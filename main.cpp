@@ -10,6 +10,8 @@
 #include "vst3_host.hpp"
 #include "alsa_out.hpp"
 
+
+
 #include "MidiFile.h"
 #include "pluginterfaces/vst/ivstevents.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
@@ -43,6 +45,8 @@ IMPLEMENT_FUNKNOWN_METHODS(VstEventList, Steinberg::Vst::IEventList, Steinberg::
 #include <map>
 #include <memory>
 
+
+
 // Forward declaration of VstEventList if needed, but it's defined below.
 
 struct Clip {
@@ -75,6 +79,8 @@ public:
         current_midi_idx = 0;
         return true;
     }
+
+
 
     bool load_clip(int slot, const std::string& path) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -126,8 +132,10 @@ struct GlobalState {
 };
 
 void playback_thread(GlobalState* state) {
-    AlsaPlayback alsa(44100, 2);
-    if (!alsa.is_ready()) return;
+    try {
+        AlsaPlayback alsa(44100, 2);
+        if (!alsa.is_ready()) return;
+
 
     int block_size = 512;
     float sample_rate = 44100.0f;
@@ -255,10 +263,19 @@ void playback_thread(GlobalState* state) {
 
         alsa.write(interleaved, block_size);
     }
+    } catch (const std::exception& e) {
+        std::cerr << "BACKEND ERROR: Exception in audio thread: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "BACKEND ERROR: Unknown exception in audio thread" << std::endl;
+    }
 }
+
 
 int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "--list") {
+
+
+
         if (argc < 3) return 1;
         Vst3Plugin::listPlugins(argv[2]);
         return 0;

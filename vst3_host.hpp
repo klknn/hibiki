@@ -27,7 +27,11 @@ public:
     Steinberg::tresult PLUGIN_API performEdit(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized) override;
     Steinberg::tresult PLUGIN_API endEdit(Steinberg::Vst::ParamID tag) override;
     Steinberg::tresult PLUGIN_API restartComponent(Steinberg::int32 flags) override;
+
+private:
+    std::atomic<uint32_t> refCount;
 };
+
 
 struct Vst3Plugin {
     VST3::Hosting::Module::Ptr module;

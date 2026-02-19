@@ -10,20 +10,16 @@
 #include "pluginterfaces/gui/iplugview.h"
 #include "public.sdk/source/common/memorystream.h"
 
-// Custom X11 error handler to prevent process exit on window closure errors
-static int hibiki_x11_error_handler(Display* d, XErrorEvent* e) {
-    char error_text[1024];
-    XGetErrorText(d, e->error_code, error_text, sizeof(error_text));
-    std::cerr << "BACKEND ERROR: X11 Protocol Error: " << error_text 
-              << " (opcode: " << (int)e->request_code << ", resource id: " << e->resourceid << ")" << std::endl;
-    return 0;
-}
 
-Vst3HostContext::Vst3HostContext() {}
+Vst3HostContext::Vst3HostContext() : refCount(1) {}
 Vst3HostContext::~Vst3HostContext() {}
 
-Steinberg::uint32 PLUGIN_API Vst3HostContext::addRef() { return 1; }
-Steinberg::uint32 PLUGIN_API Vst3HostContext::release() { return 1; }
+Steinberg::uint32 PLUGIN_API Vst3HostContext::addRef() { return ++refCount; }
+Steinberg::uint32 PLUGIN_API Vst3HostContext::release() {
+    Steinberg::uint32 r = --refCount;
+    if (r == 0) delete this;
+    return r;
+}
 
 Steinberg::tresult PLUGIN_API Vst3HostContext::queryInterface(const Steinberg::TUID _iid, void** obj) {
     QUERY_INTERFACE(_iid, obj, Steinberg::Vst::IHostApplication::iid, Steinberg::Vst::IHostApplication)
@@ -148,10 +144,14 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
         // Sync state
         Steinberg::MemoryStream stream;
         if (component->getState(&stream) == Steinberg::kResultTrue) {
+            std::cout << "Vst3Plugin::load: Syncing state to controller..." << std::endl;
             stream.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
             controller->setComponentState(&stream);
         }
+    } else {
+        std::cout << "Vst3Plugin::load: No controller available." << std::endl;
     }
+
 
 
     // Activate audio buses
@@ -201,17 +201,10 @@ void Vst3Plugin::showEditor() {
         return;
     }
 
-    if (editorRunning) {
-        std::cout << "Editor already running" << std::endl;
-        return;
-    }
+    if (editorRunning) return;
 
     // Clean up any old finished thread
     stopEditor();
-
-    XSetErrorHandler(hibiki_x11_error_handler);
-
-
 
     editorRunning = true;
     editorThread = std::thread([this]() {
@@ -222,13 +215,13 @@ void Vst3Plugin::showEditor() {
             return;
         }
 
+
         Display* display = XOpenDisplay(NULL);
         if (!display) {
             std::cerr << "Cannot open X display" << std::endl;
             editorRunning = false;
             return;
         }
-        std::cout << "X11 Display opened successfully" << std::endl;
 
         Steinberg::ViewRect rect;
         if (view->getSize(&rect) != Steinberg::kResultTrue) {
@@ -300,21 +293,25 @@ void Vst3Plugin::showEditor() {
             XSync(display, False); // Ensure destruction finishes before closing display
         }
         XCloseDisplay(display);
-        editorRunning = false;
         editorWindow = 0;
-        std::cout << "Editor thread finished" << std::endl;
+        editorRunning = false;
     });
 }
 
 
 
+
+
 void Vst3Plugin::stopEditor() {
-    editorRunning = false;
     if (editorThread.joinable()) {
-        std::cout << "Joining editor thread..." << std::endl;
+        editorRunning = false;
         editorThread.join();
+    } else {
+        editorRunning = false;
     }
 }
+
+
 
 
 
@@ -341,8 +338,14 @@ void Vst3Plugin::listPlugins(const std::string& path) {
 
 Vst3Plugin::~Vst3Plugin() {
     stopEditor();
+    
     if (processor) {
         processor->setProcessing(false);
+    }
+
+    if (controller) {
+        controller->setComponentHandler(nullptr);
+        controller->terminate();
     }
 
     if (component) {
@@ -350,4 +353,6 @@ Vst3Plugin::~Vst3Plugin() {
         component->terminate();
     }
 }
+
+
 

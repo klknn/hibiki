@@ -1,16 +1,13 @@
-#include "vst3_host.hpp"
-
 #include <atomic>
-
 #include <chrono>
 #include <iostream>
 #include <memory>
 #include <thread>
 #include <vector>
 
-#include <X11/Xatom.h>
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
+#include "vst3_editor.hpp"
+#include "vst3_host.hpp"
+
 
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/gui/iplugview.h"
@@ -24,17 +21,22 @@
 #include "public.sdk/source/vst/hosting/module.h"
 #include "public.sdk/source/vst/hosting/plugprovider.h"
 
+namespace {
 
-
-
-// Very basic event list moved from main.cpp
 class VstEventList : public Steinberg::Vst::IEventList {
     std::vector<Steinberg::Vst::Event> events;
 public:
     VstEventList() {}
     virtual ~VstEventList() {}
     
-    DECLARE_FUNKNOWN_METHODS
+    // FUnknown
+    Steinberg::uint32 PLUGIN_API addRef() override { return 1; }
+    Steinberg::uint32 PLUGIN_API release() override { return 1; }
+    Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID _iid, void** obj) override {
+        QUERY_INTERFACE(_iid, obj, Steinberg::Vst::IEventList::iid, Steinberg::Vst::IEventList)
+        return Steinberg::kNoInterface;
+    }
+
     Steinberg::int32 PLUGIN_API getEventCount() override { return events.size(); }
     Steinberg::tresult PLUGIN_API getEvent(Steinberg::int32 index, Steinberg::Vst::Event& e) override {
         if (index < 0 || index >= (int)events.size()) return Steinberg::kResultFalse;
@@ -47,83 +49,67 @@ public:
     }
     void clear() { events.clear(); }
 };
-IMPLEMENT_FUNKNOWN_METHODS(VstEventList, Steinberg::Vst::IEventList, Steinberg::Vst::IEventList::iid)
 
 
 
 class Vst3HostContext : public Steinberg::Vst::IHostApplication, public Steinberg::Vst::IComponentHandler {
 public:
-    Vst3HostContext();
-    virtual ~Vst3HostContext();
+    Vst3HostContext() : refCount(1) {}
+    virtual ~Vst3HostContext() {}
 
-    DECLARE_FUNKNOWN_METHODS
+    // FUnknown
+    Steinberg::uint32 PLUGIN_API addRef() override { return ++refCount; }
+
+    Steinberg::uint32 PLUGIN_API release() override {
+        Steinberg::uint32 r = --refCount;
+        if (r == 0) delete this;
+        return r;
+    }
+    Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID _iid, void** obj) override {
+        QUERY_INTERFACE(_iid, obj, Steinberg::Vst::IHostApplication::iid, Steinberg::Vst::IHostApplication)
+        QUERY_INTERFACE(_iid, obj, Steinberg::Vst::IComponentHandler::iid, Steinberg::Vst::IComponentHandler)
+        if (Steinberg::FUnknownPrivate::iidEqual(_iid, Steinberg::FUnknown::iid)) {
+            *obj = static_cast<Steinberg::Vst::IHostApplication*>(this);
+            addRef();
+            return Steinberg::kResultTrue;
+        }
+        return Steinberg::kNoInterface;
+    }
 
     // IHostApplication
-    Steinberg::tresult PLUGIN_API getName(Steinberg::Vst::String128 name) override;
-    Steinberg::tresult PLUGIN_API createInstance(Steinberg::TUID cid, Steinberg::TUID iid, void** obj) override;
+    Steinberg::tresult PLUGIN_API getName(Steinberg::Vst::String128 name) override {
+        Steinberg::UString str(name, 128);
+        str.fromAscii("Hibiki DAW");
+        return Steinberg::kResultTrue;
+    }
+    Steinberg::tresult PLUGIN_API createInstance(Steinberg::TUID cid, Steinberg::TUID iid, void** obj) override {
+        *obj = nullptr;
+        if (Steinberg::FUnknownPrivate::iidEqual(cid, Steinberg::Vst::IMessage::iid) && Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::Vst::IMessage::iid)) {
+            *obj = new Steinberg::Vst::HostMessage;
+            return Steinberg::kResultTrue;
+        }
+        if (Steinberg::FUnknownPrivate::iidEqual(cid, Steinberg::Vst::IAttributeList::iid) && Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::Vst::IAttributeList::iid)) {
+            if (auto attr = Steinberg::Vst::HostAttributeList::make()) {
+                attr->addRef();
+                *obj = attr;
+                return Steinberg::kResultTrue;
+            }
+        }
+        return Steinberg::kResultFalse;
+    }
 
     // IComponentHandler
-    Steinberg::tresult PLUGIN_API beginEdit(Steinberg::Vst::ParamID tag) override;
-    Steinberg::tresult PLUGIN_API performEdit(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized) override;
-    Steinberg::tresult PLUGIN_API endEdit(Steinberg::Vst::ParamID tag) override;
-    Steinberg::tresult PLUGIN_API restartComponent(Steinberg::int32 flags) override;
+    Steinberg::tresult PLUGIN_API beginEdit(Steinberg::Vst::ParamID tag) override { return Steinberg::kResultTrue; }
+    Steinberg::tresult PLUGIN_API performEdit(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized) override { return Steinberg::kResultTrue; }
+    Steinberg::tresult PLUGIN_API endEdit(Steinberg::Vst::ParamID tag) override { return Steinberg::kResultTrue; }
+    Steinberg::tresult PLUGIN_API restartComponent(Steinberg::int32 flags) override { return Steinberg::kResultTrue; }
 
 private:
     std::atomic<uint32_t> refCount;
 };
 
 
-Vst3HostContext::Vst3HostContext() : refCount(1) {}
-
-Vst3HostContext::~Vst3HostContext() {}
-
-Steinberg::uint32 PLUGIN_API Vst3HostContext::addRef() { return ++refCount; }
-Steinberg::uint32 PLUGIN_API Vst3HostContext::release() {
-    Steinberg::uint32 r = --refCount;
-    if (r == 0) delete this;
-    return r;
-}
-
-Steinberg::tresult PLUGIN_API Vst3HostContext::queryInterface(const Steinberg::TUID _iid, void** obj) {
-    QUERY_INTERFACE(_iid, obj, Steinberg::Vst::IHostApplication::iid, Steinberg::Vst::IHostApplication)
-    QUERY_INTERFACE(_iid, obj, Steinberg::Vst::IComponentHandler::iid, Steinberg::Vst::IComponentHandler)
-    if (Steinberg::FUnknownPrivate::iidEqual(_iid, Steinberg::FUnknown::iid)) {
-        *obj = static_cast<Steinberg::Vst::IHostApplication*>(this);
-        addRef();
-        return Steinberg::kResultTrue;
-    }
-    return Steinberg::kNoInterface;
-}
-
-
-
-Steinberg::tresult PLUGIN_API Vst3HostContext::getName(Steinberg::Vst::String128 name) {
-
-    Steinberg::UString str(name, 128);
-    str.fromAscii("Hibiki DAW");
-    return Steinberg::kResultTrue;
-}
-
-Steinberg::tresult PLUGIN_API Vst3HostContext::createInstance(Steinberg::TUID cid, Steinberg::TUID iid, void** obj) {
-    *obj = nullptr;
-    if (Steinberg::FUnknownPrivate::iidEqual(cid, Steinberg::Vst::IMessage::iid) && Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::Vst::IMessage::iid)) {
-        *obj = new Steinberg::Vst::HostMessage;
-        return Steinberg::kResultTrue;
-    }
-    if (Steinberg::FUnknownPrivate::iidEqual(cid, Steinberg::Vst::IAttributeList::iid) && Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::Vst::IAttributeList::iid)) {
-        if (auto attr = Steinberg::Vst::HostAttributeList::make()) {
-            attr->addRef();
-            *obj = attr;
-            return Steinberg::kResultTrue;
-        }
-    }
-    return Steinberg::kResultFalse;
-}
-
-Steinberg::tresult PLUGIN_API Vst3HostContext::beginEdit(Steinberg::Vst::ParamID tag) { return Steinberg::kResultTrue; }
-Steinberg::tresult PLUGIN_API Vst3HostContext::performEdit(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized) { return Steinberg::kResultTrue; }
-Steinberg::tresult PLUGIN_API Vst3HostContext::endEdit(Steinberg::Vst::ParamID tag) { return Steinberg::kResultTrue; }
-Steinberg::tresult PLUGIN_API Vst3HostContext::restartComponent(Steinberg::int32 flags) { return Steinberg::kResultTrue; }
+} // namespace
 
 
 struct Vst3PluginImpl {
@@ -157,7 +143,6 @@ Vst3Plugin::~Vst3Plugin() {
         impl->component->terminate();
     }
 }
-
 
 
 bool Vst3Plugin::load(const std::string& path, int plugin_index) {
@@ -218,7 +203,6 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
         }
     }
 
-    
     if (impl->controller) {
         impl->controller->initialize(impl->hostContext);
         
@@ -248,8 +232,6 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
     } else {
         std::cout << "Vst3Plugin::load: No controller available." << std::endl;
     }
-
-
 
     // Activate audio buses
     int numInBuses = impl->component->getBusCount(Steinberg::Vst::kAudio, Steinberg::Vst::kInput);
@@ -292,7 +274,6 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
 }
 
 
-
 void Vst3Plugin::showEditor() {
     if (!impl->controller) {
         std::cerr << "No controller available for showing editor" << std::endl;
@@ -306,98 +287,12 @@ void Vst3Plugin::showEditor() {
 
     impl->editorRunning = true;
     impl->editorThread = std::thread([this]() {
-        Steinberg::IPtr<Steinberg::IPlugView> view = Steinberg::owned(impl->controller->createView(Steinberg::Vst::ViewType::kEditor));
-        if (!view) {
-            std::cerr << "Plugin does not provide an editor view" << std::endl;
-            impl->editorRunning = false;
-            return;
+        auto editor = createVst3Editor();
+        if (editor) {
+            editor->open(impl->controller, impl->editorRunning, impl->editorWindow);
         }
-
-
-        Display* display = XOpenDisplay(NULL);
-        if (!display) {
-            std::cerr << "Cannot open X display" << std::endl;
-            impl->editorRunning = false;
-            return;
-        }
-
-        Steinberg::ViewRect rect;
-        if (view->getSize(&rect) != Steinberg::kResultTrue) {
-            std::cerr << "Cannot get view size" << std::endl;
-            XCloseDisplay(display);
-            impl->editorRunning = false;
-            return;
-        }
-
-        int width = rect.right - rect.left;
-        int height = rect.bottom - rect.top;
-        std::cout << "Plugin View Size: " << width << "x" << height << std::endl;
-
-        int screen = DefaultScreen(display);
-        Window window = XCreateSimpleWindow(display, RootWindow(display, screen), 0, 0, width, height, 1,
-                                          BlackPixel(display, screen), WhitePixel(display, screen));
-
-        impl->editorWindow = (uint64_t)window;
-
-        XStoreName(display, window, "Vst3 Plugin Editor");
-        XSelectInput(display, window, ExposureMask | KeyPressMask | StructureNotifyMask | SubstructureNotifyMask);
-
-        // Intercept window close request
-        Atom wmDeleteMessage = XInternAtom(display, "WM_DELETE_WINDOW", False);
-        XSetWMProtocols(display, window, &wmDeleteMessage, 1);
-
-        XMapWindow(display, window);
-        XFlush(display);
-        std::cout << "X11 Window created and mapped" << std::endl;
-
-
-        if (view->attached((void*)window, Steinberg::kPlatformTypeX11EmbedWindowID) != Steinberg::kResultTrue) {
-            std::cerr << "Failed to attach view to X11 window" << std::endl;
-            XDestroyWindow(display, window);
-            XCloseDisplay(display);
-            impl->editorRunning = false;
-            return;
-        }
-        std::cout << "Plugin View attached successfully" << std::endl;
-
-        XEvent event;
-        bool windowWasDestroyed = false;
-        while (impl->editorRunning) {
-            while (impl->editorRunning && XPending(display)) {
-                XNextEvent(display, &event);
-                if (event.type == DestroyNotify && (event.xdestroywindow.window == window)) {
-                    std::cout << "X11 Window destroyed by WM" << std::endl;
-                    windowWasDestroyed = true;
-                    impl->editorRunning = false;
-                    break;
-                }
-                if (event.type == ClientMessage) {
-                    if ((Atom)event.xclient.data.l[0] == wmDeleteMessage) {
-                        std::cout << "X11 Close button clicked" << std::endl;
-                        impl->editorRunning = false;
-                        break;
-                    }
-                }
-            }
-            if (!impl->editorRunning) break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        std::cout << "Cleaning up VST3 view..." << std::endl;
-        view->removed();
-        
-        if (!windowWasDestroyed) {
-            XDestroyWindow(display, window);
-            XSync(display, False); // Ensure destruction finishes before closing display
-        }
-        XCloseDisplay(display);
-        impl->editorWindow = 0;
-        impl->editorRunning = false;
     });
 }
-
-
-
 
 
 
@@ -409,10 +304,6 @@ void Vst3Plugin::stopEditor() {
         impl->editorRunning = false;
     }
 }
-
-
-
-
 
 
 void Vst3Plugin::listPlugins(const std::string& path) {
@@ -494,7 +385,3 @@ void Vst3Plugin::process(float** inputs, float** outputs, int numSamples,
     impl->processor->process(data);
 
 }
-
-
-
-

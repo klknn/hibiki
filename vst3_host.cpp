@@ -8,8 +8,14 @@
 #include "pluginterfaces/gui/iplugview.h"
 #include "public.sdk/source/common/memorystream.h"
 
-
-
+// Custom X11 error handler to prevent process exit on window closure errors
+static int hibiki_x11_error_handler(Display* d, XErrorEvent* e) {
+    char error_text[1024];
+    XGetErrorText(d, e->error_code, error_text, sizeof(error_text));
+    std::cerr << "BACKEND ERROR: X11 Protocol Error: " << error_text 
+              << " (opcode: " << (int)e->request_code << ", resource id: " << e->resourceid << ")" << std::endl;
+    return 0;
+}
 
 Vst3HostContext::Vst3HostContext() {}
 Vst3HostContext::~Vst3HostContext() {}
@@ -198,6 +204,8 @@ void Vst3Plugin::showEditor() {
         return;
     }
 
+    XSetErrorHandler(hibiki_x11_error_handler);
+
     editorRunning = true;
     editorThread = std::thread([this]() {
         Steinberg::IPtr<Steinberg::IPlugView> view = Steinberg::owned(controller->createView(Steinberg::Vst::ViewType::kEditor));
@@ -250,9 +258,12 @@ void Vst3Plugin::showEditor() {
 
         XEvent event;
         while (editorRunning) {
-            while (XPending(display)) {
+            // Use a check to see if our window is still valid if possible,
+            // but the error handler will catch BadWindow if it's gone.
+            while (editorRunning && XPending(display)) {
                 XNextEvent(display, &event);
-                if (event.type == DestroyNotify && event.xdestroywindow.window == window) {
+                if (event.type == DestroyNotify && (event.xdestroywindow.window == window)) {
+                    std::cout << "X11 Window destroyed by WM" << std::endl;
                     editorRunning = false;
                     break;
                 }
@@ -261,14 +272,21 @@ void Vst3Plugin::showEditor() {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
+        std::cout << "Cleaning up VST3 view..." << std::endl;
         view->removed();
-        XDestroyWindow(display, window);
+        
+        // If the window was already destroyed by WM, this might trigger BadWindow,
+        // but our error handler will keep us alive.
+        if (editorWindow != 0) {
+            XDestroyWindow(display, window);
+        }
         XCloseDisplay(display);
         editorRunning = false;
         editorWindow = 0;
         std::cout << "Editor thread finished" << std::endl;
     });
 }
+
 
 void Vst3Plugin::stopEditor() {
     if (editorRunning) {

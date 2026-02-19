@@ -207,19 +207,37 @@ class Gui(tk.Tk):
         vst_paths = ["testdata", os.path.expanduser("~/.vst3"), "/usr/lib/vst3", "/usr/local/lib/vst3"]
         for p in vst_paths:
             if os.path.exists(p):
-                for entry in os.listdir(p):
-                    if entry.endswith(".vst3"):
-                        full_path = os.path.join(p, entry)
-                        self.browser_tree.insert(self.vst_node, "end", text=entry, values=(full_path, "vst"))
+                self.add_to_tree(self.vst_node, p, [".vst3"], "vst")
 
         # Scan MIDI
         midi_paths = ["testdata", "."]
         for p in midi_paths:
             if os.path.exists(p):
-                for entry in os.listdir(p):
-                    if entry.endswith(".mid") or entry.endswith(".midi"):
-                        full_path = os.path.abspath(os.path.join(p, entry))
-                        self.browser_tree.insert(self.midi_node, "end", text=entry, values=(full_path, "midi"))
+                # Filter out some noise for recursion
+                self.add_to_tree(self.midi_node, p, [".mid", ".midi"], "midi", exclude=[".git", "bazel-", "third_party"])
+
+    def add_to_tree(self, parent_node, path, extensions, type_label, exclude=None):
+        try:
+            entries = sorted(os.listdir(path))
+        except OSError:
+            return
+
+        for entry in entries:
+            if exclude and any(entry.startswith(ex) for ex in exclude):
+                continue
+
+            full_path = os.path.join(path, entry)
+            
+            # Check if this is a target item (e.g. .vst3 bundle or .mid file)
+            is_target = any(entry.lower().endswith(ext) for ext in extensions)
+            
+            if is_target:
+                # Add as leaf node
+                self.browser_tree.insert(parent_node, "end", text=entry, values=(full_path, type_label))
+            elif os.path.isdir(full_path):
+                # Add as folder node and recurse
+                folder_node = self.browser_tree.insert(parent_node, "end", text=entry, open=False, values=("", "folder"))
+                self.add_to_tree(folder_node, full_path, extensions, type_label, exclude)
 
     def on_browser_double_click(self, event):
         item = self.browser_tree.selection()[0]
@@ -227,11 +245,13 @@ class Gui(tk.Tk):
         if not values: return
 
         path, file_type = values[0], values[1]
+        if file_type == "folder": return
         
         if file_type == "vst":
             self.start_backend(vst_path=path, midi_path=self.current_midi)
         elif file_type == "midi":
             self.start_backend(vst_path=self.current_vst, midi_path=path)
+
 
 
     def build_session_view(self, parent):

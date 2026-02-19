@@ -6,40 +6,14 @@
 #include <string>
 #include <sstream>
 
-
 #include "vst3_host.hpp"
 #include "alsa_out.hpp"
 
 
-
 #include "MidiFile.h"
-#include "pluginterfaces/vst/ivstevents.h"
-#include "pluginterfaces/vst/ivstparameterchanges.h"
-#include "pluginterfaces/vst/ivstprocesscontext.h"
 
-// Very basic event list
-class VstEventList : public Steinberg::Vst::IEventList {
-    std::vector<Steinberg::Vst::Event> events;
-public:
-    VstEventList() {}
-    virtual ~VstEventList() {}
-    
-    DECLARE_FUNKNOWN_METHODS
-    Steinberg::int32 PLUGIN_API getEventCount() override { return events.size(); }
-    Steinberg::tresult PLUGIN_API getEvent(Steinberg::int32 index, Steinberg::Vst::Event& e) override {
-        if (index < 0 || index >= (int)events.size()) return Steinberg::kResultFalse;
-        e = events[index];
-        return Steinberg::kResultTrue;
-    }
-    Steinberg::tresult PLUGIN_API addEvent(Steinberg::Vst::Event& e) override {
-        events.push_back(e);
-        return Steinberg::kResultTrue;
-    }
-    void clear() { events.clear(); }
-};
 
-// We must provide an implementation of IEventList methods for fUnknown
-IMPLEMENT_FUNKNOWN_METHODS(VstEventList, Steinberg::Vst::IEventList, Steinberg::Vst::IEventList::iid)
+
 
 #include <mutex>
 #include <map>
@@ -137,57 +111,27 @@ void playback_thread(GlobalState* state) {
         if (!alsa.is_ready()) return;
 
 
-    int block_size = 512;
-    float sample_rate = 44100.0f;
-    int num_channels = 2;
+        int block_size = 512;
+        float sample_rate = 44100.0f;
+        int num_channels = 2;
 
-    alignas(32) float bufferL[512];
-    alignas(32) float bufferR[512];
-    std::vector<float*> outChannels = {bufferL, bufferR};
+        alignas(32) float bufferL[512];
+        alignas(32) float bufferR[512];
+        float* outChannels[] = {bufferL, bufferR};
 
-    alignas(32) float inBufferL[512] = {0};
-    alignas(32) float inBufferR[512] = {0};
-    std::vector<float*> inChannels = {inBufferL, inBufferR};
+        HostProcessContext context;
+        context.sampleRate = sample_rate;
+        context.tempo = 120.0;
+        context.timeSigNumerator = 4;
+        context.timeSigDenominator = 4;
 
-    Steinberg::Vst::AudioBusBuffers inputs;
-    inputs.numChannels = 2;
-    inputs.silenceFlags = 0;
-    inputs.channelBuffers32 = inChannels.data();
+        double time_per_block = block_size / (double)sample_rate;
+        std::vector<float> mixBufferL(block_size);
+        std::vector<float> mixBufferR(block_size);
+        std::vector<float> interleaved(block_size * num_channels);
 
-    Steinberg::Vst::AudioBusBuffers outputs;
-    outputs.numChannels = num_channels;
-    outputs.silenceFlags = 0;
-    outputs.channelBuffers32 = outChannels.data();
+        while (!state->quit) {
 
-    VstEventList eventList;
-
-    Steinberg::Vst::ProcessContext context = {};
-    context.state = Steinberg::Vst::ProcessContext::kPlaying;
-    context.sampleRate = sample_rate;
-    context.tempo = 120.0;
-    context.timeSigNumerator = 4;
-    context.timeSigDenominator = 4;
-
-    Steinberg::Vst::ProcessData data;
-    data.processMode = Steinberg::Vst::kRealtime;
-    data.symbolicSampleSize = Steinberg::Vst::kSample32;
-    data.numSamples = block_size;
-    data.numInputs = 1;
-    data.inputs = &inputs;
-    data.numOutputs = 1;
-    data.outputs = &outputs;
-    data.inputParameterChanges = nullptr;
-    data.outputParameterChanges = nullptr;
-    data.inputEvents = &eventList;
-    data.outputEvents = nullptr;
-    data.processContext = &context;
-
-    double time_per_block = block_size / (double)sample_rate;
-    std::vector<float> mixBufferL(block_size);
-    std::vector<float> mixBufferR(block_size);
-    std::vector<float> interleaved(block_size * num_channels);
-
-    while (!state->quit) {
         std::fill(mixBufferL.begin(), mixBufferL.end(), 0.0f);
         std::fill(mixBufferR.begin(), mixBufferR.end(), 0.0f);
 
@@ -206,30 +150,29 @@ void playback_thread(GlobalState* state) {
                 smf::MidiFile* midifile = clip->midi.get();
                 int num_midi_events = (*midifile)[0].getEventCount();
 
-                context.continousTimeSamples = track->current_time_sec * sample_rate;
+                context.continuousTimeSamples = track->current_time_sec * sample_rate;
                 context.projectTimeMusic = track->current_time_sec * (context.tempo / 60.0);
 
-                eventList.clear();
+                std::vector<MidiNoteEvent> blockEvents;
                 while (track->current_midi_idx < num_midi_events) {
                     auto& me = (*midifile)[0][track->current_midi_idx];
                     if (me.seconds >= track->current_time_sec + time_per_block) break;
 
                     if (me.isNoteOn() || me.isNoteOff()) {
-                        Steinberg::Vst::Event e = {};
+                        MidiNoteEvent e;
                         e.sampleOffset = std::max(0, (int)((me.seconds - track->current_time_sec) * sample_rate));
                         if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
+                        e.channel = me.getChannel();
+                        e.pitch = me.getKeyNumber();
 
                         if (me.isNoteOff() || (me.isNoteOn() && me.getVelocity() == 0)) {
-                            e.type = Steinberg::Vst::Event::kNoteOffEvent;
-                            e.noteOff.channel = me.getChannel();
-                            e.noteOff.pitch = me.getKeyNumber();
+                            e.isNoteOn = false;
+                            e.velocity = 0;
                         } else {
-                            e.type = Steinberg::Vst::Event::kNoteOnEvent;
-                            e.noteOn.channel = me.getChannel();
-                            e.noteOn.pitch = me.getKeyNumber();
-                            e.noteOn.velocity = me.getVelocity() / 127.0f;
+                            e.isNoteOn = true;
+                            e.velocity = me.getVelocity() / 127.0f;
                         }
-                        eventList.addEvent(e);
+                        blockEvents.push_back(e);
                     }
                     track->current_midi_idx++;
                 }
@@ -237,7 +180,8 @@ void playback_thread(GlobalState* state) {
                 std::fill(bufferL, bufferL + block_size, 0.0f);
                 std::fill(bufferR, bufferR + block_size, 0.0f);
                 
-                track->plugin->processor->process(data);
+                track->plugin->process(nullptr, outChannels, block_size, context, blockEvents);
+
 
                 for (int i = 0; i < block_size; ++i) {
                     mixBufferL[i] += bufferL[i];

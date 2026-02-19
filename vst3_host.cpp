@@ -9,9 +9,57 @@
 
 #include "pluginterfaces/gui/iplugview.h"
 #include "public.sdk/source/common/memorystream.h"
+#include "pluginterfaces/vst/ivstevents.h"
+#include "pluginterfaces/vst/ivstprocesscontext.h"
+
+// Very basic event list moved from main.cpp
+class VstEventList : public Steinberg::Vst::IEventList {
+    std::vector<Steinberg::Vst::Event> events;
+public:
+    VstEventList() {}
+    virtual ~VstEventList() {}
+    
+    DECLARE_FUNKNOWN_METHODS
+    Steinberg::int32 PLUGIN_API getEventCount() override { return events.size(); }
+    Steinberg::tresult PLUGIN_API getEvent(Steinberg::int32 index, Steinberg::Vst::Event& e) override {
+        if (index < 0 || index >= (int)events.size()) return Steinberg::kResultFalse;
+        e = events[index];
+        return Steinberg::kResultTrue;
+    }
+    Steinberg::tresult PLUGIN_API addEvent(Steinberg::Vst::Event& e) override {
+        events.push_back(e);
+        return Steinberg::kResultTrue;
+    }
+    void clear() { events.clear(); }
+};
+IMPLEMENT_FUNKNOWN_METHODS(VstEventList, Steinberg::Vst::IEventList, Steinberg::Vst::IEventList::iid)
+
+
+
+class Vst3HostContext : public Steinberg::Vst::IHostApplication, public Steinberg::Vst::IComponentHandler {
+public:
+    Vst3HostContext();
+    virtual ~Vst3HostContext();
+
+    DECLARE_FUNKNOWN_METHODS
+
+    // IHostApplication
+    Steinberg::tresult PLUGIN_API getName(Steinberg::Vst::String128 name) override;
+    Steinberg::tresult PLUGIN_API createInstance(Steinberg::TUID cid, Steinberg::TUID iid, void** obj) override;
+
+    // IComponentHandler
+    Steinberg::tresult PLUGIN_API beginEdit(Steinberg::Vst::ParamID tag) override;
+    Steinberg::tresult PLUGIN_API performEdit(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized) override;
+    Steinberg::tresult PLUGIN_API endEdit(Steinberg::Vst::ParamID tag) override;
+    Steinberg::tresult PLUGIN_API restartComponent(Steinberg::int32 flags) override;
+
+private:
+    std::atomic<uint32_t> refCount;
+};
 
 
 Vst3HostContext::Vst3HostContext() : refCount(1) {}
+
 Vst3HostContext::~Vst3HostContext() {}
 
 Steinberg::uint32 PLUGIN_API Vst3HostContext::addRef() { return ++refCount; }
@@ -336,8 +384,68 @@ void Vst3Plugin::listPlugins(const std::string& path) {
 
 
 
+void Vst3Plugin::process(float** inputs, float** outputs, int numSamples, 
+                        const HostProcessContext& context, 
+                        const std::vector<MidiNoteEvent>& events) {
+    if (!processor) return;
+
+    Steinberg::Vst::AudioBusBuffers inBuses, outBuses;
+    inBuses.numChannels = 2; // Assuming stereo for now
+    inBuses.silenceFlags = 0;
+    inBuses.channelBuffers32 = inputs;
+
+    outBuses.numChannels = 2;
+    outBuses.silenceFlags = 0;
+    outBuses.channelBuffers32 = outputs;
+
+    VstEventList eventList;
+    for (const auto& me : events) {
+        Steinberg::Vst::Event e = {};
+        e.sampleOffset = me.sampleOffset;
+        if (me.isNoteOn) {
+            e.type = Steinberg::Vst::Event::kNoteOnEvent;
+            e.noteOn.channel = me.channel;
+            e.noteOn.pitch = me.pitch;
+            e.noteOn.velocity = me.velocity;
+        } else {
+            e.type = Steinberg::Vst::Event::kNoteOffEvent;
+            e.noteOff.channel = me.channel;
+            e.noteOff.pitch = me.pitch;
+            e.noteOff.velocity = me.velocity;
+        }
+        eventList.addEvent(e);
+    }
+
+    Steinberg::Vst::ProcessContext vstContext = {};
+    vstContext.state = Steinberg::Vst::ProcessContext::kPlaying;
+    vstContext.sampleRate = context.sampleRate;
+    vstContext.tempo = context.tempo;
+    vstContext.timeSigNumerator = context.timeSigNumerator;
+    vstContext.timeSigDenominator = context.timeSigDenominator;
+    vstContext.continousTimeSamples = context.continuousTimeSamples;
+    vstContext.projectTimeMusic = context.projectTimeMusic;
+
+    Steinberg::Vst::ProcessData data;
+    data.processMode = Steinberg::Vst::kRealtime;
+    data.symbolicSampleSize = Steinberg::Vst::kSample32;
+    data.numSamples = numSamples;
+    data.numInputs = 1;
+    data.inputs = &inBuses;
+    data.numOutputs = 1;
+    data.outputs = &outBuses;
+    data.inputParameterChanges = nullptr;
+    data.outputParameterChanges = nullptr;
+    data.inputEvents = &eventList;
+    data.outputEvents = nullptr;
+    data.processContext = &vstContext;
+    processor->process(data);
+}
+
+
 Vst3Plugin::~Vst3Plugin() {
+
     stopEditor();
+
     
     if (processor) {
         processor->setProcessing(false);

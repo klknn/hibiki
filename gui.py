@@ -36,10 +36,10 @@ class Gui(tk.Tk):
         self.start_backend()
         atexit.register(self.stop_backend_process)
 
-    def start_backend(self):
+    def start_backend(self, vst_path=None, midi_path=None):
         # Default paths for manual execution
-        vst_path = "testdata/Dexed.vst3"
-        midi_path = "testdata/test.mid"
+        if not vst_path: vst_path = "testdata/Dexed.vst3"
+        if not midi_path: midi_path = "testdata/test.mid"
         backend_bin = "./bazel-bin/hbk-play"
         
         # Check if we are running under Bazel
@@ -47,12 +47,17 @@ class Gui(tk.Tk):
             from runfiles import runfiles
             r = runfiles.Create()
             backend_bin = r.Rlocation("hibiki/hbk-play")
-            vst_path = r.Rlocation("hibiki/testdata/Dexed.vst3")
-            midi_path = r.Rlocation("hibiki/testdata/test.mid")
+            # If default paths are used, resolve them via runfiles
+            if vst_path == "testdata/Dexed.vst3":
+                vst_path = r.Rlocation("hibiki/testdata/Dexed.vst3")
+            if midi_path == "testdata/test.mid":
+                midi_path = r.Rlocation("hibiki/testdata/test.mid")
 
         if not os.path.exists(backend_bin):
             self.status_label.config(text=f"Error: {backend_bin} not found. Build it first.")
             return
+
+        self.stop_backend_process()
 
         try:
             self.backend = subprocess.Popen(
@@ -63,9 +68,12 @@ class Gui(tk.Tk):
                 text=True,
                 bufsize=1
             )
-            self.status_label.config(text="Backend connected.")
+            self.current_vst = vst_path
+            self.current_midi = midi_path
+            self.status_label.config(text=f"Backend: {os.path.basename(vst_path)} + {os.path.basename(midi_path)}")
         except Exception as e:
             self.status_label.config(text=f"Failed to start backend: {e}")
+
 
 
     def send_command(self, cmd):
@@ -184,20 +192,47 @@ class Gui(tk.Tk):
         header = tk.Label(parent, text="Browser", bg=self.colors["bg_dark"], fg=self.colors["text_light"])
         header.pack(fill=tk.X)
         
-        tree = ttk.Treeview(parent, show="tree")
-        tree.pack(fill=tk.BOTH, expand=True)
-        self.add_hover_hint(tree, "File Browser: Drag and drop instruments, effects, and samples into the workspace.")
+        self.browser_tree = ttk.Treeview(parent, show="tree")
+        self.browser_tree.pack(fill=tk.BOTH, expand=True)
+        self.add_hover_hint(self.browser_tree, "File Browser: Double-click a plugin or MIDI file to load.")
         
-        nodes = ["Sounds", "Instruments", "Audio Effects", "MIDI Effects", "Plugins", "User Library"]
-        for node in nodes:
-            parent_node = tree.insert("", "end", text=node)
-            if node == "Audio Effects":
-                tree.insert(parent_node, "end", text="EQ Eight")
-                tree.insert(parent_node, "end", text="Compressor")
-                tree.insert(parent_node, "end", text="Reverb")
-            elif node == "Instruments":
-                tree.insert(parent_node, "end", text="Operator")
-                tree.insert(parent_node, "end", text="Simpler")
+        self.vst_node = self.browser_tree.insert("", "end", text="Plugins", open=True)
+        self.midi_node = self.browser_tree.insert("", "end", text="MIDI Files", open=True)
+
+        self.populate_browser()
+        self.browser_tree.bind("<Double-1>", self.on_browser_double_click)
+
+    def populate_browser(self):
+        # Scan VST3
+        vst_paths = ["testdata", os.path.expanduser("~/.vst3"), "/usr/lib/vst3", "/usr/local/lib/vst3"]
+        for p in vst_paths:
+            if os.path.exists(p):
+                for entry in os.listdir(p):
+                    if entry.endswith(".vst3"):
+                        full_path = os.path.join(p, entry)
+                        self.browser_tree.insert(self.vst_node, "end", text=entry, values=(full_path, "vst"))
+
+        # Scan MIDI
+        midi_paths = ["testdata", "."]
+        for p in midi_paths:
+            if os.path.exists(p):
+                for entry in os.listdir(p):
+                    if entry.endswith(".mid") or entry.endswith(".midi"):
+                        full_path = os.path.abspath(os.path.join(p, entry))
+                        self.browser_tree.insert(self.midi_node, "end", text=entry, values=(full_path, "midi"))
+
+    def on_browser_double_click(self, event):
+        item = self.browser_tree.selection()[0]
+        values = self.browser_tree.item(item, "values")
+        if not values: return
+
+        path, file_type = values[0], values[1]
+        
+        if file_type == "vst":
+            self.start_backend(vst_path=path, midi_path=self.current_midi)
+        elif file_type == "midi":
+            self.start_backend(vst_path=self.current_vst, midi_path=path)
+
 
     def build_session_view(self, parent):
         header = tk.Label(parent, text="Session View", bg=self.colors["bg_dark"], fg=self.colors["text_light"])

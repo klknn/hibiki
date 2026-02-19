@@ -1,7 +1,9 @@
 #pragma once
 
-#include <alsa/asoundlib.h>
 #include <vector>
+
+
+typedef struct _snd_pcm snd_pcm_t;
 
 class AlsaPlayback {
     snd_pcm_t *pcm_handle = nullptr;

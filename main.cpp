@@ -15,10 +15,6 @@
 #include "vst3_host.hpp"
 
 
-
-
-// Forward declaration of VstEventList if needed, but it's defined below.
-
 struct Clip {
     std::unique_ptr<smf::MidiFile> midi;
 };
@@ -101,11 +97,10 @@ struct GlobalState {
     }
 };
 
-void playback_thread(GlobalState* state) {
+void playback_thread(GlobalState& state) {
     try {
         AlsaPlayback alsa(44100, 2);
         if (!alsa.is_ready()) return;
-
 
         int block_size = 512;
         float sample_rate = 44100.0f;
@@ -126,83 +121,83 @@ void playback_thread(GlobalState* state) {
         std::vector<float> mixBufferR(block_size);
         std::vector<float> interleaved(block_size * num_channels);
 
-        while (!state->quit) {
+        while (!state.quit) {
 
-        std::fill(mixBufferL.begin(), mixBufferL.end(), 0.0f);
-        std::fill(mixBufferR.begin(), mixBufferR.end(), 0.0f);
+            std::fill(mixBufferL.begin(), mixBufferL.end(), 0.0f);
+            std::fill(mixBufferR.begin(), mixBufferR.end(), 0.0f);
 
-        bool any_playing = false;
-        
-        {
-            std::lock_guard<std::mutex> lock(state->tracks_mutex);
-            for (auto& pair : state->tracks) {
-                Track* track = pair.second.get();
-                std::lock_guard<std::mutex> tlock(track->mutex);
-                
-                if (!track->plugin || track->playing_slot == -1) continue;
-                
-                any_playing = true;
-                auto& clip = track->clips[track->playing_slot];
-                smf::MidiFile* midifile = clip->midi.get();
-                int num_midi_events = (*midifile)[0].getEventCount();
+            bool any_playing = false;
+            
+            {
+                std::lock_guard<std::mutex> lock(state.tracks_mutex);
+                for (auto& pair : state.tracks) {
+                    Track* track = pair.second.get();
+                    std::lock_guard<std::mutex> tlock(track->mutex);
+                    
+                    if (!track->plugin || track->playing_slot == -1) continue;
+                    
+                    any_playing = true;
+                    auto& clip = track->clips[track->playing_slot];
+                    smf::MidiFile* midifile = clip->midi.get();
+                    int num_midi_events = (*midifile)[0].getEventCount();
 
-                context.continuousTimeSamples = track->current_time_sec * sample_rate;
-                context.projectTimeMusic = track->current_time_sec * (context.tempo / 60.0);
+                    context.continuousTimeSamples = track->current_time_sec * sample_rate;
+                    context.projectTimeMusic = track->current_time_sec * (context.tempo / 60.0);
 
-                std::vector<MidiNoteEvent> blockEvents;
-                while (track->current_midi_idx < num_midi_events) {
-                    auto& me = (*midifile)[0][track->current_midi_idx];
-                    if (me.seconds >= track->current_time_sec + time_per_block) break;
+                    std::vector<MidiNoteEvent> blockEvents;
+                    while (track->current_midi_idx < num_midi_events) {
+                        auto& me = (*midifile)[0][track->current_midi_idx];
+                        if (me.seconds >= track->current_time_sec + time_per_block) break;
 
-                    if (me.isNoteOn() || me.isNoteOff()) {
-                        MidiNoteEvent e;
-                        e.sampleOffset = std::max(0, (int)((me.seconds - track->current_time_sec) * sample_rate));
-                        if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
-                        e.channel = me.getChannel();
-                        e.pitch = me.getKeyNumber();
+                        if (me.isNoteOn() || me.isNoteOff()) {
+                            MidiNoteEvent e;
+                            e.sampleOffset = std::max(0, (int)((me.seconds - track->current_time_sec) * sample_rate));
+                            if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
+                            e.channel = me.getChannel();
+                            e.pitch = me.getKeyNumber();
 
-                        if (me.isNoteOff() || (me.isNoteOn() && me.getVelocity() == 0)) {
-                            e.isNoteOn = false;
-                            e.velocity = 0;
-                        } else {
-                            e.isNoteOn = true;
-                            e.velocity = me.getVelocity() / 127.0f;
+                            if (me.isNoteOff() || (me.isNoteOn() && me.getVelocity() == 0)) {
+                                e.isNoteOn = false;
+                                e.velocity = 0;
+                            } else {
+                                e.isNoteOn = true;
+                                e.velocity = me.getVelocity() / 127.0f;
+                            }
+                            blockEvents.push_back(e);
                         }
-                        blockEvents.push_back(e);
+                        track->current_midi_idx++;
                     }
-                    track->current_midi_idx++;
-                }
 
-                std::fill(bufferL, bufferL + block_size, 0.0f);
-                std::fill(bufferR, bufferR + block_size, 0.0f);
-                
-                track->plugin->process(nullptr, outChannels, block_size, context, blockEvents);
+                    std::fill(bufferL, bufferL + block_size, 0.0f);
+                    std::fill(bufferR, bufferR + block_size, 0.0f);
+                    
+                    track->plugin->process(nullptr, outChannels, block_size, context, blockEvents);
 
 
-                for (int i = 0; i < block_size; ++i) {
-                    mixBufferL[i] += bufferL[i];
-                    mixBufferR[i] += bufferR[i];
-                }
+                    for (int i = 0; i < block_size; ++i) {
+                        mixBufferL[i] += bufferL[i];
+                        mixBufferR[i] += bufferR[i];
+                    }
 
-                track->current_time_sec += time_per_block;
-                if (track->current_midi_idx >= num_midi_events) {
-                    track->playing_slot = -1; // Stop at end of clip for now
+                    track->current_time_sec += time_per_block;
+                    if (track->current_midi_idx >= num_midi_events) {
+                        track->playing_slot = -1; // Stop at end of clip for now
+                    }
                 }
             }
-        }
 
-        if (!any_playing) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            continue;
-        }
+            if (!any_playing) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
 
-        for (int i = 0; i < block_size; ++i) {
-            interleaved[i * 2 + 0] = mixBufferL[i];
-            interleaved[i * 2 + 1] = mixBufferR[i];
-        }
+            for (int i = 0; i < block_size; ++i) {
+                interleaved[i * 2 + 0] = mixBufferL[i];
+                interleaved[i * 2 + 1] = mixBufferR[i];
+            }
 
-        alsa.write(interleaved, block_size);
-    }
+            alsa.write(interleaved, block_size);
+        }
     } catch (const std::exception& e) {
         std::cerr << "BACKEND ERROR: Exception in audio thread: " << e.what() << std::endl;
     } catch (...) {
@@ -213,16 +208,13 @@ void playback_thread(GlobalState* state) {
 
 int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "--list") {
-
-
-
         if (argc < 3) return 1;
         Vst3Plugin::listPlugins(argv[2]);
         return 0;
     }
 
     GlobalState state;
-    std::thread audio_thread(playback_thread, &state);
+    std::thread audio_thread(playback_thread, std::ref(state));
 
     std::string line;
     while (std::getline(std::cin, line)) {

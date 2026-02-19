@@ -1,5 +1,9 @@
 #include "alsa_out.hpp"
+
 #include <iostream>
+
+#include <alsa/asoundlib.h>
+
 
 AlsaPlayback::AlsaPlayback(int rate, int ch) : sample_rate(rate), channels(ch) {
     if (snd_pcm_open(&pcm_handle, "default", SND_PCM_STREAM_PLAYBACK, 0) < 0) {

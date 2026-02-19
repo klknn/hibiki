@@ -39,7 +39,7 @@ cc_binary(
     ],
 )
 
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 
 py_binary(
     name = "gui",
@@ -51,3 +51,15 @@ py_binary(
         "//testdata",
     ],
 )
+
+py_test(
+    name = "gui_type_check",
+    srcs = ["mypy_test.py"],
+    main = "mypy_test.py",
+    deps = [
+        ":gui", # This ensures gui.py is available
+        "@pip//mypy:pkg",
+    ],
+    data = ["gui.py"],
+)
+

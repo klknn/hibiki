@@ -1,9 +1,9 @@
 #pragma once
-#include <string>
 
-#include <vector>
-#include <memory>
 #include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
 
 struct HostProcessContext {
     double sampleRate;

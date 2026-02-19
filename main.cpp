@@ -1,23 +1,19 @@
-#include <iostream>
-#include <vector>
-#include <thread>
-#include <chrono>
 #include <atomic>
-#include <string>
+#include <chrono>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <sstream>
-
-#include "vst3_host.hpp"
-#include "alsa_out.hpp"
-
+#include <string>
+#include <thread>
+#include <vector>
 
 #include "MidiFile.h"
 
+#include "alsa_out.hpp"
+#include "vst3_host.hpp"
 
-
-
-#include <mutex>
-#include <map>
-#include <memory>
 
 
 

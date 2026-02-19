@@ -282,7 +282,18 @@ int main(int argc, char** argv) {
             } else {
                 std::cout << "ERR LOAD_CLIP " << tidx << " " << sidx << "\n" << std::flush;
             }
+        } else if (cmd == "PLAY") {
+            // In session view, global play could resume or restart, 
+            // but for now individual clips are triggered via PLAY_CLIP.
+            std::cout << "ACK PLAY\n" << std::flush;
+        } else if (cmd == "STOP") {
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            for (auto& pair : state.tracks) {
+                pair.second->stop();
+            }
+            std::cout << "ACK STOP\n" << std::flush;
         } else if (cmd == "PLAY_CLIP") {
+
             int tidx, sidx;
             if (ss >> tidx >> sidx) {
                 state.get_or_create_track(tidx)->play_clip(sidx);

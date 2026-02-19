@@ -159,16 +159,37 @@ void playback_thread(Vst3Plugin* plugin, smf::MidiFile* midifile, PlaybackState*
 }
 
 int main(int argc, char** argv) {
+    if (argc < 2) {
+        std::cerr << "Usage:\n"
+                  << "  " << argv[0] << " --list <vst3_path>\n"
+                  << "  " << argv[0] << " <vst3_path> <midi_path> [plugin_index]\n";
+        return 1;
+    }
+
+    if (std::string(argv[1]) == "--list") {
+        if (argc < 3) {
+            std::cerr << "Usage: " << argv[0] << " --list <vst3_path>\n";
+            return 1;
+        }
+        Vst3Plugin::listPlugins(argv[2]);
+        return 0;
+    }
+
     if (argc < 3) {
-        std::cerr << "Usage: hbk-play <vst3_path> <midi_path>\n";
+        std::cerr << "Usage: " << argv[0] << " <vst3_path> <midi_path> [plugin_index]\n";
         return 1;
     }
 
     std::string vst3_path = argv[1];
     std::string midi_path = argv[2];
+    int plugin_index = 0;
+    if (argc >= 4) {
+        plugin_index = std::stoi(argv[3]);
+    }
 
     Vst3Plugin plugin;
-    if (!plugin.load(vst3_path)) return 1;
+    if (!plugin.load(vst3_path, plugin_index)) return 1;
+
 
     smf::MidiFile midifile;
     if (!midifile.read(midi_path)) {

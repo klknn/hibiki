@@ -36,7 +36,7 @@ class Gui(tk.Tk):
         self.start_backend()
         atexit.register(self.stop_backend_process)
 
-    def start_backend(self, vst_path=None, midi_path=None):
+    def start_backend(self, vst_path=None, midi_path=None, plugin_index=0):
         # Default paths for manual execution
         if not vst_path: vst_path = "testdata/Dexed.vst3"
         if not midi_path: midi_path = "testdata/test.mid"
@@ -60,8 +60,9 @@ class Gui(tk.Tk):
         self.stop_backend_process()
 
         try:
+            cmd = [backend_bin, vst_path, midi_path, str(plugin_index)]
             self.backend = subprocess.Popen(
-                [backend_bin, vst_path, midi_path],
+                cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -70,9 +71,11 @@ class Gui(tk.Tk):
             )
             self.current_vst = vst_path
             self.current_midi = midi_path
-            self.status_label.config(text=f"Backend: {os.path.basename(vst_path)} + {os.path.basename(midi_path)}")
+            self.current_plugin_index = plugin_index
+            self.status_label.config(text=f"Backend: {os.path.basename(vst_path)}[{plugin_index}] + {os.path.basename(midi_path)}")
         except Exception as e:
             self.status_label.config(text=f"Failed to start backend: {e}")
+
 
 
 
@@ -232,12 +235,46 @@ class Gui(tk.Tk):
             is_target = any(entry.lower().endswith(ext) for ext in extensions)
             
             if is_target:
-                # Add as leaf node
-                self.browser_tree.insert(parent_node, "end", text=entry, values=(full_path, type_label))
+                if type_label == "vst":
+                    # For VST3, try to list internal plugins
+                    plugins = self.get_vst_plugins(full_path)
+                    if len(plugins) > 1:
+                        bundle_node = self.browser_tree.insert(parent_node, "end", text=entry, values=(full_path, "folder"))
+                        for idx, name in plugins:
+                            self.browser_tree.insert(bundle_node, "end", text=name, values=(full_path, "vst", idx))
+                    elif len(plugins) == 1:
+                        self.browser_tree.insert(parent_node, "end", text=plugins[0][1], values=(full_path, "vst", plugins[0][0]))
+                    else:
+                        self.browser_tree.insert(parent_node, "end", text=entry, values=(full_path, "vst", 0))
+                else:
+                    self.browser_tree.insert(parent_node, "end", text=entry, values=(full_path, type_label))
             elif os.path.isdir(full_path):
                 # Add as folder node and recurse
                 folder_node = self.browser_tree.insert(parent_node, "end", text=entry, open=False, values=("", "folder"))
                 self.add_to_tree(folder_node, full_path, extensions, type_label, exclude)
+
+    def get_vst_plugins(self, vst_path):
+        backend_bin = "./bazel-bin/hbk-play"
+        if "PYTHON_RUNFILES" in os.environ:
+            from runfiles import runfiles
+            r = runfiles.Create()
+            backend_bin = r.Rlocation("hibiki/hbk-play")
+        
+        if not os.path.exists(backend_bin):
+            return []
+
+        try:
+            result = subprocess.run([backend_bin, "--list", vst_path], capture_output=True, text=True, timeout=2)
+            if result.returncode != 0: return []
+            
+            plugins = []
+            for line in result.stdout.splitlines():
+                if ":" in line:
+                    idx, name = line.split(":", 1)
+                    plugins.append((idx, name))
+            return plugins
+        except:
+            return []
 
     def on_browser_double_click(self, event):
         item = self.browser_tree.selection()[0]
@@ -248,9 +285,11 @@ class Gui(tk.Tk):
         if file_type == "folder": return
         
         if file_type == "vst":
-            self.start_backend(vst_path=path, midi_path=self.current_midi)
+            index = values[2] if len(values) > 2 else 0
+            self.start_backend(vst_path=path, midi_path=self.current_midi, plugin_index=index)
         elif file_type == "midi":
-            self.start_backend(vst_path=self.current_vst, midi_path=path)
+            self.start_backend(vst_path=self.current_vst, midi_path=path, plugin_index=self.current_plugin_index)
+
 
 
 

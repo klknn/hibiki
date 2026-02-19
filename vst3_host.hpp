@@ -26,6 +26,8 @@ struct Vst3Plugin {
     Steinberg::IPtr<Steinberg::Vst::IAudioProcessor> processor;
     Steinberg::IPtr<Steinberg::Vst::IHostApplication> hostContext;
     
-    bool load(const std::string& path);
+    bool load(const std::string& path, int plugin_index = 0);
+    static void listPlugins(const std::string& path);
     ~Vst3Plugin();
 };
+

@@ -29,7 +29,7 @@ Steinberg::tresult PLUGIN_API Vst3HostContext::createInstance(Steinberg::TUID ci
     return Steinberg::kResultFalse;
 }
 
-bool Vst3Plugin::load(const std::string& path) {
+bool Vst3Plugin::load(const std::string& path, int plugin_index) {
     std::string error;
     module = VST3::Hosting::Module::create(path, error);
     if (!module) {
@@ -38,26 +38,33 @@ bool Vst3Plugin::load(const std::string& path) {
     }
 
     auto factory = module->getFactory();
-    for (Steinberg::uint32 i = 0; i < factory.classCount(); ++i) {
-        auto classes = factory.classInfos();
-        if (i < classes.size()) {
-            auto& info = classes[i];
-            if (info.category() == kVstAudioEffectClass) {
-                component = factory.createInstance<Steinberg::Vst::IComponent>(info.ID());
-                if (component) {
-                    component->queryInterface(Steinberg::Vst::IAudioProcessor::iid, (void**)&processor);
-                    // If not a single component effect, create processor separately
-                    if (!processor) {
-                        processor = factory.createInstance<Steinberg::Vst::IAudioProcessor>(info.ID());
-                    }
-                    break;
-                }
-            }
+    auto classes = factory.classInfos();
+    std::vector<VST3::Hosting::ClassInfo> audioEffects;
+    for (auto& info : classes) {
+        if (info.category() == kVstAudioEffectClass) {
+            audioEffects.push_back(info);
         }
     }
 
-    if (!component || !processor) {
-        std::cerr << "Failed to create IComponent or IAudioProcessor" << std::endl;
+    if (plugin_index < 0 || plugin_index >= (int)audioEffects.size()) {
+        std::cerr << "Plugin index " << plugin_index << " out of range (found " << audioEffects.size() << " audio effects)\n";
+        return false;
+    }
+
+    auto& info = audioEffects[plugin_index];
+    component = factory.createInstance<Steinberg::Vst::IComponent>(info.ID());
+    if (!component) {
+        std::cerr << "Failed to create IComponent for " << info.name() << std::endl;
+        return false;
+    }
+
+    component->queryInterface(Steinberg::Vst::IAudioProcessor::iid, (void**)&processor);
+    if (!processor) {
+        processor = factory.createInstance<Steinberg::Vst::IAudioProcessor>(info.ID());
+    }
+
+    if (!processor) {
+        std::cerr << "Failed to create IAudioProcessor for " << info.name() << std::endl;
         return false;
     }
 
@@ -78,10 +85,7 @@ bool Vst3Plugin::load(const std::string& path) {
 
     int numInBuses = component->getBusCount(Steinberg::Vst::kAudio, Steinberg::Vst::kInput);
     int numOutBuses = component->getBusCount(Steinberg::Vst::kAudio, Steinberg::Vst::kOutput);
-    std::cout << "Plugin Audio Buses - In: " << numInBuses << ", Out: " << numOutBuses << "\n";
-
-    int numEventInBuses = component->getBusCount(Steinberg::Vst::kEvent, Steinberg::Vst::kInput);
-    std::cout << "Plugin Event Buses - In: " << numEventInBuses << "\n";
+    std::cout << "Plugin: " << info.name() << " - Audio Buses - In: " << numInBuses << ", Out: " << numOutBuses << "\n";
 
     component->activateBus(Steinberg::Vst::kAudio, Steinberg::Vst::kOutput, 0, true);
     component->activateBus(Steinberg::Vst::kEvent, Steinberg::Vst::kInput, 0, true);
@@ -90,6 +94,26 @@ bool Vst3Plugin::load(const std::string& path) {
 
     return true;
 }
+
+void Vst3Plugin::listPlugins(const std::string& path) {
+    std::string error;
+    auto mod = VST3::Hosting::Module::create(path, error);
+    if (!mod) {
+        std::cerr << "Error: " << error << std::endl;
+        return;
+    }
+
+    auto factory = mod->getFactory();
+    auto classes = factory.classInfos();
+    int idx = 0;
+    for (auto& info : classes) {
+        if (info.category() == kVstAudioEffectClass) {
+            std::cout << idx << ":" << info.name() << "\n";
+            idx++;
+        }
+    }
+}
+
 
 Vst3Plugin::~Vst3Plugin() {
     if (processor) {
@@ -100,3 +124,4 @@ Vst3Plugin::~Vst3Plugin() {
         component->terminate();
     }
 }
+

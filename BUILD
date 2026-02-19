@@ -10,7 +10,7 @@ cc_library(
 cc_library(
     name = "vst3_host",
     srcs = ["vst3_host.cpp"],
-    hdrs = ["vst3_host.hpp", "vst3_editor.hpp"],
+    hdrs = ["vst3_host.hpp", "vst3_host_impl.hpp"],
     deps = [
         "//third_party:vst3sdk",
     ],
@@ -24,10 +24,9 @@ cc_library(
         ":vst3_host",
         "//third_party:vst3sdk",
     ],
-    linkopts = ["-lX11"],
+    linkopts = ["-lX11", "-lXcursor"],
     alwayslink = True,
 )
-
 
 cc_binary(
     name = "hbk-play",
@@ -39,7 +38,6 @@ cc_binary(
         "@midifile//:midifile",
     ],
 )
-
 
 load("@rules_python//python:defs.bzl", "py_binary")
 
@@ -53,6 +51,3 @@ py_binary(
         "//testdata",
     ],
 )
-
-
-

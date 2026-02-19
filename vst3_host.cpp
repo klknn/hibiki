@@ -1,12 +1,13 @@
+#include "vst3_host.hpp"
+#include "vst3_host_impl.hpp"
+
 #include <atomic>
+
 #include <chrono>
 #include <iostream>
 #include <memory>
 #include <thread>
 #include <vector>
-
-#include "vst3_editor.hpp"
-#include "vst3_host.hpp"
 
 
 #include "pluginterfaces/base/ustring.h"
@@ -112,19 +113,8 @@ private:
 } // namespace
 
 
-struct Vst3PluginImpl {
-    VST3::Hosting::Module::Ptr module;
-    Steinberg::IPtr<Steinberg::Vst::IComponent> component;
-    Steinberg::IPtr<Steinberg::Vst::IAudioProcessor> processor;
-    Steinberg::IPtr<Steinberg::Vst::IEditController> controller;
-    Steinberg::IPtr<Steinberg::Vst::IHostApplication> hostContext;
-    
-    std::thread editorThread;
-    std::atomic<bool> editorRunning{false};
-    std::atomic<uint64_t> editorWindow{0};
-};
-
 Vst3Plugin::Vst3Plugin() : impl(std::make_unique<Vst3PluginImpl>()) {}
+
 
 Vst3Plugin::~Vst3Plugin() {
     stopEditor();
@@ -271,38 +261,6 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
     impl->processor->setProcessing(true);
 
     return true;
-}
-
-
-void Vst3Plugin::showEditor() {
-    if (!impl->controller) {
-        std::cerr << "No controller available for showing editor" << std::endl;
-        return;
-    }
-
-    if (impl->editorRunning) return;
-
-    // Clean up any old finished thread
-    stopEditor();
-
-    impl->editorRunning = true;
-    impl->editorThread = std::thread([this]() {
-        auto editor = createVst3Editor();
-        if (editor) {
-            editor->open(impl->controller, impl->editorRunning, impl->editorWindow);
-        }
-    });
-}
-
-
-
-void Vst3Plugin::stopEditor() {
-    if (impl->editorThread.joinable()) {
-        impl->editorRunning = false;
-        impl->editorThread.join();
-    } else {
-        impl->editorRunning = false;
-    }
 }
 
 

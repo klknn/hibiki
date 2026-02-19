@@ -13,3 +13,19 @@ cc_binary(
         "-ldl",
     ],
 )
+
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "gui",
+    srcs = ["gui.py"],
+    main = "gui.py",
+    deps = ["@bazel_tools//tools/python/runfiles"],
+    data = [
+        ":hbk-play",
+        "//testdata",
+    ],
+)
+
+
+

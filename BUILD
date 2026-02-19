@@ -11,7 +11,10 @@ cc_binary(
         "-lasound",
         "-lpthread",
         "-ldl",
+        "-lX11",
+        "-lXcursor",
     ],
+
 )
 
 load("@rules_python//python:defs.bzl", "py_binary")

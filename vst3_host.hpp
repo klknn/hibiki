@@ -24,10 +24,13 @@ struct Vst3Plugin {
     VST3::Hosting::Module::Ptr module;
     Steinberg::IPtr<Steinberg::Vst::IComponent> component;
     Steinberg::IPtr<Steinberg::Vst::IAudioProcessor> processor;
+    Steinberg::IPtr<Steinberg::Vst::IEditController> controller;
     Steinberg::IPtr<Steinberg::Vst::IHostApplication> hostContext;
     
     bool load(const std::string& path, int plugin_index = 0);
+    void showEditor();
     static void listPlugins(const std::string& path);
+
     ~Vst3Plugin();
 };
 

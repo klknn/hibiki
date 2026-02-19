@@ -294,7 +294,17 @@ int main(int argc, char** argv) {
                 state.get_or_create_track(tidx)->stop();
                 std::cout << "ACK STOP_TRACK " << tidx << "\n" << std::flush;
             }
+        } else if (cmd == "SHOW_GUI") {
+            int track_idx;
+            ss >> track_idx;
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            if (state.tracks.count(track_idx)) {
+                if (state.tracks[track_idx]->plugin) {
+                    state.tracks[track_idx]->plugin->showEditor();
+                }
+            }
         } else if (cmd == "QUIT") {
+
             state.quit = true;
             break;
         }

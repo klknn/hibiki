@@ -29,6 +29,13 @@ class Gui(tk.Tk):
         }
         
         self.configure(bg=self.colors["bg_dark"])
+        
+        # Track / Slot selection state
+        self.selected_track = 1
+        self.selected_slot = 0
+        self.track_frames = {} # track_idx -> frame
+        self.clip_buttons = {} # (track_idx, slot_idx) -> button
+        
         self.create_layout()
         
         # Backend process management
@@ -36,10 +43,8 @@ class Gui(tk.Tk):
         self.start_backend()
         atexit.register(self.stop_backend_process)
 
-    def start_backend(self, vst_path=None, midi_path=None, plugin_index=0):
-        # Default paths for manual execution
-        if not vst_path: vst_path = "testdata/Dexed.vst3"
-        if not midi_path: midi_path = "testdata/test.mid"
+
+    def start_backend(self):
         backend_bin = "./bazel-bin/hbk-play"
         
         # Check if we are running under Bazel
@@ -47,11 +52,6 @@ class Gui(tk.Tk):
             from runfiles import runfiles
             r = runfiles.Create()
             backend_bin = r.Rlocation("hibiki/hbk-play")
-            # If default paths are used, resolve them via runfiles
-            if vst_path == "testdata/Dexed.vst3":
-                vst_path = r.Rlocation("hibiki/testdata/Dexed.vst3")
-            if midi_path == "testdata/test.mid":
-                midi_path = r.Rlocation("hibiki/testdata/test.mid")
 
         if not os.path.exists(backend_bin):
             self.status_label.config(text=f"Error: {backend_bin} not found. Build it first.")
@@ -60,21 +60,19 @@ class Gui(tk.Tk):
         self.stop_backend_process()
 
         try:
-            cmd = [backend_bin, vst_path, midi_path, str(plugin_index)]
+            # Start backend in command mode (no initial arguments)
             self.backend = subprocess.Popen(
-                cmd,
+                [backend_bin],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1
             )
-            self.current_vst = vst_path
-            self.current_midi = midi_path
-            self.current_plugin_index = plugin_index
-            self.status_label.config(text=f"Backend: {os.path.basename(vst_path)}[{plugin_index}] + {os.path.basename(midi_path)}")
+            self.status_label.config(text="Backend started in multi-track mode.")
         except Exception as e:
             self.status_label.config(text=f"Failed to start backend: {e}")
+
 
 
 
@@ -286,9 +284,16 @@ class Gui(tk.Tk):
         
         if file_type == "vst":
             index = values[2] if len(values) > 2 else 0
-            self.start_backend(vst_path=path, midi_path=self.current_midi, plugin_index=index)
+            self.send_command(f"LOAD_INST {self.selected_track} {path} {index}")
+            self.status_label.config(text=f"Loading {os.path.basename(path)} into Track {self.selected_track}")
         elif file_type == "midi":
-            self.start_backend(vst_path=self.current_vst, midi_path=path, plugin_index=self.current_plugin_index)
+            self.send_command(f"LOAD_CLIP {self.selected_track} {self.selected_slot} {path}")
+            self.status_label.config(text=f"Loading {os.path.basename(path)} into Track {self.selected_track} Slot {self.selected_slot}")
+            # Update clip button text visually
+            btn = self.clip_buttons.get((self.selected_track, self.selected_slot))
+            if btn:
+                btn.config(text="► " + os.path.basename(path)[:10])
+
 
 
 
@@ -308,17 +313,19 @@ class Gui(tk.Tk):
     def create_track(self, parent, name, idx):
         track_frame = tk.Frame(parent, bg=self.colors["bg_track"], bd=1, relief=tk.SUNKEN, width=80)
         track_frame.pack(side=tk.LEFT, fill=tk.Y, padx=2)
+        self.track_frames[idx] = track_frame
         
         track_header = tk.Label(track_frame, text=name, bg=self.colors["bg_dark"], fg=self.colors["text_light"])
         track_header.pack(fill=tk.X)
+        track_header.bind("<Button-1>", lambda e: self.select_track(idx))
         self.add_hover_hint(track_header, f"Track Name: Click to select the track '{name}'.")
         
         for j in range(5):
-            clip_color = self.colors["bg_light"] if j != idx else self.colors["btn_active"]
-            clip_text = "►  Clip" if j == idx else ""
-            btn = tk.Button(track_frame, text=clip_text, bg=clip_color, height=1, relief=tk.FLAT)
+            btn = tk.Button(track_frame, text="", bg=self.colors["bg_light"], height=1, relief=tk.FLAT)
             btn.pack(fill=tk.X, padx=2, pady=1)
-            self.add_hover_hint(btn, "Clip Slot: Double-click to create an empty clip, or click ► to launch.")
+            btn.config(command=lambda t=idx, s=j: self.on_clip_click(t, s))
+            self.clip_buttons[(idx, j)] = btn
+            self.add_hover_hint(btn, f"Clip Slot {j+1}: Click to select and play.")
             
         tk.Frame(track_frame, bg=self.colors["bg_track"]).pack(fill=tk.Y, expand=True)
         
@@ -338,7 +345,8 @@ class Gui(tk.Tk):
         
         btn_active = tk.Button(btn_container, text="1", bg=self.colors["btn_active"], font=("Arial", 7, "bold"))
         btn_active.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=1)
-        self.add_hover_hint(btn_active, "Track Activator: Mute or unmute this track.")
+        btn_active.config(command=lambda: self.send_command(f"STOP_TRACK {idx}"))
+        self.add_hover_hint(btn_active, f"Track Activator: Click to stop all clips on track {idx}.")
         
         btn_solo = tk.Button(btn_container, text="S", bg=self.colors["bg_light"], font=("Arial", 7, "bold"))
         btn_solo.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=1)
@@ -347,6 +355,32 @@ class Gui(tk.Tk):
         btn_arm = tk.Button(btn_container, text="O", bg=self.colors["bg_light"], font=("Arial", 7, "bold"))
         btn_arm.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=1)
         self.add_hover_hint(btn_arm, "Arm Recording: Prepare this track to receive incoming audio/MIDI.")
+
+    def select_track(self, idx):
+        # Reset previous selection colors
+        if self.selected_track in self.track_frames:
+            self.track_frames[self.selected_track].config(bg=self.colors["bg_track"])
+            
+        self.selected_track = idx
+        self.track_frames[idx].config(bg=self.colors["btn_active"])
+        self.status_label.config(text=f"Track {idx} selected.")
+
+    def on_clip_click(self, track_idx, slot_idx):
+        # Select track and slot
+        self.select_track(track_idx)
+        
+        # Reset previous slot highlights in this track
+        for j in range(5):
+            btn = self.clip_buttons.get((track_idx, j))
+            if btn: btn.config(relief=tk.FLAT, bd=1)
+            
+        self.selected_slot = slot_idx
+        btn = self.clip_buttons.get((track_idx, slot_idx))
+        if btn: btn.config(relief=tk.SUNKEN, bd=2)
+        
+        self.send_command(f"PLAY_CLIP {track_idx} {slot_idx}")
+        self.status_label.config(text=f"Playing Clip {slot_idx} on Track {track_idx}")
+
 
     def create_master_track(self, parent):
         master_frame = tk.Frame(parent, bg=self.colors["bg_mid"], bd=1, relief=tk.SUNKEN, width=100)

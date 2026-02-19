@@ -83,9 +83,17 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
 
     // Get EditController (needed for GUI)
     if (component->queryInterface(Steinberg::Vst::IEditController::iid, (void**)&controller) != Steinberg::kResultTrue) {
-        std::cerr << "Failed to get IEditController from component, trying factory..." << std::endl;
-        controller = factory.createInstance<Steinberg::Vst::IEditController>(info.ID());
+        Steinberg::TUID controllerCID;
+        if (component->getControllerClassId(controllerCID) == Steinberg::kResultTrue) {
+            controller = factory.createInstance<Steinberg::Vst::IEditController>(controllerCID);
+        }
+        
+        if (!controller) {
+            std::cerr << "Failed to get IEditController from component, trying factory as fallback..." << std::endl;
+            controller = factory.createInstance<Steinberg::Vst::IEditController>(info.ID());
+        }
     }
+
     
     if (controller) {
         controller->initialize(hostContext);
@@ -139,6 +147,7 @@ void Vst3Plugin::showEditor() {
             std::cerr << "Cannot open X display" << std::endl;
             return;
         }
+        std::cout << "X11 Display opened successfully" << std::endl;
 
         Steinberg::ViewRect rect;
         if (view->getSize(&rect) != Steinberg::kResultTrue) {
@@ -149,6 +158,7 @@ void Vst3Plugin::showEditor() {
 
         int width = rect.right - rect.left;
         int height = rect.bottom - rect.top;
+        std::cout << "Plugin View Size: " << width << "x" << height << std::endl;
 
         int screen = DefaultScreen(display);
         Window window = XCreateSimpleWindow(display, RootWindow(display, screen), 0, 0, width, height, 1,
@@ -157,6 +167,8 @@ void Vst3Plugin::showEditor() {
         XStoreName(display, window, "Vst3 Plugin Editor");
         XSelectInput(display, window, ExposureMask | KeyPressMask | StructureNotifyMask);
         XMapWindow(display, window);
+        XFlush(display);
+        std::cout << "X11 Window created and mapped" << std::endl;
 
         if (view->attached((void*)window, Steinberg::kPlatformTypeX11EmbedWindowID) != Steinberg::kResultTrue) {
             std::cerr << "Failed to attach view to X11 window" << std::endl;
@@ -164,6 +176,8 @@ void Vst3Plugin::showEditor() {
             XCloseDisplay(display);
             return;
         }
+        std::cout << "Plugin View attached successfully" << std::endl;
+
 
         XEvent event;
         bool running = true;

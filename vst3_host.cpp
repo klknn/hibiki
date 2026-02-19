@@ -174,16 +174,24 @@ void Vst3Plugin::showEditor() {
         return;
     }
 
-    std::thread([this]() {
+    if (editorRunning) {
+        std::cout << "Editor already running" << std::endl;
+        return;
+    }
+
+    editorRunning = true;
+    editorThread = std::thread([this]() {
         Steinberg::IPtr<Steinberg::IPlugView> view = Steinberg::owned(controller->createView(Steinberg::Vst::ViewType::kEditor));
         if (!view) {
             std::cerr << "Plugin does not provide an editor view" << std::endl;
+            editorRunning = false;
             return;
         }
 
         Display* display = XOpenDisplay(NULL);
         if (!display) {
             std::cerr << "Cannot open X display" << std::endl;
+            editorRunning = false;
             return;
         }
         std::cout << "X11 Display opened successfully" << std::endl;
@@ -192,6 +200,7 @@ void Vst3Plugin::showEditor() {
         if (view->getSize(&rect) != Steinberg::kResultTrue) {
             std::cerr << "Cannot get view size" << std::endl;
             XCloseDisplay(display);
+            editorRunning = false;
             return;
         }
 
@@ -203,8 +212,10 @@ void Vst3Plugin::showEditor() {
         Window window = XCreateSimpleWindow(display, RootWindow(display, screen), 0, 0, width, height, 1,
                                           BlackPixel(display, screen), WhitePixel(display, screen));
 
+        editorWindow = (uint64_t)window;
+
         XStoreName(display, window, "Vst3 Plugin Editor");
-        XSelectInput(display, window, ExposureMask | KeyPressMask | StructureNotifyMask);
+        XSelectInput(display, window, ExposureMask | KeyPressMask | StructureNotifyMask | SubstructureNotifyMask);
         XMapWindow(display, window);
         XFlush(display);
         std::cout << "X11 Window created and mapped" << std::endl;
@@ -213,29 +224,42 @@ void Vst3Plugin::showEditor() {
             std::cerr << "Failed to attach view to X11 window" << std::endl;
             XDestroyWindow(display, window);
             XCloseDisplay(display);
+            editorRunning = false;
             return;
         }
         std::cout << "Plugin View attached successfully" << std::endl;
 
-
         XEvent event;
-        bool running = true;
-        while (running) {
+        while (editorRunning) {
             while (XPending(display)) {
                 XNextEvent(display, &event);
-                if (event.type == DestroyNotify) {
-                    running = false;
+                if (event.type == DestroyNotify && event.xdestroywindow.window == window) {
+                    editorRunning = false;
                     break;
                 }
             }
+            if (!editorRunning) break;
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
         view->removed();
         XDestroyWindow(display, window);
         XCloseDisplay(display);
-    }).detach();
+        editorRunning = false;
+        editorWindow = 0;
+        std::cout << "Editor thread finished" << std::endl;
+    });
 }
+
+void Vst3Plugin::stopEditor() {
+    if (editorRunning) {
+        editorRunning = false;
+        if (editorThread.joinable()) {
+            editorThread.join();
+        }
+    }
+}
+
 
 void Vst3Plugin::listPlugins(const std::string& path) {
     std::string error;
@@ -259,9 +283,11 @@ void Vst3Plugin::listPlugins(const std::string& path) {
 
 
 Vst3Plugin::~Vst3Plugin() {
+    stopEditor();
     if (processor) {
         processor->setProcessing(false);
     }
+
     if (component) {
         component->setActive(false);
         component->terminate();

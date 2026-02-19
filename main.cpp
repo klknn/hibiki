@@ -70,6 +70,9 @@ public:
             plugin.reset();
             return false;
         }
+        // Reset playback state when instrument changes
+        current_time_sec = 0.0;
+        current_midi_idx = 0;
         return true;
     }
 
@@ -83,8 +86,15 @@ public:
         auto clip = std::make_unique<Clip>();
         clip->midi = std::move(midi);
         clips[slot] = std::move(clip);
+
+        // If we are currently playing this slot, reset playback
+        if (playing_slot == slot) {
+            current_time_sec = 0.0;
+            current_midi_idx = 0;
+        }
         return true;
     }
+
 
     void play_clip(int slot) {
         std::lock_guard<std::mutex> lock(mutex);

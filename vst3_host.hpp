@@ -8,6 +8,8 @@
 #include "pluginterfaces/vst/ivstmessage.h"
 
 #include <string>
+#include <thread>
+#include <atomic>
 
 class Vst3HostContext : public Steinberg::Vst::IHostApplication, public Steinberg::Vst::IComponentHandler {
 public:
@@ -27,7 +29,6 @@ public:
     Steinberg::tresult PLUGIN_API restartComponent(Steinberg::int32 flags) override;
 };
 
-
 struct Vst3Plugin {
     VST3::Hosting::Module::Ptr module;
     Steinberg::IPtr<Steinberg::Vst::IComponent> component;
@@ -35,10 +36,14 @@ struct Vst3Plugin {
     Steinberg::IPtr<Steinberg::Vst::IEditController> controller;
     Steinberg::IPtr<Steinberg::Vst::IHostApplication> hostContext;
     
+    std::thread editorThread;
+    std::atomic<bool> editorRunning{false};
+    std::atomic<uint64_t> editorWindow{0}; // Store X11 Window ID
+
     bool load(const std::string& path, int plugin_index = 0);
     void showEditor();
+    void stopEditor();
     static void listPlugins(const std::string& path);
 
     ~Vst3Plugin();
 };
-

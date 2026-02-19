@@ -297,13 +297,19 @@ int main(int argc, char** argv) {
         } else if (cmd == "SHOW_GUI") {
             int track_idx;
             ss >> track_idx;
+            std::cout << "Received SHOW_GUI for track " << track_idx << std::endl;
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             if (state.tracks.count(track_idx)) {
                 if (state.tracks[track_idx]->plugin) {
                     state.tracks[track_idx]->plugin->showEditor();
+                } else {
+                    std::cout << "Track " << track_idx << " has no plugin" << std::endl;
                 }
+            } else {
+                std::cout << "Track " << track_idx << " does not exist" << std::endl;
             }
         } else if (cmd == "QUIT") {
+
 
             state.quit = true;
             break;

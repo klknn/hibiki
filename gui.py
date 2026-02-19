@@ -326,12 +326,23 @@ class Gui(tk.Tk):
         track_frame.pack(side=tk.LEFT, fill=tk.Y, padx=2)
         self.track_frames[idx] = track_frame
         
-        track_header = tk.Label(track_frame, text=name, bg=self.colors["bg_dark"], fg=self.colors["text_light"], height=2, wraplength=70)
-        track_header.pack(fill=tk.X)
-        self.track_headers[idx] = track_header
+        # Track Header Frame (Edit Button + Name)
+        header_container = tk.Frame(track_frame, bg=self.colors["bg_dark"])
+        header_container.pack(fill=tk.X)
+        
+        edit_btn = tk.Button(header_container, text="⚙", bg=self.colors["bg_dark"], fg=self.colors["text_light"], 
+                            relief=tk.FLAT, width=2, command=lambda: self.send_command(f"SHOW_GUI {idx}"))
+        edit_btn.pack(side=tk.LEFT)
+        self.add_hover_hint(edit_btn, f"Plugin Editor: Click to open the custom GUI for the plugin on track {idx}.")
 
+        track_header = tk.Label(header_container, text=name, bg=self.colors["bg_dark"], fg=self.colors["text_light"], height=2, wraplength=50)
+        track_header.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.track_headers[idx] = track_header
+        
         track_header.bind("<Button-1>", lambda e: self.select_track(idx))
+        header_container.bind("<Button-1>", lambda e: self.select_track(idx))
         self.add_hover_hint(track_header, f"Track Name: Click to select the track '{name}'.")
+
         
         for j in range(5):
             btn = tk.Button(track_frame, text="", bg=self.colors["bg_light"], height=1, relief=tk.FLAT)
@@ -371,12 +382,14 @@ class Gui(tk.Tk):
 
     def select_track(self, idx):
         # Reset previous selection colors
-        if self.selected_track in self.track_frames:
-            self.track_frames[self.selected_track].config(bg=self.colors["bg_track"])
+        for f in self.track_frames.values():
+            f.config(bg=self.colors["bg_track"])
             
         self.selected_track = idx
         self.track_frames[idx].config(bg=self.colors["btn_active"])
         self.status_label.config(text=f"Track {idx} selected.")
+
+
 
     def on_clip_click(self, track_idx, slot_idx):
         # Select track and slot

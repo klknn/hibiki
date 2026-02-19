@@ -34,7 +34,9 @@ class Gui(tk.Tk):
         self.selected_track = 1
         self.selected_slot = 0
         self.track_frames = {} # track_idx -> frame
+        self.track_headers = {} # track_idx -> label
         self.clip_buttons = {} # (track_idx, slot_idx) -> button
+
         
         self.create_layout()
         
@@ -286,7 +288,15 @@ class Gui(tk.Tk):
             index = values[2] if len(values) > 2 else 0
             self.send_command(f"LOAD_INST {self.selected_track} {path} {index}")
             self.status_label.config(text=f"Loading {os.path.basename(path)} into Track {self.selected_track}")
+            
+            # Update track header name
+            header_label = self.track_headers.get(self.selected_track)
+            if header_label:
+                # If it's a sub-plugin, values[2] exists and the name in the tree is better
+                instrument_name = self.browser_tree.item(item, "text")
+                header_label.config(text=instrument_name)
         elif file_type == "midi":
+
             self.send_command(f"LOAD_CLIP {self.selected_track} {self.selected_slot} {path}")
             self.status_label.config(text=f"Loading {os.path.basename(path)} into Track {self.selected_track} Slot {self.selected_slot}")
             # Update clip button text visually
@@ -306,7 +316,8 @@ class Gui(tk.Tk):
         tracks_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         for i in range(1, 5):
-            self.create_track(tracks_container, f"{i} Audio", i)
+            self.create_track(tracks_container, "empty", i)
+
             
         self.create_master_track(tracks_container)
 
@@ -315,8 +326,10 @@ class Gui(tk.Tk):
         track_frame.pack(side=tk.LEFT, fill=tk.Y, padx=2)
         self.track_frames[idx] = track_frame
         
-        track_header = tk.Label(track_frame, text=name, bg=self.colors["bg_dark"], fg=self.colors["text_light"])
+        track_header = tk.Label(track_frame, text=name, bg=self.colors["bg_dark"], fg=self.colors["text_light"], height=2, wraplength=70)
         track_header.pack(fill=tk.X)
+        self.track_headers[idx] = track_header
+
         track_header.bind("<Button-1>", lambda e: self.select_track(idx))
         self.add_hover_hint(track_header, f"Track Name: Click to select the track '{name}'.")
         

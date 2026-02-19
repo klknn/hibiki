@@ -1,0 +1,27 @@
+module(
+    name = "hibiki",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "rules_cc", version = "0.0.9")
+
+# Non-module dependencies via http_archive
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+
+http_archive(
+    name = "midifile",
+    url = "https://github.com/craigsapp/midifile/archive/refs/heads/master.zip",
+    strip_prefix = "midifile-master",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "midifile",
+    srcs = glob(["src/*.cpp"]),
+    hdrs = glob(["include/*.h"]),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+)

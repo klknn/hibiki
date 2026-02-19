@@ -1,16 +1,27 @@
 #include "vst3_host.hpp"
-#include "pluginterfaces/base/ustring.h"
+#include <memory>
 #include <iostream>
 #include <vector>
 #include <thread>
+#include <atomic>
+#include <chrono>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
 
+#include "public.sdk/source/vst/hosting/module.h"
+#include "public.sdk/source/vst/hosting/hostclasses.h"
+#include "public.sdk/source/vst/hosting/plugprovider.h"
+#include "pluginterfaces/vst/ivstaudioprocessor.h"
+#include "pluginterfaces/vst/ivsteditcontroller.h"
+#include "pluginterfaces/vst/ivstmessage.h"
+#include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/gui/iplugview.h"
 #include "public.sdk/source/common/memorystream.h"
 #include "pluginterfaces/vst/ivstevents.h"
 #include "pluginterfaces/vst/ivstprocesscontext.h"
+
+
 
 // Very basic event list moved from main.cpp
 class VstEventList : public Steinberg::Vst::IEventList {
@@ -111,15 +122,49 @@ Steinberg::tresult PLUGIN_API Vst3HostContext::endEdit(Steinberg::Vst::ParamID t
 Steinberg::tresult PLUGIN_API Vst3HostContext::restartComponent(Steinberg::int32 flags) { return Steinberg::kResultTrue; }
 
 
+struct Vst3PluginImpl {
+    VST3::Hosting::Module::Ptr module;
+    Steinberg::IPtr<Steinberg::Vst::IComponent> component;
+    Steinberg::IPtr<Steinberg::Vst::IAudioProcessor> processor;
+    Steinberg::IPtr<Steinberg::Vst::IEditController> controller;
+    Steinberg::IPtr<Steinberg::Vst::IHostApplication> hostContext;
+    
+    std::thread editorThread;
+    std::atomic<bool> editorRunning{false};
+    std::atomic<uint64_t> editorWindow{0};
+};
+
+Vst3Plugin::Vst3Plugin() : impl(std::make_unique<Vst3PluginImpl>()) {}
+
+Vst3Plugin::~Vst3Plugin() {
+    stopEditor();
+    
+    if (impl->processor) {
+        impl->processor->setProcessing(false);
+    }
+
+    if (impl->controller) {
+        impl->controller->setComponentHandler(nullptr);
+        impl->controller->terminate();
+    }
+
+    if (impl->component) {
+        impl->component->setActive(false);
+        impl->component->terminate();
+    }
+}
+
+
+
 bool Vst3Plugin::load(const std::string& path, int plugin_index) {
     std::string error;
-    module = VST3::Hosting::Module::create(path, error);
-    if (!module) {
+    impl->module = VST3::Hosting::Module::create(path, error);
+    if (!impl->module) {
         std::cerr << "Failed to load VST3 module: " << error << std::endl;
         return false;
     }
 
-    auto factory = module->getFactory();
+    auto factory = impl->module->getFactory();
     auto classes = factory.classInfos();
     std::vector<VST3::Hosting::ClassInfo> audioEffects;
     for (auto& info : classes) {
@@ -134,56 +179,56 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
     }
 
     auto& info = audioEffects[plugin_index];
-    component = factory.createInstance<Steinberg::Vst::IComponent>(info.ID());
-    if (!component) {
+    impl->component = factory.createInstance<Steinberg::Vst::IComponent>(info.ID());
+    if (!impl->component) {
         std::cerr << "Failed to create IComponent for " << info.name() << std::endl;
         return false;
     }
 
-    component->queryInterface(Steinberg::Vst::IAudioProcessor::iid, (void**)&processor);
-    if (!processor) {
-        processor = factory.createInstance<Steinberg::Vst::IAudioProcessor>(info.ID());
+    impl->component->queryInterface(Steinberg::Vst::IAudioProcessor::iid, (void**)&impl->processor);
+    if (!impl->processor) {
+        impl->processor = factory.createInstance<Steinberg::Vst::IAudioProcessor>(info.ID());
     }
 
-    if (!processor) {
+    if (!impl->processor) {
         std::cerr << "Failed to create IAudioProcessor for " << info.name() << std::endl;
         return false;
     }
 
-    hostContext = Steinberg::owned(new Vst3HostContext());
-    if (component->initialize(hostContext) != Steinberg::kResultTrue) {
+    impl->hostContext = Steinberg::owned(new Vst3HostContext());
+    if (impl->component->initialize(impl->hostContext) != Steinberg::kResultTrue) {
         std::cerr << "Failed to initialize component" << std::endl;
         return false;
     }
 
     // Get EditController (needed for GUI)
-    if (component->queryInterface(Steinberg::Vst::IEditController::iid, (void**)&controller) != Steinberg::kResultTrue) {
+    if (impl->component->queryInterface(Steinberg::Vst::IEditController::iid, (void**)&impl->controller) != Steinberg::kResultTrue) {
         Steinberg::TUID controllerCID;
-        if (component->getControllerClassId(controllerCID) == Steinberg::kResultTrue) {
-            controller = factory.createInstance<Steinberg::Vst::IEditController>(controllerCID);
+        if (impl->component->getControllerClassId(controllerCID) == Steinberg::kResultTrue) {
+            impl->controller = factory.createInstance<Steinberg::Vst::IEditController>(controllerCID);
         }
         
-        if (!controller) {
+        if (!impl->controller) {
             std::cerr << "Failed to get IEditController from component, trying factory as fallback..." << std::endl;
-            controller = factory.createInstance<Steinberg::Vst::IEditController>(info.ID());
+            impl->controller = factory.createInstance<Steinberg::Vst::IEditController>(info.ID());
         }
     }
 
     
-    if (controller) {
-        controller->initialize(hostContext);
+    if (impl->controller) {
+        impl->controller->initialize(impl->hostContext);
         
         Steinberg::Vst::IComponentHandler* handler = nullptr;
-        if (hostContext->queryInterface(Steinberg::Vst::IComponentHandler::iid, (void**)&handler) == Steinberg::kResultTrue) {
-            controller->setComponentHandler(handler);
+        if (impl->hostContext->queryInterface(Steinberg::Vst::IComponentHandler::iid, (void**)&handler) == Steinberg::kResultTrue) {
+            impl->controller->setComponentHandler(handler);
             handler->release();
         }
         
         // Connect component and controller
 
         Steinberg::IPtr<Steinberg::Vst::IConnectionPoint> cp1, cp2;
-        component->queryInterface(Steinberg::Vst::IConnectionPoint::iid, (void**)&cp1);
-        controller->queryInterface(Steinberg::Vst::IConnectionPoint::iid, (void**)&cp2);
+        impl->component->queryInterface(Steinberg::Vst::IConnectionPoint::iid, (void**)&cp1);
+        impl->controller->queryInterface(Steinberg::Vst::IConnectionPoint::iid, (void**)&cp2);
         if (cp1 && cp2) {
             cp1->connect(cp2);
             cp2->connect(cp1);
@@ -191,10 +236,10 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
         
         // Sync state
         Steinberg::MemoryStream stream;
-        if (component->getState(&stream) == Steinberg::kResultTrue) {
+        if (impl->component->getState(&stream) == Steinberg::kResultTrue) {
             std::cout << "Vst3Plugin::load: Syncing state to controller..." << std::endl;
             stream.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
-            controller->setComponentState(&stream);
+            impl->controller->setComponentState(&stream);
         }
     } else {
         std::cout << "Vst3Plugin::load: No controller available." << std::endl;
@@ -203,22 +248,22 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
 
 
     // Activate audio buses
-    int numInBuses = component->getBusCount(Steinberg::Vst::kAudio, Steinberg::Vst::kInput);
+    int numInBuses = impl->component->getBusCount(Steinberg::Vst::kAudio, Steinberg::Vst::kInput);
     for (int i = 0; i < numInBuses; i++) {
-        component->activateBus(Steinberg::Vst::kAudio, Steinberg::Vst::kInput, i, true);
+        impl->component->activateBus(Steinberg::Vst::kAudio, Steinberg::Vst::kInput, i, true);
     }
-    int numOutBuses = component->getBusCount(Steinberg::Vst::kAudio, Steinberg::Vst::kOutput);
+    int numOutBuses = impl->component->getBusCount(Steinberg::Vst::kAudio, Steinberg::Vst::kOutput);
     for (int i = 0; i < numOutBuses; i++) {
-        component->activateBus(Steinberg::Vst::kAudio, Steinberg::Vst::kOutput, i, true);
+        impl->component->activateBus(Steinberg::Vst::kAudio, Steinberg::Vst::kOutput, i, true);
     }
 
     // Activate event buses (MIDI)
-    int numInEventBuses = component->getBusCount(Steinberg::Vst::kEvent, Steinberg::Vst::kInput);
+    int numInEventBuses = impl->component->getBusCount(Steinberg::Vst::kEvent, Steinberg::Vst::kInput);
     for (int i = 0; i < numInEventBuses; i++) {
-        component->activateBus(Steinberg::Vst::kEvent, Steinberg::Vst::kInput, i, true);
+        impl->component->activateBus(Steinberg::Vst::kEvent, Steinberg::Vst::kInput, i, true);
     }
 
-    if (component->setActive(true) != Steinberg::kResultTrue) {
+    if (impl->component->setActive(true) != Steinberg::kResultTrue) {
         std::cerr << "Failed to activate component" << std::endl;
         return false;
     }
@@ -229,37 +274,38 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
     setup.maxSamplesPerBlock = 512;
     setup.sampleRate = 44100.0;
     
-    if (processor->setupProcessing(setup) != Steinberg::kResultTrue) {
+    if (impl->processor->setupProcessing(setup) != Steinberg::kResultTrue) {
         std::cerr << "Failed to setup processing" << std::endl;
-        component->setActive(false);
+        impl->component->setActive(false);
         return false;
     }
 
     std::cout << "Plugin: " << info.name() << " - Audio Buses - In: " << numInBuses << ", Out: " << numOutBuses << "\n";
 
-    processor->setProcessing(true);
+    impl->processor->setProcessing(true);
 
     return true;
 }
 
 
+
 void Vst3Plugin::showEditor() {
-    if (!controller) {
+    if (!impl->controller) {
         std::cerr << "No controller available for showing editor" << std::endl;
         return;
     }
 
-    if (editorRunning) return;
+    if (impl->editorRunning) return;
 
     // Clean up any old finished thread
     stopEditor();
 
-    editorRunning = true;
-    editorThread = std::thread([this]() {
-        Steinberg::IPtr<Steinberg::IPlugView> view = Steinberg::owned(controller->createView(Steinberg::Vst::ViewType::kEditor));
+    impl->editorRunning = true;
+    impl->editorThread = std::thread([this]() {
+        Steinberg::IPtr<Steinberg::IPlugView> view = Steinberg::owned(impl->controller->createView(Steinberg::Vst::ViewType::kEditor));
         if (!view) {
             std::cerr << "Plugin does not provide an editor view" << std::endl;
-            editorRunning = false;
+            impl->editorRunning = false;
             return;
         }
 
@@ -267,7 +313,7 @@ void Vst3Plugin::showEditor() {
         Display* display = XOpenDisplay(NULL);
         if (!display) {
             std::cerr << "Cannot open X display" << std::endl;
-            editorRunning = false;
+            impl->editorRunning = false;
             return;
         }
 
@@ -275,7 +321,7 @@ void Vst3Plugin::showEditor() {
         if (view->getSize(&rect) != Steinberg::kResultTrue) {
             std::cerr << "Cannot get view size" << std::endl;
             XCloseDisplay(display);
-            editorRunning = false;
+            impl->editorRunning = false;
             return;
         }
 
@@ -287,7 +333,7 @@ void Vst3Plugin::showEditor() {
         Window window = XCreateSimpleWindow(display, RootWindow(display, screen), 0, 0, width, height, 1,
                                           BlackPixel(display, screen), WhitePixel(display, screen));
 
-        editorWindow = (uint64_t)window;
+        impl->editorWindow = (uint64_t)window;
 
         XStoreName(display, window, "Vst3 Plugin Editor");
         XSelectInput(display, window, ExposureMask | KeyPressMask | StructureNotifyMask | SubstructureNotifyMask);
@@ -305,31 +351,31 @@ void Vst3Plugin::showEditor() {
             std::cerr << "Failed to attach view to X11 window" << std::endl;
             XDestroyWindow(display, window);
             XCloseDisplay(display);
-            editorRunning = false;
+            impl->editorRunning = false;
             return;
         }
         std::cout << "Plugin View attached successfully" << std::endl;
 
         XEvent event;
         bool windowWasDestroyed = false;
-        while (editorRunning) {
-            while (editorRunning && XPending(display)) {
+        while (impl->editorRunning) {
+            while (impl->editorRunning && XPending(display)) {
                 XNextEvent(display, &event);
                 if (event.type == DestroyNotify && (event.xdestroywindow.window == window)) {
                     std::cout << "X11 Window destroyed by WM" << std::endl;
                     windowWasDestroyed = true;
-                    editorRunning = false;
+                    impl->editorRunning = false;
                     break;
                 }
                 if (event.type == ClientMessage) {
                     if ((Atom)event.xclient.data.l[0] == wmDeleteMessage) {
                         std::cout << "X11 Close button clicked" << std::endl;
-                        editorRunning = false;
+                        impl->editorRunning = false;
                         break;
                     }
                 }
             }
-            if (!editorRunning) break;
+            if (!impl->editorRunning) break;
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
@@ -341,8 +387,8 @@ void Vst3Plugin::showEditor() {
             XSync(display, False); // Ensure destruction finishes before closing display
         }
         XCloseDisplay(display);
-        editorWindow = 0;
-        editorRunning = false;
+        impl->editorWindow = 0;
+        impl->editorRunning = false;
     });
 }
 
@@ -350,14 +396,16 @@ void Vst3Plugin::showEditor() {
 
 
 
+
 void Vst3Plugin::stopEditor() {
-    if (editorThread.joinable()) {
-        editorRunning = false;
-        editorThread.join();
+    if (impl->editorThread.joinable()) {
+        impl->editorRunning = false;
+        impl->editorThread.join();
     } else {
-        editorRunning = false;
+        impl->editorRunning = false;
     }
 }
+
 
 
 
@@ -387,9 +435,9 @@ void Vst3Plugin::listPlugins(const std::string& path) {
 void Vst3Plugin::process(float** inputs, float** outputs, int numSamples, 
                         const HostProcessContext& context, 
                         const std::vector<MidiNoteEvent>& events) {
-    if (!processor) return;
+    if (!impl->processor) return;
 
-    Steinberg::Vst::AudioBusBuffers inBuses, outBuses;
+    Steinberg::Vst::AudioBusBuffers inBuses = {}, outBuses = {};
     inBuses.numChannels = 2; // Assuming stereo for now
     inBuses.silenceFlags = 0;
     inBuses.channelBuffers32 = inputs;
@@ -438,29 +486,11 @@ void Vst3Plugin::process(float** inputs, float** outputs, int numSamples,
     data.inputEvents = &eventList;
     data.outputEvents = nullptr;
     data.processContext = &vstContext;
-    processor->process(data);
+
+    impl->processor->process(data);
+
 }
 
-
-Vst3Plugin::~Vst3Plugin() {
-
-    stopEditor();
-
-    
-    if (processor) {
-        processor->setProcessing(false);
-    }
-
-    if (controller) {
-        controller->setComponentHandler(nullptr);
-        controller->terminate();
-    }
-
-    if (component) {
-        component->setActive(false);
-        component->terminate();
-    }
-}
 
 
 

@@ -1,16 +1,9 @@
 #pragma once
-
-#include "public.sdk/source/vst/hosting/module.h"
-#include "public.sdk/source/vst/hosting/hostclasses.h"
-#include "public.sdk/source/vst/hosting/plugprovider.h"
-#include "pluginterfaces/vst/ivstaudioprocessor.h"
-#include "pluginterfaces/vst/ivsteditcontroller.h"
-#include "pluginterfaces/vst/ivstmessage.h"
-
 #include <string>
-#include <thread>
-#include <atomic>
+
 #include <vector>
+#include <memory>
+#include <cstdint>
 
 struct HostProcessContext {
     double sampleRate;
@@ -29,30 +22,23 @@ struct MidiNoteEvent {
     bool isNoteOn;
 };
 
+struct Vst3PluginImpl;
 
-// Internal host context class is now defined in vst3_host.cpp
-
-struct Vst3Plugin {
-
-    VST3::Hosting::Module::Ptr module;
-    Steinberg::IPtr<Steinberg::Vst::IComponent> component;
-    Steinberg::IPtr<Steinberg::Vst::IAudioProcessor> processor;
-    Steinberg::IPtr<Steinberg::Vst::IEditController> controller;
-    Steinberg::IPtr<Steinberg::Vst::IHostApplication> hostContext;
-    
-    std::thread editorThread;
-    std::atomic<bool> editorRunning{false};
-    std::atomic<uint64_t> editorWindow{0}; // Store X11 Window ID
+class Vst3Plugin {
+public:
+    Vst3Plugin();
+    ~Vst3Plugin();
 
     bool load(const std::string& path, int plugin_index = 0);
     void showEditor();
     void stopEditor();
-    static void listPlugins(const std::string& path);
-
     void process(float** inputs, float** outputs, int numSamples, 
                  const HostProcessContext& context, 
                  const std::vector<MidiNoteEvent>& events);
 
-    ~Vst3Plugin();
+    static void listPlugins(const std::string& path);
 
+private:
+    std::unique_ptr<Vst3PluginImpl> impl;
 };
+

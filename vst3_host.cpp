@@ -206,7 +206,13 @@ void Vst3Plugin::showEditor() {
         return;
     }
 
+    if (editorThread.joinable()) {
+        std::cout << "Joining finished editor thread..." << std::endl;
+        editorThread.join();
+    }
+
     XSetErrorHandler(hibiki_x11_error_handler);
+
 
     editorRunning = true;
     editorThread = std::thread([this]() {

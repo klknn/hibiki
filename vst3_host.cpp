@@ -6,15 +6,32 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include "pluginterfaces/gui/iplugview.h"
+#include "public.sdk/source/common/memorystream.h"
+
 
 
 
 Vst3HostContext::Vst3HostContext() {}
 Vst3HostContext::~Vst3HostContext() {}
 
-IMPLEMENT_FUNKNOWN_METHODS(Vst3HostContext, Steinberg::Vst::IHostApplication, Steinberg::Vst::IHostApplication::iid)
+Steinberg::uint32 PLUGIN_API Vst3HostContext::addRef() { return 1; }
+Steinberg::uint32 PLUGIN_API Vst3HostContext::release() { return 1; }
+
+Steinberg::tresult PLUGIN_API Vst3HostContext::queryInterface(const Steinberg::TUID _iid, void** obj) {
+    QUERY_INTERFACE(_iid, obj, Steinberg::Vst::IHostApplication::iid, Steinberg::Vst::IHostApplication)
+    QUERY_INTERFACE(_iid, obj, Steinberg::Vst::IComponentHandler::iid, Steinberg::Vst::IComponentHandler)
+    if (Steinberg::FUnknownPrivate::iidEqual(_iid, Steinberg::FUnknown::iid)) {
+        *obj = static_cast<Steinberg::Vst::IHostApplication*>(this);
+        addRef();
+        return Steinberg::kResultTrue;
+    }
+    return Steinberg::kNoInterface;
+}
+
+
 
 Steinberg::tresult PLUGIN_API Vst3HostContext::getName(Steinberg::Vst::String128 name) {
+
     Steinberg::UString str(name, 128);
     str.fromAscii("Hibiki DAW");
     return Steinberg::kResultTrue;
@@ -35,6 +52,12 @@ Steinberg::tresult PLUGIN_API Vst3HostContext::createInstance(Steinberg::TUID ci
     }
     return Steinberg::kResultFalse;
 }
+
+Steinberg::tresult PLUGIN_API Vst3HostContext::beginEdit(Steinberg::Vst::ParamID tag) { return Steinberg::kResultTrue; }
+Steinberg::tresult PLUGIN_API Vst3HostContext::performEdit(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized) { return Steinberg::kResultTrue; }
+Steinberg::tresult PLUGIN_API Vst3HostContext::endEdit(Steinberg::Vst::ParamID tag) { return Steinberg::kResultTrue; }
+Steinberg::tresult PLUGIN_API Vst3HostContext::restartComponent(Steinberg::int32 flags) { return Steinberg::kResultTrue; }
+
 
 bool Vst3Plugin::load(const std::string& path, int plugin_index) {
     std::string error;
@@ -97,7 +120,15 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
     
     if (controller) {
         controller->initialize(hostContext);
+        
+        Steinberg::Vst::IComponentHandler* handler = nullptr;
+        if (hostContext->queryInterface(Steinberg::Vst::IComponentHandler::iid, (void**)&handler) == Steinberg::kResultTrue) {
+            controller->setComponentHandler(handler);
+            handler->release();
+        }
+        
         // Connect component and controller
+
         Steinberg::IPtr<Steinberg::Vst::IConnectionPoint> cp1, cp2;
         component->queryInterface(Steinberg::Vst::IConnectionPoint::iid, (void**)&cp1);
         controller->queryInterface(Steinberg::Vst::IConnectionPoint::iid, (void**)&cp2);
@@ -105,10 +136,18 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
             cp1->connect(cp2);
             cp2->connect(cp1);
         }
+        
+        // Sync state
+        Steinberg::MemoryStream stream;
+        if (component->getState(&stream) == Steinberg::kResultTrue) {
+            stream.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
+            controller->setComponentState(&stream);
+        }
     }
 
 
     Steinberg::Vst::ProcessSetup setup;
+
     setup.processMode = Steinberg::Vst::kRealtime;
     setup.symbolicSampleSize = Steinberg::Vst::kSample32;
     setup.maxSamplesPerBlock = 512;

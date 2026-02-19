@@ -146,27 +146,46 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
     }
 
 
-    Steinberg::Vst::ProcessSetup setup;
+    // Activate audio buses
+    int numInBuses = component->getBusCount(Steinberg::Vst::kAudio, Steinberg::Vst::kInput);
+    for (int i = 0; i < numInBuses; i++) {
+        component->activateBus(Steinberg::Vst::kAudio, Steinberg::Vst::kInput, i, true);
+    }
+    int numOutBuses = component->getBusCount(Steinberg::Vst::kAudio, Steinberg::Vst::kOutput);
+    for (int i = 0; i < numOutBuses; i++) {
+        component->activateBus(Steinberg::Vst::kAudio, Steinberg::Vst::kOutput, i, true);
+    }
 
+    // Activate event buses (MIDI)
+    int numInEventBuses = component->getBusCount(Steinberg::Vst::kEvent, Steinberg::Vst::kInput);
+    for (int i = 0; i < numInEventBuses; i++) {
+        component->activateBus(Steinberg::Vst::kEvent, Steinberg::Vst::kInput, i, true);
+    }
+
+    if (component->setActive(true) != Steinberg::kResultTrue) {
+        std::cerr << "Failed to activate component" << std::endl;
+        return false;
+    }
+
+    Steinberg::Vst::ProcessSetup setup;
     setup.processMode = Steinberg::Vst::kRealtime;
     setup.symbolicSampleSize = Steinberg::Vst::kSample32;
     setup.maxSamplesPerBlock = 512;
     setup.sampleRate = 44100.0;
     
-    processor->setupProcessing(setup);
-    component->setActive(true);
+    if (processor->setupProcessing(setup) != Steinberg::kResultTrue) {
+        std::cerr << "Failed to setup processing" << std::endl;
+        component->setActive(false);
+        return false;
+    }
 
-    int numInBuses = component->getBusCount(Steinberg::Vst::kAudio, Steinberg::Vst::kInput);
-    int numOutBuses = component->getBusCount(Steinberg::Vst::kAudio, Steinberg::Vst::kOutput);
     std::cout << "Plugin: " << info.name() << " - Audio Buses - In: " << numInBuses << ", Out: " << numOutBuses << "\n";
-
-    component->activateBus(Steinberg::Vst::kAudio, Steinberg::Vst::kOutput, 0, true);
-    component->activateBus(Steinberg::Vst::kEvent, Steinberg::Vst::kInput, 0, true);
 
     processor->setProcessing(true);
 
     return true;
 }
+
 
 void Vst3Plugin::showEditor() {
     if (!controller) {

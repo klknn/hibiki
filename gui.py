@@ -72,14 +72,31 @@ class Gui(tk.Tk):
                 bufsize=1
             )
             self.status_label.config(text="Backend started in multi-track mode.")
+            
+            # Start thread to monitor stderr
+            from threading import Thread
+            self.stderr_thread = Thread(target=self.monitor_backend_stderr, daemon=True)
+            self.stderr_thread.start()
+
         except Exception as e:
+
             self.status_label.config(text=f"Failed to start backend: {e}")
 
 
 
 
 
+    def monitor_backend_stderr(self):
+        while self.backend and self.backend.poll() is None:
+            line = self.backend.stderr.readline()
+            if line:
+                print(f"BACKEND ERROR: {line.strip()}")
+                self.after(0, lambda l=line: self.status_label.config(text=f"Error: {l.strip()}"))
+            else:
+                break
+
     def send_command(self, cmd):
+
         if self.backend and self.backend.poll() is None:
             try:
                 self.backend.stdin.write(f"{cmd}\n")
@@ -88,7 +105,13 @@ class Gui(tk.Tk):
             except Exception as e:
                 self.status_label.config(text=f"Command error: {e}")
         else:
-            self.status_label.config(text="Backend not running.")
+            print("Backend not running.")
+            try:
+                if self.status_label.winfo_exists():
+                    self.status_label.config(text="Backend not running.")
+            except:
+                pass
+
 
     def stop_backend_process(self):
         if self.backend:

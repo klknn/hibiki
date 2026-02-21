@@ -1,34 +1,23 @@
-import tkinter as tk
-from tkinter import ttk
-import ctypes
-
-# Fix for X11 threading issues
-try:
-    libx11 = ctypes.CDLL('libX11.so.6')
-    libx11.XInitThreads()
-    # On some systems, synchronization helps avoid xcb sequence number issues
-    # libx11.XSynchronize(None, True) 
-except Exception:
-    pass
+from __future__ import annotations
 
 import atexit
 import os
 import signal
 import subprocess
-import queue
-import struct
+import tkinter as tk
+from tkinter import ttk
 from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
-import flatbuffers
-from hibiki.ipc import Message, Command, LoadInstrument, LoadClip, Play, Stop, PlayClip, StopTrack, ShowGui, Quit
+if TYPE_CHECKING:
+    from threading import Thread
 
 class Gui(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        
+
         self.title("hibiki")
         self.geometry("1024x768")
-        
+
         # Classic Ableton utilitarian color palette
         self.colors: Dict[str, str] = {
             "bg_dark": "#505050",
@@ -38,22 +27,22 @@ class Gui(tk.Tk):
             "bg_display": "#D0D0D0", # For digital displays (BPM, Timestamp)
             "text_light": "#FFFFFF",
             "text_dark": "#000000",
-            "btn_active": "#E0B050", 
+            "btn_active": "#E0B050",
             "btn_mute": "#E06060",
             "btn_solo": "#60A0E0",
             "btn_arm": "#D06060",
             "btn_play": "#60E060"
         }
-        
+
         self.configure(bg=self.colors["bg_dark"])
-        
+
         # Track / Slot selection state
         self.selected_track: int = 1
         self.selected_slot: int = 0
         self.track_frames: Dict[int, tk.Frame] = {} # track_idx -> frame
         self.track_headers: Dict[int, tk.Label] = {} # track_idx -> label
         self.clip_buttons: Dict[Tuple[int, int], tk.Button] = {} # (track_idx, slot_idx) -> button
-        
+
         # UI Elements
         self.status_label: tk.Label
         self.play_btn: tk.Button
@@ -68,29 +57,16 @@ class Gui(tk.Tk):
         self.midi_node: str
 
         self.create_layout()
-        
-        self.msg_queue: queue.Queue[str] = queue.Queue()
-        self.after(100, self.poll_queue)
-        
+
         # Backend process management
-        self.backend: Optional[subprocess.Popen[bytes]] = None
-        
-        # Defer backend start to ensure X11 is ready
-        self.after(500, self.start_backend)
+        self.backend: Optional[subprocess.Popen[str]] = None
+        self.stderr_thread: Optional[Thread] = None
+        self.start_backend()
         atexit.register(self.stop_backend_process)
 
 
     def start_backend(self) -> None:
         backend_bin: str = "./bazel-bin/hbk-play"
-        
-        # Check if we are running under Bazel
-        if "PYTHON_RUNFILES" in os.environ:
-            from runfiles import runfiles
-            r = runfiles.Create()
-            if r:
-                res = r.Rlocation("hibiki/hbk-play")
-                if res:
-                    backend_bin = res
 
         if not os.path.exists(backend_bin):
             self.status_label.config(text=f"Error: {backend_bin} not found. Build it first.")
@@ -105,172 +81,86 @@ class Gui(tk.Tk):
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=False,
-                bufsize=0,
-                start_new_session=True
+                text=True,
+                bufsize=1
             )
             self.status_label.config(text="Backend started in multi-track mode.")
-            
-            if self.backend.stderr:
-                # Set stderr to non-blocking
-                import fcntl
-                fd = self.backend.stderr.fileno()
-                fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-                fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-                
-            # Start non-blocking monitoring
-            self.after(100, self.monitor_backend_stderr)
+
+            # Start thread to monitor stderr
+            from threading import Thread
+            self.stderr_thread = Thread(target=self.monitor_backend_stderr, daemon=True)
+            self.stderr_thread.start()
 
         except Exception as e:
             self.status_label.config(text=f"Failed to start backend: {e}")
 
 
     def monitor_backend_stderr(self) -> None:
-        if self.backend and self.backend.stderr:
-            try:
-                while True:
-                    line_bytes = self.backend.stderr.readline()
-                    if not line_bytes:
-                        break
-                    line = line_bytes.decode('utf-8', errors='replace').strip()
-                    if line:
-                        print(f"BACKEND: {line}")
-                        self.msg_queue.put(line)
-            except BlockingIOError:
-                pass
-            except Exception as e:
-                print(f"Monitoring error: {e}")
-            
+        while self.backend and self.backend.poll() is None:
+            if self.backend.stderr:
+                line: str = self.backend.stderr.readline()
+                if line:
+                    print(f"BACKEND ERROR: {line.strip()}")
+                    def update_status(l: str = line) -> None:
+                        self.status_label.config(text=f"Error: {l.strip()}")
+                    self.after(0, update_status)
+                else:
+                    break
+            else:
+                break
+
+    def send_command(self, cmd: str) -> None:
         if self.backend and self.backend.poll() is None:
-            self.after(100, self.monitor_backend_stderr)
-
-    def poll_queue(self) -> None:
-        try:
-            while True:
-                msg = self.msg_queue.get_nowait()
-                if "ACK" in msg:
-                    self.status_label.config(text=msg)
-                elif "ERR" in msg:
-                    self.status_label.config(text=f"Error: {msg}")
-        except queue.Empty:
-            pass
-        self.after(100, self.poll_queue)
-
-    def send_to_backend(self, command_type: int, command_offset: int, builder: flatbuffers.Builder) -> None:
-        Message.MessageStart(builder)
-        Message.MessageAddCommandType(builder, command_type)
-        Message.MessageAddCommand(builder, command_offset)
-        msg_offset = Message.MessageEnd(builder)
-        builder.Finish(msg_offset)
-        
-        buf = builder.Output()
-        if self.backend and self.backend.stdin:
             try:
-                # Length-prefixed binary message
-                self.backend.stdin.write(struct.pack("\u003cI", len(buf)))
-                self.backend.stdin.write(buf)
-                self.backend.stdin.flush()
+                if self.backend.stdin:
+                    self.backend.stdin.write(f"{cmd}\n")
+                    self.backend.stdin.flush()
+                # We could read ACK here if we wanted to be more robust
             except Exception as e:
-                self.status_label.config(text=f"Send error: {e}")
+                self.status_label.config(text=f"Command error: {e}")
+        else:
+            print("Backend not running.")
+            try:
+                if self.status_label.winfo_exists():
+                    self.status_label.config(text="Backend not running.")
+            except:
+                pass
 
-    def send_command_quit(self) -> None:
-        builder = flatbuffers.Builder(64)
-        Quit.QuitStart(builder)
-        cmd = Quit.QuitEnd(builder)
-        self.send_to_backend(Command.Command.Quit, cmd, builder)
-
-    def send_command_play(self) -> None:
-        builder = flatbuffers.Builder(64)
-        Play.PlayStart(builder)
-        cmd = Play.PlayEnd(builder)
-        self.send_to_backend(Command.Command.Play, cmd, builder)
-
-    def send_command_stop(self) -> None:
-        builder = flatbuffers.Builder(64)
-        Stop.StopStart(builder)
-        cmd = Stop.StopEnd(builder)
-        self.send_to_backend(Command.Command.Stop, cmd, builder)
-
-    def send_command_load_instrument(self, track_idx: int, path: str, plugin_idx: int) -> None:
-        builder = flatbuffers.Builder(128)
-        path_offset = builder.CreateString(path)
-        LoadInstrument.LoadInstrumentStart(builder)
-        LoadInstrument.LoadInstrumentAddTrackIdx(builder, track_idx)
-        LoadInstrument.LoadInstrumentAddPath(builder, path_offset)
-        LoadInstrument.LoadInstrumentAddPluginIdx(builder, plugin_idx)
-        cmd = LoadInstrument.LoadInstrumentEnd(builder)
-        self.send_to_backend(Command.Command.LoadInstrument, cmd, builder)
-
-    def send_command_load_clip(self, track_idx: int, slot_idx: int, path: str) -> None:
-        builder = flatbuffers.Builder(128)
-        path_offset = builder.CreateString(path)
-        LoadClip.LoadClipStart(builder)
-        LoadClip.LoadClipAddTrackIdx(builder, track_idx)
-        LoadClip.LoadClipAddSlotIdx(builder, slot_idx)
-        LoadClip.LoadClipAddPath(builder, path_offset)
-        cmd = LoadClip.LoadClipEnd(builder)
-        self.send_to_backend(Command.Command.LoadClip, cmd, builder)
-
-    def send_command_play_clip(self, track_idx: int, slot_idx: int) -> None:
-        builder = flatbuffers.Builder(64)
-        PlayClip.PlayClipStart(builder)
-        PlayClip.PlayClipAddTrackIdx(builder, track_idx)
-        PlayClip.PlayClipAddSlotIdx(builder, slot_idx)
-        cmd = PlayClip.PlayClipEnd(builder)
-        self.send_to_backend(Command.Command.PlayClip, cmd, builder)
-
-    def send_command_stop_track(self, track_idx: int) -> None:
-        builder = flatbuffers.Builder(64)
-        StopTrack.StopTrackStart(builder)
-        StopTrack.StopTrackAddTrackIdx(builder, track_idx)
-        cmd = StopTrack.StopTrackEnd(builder)
-        self.send_to_backend(Command.Command.StopTrack, cmd, builder)
-
-    def send_command_show_gui(self, track_idx: int) -> None:
-        builder = flatbuffers.Builder(64)
-        ShowGui.ShowGuiStart(builder)
-        ShowGui.ShowGuiAddTrackIdx(builder, track_idx)
-        cmd = ShowGui.ShowGuiEnd(builder)
-        self.send_to_backend(Command.Command.ShowGui, cmd, builder)
 
     def stop_backend_process(self) -> None:
         if self.backend:
-            self.send_command_quit()
+            self.send_command("QUIT")
             try:
                 self.backend.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 self.backend.kill()
             self.backend = None
 
-    def on_closing(self) -> None:
-        self.stop_backend_process()
-        self.destroy()
-
     def create_layout(self) -> None:
         # 1. Top Bar (Control Bar)
         self.build_top_bar()
-        
+
         # 2. Bottom Bar (Status Bar) - Packed before main so it stays glued to bottom
         self.build_bottom_bar()
-        
+
         # 3. Main Workspace (Browser + Session/Detail)
         self.main_paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         self.main_paned.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
-        
+
         # Left Panel: Browser
         self.browser_frame = tk.Frame(self.main_paned, bg=self.colors["bg_light"], width=200)
         self.main_paned.add(self.browser_frame, weight=1)
         self.build_browser(self.browser_frame)
-        
+
         # Right Panel: Workspace Split
         self.workspace_paned = ttk.PanedWindow(self.main_paned, orient=tk.VERTICAL)
         self.main_paned.add(self.workspace_paned, weight=5)
-        
+
         # Top Workspace: Session View
         self.session_frame = tk.Frame(self.workspace_paned, bg=self.colors["bg_mid"])
         self.workspace_paned.add(self.session_frame, weight=3)
         self.build_session_view(self.session_frame)
-        
+
         # Bottom Workspace: Detail View
         self.detail_frame = tk.Frame(self.workspace_paned, bg=self.colors["bg_dark"])
         self.workspace_paned.add(self.detail_frame, weight=1)
@@ -279,35 +169,35 @@ class Gui(tk.Tk):
     def build_top_bar(self) -> None:
         top_frame = tk.Frame(self, bg=self.colors["bg_dark"], height=40, bd=1, relief=tk.RAISED)
         top_frame.pack(side=tk.TOP, fill=tk.X)
-        
+
         # --- Song Info Section (Left) ---
         song_info_frame = tk.Frame(top_frame, bg=self.colors["bg_dark"])
         song_info_frame.pack(side=tk.LEFT, padx=10, pady=5)
-        
+
         bpm_lbl = tk.Label(song_info_frame, text="120.00", bg=self.colors["bg_display"], font=("Courier", 10, "bold"), width=6, bd=1, relief=tk.SUNKEN)
         bpm_lbl.pack(side=tk.LEFT, padx=2)
         self.add_hover_hint(bpm_lbl, "Tempo: Global song tempo in Beats Per Minute (BPM).")
-        
+
         time_sig_lbl = tk.Label(song_info_frame, text="4 / 4", bg=self.colors["bg_display"], font=("Courier", 10, "bold"), width=5, bd=1, relief=tk.SUNKEN)
         time_sig_lbl.pack(side=tk.LEFT, padx=2)
         self.add_hover_hint(time_sig_lbl, "Time Signature: Global time signature (Numerator / Denominator).")
-        
+
         # --- Playback Section (Center-Left) ---
         playback_frame = tk.Frame(top_frame, bg=self.colors["bg_dark"])
         playback_frame.pack(side=tk.LEFT, padx=20, pady=5)
-        
-        self.play_btn = tk.Button(playback_frame, text="▶", bg=self.colors["bg_light"], activebackground=self.colors["btn_play"], width=3, command=self.send_command_play)
-        self.play_btn.pack(side=tk.LEFT, padx=2)
+
+        self.play_btn = tk.Button(playback_frame, text="▶", bg=self.colors["bg_light"], activebackground=self.colors["btn_play"], width=3, command=lambda: self.send_command("PLAY"))
+        self.play_btn.pack(side=tk.LEFT, padx=1)
         self.add_hover_hint(self.play_btn, "Play: Start playback from the current marker.")
-        
-        self.stop_btn = tk.Button(playback_frame, text="■", bg=self.colors["bg_light"], width=3, command=self.send_command_stop)
-        self.stop_btn.pack(side=tk.LEFT, padx=2)
+
+        self.stop_btn = tk.Button(playback_frame, text="■", bg=self.colors["bg_light"], width=3, command=lambda: self.send_command("STOP"))
+        self.stop_btn.pack(side=tk.LEFT, padx=1)
         self.add_hover_hint(self.stop_btn, "Stop: Stop playback. Click again to return to start.")
-        
+
         rec_btn = tk.Button(playback_frame, text="●", bg=self.colors["bg_light"], activebackground=self.colors["btn_arm"], width=3)
         rec_btn.pack(side=tk.LEFT, padx=1)
         self.add_hover_hint(rec_btn, "Arrangement Record: Record session clips and automation into the Arrangement.")
- 
+
         timestamp_lbl = tk.Label(playback_frame, text="1. 1. 1", bg=self.colors["bg_display"], font=("Courier", 10, "bold"), width=8, bd=1, relief=tk.SUNKEN)
         timestamp_lbl.pack(side=tk.LEFT, padx=10)
         self.add_hover_hint(timestamp_lbl, "Position: Current playback position (Bars . Beats . Sixteenths).")
@@ -315,11 +205,11 @@ class Gui(tk.Tk):
         # --- Device Info Section (Right) ---
         device_frame = tk.Frame(top_frame, bg=self.colors["bg_dark"])
         device_frame.pack(side=tk.RIGHT, padx=10, pady=5)
-        
+
         sample_rate_lbl = tk.Label(device_frame, text="44100 Hz", bg=self.colors["bg_dark"], fg=self.colors["text_light"], font=("Arial", 8))
         sample_rate_lbl.pack(side=tk.LEFT, padx=5)
         self.add_hover_hint(sample_rate_lbl, "Audio Engine: Current hardware sample rate.")
-        
+
         cpu_lbl = tk.Label(device_frame, text="CPU: 3%", bg=self.colors["bg_display"], font=("Courier", 9), width=8, bd=1, relief=tk.SUNKEN)
         cpu_lbl.pack(side=tk.LEFT, padx=2)
         self.add_hover_hint(cpu_lbl, "CPU Load Meter: Current processing load. High values may cause audio dropouts.")
@@ -328,7 +218,7 @@ class Gui(tk.Tk):
     def build_bottom_bar(self) -> None:
         bottom_frame = tk.Frame(self, bg=self.colors["bg_light"], bd=1, relief=tk.SUNKEN)
         bottom_frame.pack(side=tk.BOTTOM, fill=tk.X)
-        
+
         self.status_label = tk.Label(bottom_frame, text="Ready.", bg=self.colors["bg_light"], font=("Arial", 8))
         self.status_label.pack(side=tk.LEFT, padx=5, pady=2)
 
@@ -338,18 +228,18 @@ class Gui(tk.Tk):
             self.status_label.config(text=t)
         def on_leave(event: tk.Event[Any]) -> None:
             self.status_label.config(text="Ready.")
-            
+
         widget.bind("<Enter>", on_enter)
         widget.bind("<Leave>", on_leave)
 
     def build_browser(self, parent: tk.Frame) -> None:
         header = tk.Label(parent, text="Browser", bg=self.colors["bg_dark"], fg=self.colors["text_light"])
         header.pack(fill=tk.X)
-        
+
         self.browser_tree = ttk.Treeview(parent, show="tree")
         self.browser_tree.pack(fill=tk.BOTH, expand=True)
         self.add_hover_hint(self.browser_tree, "File Browser: Double-click a plugin or MIDI file to load.")
-        
+
         self.vst_node = self.browser_tree.insert("", "end", text="Plugins", open=True)
         self.midi_node = self.browser_tree.insert("", "end", text="MIDI Files", open=True)
 
@@ -381,10 +271,10 @@ class Gui(tk.Tk):
                 continue
 
             full_path: str = os.path.join(path, entry)
-            
+
             # Check if this is a target item (e.g. .vst3 bundle or .mid file)
             is_target: bool = any(entry.lower().endswith(ext) for ext in extensions)
-            
+
             if is_target:
                 if type_label == "vst":
                     # For VST3, try to list internal plugins
@@ -413,14 +303,14 @@ class Gui(tk.Tk):
                 res = r.Rlocation("hibiki/hbk-play")
                 if res:
                     backend_bin = res
-        
+
         if not os.path.exists(backend_bin):
             return []
 
         try:
             result: subprocess.CompletedProcess[str] = subprocess.run([backend_bin, "--list", vst_path], capture_output=True, text=True, timeout=2)
             if result.returncode != 0: return []
-            
+
             plugins: List[Tuple[str, str]] = []
             if result.stdout:
                 for line in result.stdout.splitlines():
@@ -431,7 +321,7 @@ class Gui(tk.Tk):
         except:
             return []
 
-    def on_browser_double_click(self, event: tk.Event) -> None:
+    def on_browser_double_click(self, event: tk.Event[ttk.Treeview]) -> None:
         selection = self.browser_tree.selection()
         if not selection: return
         item: str = selection[0]
@@ -441,12 +331,12 @@ class Gui(tk.Tk):
         path: str = values[0]
         file_type: str = values[1]
         if file_type == "folder": return
-        
+
         if file_type == "vst":
             index: Any = values[2] if len(values) > 2 else 0
             self.send_command(f"LOAD_INST {self.selected_track} {path} {index}")
             self.status_label.config(text=f"Loading {os.path.basename(path)} into Track {self.selected_track}")
-            
+
             # Update track header name
             header_label: Optional[tk.Label] = self.track_headers.get(self.selected_track)
             if header_label:
@@ -466,26 +356,26 @@ class Gui(tk.Tk):
     def build_session_view(self, parent: tk.Frame) -> None:
         header = tk.Label(parent, text="Session View", bg=self.colors["bg_dark"], fg=self.colors["text_light"])
         header.pack(fill=tk.X)
-        
+
         tracks_container = tk.Frame(parent, bg=self.colors["bg_mid"])
         tracks_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
+
         for i in range(1, 5):
             self.create_track(tracks_container, "empty", i)
 
-            
+
         self.create_master_track(tracks_container)
 
     def create_track(self, parent: tk.Frame, name: str, idx: int) -> None:
         track_frame = tk.Frame(parent, bg=self.colors["bg_track"], bd=1, relief=tk.SUNKEN, width=80)
         track_frame.pack(side=tk.LEFT, fill=tk.Y, padx=2)
         self.track_frames[idx] = track_frame
-        
+
         # Track Header Frame (Edit Button + Name)
         header_container = tk.Frame(track_frame, bg=self.colors["bg_dark"])
         header_container.pack(fill=tk.X)
-        
-        edit_btn = tk.Button(header_container, text="⚙", bg=self.colors["bg_dark"], fg=self.colors["text_light"], 
+
+        edit_btn = tk.Button(header_container, text="⚙", bg=self.colors["bg_dark"], fg=self.colors["text_light"],
                             relief=tk.FLAT, width=2, command=lambda: self.send_command(f"SHOW_GUI {idx}"))
         edit_btn.pack(side=tk.LEFT)
         self.add_hover_hint(edit_btn, f"Plugin Editor: Click to open the custom GUI for the plugin on track {idx}.")
@@ -493,7 +383,7 @@ class Gui(tk.Tk):
         track_header = tk.Label(header_container, text=name, bg=self.colors["bg_dark"], fg=self.colors["text_light"], height=2, wraplength=50)
         track_header.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.track_headers[idx] = track_header
-        
+
         track_header.bind("<Button-1>", lambda e: self.select_track(idx))
         header_container.bind("<Button-1>", lambda e: self.select_track(idx))
         self.add_hover_hint(track_header, f"Track Name: Click to select the track '{name}'.")
@@ -506,32 +396,32 @@ class Gui(tk.Tk):
             btn.config(command=click_handler)
             self.clip_buttons[(idx, j)] = btn
             self.add_hover_hint(btn, f"Clip Slot {j+1}: Click to select and play.")
-            
+
         tk.Frame(track_frame, bg=self.colors["bg_track"]).pack(fill=tk.Y, expand=True)
-        
+
         # Panning
         pan_scale = tk.Scale(track_frame, from_=-50, to=50, orient=tk.HORIZONTAL, showvalue=False, length=60, sliderlength=10)
         pan_scale.pack()
         self.add_hover_hint(pan_scale, "Track Panning: Adjust the stereo panorama of this track.")
-        
+
         # Volume
         vol_scale = tk.Scale(track_frame, from_=6, to=-70, orient=tk.VERTICAL, showvalue=False, length=120, sliderlength=15)
         vol_scale.pack()
         self.add_hover_hint(vol_scale, "Track Volume: Adjust the output volume of this track.")
-        
+
         # Buttons
         btn_container = tk.Frame(track_frame, bg=self.colors["bg_track"])
         btn_container.pack(fill=tk.X, pady=4)
-        
+
         btn_active = tk.Button(btn_container, text="1", bg=self.colors["btn_active"], font=("Arial", 7, "bold"))
         btn_active.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=1)
         btn_active.config(command=lambda: self.send_command(f"STOP_TRACK {idx}"))
         self.add_hover_hint(btn_active, f"Track Activator: Click to stop all clips on track {idx}.")
-        
+
         btn_solo = tk.Button(btn_container, text="S", bg=self.colors["bg_light"], font=("Arial", 7, "bold"))
         btn_solo.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=1)
         self.add_hover_hint(btn_solo, "Solo: Mute all other tracks except soloed tracks.")
-        
+
         btn_arm = tk.Button(btn_container, text="O", bg=self.colors["bg_light"], font=("Arial", 7, "bold"))
         btn_arm.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=1)
         self.add_hover_hint(btn_arm, "Arm Recording: Prepare this track to receive incoming audio/MIDI.")
@@ -540,7 +430,7 @@ class Gui(tk.Tk):
         # Reset previous selection colors
         for f in self.track_frames.values():
             f.config(bg=self.colors["bg_track"])
-            
+
         self.selected_track = idx
         self.track_frames[idx].config(bg=self.colors["btn_active"])
         self.status_label.config(text=f"Track {idx} selected.")
@@ -548,32 +438,32 @@ class Gui(tk.Tk):
     def on_clip_click(self, track_idx: int, slot_idx: int) -> None:
         # Select track and slot
         self.select_track(track_idx)
-        
+
         # Reset previous slot highlights in this track
         for j in range(5):
             btn = self.clip_buttons.get((track_idx, j))
             if btn: btn.config(relief=tk.FLAT, bd=1)
-            
+
         self.selected_slot = slot_idx
         btn = self.clip_buttons.get((track_idx, slot_idx))
         if btn: btn.config(relief=tk.SUNKEN, bd=2)
-        
+
         self.send_command(f"PLAY_CLIP {track_idx} {slot_idx}")
         self.status_label.config(text=f"Playing Clip {slot_idx} on Track {track_idx}")
 
     def create_master_track(self, parent: tk.Frame) -> None:
         master_frame = tk.Frame(parent, bg=self.colors["bg_mid"], bd=1, relief=tk.SUNKEN, width=100)
         master_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=2)
-        
+
         tk.Label(master_frame, text="Master", bg="#404040", fg=self.colors["text_light"]).pack(fill=tk.X)
-        
+
         for j in range(5):
             scene_btn = tk.Button(master_frame, text=f"{j+1}  ►", bg=self.colors["bg_light"], height=1, anchor="e")
             scene_btn.pack(fill=tk.X, padx=2, pady=1)
             self.add_hover_hint(scene_btn, f"Scene Launch: Launch all clips in row {j+1} simultaneously.")
-            
+
         tk.Frame(master_frame, bg=self.colors["bg_mid"]).pack(fill=tk.Y, expand=True)
-        
+
         tk.Label(master_frame, text="Master Vol", bg=self.colors["bg_mid"], font=("Arial", 7)).pack()
         master_vol = tk.Scale(master_frame, from_=6, to=-70, orient=tk.VERTICAL, showvalue=False, length=120, sliderlength=15)
         master_vol.pack(pady=5)
@@ -582,10 +472,10 @@ class Gui(tk.Tk):
     def build_detail_view(self, parent: tk.Frame) -> None:
         header = tk.Label(parent, text="Track Detail View (Instrument / Audio Effects)", bg="#404040", fg=self.colors["text_light"])
         header.pack(fill=tk.X)
-        
+
         devices_container = tk.Frame(parent, bg=self.colors["bg_light"])
         devices_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
+
         self.create_device(devices_container, "Simpler", ["Start", "Loop", "Length", "Fade"])
         self.create_device(devices_container, "EQ Eight", ["Freq", "Res", "Gain"])
         self.create_device(devices_container, "Reverb", ["Decay", "Density", "Dry/Wet"])
@@ -593,29 +483,29 @@ class Gui(tk.Tk):
     def create_device(self, parent: tk.Frame, name: str, parameters: List[str]) -> None:
         device_frame = tk.Frame(parent, bg=self.colors["bg_mid"], bd=2, relief=tk.RAISED)
         device_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5)
-        
+
         header = tk.Frame(device_frame, bg=self.colors["bg_dark"])
         header.pack(fill=tk.X)
-        
+
         on_off = tk.Button(header, text="O", bg=self.colors["btn_active"], font=("Arial", 6), width=2)
         on_off.pack(side=tk.LEFT, padx=2)
         self.add_hover_hint(on_off, f"Device Activator: Turn {name} on or off.")
-        
+
         title = tk.Label(header, text=name, bg=self.colors["bg_dark"], fg=self.colors["text_light"], font=("Arial", 9, "bold"))
         title.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.add_hover_hint(title, f"{name}: Device header. Drag to reorder devices in the chain.")
-        
+
         params_container = tk.Frame(device_frame, bg=self.colors["bg_mid"])
         params_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
+
         for param in parameters:
             p_frame = tk.Frame(params_container, bg=self.colors["bg_mid"])
             p_frame.pack(side=tk.LEFT, padx=5)
-            
+
             scale = tk.Scale(p_frame, from_=100, to=0, orient=tk.VERTICAL, showvalue=False, length=80, sliderlength=15)
             scale.pack()
             self.add_hover_hint(scale, f"Macro Control: Adjust the {param} parameter for {name}.")
-            
+
             tk.Label(p_frame, text=param, bg=self.colors["bg_mid"], font=("Arial", 7)).pack()
 
 if __name__ == "__main__":

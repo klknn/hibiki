@@ -14,7 +14,7 @@
 #include "alsa_out.hpp"
 #include "vst3_host.hpp"
 
-#include "hibiki_ipc_generated.h"
+// #include "hibiki_ipc_generated.h"
 
 struct Clip {
     std::unique_ptr<smf::MidiFile> midi;
@@ -25,11 +25,11 @@ public:
     int index;
     std::unique_ptr<Vst3Plugin> plugin;
     std::map<int, std::unique_ptr<Clip>> clips;
-    
+
     int playing_slot = -1;
     double current_time_sec = 0.0;
     int current_midi_idx = 0;
-    
+
     std::mutex mutex;
 
     Track(int idx) : index(idx) {}
@@ -55,7 +55,7 @@ public:
         if (!midi->read(path)) return false;
         midi->joinTracks();
         midi->doTimeAnalysis();
-        
+
         auto clip = std::make_unique<Clip>();
         clip->midi = std::move(midi);
         clips[slot] = std::move(clip);
@@ -128,15 +128,15 @@ void playback_thread(GlobalState& state) {
             std::fill(mixBufferR.begin(), mixBufferR.end(), 0.0f);
 
             bool any_playing = false;
-            
+
             {
                 std::lock_guard<std::mutex> lock(state.tracks_mutex);
                 for (auto& pair : state.tracks) {
                     Track* track = pair.second.get();
                     std::lock_guard<std::mutex> tlock(track->mutex);
-                    
+
                     if (!track->plugin || track->playing_slot == -1) continue;
-                    
+
                     any_playing = true;
                     auto& clip = track->clips[track->playing_slot];
                     smf::MidiFile* midifile = clip->midi.get();
@@ -171,7 +171,7 @@ void playback_thread(GlobalState& state) {
 
                     std::fill(bufferL, bufferL + block_size, 0.0f);
                     std::fill(bufferR, bufferR + block_size, 0.0f);
-                    
+
                     track->plugin->process(nullptr, outChannels, block_size, context, blockEvents);
 
 
@@ -222,7 +222,7 @@ int main(int argc, char** argv) {
         std::stringstream ss(line);
         std::string cmd;
         ss >> cmd;
-        
+
         if (cmd == "LOAD_INST") {
             int tidx, pidx = 0;
             std::string vpath;
@@ -243,7 +243,7 @@ int main(int argc, char** argv) {
                 std::cout << "ERR LOAD_CLIP " << tidx << " " << sidx << "\n" << std::flush;
             }
         } else if (cmd == "PLAY") {
-            // In session view, global play could resume or restart, 
+            // In session view, global play could resume or restart,
             // but for now individual clips are triggered via PLAY_CLIP.
             std::cout << "ACK PLAY\n" << std::flush;
         } else if (cmd == "STOP") {
@@ -290,5 +290,3 @@ int main(int argc, char** argv) {
     if (audio_thread.joinable()) audio_thread.join();
     return 0;
 }
-
-

@@ -1,0 +1,17 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index dc400d17..172c7765 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -47,12 +47,6 @@ bazel_dep(
+     name = "rules_shell",
+     version = "0.3.0",
+ )
+-bazel_dep(
+-    name = "rules_swift",
+-    version = "2.1.1",
+-    max_compatibility_level = 3,
+-    repo_name = "build_bazel_rules_swift",
+-)
+ bazel_dep(
+     name = "bazel_skylib",
+     version = "1.7.1",

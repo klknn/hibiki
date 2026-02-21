@@ -3,9 +3,9 @@ module(
     version = "0.1.0",
 )
 
-bazel_dep(name = "rules_cc", version = "0.0.16")
-bazel_dep(name = "rules_python", version = "1.0.0")
-bazel_dep(name = "flatbuffers", version = "24.3.25")
+# DO NOT UPDATE THESE VERSIONS FOR X11.
+bazel_dep(name = "rules_cc", version = "0.2.14")
+bazel_dep(name = "rules_python", version = "1.7.0")
 
 # Non-module dependencies via http_archive
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
@@ -27,6 +27,15 @@ cc_library(
 """,
 )
 
+http_archive(
+    name = "flatbuffers",
+    url = "https://github.com/google/flatbuffers/archive/refs/tags/v25.12.19-2026-02-06-03fffb2.zip",
+    strip_prefix = "flatbuffers-25.12.19-2026-02-06-03fffb2",
+    # To remove rules_swift conflict.
+    patches = ["//third_party/flatbuffers.patch"],
+)
+
+
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(python_version = "3.10")
 
@@ -38,3 +47,48 @@ pip.parse(
 )
 
 use_repo(pip, "pip")
+
+# git_repository = use_repo_rule("@bazel//tools/build_defs/repo:git.bzl", "git_repository")
+git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
+git_repository(
+    name = "vst3sdk",
+    tag = "v3.8.0_build_66",
+    remote = "https://github.com/steinbergmedia/vst3sdk",
+    recursive_init_submodules = True,
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "vst3sdk",
+    srcs = glob([
+        "public.sdk/source/vst/*.cpp",
+        "public.sdk/source/vst/hosting/*.cpp",
+        "public.sdk/source/vst/utility/*.cpp",
+        "public.sdk/source/common/*.cpp",
+        "base/source/*.cpp",
+        "pluginterfaces/**/*.cpp",
+    ], exclude = [
+        "public.sdk/source/vst/hosting/vst2wrapper.cpp",
+        "**/*win32*.cpp",
+        "**/*mac*.cpp",
+        "**/*mac*.mm",
+        "**/*vstgui*.cpp",
+    ]),
+    hdrs = glob([
+        "pluginterfaces/**/*.h",
+        "public.sdk/**/*.h",
+        "public.sdk/**/*.cpp", # Some templates are in cpp files
+        "base/**/*.h",
+    ]),
+    includes = [
+        "pluginterfaces",
+        "public.sdk/..",
+    ],
+    visibility = ["//visibility:public"],
+    defines = ["RELEASE"],
+    linkopts = ["-lpthread", "-ldl"],
+)
+
+"""
+)

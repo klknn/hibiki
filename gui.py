@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import atexit
 import os
+import logging
 import signal
 import subprocess
+import threading
 import tkinter as tk
 from tkinter import ttk
-from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-if TYPE_CHECKING:
-    from threading import Thread
 
 class Gui(tk.Tk):
     def __init__(self) -> None:
@@ -60,40 +60,37 @@ class Gui(tk.Tk):
 
         # Backend process management
         self.backend: Optional[subprocess.Popen[str]] = None
-        self.stderr_thread: Optional[Thread] = None
+        self.stderr_thread: Optional[threading.Thread] = None
         self.start_backend()
         atexit.register(self.stop_backend_process)
 
 
     def start_backend(self) -> None:
-        backend_bin: str = "./bazel-bin/hbk-play"
-
+        from python.runfiles import runfiles
+        r = runfiles.Create()
+        assert r is not None
+        backend_bin = r.Rlocation("hibiki/hbk-play")
+        assert backend_bin is not None
         if not os.path.exists(backend_bin):
             self.status_label.config(text=f"Error: {backend_bin} not found. Build it first.")
-            return
+            raise ValueError(f"Error: {backend_bin} not found. Build it first.")
 
         self.stop_backend_process()
 
-        try:
-            # Start backend in command mode (no initial arguments)
-            self.backend = subprocess.Popen(
-                [backend_bin],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1
-            )
-            self.status_label.config(text="Backend started in multi-track mode.")
+        # Start backend in command mode (no initial arguments)
+        self.backend = subprocess.Popen(
+            [backend_bin],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1
+        )
+        self.status_label.config(text="Backend started in multi-track mode.")
 
-            # Start thread to monitor stderr
-            from threading import Thread
-            self.stderr_thread = Thread(target=self.monitor_backend_stderr, daemon=True)
-            self.stderr_thread.start()
-
-        except Exception as e:
-            self.status_label.config(text=f"Failed to start backend: {e}")
-
+        # Start thread to monitor stderr
+        self.stderr_thread = threading.Thread(target=self.monitor_backend_stderr, daemon=True)
+        self.stderr_thread.start()
 
     def monitor_backend_stderr(self) -> None:
         while self.backend and self.backend.poll() is None:

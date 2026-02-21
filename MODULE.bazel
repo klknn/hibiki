@@ -6,6 +6,7 @@ module(
 # DO NOT UPDATE THESE VERSIONS FOR X11.
 bazel_dep(name = "rules_cc", version = "0.2.14")
 bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "platforms", version = "1.0.0")
 
 # Non-module dependencies via http_archive
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
@@ -14,17 +15,7 @@ http_archive(
     name = "midifile",
     url = "https://github.com/craigsapp/midifile/archive/refs/heads/master.zip",
     strip_prefix = "midifile-master",
-    build_file_content = """
-load("@rules_cc//cc:defs.bzl", "cc_library")
-
-cc_library(
-    name = "midifile",
-    srcs = glob(["src/*.cpp"]),
-    hdrs = glob(["include/*.h"]),
-    includes = ["include"],
-    visibility = ["//visibility:public"],
-)
-""",
+    build_file = "//third_party:midifile.BUILD",
 )
 
 http_archive(
@@ -32,23 +23,22 @@ http_archive(
     url = "https://github.com/google/flatbuffers/archive/refs/tags/v25.12.19-2026-02-06-03fffb2.zip",
     strip_prefix = "flatbuffers-25.12.19-2026-02-06-03fffb2",
     # To remove rules_swift conflict.
-    patches = ["//third_party/flatbuffers.patch"],
+    patches = ["//third_party:flatbuffers.patch"],
 )
 
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
-python.toolchain(python_version = "3.10")
+python.toolchain(python_version = "3.13")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
     hub_name = "pip",
-    python_version = "3.10",
+    python_version = "3.13",
     requirements_lock = "//:requirements.txt",
 )
 
 use_repo(pip, "pip")
 
-# git_repository = use_repo_rule("@bazel//tools/build_defs/repo:git.bzl", "git_repository")
 git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 git_repository(
@@ -56,39 +46,5 @@ git_repository(
     tag = "v3.8.0_build_66",
     remote = "https://github.com/steinbergmedia/vst3sdk",
     recursive_init_submodules = True,
-    build_file_content = """
-load("@rules_cc//cc:defs.bzl", "cc_library")
-
-cc_library(
-    name = "vst3sdk",
-    srcs = glob([
-        "public.sdk/source/vst/*.cpp",
-        "public.sdk/source/vst/hosting/*.cpp",
-        "public.sdk/source/vst/utility/*.cpp",
-        "public.sdk/source/common/*.cpp",
-        "base/source/*.cpp",
-        "pluginterfaces/**/*.cpp",
-    ], exclude = [
-        "public.sdk/source/vst/hosting/vst2wrapper.cpp",
-        "**/*win32*.cpp",
-        "**/*mac*.cpp",
-        "**/*mac*.mm",
-        "**/*vstgui*.cpp",
-    ]),
-    hdrs = glob([
-        "pluginterfaces/**/*.h",
-        "public.sdk/**/*.h",
-        "public.sdk/**/*.cpp", # Some templates are in cpp files
-        "base/**/*.h",
-    ]),
-    includes = [
-        "pluginterfaces",
-        "public.sdk/..",
-    ],
-    visibility = ["//visibility:public"],
-    defines = ["RELEASE"],
-    linkopts = ["-lpthread", "-ldl"],
-)
-
-"""
+    build_file = "//third_party:vst3sdk.BUILD"
 )

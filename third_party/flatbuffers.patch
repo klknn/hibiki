@@ -1,7 +1,7 @@
-diff --git a/MODULE.bazel b/MODULE.bazel
+diff --git MODULE.bazel MODULE.bazel
 index dc400d17..172c7765 100644
---- a/MODULE.bazel
-+++ b/MODULE.bazel
+--- MODULE.bazel
++++ MODULE.bazel
 @@ -47,12 +47,6 @@ bazel_dep(
      name = "rules_shell",
      version = "0.3.0",

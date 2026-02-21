@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import ttk
 import struct
 import flatbuffers
-from hibiki.ipc import Message, Command, LoadInstrument, LoadClip, Play, Stop, PlayClip, StopTrack, ShowGui, Quit
+from hibiki.ipc import Message, Command, LoadPlugin, LoadClip, Play, Stop, PlayClip, StopTrack, ShowPluginGui, SetParamValue, Quit
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
@@ -45,6 +45,9 @@ class Gui(tk.Tk):
         self.track_frames: Dict[int, tk.Frame] = {} # track_idx -> frame
         self.track_headers: Dict[int, tk.Label] = {} # track_idx -> label
         self.clip_buttons: Dict[Tuple[int, int], tk.Button] = {} # (track_idx, slot_idx) -> button
+
+        self.track_plugins: Dict[int, List[Dict[str, Any]]] = {} # track_idx -> list of {path, name, params}
+        self.selected_plugin_idx: int = -1
 
         # UI Elements
         self.status_label: tk.Label
@@ -128,19 +131,61 @@ class Gui(tk.Tk):
             except:
                 pass
 
-    def send_load_instrument(self, track_idx: int, path: str, plugin_idx: int = 0) -> None:
+    def send_load_plugin(self, track_idx: int, path: str, plugin_idx: int = 0) -> None:
         builder = flatbuffers.Builder(1024)
         path_off = builder.CreateString(path)
         
-        LoadInstrument.Start(builder)
-        LoadInstrument.AddTrackIndex(builder, track_idx)
-        LoadInstrument.AddPath(builder, path_off)
-        LoadInstrument.AddPluginIndex(builder, plugin_idx)
-        inst_off = LoadInstrument.End(builder)
+        LoadPlugin.Start(builder)
+        LoadPlugin.AddTrackIndex(builder, track_idx)
+        LoadPlugin.AddPath(builder, path_off)
+        LoadPlugin.AddPluginIndex(builder, plugin_idx)
+        inst_off = LoadPlugin.End(builder)
         
         Message.Start(builder)
-        Message.AddCommandType(builder, Command.Command.LoadInstrument)
+        Message.AddCommandType(builder, Command.Command.LoadPlugin)
         Message.AddCommand(builder, inst_off)
+        msg_off = Message.End(builder)
+        builder.Finish(msg_off)
+        self._send_flatbuffer(builder)
+
+        # Optimistically track for UI
+        if track_idx not in self.track_plugins:
+            self.track_plugins[track_idx] = []
+        self.track_plugins[track_idx].append({
+            "path": path,
+            "name": os.path.basename(path),
+            "params": [] # We don't know them yet without backend feedback
+        })
+        self.after(0, self.refresh_detail_view)
+
+    def send_set_param_value(self, track_idx: int, plugin_idx: int, param_id: int, value: float) -> None:
+        builder = flatbuffers.Builder(1024)
+        
+        SetParamValue.Start(builder)
+        SetParamValue.AddTrackIndex(builder, track_idx)
+        SetParamValue.AddPluginIndex(builder, plugin_idx)
+        SetParamValue.AddParamId(builder, param_id)
+        SetParamValue.AddValue(builder, value)
+        cmd_off = SetParamValue.End(builder)
+        
+        Message.Start(builder)
+        Message.AddCommandType(builder, Command.Command.SetParamValue)
+        Message.AddCommand(builder, cmd_off)
+        msg_off = Message.End(builder)
+        builder.Finish(msg_off)
+        self._send_flatbuffer(builder)
+
+    def send_show_plugin_gui(self, track_idx: int, plugin_idx: int) -> None:
+        builder = flatbuffers.Builder(1024)
+        
+        ShowPluginGui.Start(builder)
+        ShowPluginGui.AddTrackIndex(builder, track_idx)
+        ShowPluginGui.AddPluginIndex(builder, plugin_idx)
+        cmd_off = ShowPluginGui.End(builder)
+        
+        Message.Start(builder)
+        Message.AddCommandType(builder, Command.Command.ShowPluginGui)
+        Message.AddCommand(builder, cmd_off)
         msg_off = Message.End(builder)
         builder.Finish(msg_off)
         self._send_flatbuffer(builder)
@@ -209,19 +254,6 @@ class Gui(tk.Tk):
         Message.Start(builder)
         Message.AddCommandType(builder, Command.Command.StopTrack)
         Message.AddCommand(builder, st_off)
-        msg_off = Message.End(builder)
-        builder.Finish(msg_off)
-        self._send_flatbuffer(builder)
-
-    def send_show_gui(self, track_idx: int) -> None:
-        builder = flatbuffers.Builder(128)
-        ShowGui.Start(builder)
-        ShowGui.AddTrackIndex(builder, track_idx)
-        sg_off = ShowGui.End(builder)
-        
-        Message.Start(builder)
-        Message.AddCommandType(builder, Command.Command.ShowGui)
-        Message.AddCommand(builder, sg_off)
         msg_off = Message.End(builder)
         builder.Finish(msg_off)
         self._send_flatbuffer(builder)
@@ -446,7 +478,7 @@ class Gui(tk.Tk):
 
         if file_type == "vst":
             index: int = int(values[2]) if len(values) > 2 else 0
-            self.send_load_instrument(self.selected_track, path, index)
+            self.send_load_plugin(self.selected_track, path, index)
             self.status_label.config(text=f"Loading {os.path.basename(path)} into Track {self.selected_track}")
 
             # Update track header name
@@ -488,7 +520,7 @@ class Gui(tk.Tk):
         header_container.pack(fill=tk.X)
 
         edit_btn = tk.Button(header_container, text="⚙", bg=self.colors["bg_dark"], fg=self.colors["text_light"],
-                            relief=tk.FLAT, width=2, command=lambda: self.send_show_gui(idx))
+                            relief=tk.FLAT, width=2, command=lambda: self.send_show_plugin_gui(idx, 0))
         edit_btn.pack(side=tk.LEFT)
         self.add_hover_hint(edit_btn, f"Plugin Editor: Click to open the custom GUI for the plugin on track {idx}.")
 
@@ -546,6 +578,7 @@ class Gui(tk.Tk):
         self.selected_track = idx
         self.track_frames[idx].config(bg=self.colors["btn_active"])
         self.status_label.config(text=f"Track {idx} selected.")
+        self.refresh_detail_view()
 
     def on_clip_click(self, track_idx: int, slot_idx: int) -> None:
         # Select track and slot
@@ -582,17 +615,32 @@ class Gui(tk.Tk):
         self.add_hover_hint(master_vol, "Master Volume: Adjust the final output volume of the set.")
 
     def build_detail_view(self, parent: tk.Frame) -> None:
-        header = tk.Label(parent, text="Track Detail View (Instrument / Audio Effects)", bg="#404040", fg=self.colors["text_light"])
-        header.pack(fill=tk.X)
+        self.detail_header = tk.Label(parent, text="Track Detail View (Instrument / Audio Effects)", bg="#404040", fg=self.colors["text_light"])
+        self.detail_header.pack(fill=tk.X)
 
-        devices_container = tk.Frame(parent, bg=self.colors["bg_light"])
-        devices_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.devices_container = tk.Frame(parent, bg=self.colors["bg_light"])
+        self.devices_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        self.refresh_detail_view()
 
-        self.create_device(devices_container, "Simpler", ["Start", "Loop", "Length", "Fade"])
-        self.create_device(devices_container, "EQ Eight", ["Freq", "Res", "Gain"])
-        self.create_device(devices_container, "Reverb", ["Decay", "Density", "Dry/Wet"])
+    def refresh_detail_view(self) -> None:
+        # Clear existing devices
+        for widget in self.devices_container.winfo_children():
+            widget.destroy()
 
-    def create_device(self, parent: tk.Frame, name: str, parameters: List[str]) -> None:
+        self.detail_header.config(text=f"Track {self.selected_track} Detail View")
+
+        plugins = self.track_plugins.get(self.selected_track, [])
+        if not plugins:
+            empty_label = tk.Label(self.devices_container, text="No plugins loaded on this track. Double-click a VST in the browser to add one.", 
+                                  bg=self.colors["bg_light"], fg=self.colors["text_dark"])
+            empty_label.pack(pady=20)
+            return
+
+        for idx, plugin in enumerate(plugins):
+            self.create_plugin_device(self.devices_container, plugin["name"], idx)
+
+    def create_plugin_device(self, parent: tk.Frame, name: str, plugin_idx: int) -> None:
         device_frame = tk.Frame(parent, bg=self.colors["bg_mid"], bd=2, relief=tk.RAISED)
         device_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5)
 
@@ -601,24 +649,40 @@ class Gui(tk.Tk):
 
         on_off = tk.Button(header, text="O", bg=self.colors["btn_active"], font=("Arial", 6), width=2)
         on_off.pack(side=tk.LEFT, padx=2)
-        self.add_hover_hint(on_off, f"Device Activator: Turn {name} on or off.")
 
-        title = tk.Label(header, text=name, bg=self.colors["bg_dark"], fg=self.colors["text_light"], font=("Arial", 9, "bold"))
+        title = tk.Button(header, text=name, bg=self.colors["bg_dark"], fg=self.colors["text_light"], 
+                          font=("Arial", 9, "bold"), relief=tk.FLAT,
+                          command=lambda: self.send_show_plugin_gui(self.selected_track, plugin_idx))
         title.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.add_hover_hint(title, f"{name}: Device header. Drag to reorder devices in the chain.")
+        self.add_hover_hint(title, f"{name}: Click to open the custom plugin GUI.")
 
         params_container = tk.Frame(device_frame, bg=self.colors["bg_mid"])
         params_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        for param in parameters:
+        # For now, we don't have the real list of parameters from the backend ACK yet.
+        # We can add a few generic macro knobs that map to param 0, 1, 2...
+        # or wait for a proper parameter query IPC.
+        # Let's show 4 generic macro knobs as a placeholder that work if the plugin has them.
+        for i in range(4):
             p_frame = tk.Frame(params_container, bg=self.colors["bg_mid"])
             p_frame.pack(side=tk.LEFT, padx=5)
 
-            scale = tk.Scale(p_frame, from_=100, to=0, orient=tk.VERTICAL, showvalue=False, length=80, sliderlength=15)
+            # Use a slightly larger scale for easier control
+            scale = tk.Scale(p_frame, from_=1.0, to=0.0, resolution=0.01, orient=tk.VERTICAL, 
+                             showvalue=False, length=80, sliderlength=15, bg=self.colors["bg_mid"])
+            scale.set(0.5) # Default middle
             scale.pack()
-            self.add_hover_hint(scale, f"Macro Control: Adjust the {param} parameter for {name}.")
+            
+            def make_cmd(p_idx=plugin_idx, p_id=i):
+                return lambda val: self.send_set_param_value(self.selected_track, p_idx, p_id, float(val))
+            
+            scale.config(command=make_cmd())
+            
+            tk.Label(p_frame, text=f"Macro {i+1}", bg=self.colors["bg_mid"], font=("Arial", 7)).pack()
 
-            tk.Label(p_frame, text=param, bg=self.colors["bg_mid"], font=("Arial", 7)).pack()
+    def create_device(self, parent: tk.Frame, name: str, parameters: List[str]) -> None:
+        # Keep old method for now or delete if unused
+        pass
 
 if __name__ == "__main__":
     app = Gui()

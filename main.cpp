@@ -23,7 +23,7 @@ struct Clip {
 class Track {
 public:
     int index;
-    std::unique_ptr<Vst3Plugin> plugin;
+    std::vector<std::unique_ptr<Vst3Plugin>> plugins;
     std::map<int, std::unique_ptr<Clip>> clips;
 
     int playing_slot = -1;
@@ -34,16 +34,19 @@ public:
 
     Track(int idx) : index(idx) {}
 
-    bool load_instrument(const std::string& path, int plugin_index) {
+    bool load_plugin(const std::string& path, int plugin_index) {
         std::lock_guard<std::mutex> lock(mutex);
-        plugin = std::make_unique<Vst3Plugin>();
+        auto plugin = std::make_unique<Vst3Plugin>();
         if (!plugin->load(path, plugin_index)) {
-            plugin.reset();
             return false;
         }
-        // Reset playback state when instrument changes
-        current_time_sec = 0.0;
-        current_midi_idx = 0;
+        plugins.push_back(std::move(plugin));
+        
+        // If this is the first plugin, reset playback state
+        if (plugins.size() == 1) {
+            current_time_sec = 0.0;
+            current_midi_idx = 0;
+        }
         return true;
     }
 
@@ -134,7 +137,7 @@ void playback_thread(GlobalState& state) {
                 Track* track = pair.second.get();
                 std::lock_guard<std::mutex> tlock(track->mutex);
 
-                if (!track->plugin || track->playing_slot == -1) continue;
+                if (track->plugins.empty() || track->playing_slot == -1) continue;
 
                 any_playing = true;
                 auto& clip = track->clips[track->playing_slot];
@@ -171,7 +174,16 @@ void playback_thread(GlobalState& state) {
                 std::fill(bufferL, bufferL + block_size, 0.0f);
                 std::fill(bufferR, bufferR + block_size, 0.0f);
 
-                track->plugin->process(nullptr, outChannels, block_size, context, blockEvents);
+                for (size_t i = 0; i < track->plugins.size(); ++i) {
+                    auto& p = track->plugins[i];
+                    if (i == 0) {
+                        // First plugin gets the MIDI events
+                        p->process(nullptr, outChannels, block_size, context, blockEvents);
+                    } else {
+                        // Subsequent plugins get previous audio output as input
+                        p->process(outChannels, outChannels, block_size, context, {});
+                    }
+                }
 
 
                 for (int i = 0; i < block_size; ++i) {
@@ -235,15 +247,15 @@ int main(int argc, char** argv) {
         auto message = hibiki::ipc::GetMessage(buffer.get());
         auto command_type = message->command_type();
 
-        if (command_type == hibiki::ipc::Command_LoadInstrument) {
-            auto cmd = static_cast<const hibiki::ipc::LoadInstrument*>(message->command());
+        if (command_type == hibiki::ipc::Command_LoadPlugin) {
+            auto cmd = static_cast<const hibiki::ipc::LoadPlugin*>(message->command());
             int tidx = cmd->track_index();
             std::string vpath = cmd->path()->str();
             int pidx = cmd->plugin_index();
-            if (state.get_or_create_track(tidx)->load_instrument(vpath, pidx)) {
-                std::cout << "ACK LOAD_INST " << tidx << "\n" << std::flush;
+            if (state.get_or_create_track(tidx)->load_plugin(vpath, pidx)) {
+                std::cout << "ACK LOAD_PLUGIN " << tidx << "\n" << std::flush;
             } else {
-                std::cout << "ERR LOAD_INST " << tidx << "\n" << std::flush;
+                std::cout << "ERR LOAD_PLUGIN " << tidx << "\n" << std::flush;
             }
         } else if (command_type == hibiki::ipc::Command_LoadClip) {
             auto cmd = static_cast<const hibiki::ipc::LoadClip*>(message->command());
@@ -274,19 +286,29 @@ int main(int argc, char** argv) {
             int tidx = cmd->track_index();
             state.get_or_create_track(tidx)->stop();
             std::cout << "ACK STOP_TRACK " << tidx << "\n" << std::flush;
-        } else if (command_type == hibiki::ipc::Command_ShowGui) {
-            auto cmd = static_cast<const hibiki::ipc::ShowGui*>(message->command());
+        } else if (command_type == hibiki::ipc::Command_ShowPluginGui) {
+            auto cmd = static_cast<const hibiki::ipc::ShowPluginGui*>(message->command());
             int track_idx = cmd->track_index();
-            std::cout << "Received SHOW_GUI for track " << track_idx << std::endl;
+            int plugin_idx = cmd->plugin_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             if (state.tracks.count(track_idx)) {
-                if (state.tracks[track_idx]->plugin) {
-                    state.tracks[track_idx]->plugin->showEditor();
-                } else {
-                    std::cout << "Track " << track_idx << " has no plugin" << std::endl;
+                auto& plugins = state.tracks[track_idx]->plugins;
+                if (plugin_idx >= 0 && plugin_idx < (int)plugins.size()) {
+                    plugins[plugin_idx]->showEditor();
                 }
-            } else {
-                std::cout << "Track " << track_idx << " does not exist" << std::endl;
+            }
+        } else if (command_type == hibiki::ipc::Command_SetParamValue) {
+            auto cmd = static_cast<const hibiki::ipc::SetParamValue*>(message->command());
+            int track_idx = cmd->track_index();
+            int plugin_idx = cmd->plugin_index();
+            uint32_t param_id = cmd->param_id();
+            float value = cmd->value();
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            if (state.tracks.count(track_idx)) {
+                auto& plugins = state.tracks[track_idx]->plugins;
+                if (plugin_idx >= 0 && plugin_idx < (int)plugins.size()) {
+                    plugins[plugin_idx]->setParameterValue(param_id, value);
+                }
             }
         } else if (command_type == hibiki::ipc::Command_Quit) {
             state.quit = true;

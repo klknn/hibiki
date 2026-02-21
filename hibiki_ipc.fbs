@@ -1,6 +1,6 @@
 namespace hibiki.ipc;
 
-table LoadInstrument {
+table LoadPlugin {
     track_index: int;
     path: string;
     plugin_index: int = 0;
@@ -25,20 +25,29 @@ table StopTrack {
     track_index: int;
 }
 
-table ShowGui {
+table ShowPluginGui {
     track_index: int;
+    plugin_index: int;
+}
+
+table SetParamValue {
+    track_index: int;
+    plugin_index: int;
+    param_id: uint;
+    value: float;
 }
 
 table Quit {}
 
 union Command {
-    LoadInstrument,
+    LoadPlugin,
     LoadClip,
     Play,
     Stop,
     PlayClip,
     StopTrack,
-    ShowGui,
+    ShowPluginGui,
+    SetParamValue,
     Quit
 }
 

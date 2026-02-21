@@ -334,12 +334,43 @@ void Vst3Plugin::process(float** inputs, float** outputs, int numSamples,
     data.inputs = &inBuses;
     data.numOutputs = 1;
     data.outputs = &outBuses;
-    data.inputParameterChanges = nullptr;
+    data.inputParameterChanges = nullptr; // TODO: Implement if needed for real-time automation
     data.outputParameterChanges = nullptr;
     data.inputEvents = &eventList;
     data.outputEvents = nullptr;
     data.processContext = &vstContext;
 
     impl->processor->process(data);
+}
 
+int Vst3Plugin::getParameterCount() const {
+    if (!impl->controller) return 0;
+    return impl->controller->getParameterCount();
+}
+
+bool Vst3Plugin::getParameterInfo(int index, VstParamInfo& info) const {
+    if (!impl->controller) return false;
+    Steinberg::Vst::ParameterInfo vinfo = {};
+    if (impl->controller->getParameterInfo(index, vinfo) == Steinberg::kResultTrue) {
+        info.id = vinfo.id;
+        char buf[128];
+        Steinberg::UString(vinfo.title, 128).toAscii(buf, 128);
+        info.name = buf;
+        info.defaultValue = vinfo.defaultNormalizedValue;
+        return true;
+    }
+    return false;
+}
+
+void Vst3Plugin::setParameterValue(uint32_t id, double valueNormalized) {
+    if (impl->controller) {
+        impl->controller->setParamNormalized(id, valueNormalized);
+    }
+}
+
+double Vst3Plugin::getParameterValue(uint32_t id) const {
+    if (impl->controller) {
+        return impl->controller->getParamNormalized(id);
+    }
+    return 0.0;
 }

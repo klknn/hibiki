@@ -22,6 +22,12 @@ struct MidiNoteEvent {
     bool isNoteOn;
 };
 
+struct VstParamInfo {
+    uint32_t id;
+    std::string name;
+    double defaultValue;
+};
+
 struct Vst3PluginImpl;
 
 class Vst3Plugin {
@@ -35,6 +41,11 @@ public:
     void process(float** inputs, float** outputs, int numSamples, 
                  const HostProcessContext& context, 
                  const std::vector<MidiNoteEvent>& events);
+
+    int getParameterCount() const;
+    bool getParameterInfo(int index, VstParamInfo& info) const;
+    void setParameterValue(uint32_t id, double valueNormalized);
+    double getParameterValue(uint32_t id) const;
 
     static void listPlugins(const std::string& path);
 

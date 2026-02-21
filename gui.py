@@ -8,6 +8,9 @@ import subprocess
 import threading
 import tkinter as tk
 from tkinter import ttk
+import struct
+import flatbuffers
+from hibiki.ipc import Message, Command, LoadInstrument, LoadClip, Play, Stop, PlayClip, StopTrack, ShowGui, Quit
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
@@ -106,13 +109,15 @@ class Gui(tk.Tk):
             else:
                 break
 
-    def send_command(self, cmd: str) -> None:
+    def _send_flatbuffer(self, builder: flatbuffers.Builder) -> None:
         if self.backend and self.backend.poll() is None:
             try:
                 if self.backend.stdin:
-                    self.backend.stdin.write(f"{cmd}\n")
-                    self.backend.stdin.flush()
-                # We could read ACK here if we wanted to be more robust
+                    data = builder.Output()
+                    # Sent length-prefixed message (4 bytes, little endian)
+                    self.backend.stdin.buffer.write(struct.pack("<I", len(data)))
+                    self.backend.stdin.buffer.write(data)
+                    self.backend.stdin.buffer.flush()
             except Exception as e:
                 self.status_label.config(text=f"Command error: {e}")
         else:
@@ -123,10 +128,120 @@ class Gui(tk.Tk):
             except:
                 pass
 
+    def send_load_instrument(self, track_idx: int, path: str, plugin_idx: int = 0) -> None:
+        builder = flatbuffers.Builder(1024)
+        path_off = builder.CreateString(path)
+        
+        LoadInstrument.Start(builder)
+        LoadInstrument.AddTrackIndex(builder, track_idx)
+        LoadInstrument.AddPath(builder, path_off)
+        LoadInstrument.AddPluginIndex(builder, plugin_idx)
+        inst_off = LoadInstrument.End(builder)
+        
+        Message.Start(builder)
+        Message.AddCommandType(builder, Command.Command.LoadInstrument)
+        Message.AddCommand(builder, inst_off)
+        msg_off = Message.End(builder)
+        builder.Finish(msg_off)
+        self._send_flatbuffer(builder)
+
+    def send_load_clip(self, track_idx: int, slot_idx: int, path: str) -> None:
+        builder = flatbuffers.Builder(1024)
+        path_off = builder.CreateString(path)
+        
+        LoadClip.Start(builder)
+        LoadClip.AddTrackIndex(builder, track_idx)
+        LoadClip.AddSlotIndex(builder, slot_idx)
+        LoadClip.AddPath(builder, path_off)
+        clip_off = LoadClip.End(builder)
+        
+        Message.Start(builder)
+        Message.AddCommandType(builder, Command.Command.LoadClip)
+        Message.AddCommand(builder, clip_off)
+        msg_off = Message.End(builder)
+        builder.Finish(msg_off)
+        self._send_flatbuffer(builder)
+
+    def send_play(self) -> None:
+        builder = flatbuffers.Builder(128)
+        Play.Start(builder)
+        play_off = Play.End(builder)
+        
+        Message.Start(builder)
+        Message.AddCommandType(builder, Command.Command.Play)
+        Message.AddCommand(builder, play_off)
+        msg_off = Message.End(builder)
+        builder.Finish(msg_off)
+        self._send_flatbuffer(builder)
+
+    def send_stop(self) -> None:
+        builder = flatbuffers.Builder(128)
+        Stop.Start(builder)
+        stop_off = Stop.End(builder)
+        
+        Message.Start(builder)
+        Message.AddCommandType(builder, Command.Command.Stop)
+        Message.AddCommand(builder, stop_off)
+        msg_off = Message.End(builder)
+        builder.Finish(msg_off)
+        self._send_flatbuffer(builder)
+
+    def send_play_clip(self, track_idx: int, slot_idx: int) -> None:
+        builder = flatbuffers.Builder(128)
+        PlayClip.Start(builder)
+        PlayClip.AddTrackIndex(builder, track_idx)
+        PlayClip.AddSlotIndex(builder, slot_idx)
+        pc_off = PlayClip.End(builder)
+        
+        Message.Start(builder)
+        Message.AddCommandType(builder, Command.Command.PlayClip)
+        Message.AddCommand(builder, pc_off)
+        msg_off = Message.End(builder)
+        builder.Finish(msg_off)
+        self._send_flatbuffer(builder)
+
+    def send_stop_track(self, track_idx: int) -> None:
+        builder = flatbuffers.Builder(128)
+        StopTrack.Start(builder)
+        StopTrack.AddTrackIndex(builder, track_idx)
+        st_off = StopTrack.End(builder)
+        
+        Message.Start(builder)
+        Message.AddCommandType(builder, Command.Command.StopTrack)
+        Message.AddCommand(builder, st_off)
+        msg_off = Message.End(builder)
+        builder.Finish(msg_off)
+        self._send_flatbuffer(builder)
+
+    def send_show_gui(self, track_idx: int) -> None:
+        builder = flatbuffers.Builder(128)
+        ShowGui.Start(builder)
+        ShowGui.AddTrackIndex(builder, track_idx)
+        sg_off = ShowGui.End(builder)
+        
+        Message.Start(builder)
+        Message.AddCommandType(builder, Command.Command.ShowGui)
+        Message.AddCommand(builder, sg_off)
+        msg_off = Message.End(builder)
+        builder.Finish(msg_off)
+        self._send_flatbuffer(builder)
+
+    def send_quit(self) -> None:
+        builder = flatbuffers.Builder(128)
+        Quit.Start(builder)
+        quit_off = Quit.End(builder)
+        
+        Message.Start(builder)
+        Message.AddCommandType(builder, Command.Command.Quit)
+        Message.AddCommand(builder, quit_off)
+        msg_off = Message.End(builder)
+        builder.Finish(msg_off)
+        self._send_flatbuffer(builder)
+
 
     def stop_backend_process(self) -> None:
         if self.backend:
-            self.send_command("QUIT")
+            self.send_quit()
             try:
                 self.backend.wait(timeout=1)
             except subprocess.TimeoutExpired:
@@ -183,11 +298,11 @@ class Gui(tk.Tk):
         playback_frame = tk.Frame(top_frame, bg=self.colors["bg_dark"])
         playback_frame.pack(side=tk.LEFT, padx=20, pady=5)
 
-        self.play_btn = tk.Button(playback_frame, text="▶", bg=self.colors["bg_light"], activebackground=self.colors["btn_play"], width=3, command=lambda: self.send_command("PLAY"))
+        self.play_btn = tk.Button(playback_frame, text="▶", bg=self.colors["bg_light"], activebackground=self.colors["btn_play"], width=3, command=self.send_play)
         self.play_btn.pack(side=tk.LEFT, padx=1)
         self.add_hover_hint(self.play_btn, "Play: Start playback from the current marker.")
 
-        self.stop_btn = tk.Button(playback_frame, text="■", bg=self.colors["bg_light"], width=3, command=lambda: self.send_command("STOP"))
+        self.stop_btn = tk.Button(playback_frame, text="■", bg=self.colors["bg_light"], width=3, command=self.send_stop)
         self.stop_btn.pack(side=tk.LEFT, padx=1)
         self.add_hover_hint(self.stop_btn, "Stop: Stop playback. Click again to return to start.")
 
@@ -330,8 +445,8 @@ class Gui(tk.Tk):
         if file_type == "folder": return
 
         if file_type == "vst":
-            index: Any = values[2] if len(values) > 2 else 0
-            self.send_command(f"LOAD_INST {self.selected_track} {path} {index}")
+            index: int = int(values[2]) if len(values) > 2 else 0
+            self.send_load_instrument(self.selected_track, path, index)
             self.status_label.config(text=f"Loading {os.path.basename(path)} into Track {self.selected_track}")
 
             # Update track header name
@@ -342,7 +457,7 @@ class Gui(tk.Tk):
                 header_label.config(text=instrument_name)
         elif file_type == "midi":
 
-            self.send_command(f"LOAD_CLIP {self.selected_track} {self.selected_slot} {path}")
+            self.send_load_clip(self.selected_track, self.selected_slot, path)
             self.status_label.config(text=f"Loading {os.path.basename(path)} into Track {self.selected_track} Slot {self.selected_slot}")
             # Update clip button text visually
             btn: Optional[tk.Button] = self.clip_buttons.get((self.selected_track, self.selected_slot))
@@ -373,7 +488,7 @@ class Gui(tk.Tk):
         header_container.pack(fill=tk.X)
 
         edit_btn = tk.Button(header_container, text="⚙", bg=self.colors["bg_dark"], fg=self.colors["text_light"],
-                            relief=tk.FLAT, width=2, command=lambda: self.send_command(f"SHOW_GUI {idx}"))
+                            relief=tk.FLAT, width=2, command=lambda: self.send_show_gui(idx))
         edit_btn.pack(side=tk.LEFT)
         self.add_hover_hint(edit_btn, f"Plugin Editor: Click to open the custom GUI for the plugin on track {idx}.")
 
@@ -412,7 +527,7 @@ class Gui(tk.Tk):
 
         btn_active = tk.Button(btn_container, text="1", bg=self.colors["btn_active"], font=("Arial", 7, "bold"))
         btn_active.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=1)
-        btn_active.config(command=lambda: self.send_command(f"STOP_TRACK {idx}"))
+        btn_active.config(command=lambda: self.send_stop_track(idx))
         self.add_hover_hint(btn_active, f"Track Activator: Click to stop all clips on track {idx}.")
 
         btn_solo = tk.Button(btn_container, text="S", bg=self.colors["bg_light"], font=("Arial", 7, "bold"))
@@ -445,7 +560,7 @@ class Gui(tk.Tk):
         btn = self.clip_buttons.get((track_idx, slot_idx))
         if btn: btn.config(relief=tk.SUNKEN, bd=2)
 
-        self.send_command(f"PLAY_CLIP {track_idx} {slot_idx}")
+        self.send_play_clip(track_idx, slot_idx)
         self.status_label.config(text=f"Playing Clip {slot_idx} on Track {track_idx}")
 
     def create_master_track(self, parent: tk.Frame) -> None:

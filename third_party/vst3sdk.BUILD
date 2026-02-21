@@ -29,4 +29,5 @@ cc_library(
     visibility = ["//visibility:public"],
     defines = ["RELEASE"],
     linkopts = ["-lpthread", "-ldl"],
+    copts = ["-fexceptions"],
 )

@@ -14,7 +14,7 @@
 #include "alsa_out.hpp"
 #include "vst3_host.hpp"
 
-#include "hibiki_ipc_generated.h"
+#include "hibiki_request_generated.h"
 
 struct Clip {
     std::unique_ptr<smf::MidiFile> midi;
@@ -41,7 +41,7 @@ public:
             return false;
         }
         plugins.push_back(std::move(plugin));
-        
+
         // If this is the first plugin, reset playback state
         if (plugins.size() == 1) {
             current_time_sec = 0.0;
@@ -84,6 +84,13 @@ public:
     void stop() {
         std::lock_guard<std::mutex> lock(mutex);
         playing_slot = -1;
+    }
+
+    bool remove_plugin(size_t pidx) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (pidx >= plugins.size()) return false;
+        plugins.erase(plugins.begin() + pidx);
+        return true;
     }
 };
 
@@ -244,7 +251,7 @@ int main(int argc, char** argv) {
             break;
         }
 
-        auto message = hibiki::ipc::GetMessage(buffer.get());
+        auto message = hibiki::ipc::GetRequest(buffer.get());
         auto command_type = message->command_type();
 
         if (command_type == hibiki::ipc::Command_LoadPlugin) {
@@ -286,6 +293,15 @@ int main(int argc, char** argv) {
             int tidx = cmd->track_index();
             state.get_or_create_track(tidx)->stop();
             std::cout << "ACK STOP_TRACK " << tidx << "\n" << std::flush;
+        } else if (command_type == hibiki::ipc::Command_RemovePlugin) {
+            auto cmd = static_cast<const hibiki::ipc::RemovePlugin*>(message->command());
+            int tidx = cmd->track_index();
+            int pidx = cmd->plugin_index();
+            if (state.get_or_create_track(tidx)->remove_plugin(pidx)) {
+                std::cout << "ACK REMOVE_PLUGIN " << tidx << " " << pidx << "\n" << std::flush;
+            } else {
+                std::cout << "ERR REMOVE_PLUGIN " << tidx << " " << pidx << "\n" << std::flush;
+            }
         } else if (command_type == hibiki::ipc::Command_ShowPluginGui) {
             auto cmd = static_cast<const hibiki::ipc::ShowPluginGui*>(message->command());
             int track_idx = cmd->track_index();

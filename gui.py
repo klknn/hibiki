@@ -10,7 +10,9 @@ import tkinter as tk
 from tkinter import ttk
 import struct
 import flatbuffers
-from hibiki.ipc import Message, Command, LoadPlugin, LoadClip, Play, Stop, PlayClip, StopTrack, ShowPluginGui, SetParamValue, Quit
+from hibiki.ipc import Request, Command, LoadPlugin, LoadClip, Play, Stop, PlayClip, StopTrack, ShowPluginGui, SetParamValue, RemovePlugin, Quit
+from hibiki import project
+from hibiki.project import Project, Track, Plugin, Clip
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
@@ -45,6 +47,7 @@ class Gui(tk.Tk):
         self.track_frames: Dict[int, tk.Frame] = {} # track_idx -> frame
         self.track_headers: Dict[int, tk.Label] = {} # track_idx -> label
         self.clip_buttons: Dict[Tuple[int, int], tk.Button] = {} # (track_idx, slot_idx) -> button
+        self.track_clips: Dict[int, Dict[int, str]] = {} # track_idx -> slot_idx -> path
 
         self.track_plugins: Dict[int, List[Dict[str, Any]]] = {} # track_idx -> list of {path, name, params}
         self.selected_plugin_idx: int = -1
@@ -98,6 +101,9 @@ class Gui(tk.Tk):
         self.stderr_thread = threading.Thread(target=self.monitor_backend_stderr, daemon=True)
         self.stderr_thread.start()
 
+        # Restore last session
+        self.after(500, lambda: self.load_session("last_session.hbk"))
+
     def monitor_backend_stderr(self) -> None:
         while self.backend and self.backend.poll() is None:
             if self.backend.stderr:
@@ -134,17 +140,17 @@ class Gui(tk.Tk):
     def send_load_plugin(self, track_idx: int, path: str, plugin_idx: int = 0) -> None:
         builder = flatbuffers.Builder(1024)
         path_off = builder.CreateString(path)
-        
+
         LoadPlugin.Start(builder)
         LoadPlugin.AddTrackIndex(builder, track_idx)
         LoadPlugin.AddPath(builder, path_off)
         LoadPlugin.AddPluginIndex(builder, plugin_idx)
         inst_off = LoadPlugin.End(builder)
-        
-        Message.Start(builder)
-        Message.AddCommandType(builder, Command.Command.LoadPlugin)
-        Message.AddCommand(builder, inst_off)
-        msg_off = Message.End(builder)
+
+        Request.Start(builder)
+        Request.AddCommandType(builder, Command.Command.LoadPlugin)
+        Request.AddCommand(builder, inst_off)
+        msg_off = Request.End(builder)
         builder.Finish(msg_off)
         self._send_flatbuffer(builder)
 
@@ -160,62 +166,93 @@ class Gui(tk.Tk):
 
     def send_set_param_value(self, track_idx: int, plugin_idx: int, param_id: int, value: float) -> None:
         builder = flatbuffers.Builder(1024)
-        
+
         SetParamValue.Start(builder)
         SetParamValue.AddTrackIndex(builder, track_idx)
         SetParamValue.AddPluginIndex(builder, plugin_idx)
         SetParamValue.AddParamId(builder, param_id)
         SetParamValue.AddValue(builder, value)
         cmd_off = SetParamValue.End(builder)
-        
-        Message.Start(builder)
-        Message.AddCommandType(builder, Command.Command.SetParamValue)
-        Message.AddCommand(builder, cmd_off)
-        msg_off = Message.End(builder)
+
+        Request.Start(builder)
+        Request.AddCommandType(builder, Command.Command.SetParamValue)
+        Request.AddCommand(builder, cmd_off)
+        msg_off = Request.End(builder)
         builder.Finish(msg_off)
         self._send_flatbuffer(builder)
 
     def send_show_plugin_gui(self, track_idx: int, plugin_idx: int) -> None:
         builder = flatbuffers.Builder(1024)
-        
+
         ShowPluginGui.Start(builder)
         ShowPluginGui.AddTrackIndex(builder, track_idx)
         ShowPluginGui.AddPluginIndex(builder, plugin_idx)
         cmd_off = ShowPluginGui.End(builder)
-        
-        Message.Start(builder)
-        Message.AddCommandType(builder, Command.Command.ShowPluginGui)
-        Message.AddCommand(builder, cmd_off)
-        msg_off = Message.End(builder)
+
+        Request.Start(builder)
+        Request.AddCommandType(builder, Command.Command.ShowPluginGui)
+        Request.AddCommand(builder, cmd_off)
+        msg_off = Request.End(builder)
         builder.Finish(msg_off)
         self._send_flatbuffer(builder)
 
     def send_load_clip(self, track_idx: int, slot_idx: int, path: str) -> None:
         builder = flatbuffers.Builder(1024)
         path_off = builder.CreateString(path)
-        
+
         LoadClip.Start(builder)
         LoadClip.AddTrackIndex(builder, track_idx)
         LoadClip.AddSlotIndex(builder, slot_idx)
         LoadClip.AddPath(builder, path_off)
         clip_off = LoadClip.End(builder)
-        
-        Message.Start(builder)
-        Message.AddCommandType(builder, Command.Command.LoadClip)
-        Message.AddCommand(builder, clip_off)
-        msg_off = Message.End(builder)
+
+        Request.Start(builder)
+        Request.AddCommandType(builder, Command.Command.LoadClip)
+        Request.AddCommand(builder, clip_off)
+        msg_off = Request.End(builder)
         builder.Finish(msg_off)
         self._send_flatbuffer(builder)
+
+        # Track for session saving
+        if track_idx not in self.track_clips:
+            self.track_clips[track_idx] = {}
+        self.track_clips[track_idx][slot_idx] = path
+
+    def send_remove_plugin(self, track_idx: int, plugin_idx: int) -> None:
+        builder = flatbuffers.Builder(1024)
+
+        RemovePlugin.Start(builder)
+        RemovePlugin.AddTrackIndex(builder, track_idx)
+        RemovePlugin.AddPluginIndex(builder, plugin_idx)
+        cmd_off = RemovePlugin.End(builder)
+
+        Request.Start(builder)
+        Request.AddCommandType(builder, Command.Command.RemovePlugin)
+        Request.AddCommand(builder, cmd_off)
+        msg_off = Request.End(builder)
+        builder.Finish(msg_off)
+        self._send_flatbuffer(builder)
+
+    def on_remove_plugin(self, track_idx: int, plugin_idx: int) -> None:
+        self.send_remove_plugin(track_idx, plugin_idx)
+
+        # Update local state
+        if track_idx in self.track_plugins:
+            plugins = self.track_plugins[track_idx]
+            if 0 <= plugin_idx < len(plugins):
+                plugins.pop(plugin_idx)
+                self.status_label.config(text=f"Removed plugin {plugin_idx} from track {track_idx}")
+                self.refresh_detail_view()
 
     def send_play(self) -> None:
         builder = flatbuffers.Builder(128)
         Play.Start(builder)
         play_off = Play.End(builder)
-        
-        Message.Start(builder)
-        Message.AddCommandType(builder, Command.Command.Play)
-        Message.AddCommand(builder, play_off)
-        msg_off = Message.End(builder)
+
+        Request.Start(builder)
+        Request.AddCommandType(builder, Command.Command.Play)
+        Request.AddCommand(builder, play_off)
+        msg_off = Request.End(builder)
         builder.Finish(msg_off)
         self._send_flatbuffer(builder)
 
@@ -223,11 +260,11 @@ class Gui(tk.Tk):
         builder = flatbuffers.Builder(128)
         Stop.Start(builder)
         stop_off = Stop.End(builder)
-        
-        Message.Start(builder)
-        Message.AddCommandType(builder, Command.Command.Stop)
-        Message.AddCommand(builder, stop_off)
-        msg_off = Message.End(builder)
+
+        Request.Start(builder)
+        Request.AddCommandType(builder, Command.Command.Stop)
+        Request.AddCommand(builder, stop_off)
+        msg_off = Request.End(builder)
         builder.Finish(msg_off)
         self._send_flatbuffer(builder)
 
@@ -237,11 +274,11 @@ class Gui(tk.Tk):
         PlayClip.AddTrackIndex(builder, track_idx)
         PlayClip.AddSlotIndex(builder, slot_idx)
         pc_off = PlayClip.End(builder)
-        
-        Message.Start(builder)
-        Message.AddCommandType(builder, Command.Command.PlayClip)
-        Message.AddCommand(builder, pc_off)
-        msg_off = Message.End(builder)
+
+        Request.Start(builder)
+        Request.AddCommandType(builder, Command.Command.PlayClip)
+        Request.AddCommand(builder, pc_off)
+        msg_off = Request.End(builder)
         builder.Finish(msg_off)
         self._send_flatbuffer(builder)
 
@@ -250,11 +287,11 @@ class Gui(tk.Tk):
         StopTrack.Start(builder)
         StopTrack.AddTrackIndex(builder, track_idx)
         st_off = StopTrack.End(builder)
-        
-        Message.Start(builder)
-        Message.AddCommandType(builder, Command.Command.StopTrack)
-        Message.AddCommand(builder, st_off)
-        msg_off = Message.End(builder)
+
+        Request.Start(builder)
+        Request.AddCommandType(builder, Command.Command.StopTrack)
+        Request.AddCommand(builder, st_off)
+        msg_off = Request.End(builder)
         builder.Finish(msg_off)
         self._send_flatbuffer(builder)
 
@@ -262,11 +299,11 @@ class Gui(tk.Tk):
         builder = flatbuffers.Builder(128)
         Quit.Start(builder)
         quit_off = Quit.End(builder)
-        
-        Message.Start(builder)
-        Message.AddCommandType(builder, Command.Command.Quit)
-        Message.AddCommand(builder, quit_off)
-        msg_off = Message.End(builder)
+
+        Request.Start(builder)
+        Request.AddCommandType(builder, Command.Command.Quit)
+        Request.AddCommand(builder, quit_off)
+        msg_off = Request.End(builder)
         builder.Finish(msg_off)
         self._send_flatbuffer(builder)
 
@@ -337,6 +374,10 @@ class Gui(tk.Tk):
         self.stop_btn = tk.Button(playback_frame, text="■", bg=self.colors["bg_light"], width=3, command=self.send_stop)
         self.stop_btn.pack(side=tk.LEFT, padx=1)
         self.add_hover_hint(self.stop_btn, "Stop: Stop playback. Click again to return to start.")
+
+        save_btn = tk.Button(playback_frame, text="SAVE", bg=self.colors["bg_light"], font=("Arial", 8, "bold"), command=self.save_session)
+        save_btn.pack(side=tk.LEFT, padx=10)
+        self.add_hover_hint(save_btn, "Save Session: Click to save the current track/plugin configuration.")
 
         rec_btn = tk.Button(playback_frame, text="●", bg=self.colors["bg_light"], activebackground=self.colors["btn_arm"], width=3)
         rec_btn.pack(side=tk.LEFT, padx=1)
@@ -620,7 +661,7 @@ class Gui(tk.Tk):
 
         self.devices_container = tk.Frame(parent, bg=self.colors["bg_light"])
         self.devices_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
+
         self.refresh_detail_view()
 
     def refresh_detail_view(self) -> None:
@@ -632,7 +673,7 @@ class Gui(tk.Tk):
 
         plugins = self.track_plugins.get(self.selected_track, [])
         if not plugins:
-            empty_label = tk.Label(self.devices_container, text="No plugins loaded on this track. Double-click a VST in the browser to add one.", 
+            empty_label = tk.Label(self.devices_container, text="No plugins loaded on this track. Double-click a VST in the browser to add one.",
                                   bg=self.colors["bg_light"], fg=self.colors["text_dark"])
             empty_label.pack(pady=20)
             return
@@ -650,11 +691,18 @@ class Gui(tk.Tk):
         on_off = tk.Button(header, text="O", bg=self.colors["btn_active"], font=("Arial", 6), width=2)
         on_off.pack(side=tk.LEFT, padx=2)
 
-        title = tk.Button(header, text=name, bg=self.colors["bg_dark"], fg=self.colors["text_light"], 
+        title = tk.Button(header, text=name, bg=self.colors["bg_dark"], fg=self.colors["text_light"],
                           font=("Arial", 9, "bold"), relief=tk.FLAT,
                           command=lambda: self.send_show_plugin_gui(self.selected_track, plugin_idx))
         title.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.add_hover_hint(title, f"{name}: Click to open the custom plugin GUI.")
+
+        remove_btn = tk.Button(header, text="×", bg=self.colors["bg_dark"], fg="#ff4444",
+                               activeforeground="#ff8888", activebackground=self.colors["bg_dark"],
+                               bd=0, font=("Arial", 10, "bold"),
+                               command=lambda: self.on_remove_plugin(self.selected_track, plugin_idx))
+        remove_btn.pack(side=tk.RIGHT, padx=2)
+        self.add_hover_hint(remove_btn, "Remove Plugin: Click to delete this effect from the chain.")
 
         params_container = tk.Frame(device_frame, bg=self.colors["bg_mid"])
         params_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -668,21 +716,109 @@ class Gui(tk.Tk):
             p_frame.pack(side=tk.LEFT, padx=5)
 
             # Use a slightly larger scale for easier control
-            scale = tk.Scale(p_frame, from_=1.0, to=0.0, resolution=0.01, orient=tk.VERTICAL, 
+            scale = tk.Scale(p_frame, from_=1.0, to=0.0, resolution=0.01, orient=tk.VERTICAL,
                              showvalue=False, length=80, sliderlength=15, bg=self.colors["bg_mid"])
             scale.set(0.5) # Default middle
             scale.pack()
-            
+
             def make_cmd(p_idx=plugin_idx, p_id=i):
                 return lambda val: self.send_set_param_value(self.selected_track, p_idx, p_id, float(val))
-            
+
             scale.config(command=make_cmd())
-            
+
             tk.Label(p_frame, text=f"Macro {i+1}", bg=self.colors["bg_mid"], font=("Arial", 7)).pack()
 
-    def create_device(self, parent: tk.Frame, name: str, parameters: List[str]) -> None:
-        # Keep old method for now or delete if unused
-        pass
+    def save_session(self, filename: str = "last_session.hbk") -> None:
+        builder = flatbuffers.Builder(4096)
+
+        track_offs = []
+        for tidx, plugins in self.track_plugins.items():
+            plugin_offs = []
+            for p in plugins:
+                path_off = builder.CreateString(p["path"])
+                Plugin.Plugin.Start(builder)
+                Plugin.Plugin.AddPath(builder, path_off)
+                Plugin.Plugin.AddIndex(builder, p.get("index", 0))
+                plugin_offs.append(Plugin.Plugin.End(builder))
+
+            Track.Track.StartPluginsVector(builder, len(plugin_offs))
+            for po in reversed(plugin_offs):
+                builder.PrependUOffsetTRelative(po)
+            plugins_vec = builder.EndVector()
+
+            clip_offs = []
+            if tidx in self.track_clips:
+                for sidx, cpath in self.track_clips[tidx].items():
+                    cpath_off = builder.CreateString(cpath)
+                    Clip.Clip.Start(builder)
+                    Clip.Clip.AddSlotIndex(builder, sidx)
+                    Clip.Clip.AddPath(builder, cpath_off)
+                    clip_offs.append(Clip.Clip.End(builder))
+
+            Track.Track.StartClipsVector(builder, len(clip_offs))
+            for co in reversed(clip_offs):
+                builder.PrependUOffsetTRelative(co)
+            clips_vec = builder.EndVector()
+
+            Track.Track.Start(builder)
+            Track.Track.AddIndex(builder, tidx)
+            Track.Track.AddPlugins(builder, plugins_vec)
+            Track.Track.AddClips(builder, clips_vec)
+            track_offs.append(Track.Track.End(builder))
+
+        Project.Project.StartTracksVector(builder, len(track_offs))
+        for to in reversed(track_offs):
+            builder.PrependUOffsetTRelative(to)
+        tracks_vec = builder.EndVector()
+
+        Project.Project.Start(builder)
+        Project.Project.AddTracks(builder, tracks_vec)
+        proj_off = Project.Project.End(builder)
+
+        builder.Finish(proj_off)
+
+        with open(filename, "wb") as f:
+            f.write(builder.Output())
+        self.status_label.config(text=f"Session saved to {filename}")
+
+    def load_session(self, filename: str = "last_session.hbk") -> None:
+        if not os.path.exists(filename):
+            print(f"No session file found at {filename}")
+            return
+
+        with open(filename, "rb") as f:
+            buf = f.read()
+            proj = Project.Project.GetRootAsProject(buf, 0)
+
+        self.status_label.config(text=f"Restoring session from {filename}...")
+
+        # Clear current state
+        self.track_plugins = {}
+        self.track_clips = {}
+
+        for i in range(proj.TracksLength()):
+            t = proj.Tracks(i)
+            if not t: continue
+            tidx = t.Index()
+
+            # Load plugins (reset them first in backend if possible, but for now we just append)
+            for j in range(t.PluginsLength()):
+                p = t.Plugins(j)
+                if not p: continue
+                path = p.Path().decode("utf-8")
+                idx = p.Index()
+                self.send_load_plugin(tidx, path, idx)
+
+            # Load clips
+            for j in range(t.ClipsLength()):
+                c = t.Clips(j)
+                if not c: continue
+                sidx = c.SlotIndex()
+                path = c.Path().decode("utf-8")
+                self.send_load_clip(tidx, sidx, path)
+
+        self.refresh_detail_view()
+        self.status_label.config(text=f"Session restored from {filename}")
 
 if __name__ == "__main__":
     app = Gui()

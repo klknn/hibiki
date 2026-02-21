@@ -1,0 +1,23 @@
+namespace hibiki.ipc;
+
+table ParamInfo {
+    id: uint;
+    name: string;
+    default_value: float;
+}
+
+table ParamList {
+    track_index: int;
+    plugin_index: int;
+    params: [ParamInfo];
+}
+
+union Response {
+    ParamList
+}
+
+table Notification {
+    response: Response;
+}
+
+root_type Notification;

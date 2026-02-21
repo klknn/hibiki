@@ -1,0 +1,30 @@
+namespace hibiki.project;
+
+table Parameter {
+    id: uint;
+    value: float;
+}
+
+table Plugin {
+    path: string;
+    index: int;
+    parameters: [Parameter];
+}
+
+table Clip {
+    slot_index: int;
+    path: string;
+}
+
+table Track {
+    index: int;
+    plugins: [Plugin];
+    clips: [Clip];
+}
+
+table Project {
+    bpm: float = 120.0;
+    tracks: [Track];
+}
+
+root_type Project;

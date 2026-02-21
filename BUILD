@@ -38,19 +38,24 @@ cc_binary(
         ":alsa_out",
         ":vst3_host",
         ":vst3_host_x11",
-        ":hibiki_ipc_cc",
+        ":hibiki_request_cc",
         "@midifile//:midifile",
     ],
 )
 
 flatbuffer_cc_library(
-    name = "hibiki_ipc_cc",
-    srcs = ["hibiki_ipc.fbs"],
+    name = "hibiki_request_cc",
+    srcs = ["hibiki_request.fbs"],
+)
+
+flatbuffer_cc_library(
+    name = "hibiki_response_cc",
+    srcs = ["hibiki_response.fbs"],
 )
 
 flatbuffer_library_public(
-    name = "hibiki_ipc_py_gen",
-    srcs = ["hibiki_ipc.fbs"],
+    name = "hibiki_request_py_gen",
+    srcs = ["hibiki_request.fbs"],
     outs = [
         "hibiki/ipc/__init__.py",
         "hibiki/ipc/Command.py",
@@ -62,17 +67,50 @@ flatbuffer_library_public(
         "hibiki/ipc/StopTrack.py",
         "hibiki/ipc/ShowPluginGui.py",
         "hibiki/ipc/SetParamValue.py",
+        "hibiki/ipc/RemovePlugin.py",
         "hibiki/ipc/Quit.py",
-        "hibiki/ipc/Message.py",
+        "hibiki/ipc/Request.py",
+    ],
+    language_flag = "--python",
+)
+
+flatbuffer_library_public(
+    name = "hibiki_response_py_gen",
+    srcs = ["hibiki_response.fbs"],
+    outs = [
+        "hibiki/ipc/ParamInfo.py",
+        "hibiki/ipc/ParamList.py",
+        "hibiki/ipc/Response.py",
+        "hibiki/ipc/Notification.py",
     ],
     language_flag = "--python",
 )
 
 py_library(
-    name = "hibiki_ipc_py",
-    srcs = [":hibiki_ipc_py_gen"],
+    name = "hibiki_request_py",
+    srcs = [":hibiki_request_py_gen", ":hibiki_response_py_gen"],
     deps = ["@pip//flatbuffers:pkg"],
     visibility = ["//visibility:public"],
+)
+
+flatbuffer_library_public(
+    name = "hibiki_project_py_gen",
+    srcs = ["hibiki_project.fbs"],
+    outs = [
+        "hibiki/project/__init__.py",
+        "hibiki/project/Parameter.py",
+        "hibiki/project/Plugin.py",
+        "hibiki/project/Clip.py",
+        "hibiki/project/Track.py",
+        "hibiki/project/Project.py",
+    ],
+    language_flag = "--python",
+)
+
+py_library(
+    name = "hibiki_project_py",
+    srcs = [":hibiki_project_py_gen"],
+    deps = ["@pip//flatbuffers:pkg"],
 )
 
 py_binary(
@@ -80,7 +118,8 @@ py_binary(
     srcs = ["gui.py"],
     main = "gui.py",
     deps = [
-        ":hibiki_ipc_py",
+        ":hibiki_request_py",
+        ":hibiki_project_py",
         "@bazel_tools//tools/python/runfiles",
     ],
     data = [

@@ -37,6 +37,11 @@ table SetParamValue {
     value: float;
 }
 
+table RemovePlugin {
+    track_index: int;
+    plugin_index: int;
+}
+
 table Quit {}
 
 union Command {
@@ -48,11 +53,12 @@ union Command {
     StopTrack,
     ShowPluginGui,
     SetParamValue,
+    RemovePlugin,
     Quit
 }
 
-table Message {
+table Request {
     command: Command;
 }
 
-root_type Message;
+root_type Request;

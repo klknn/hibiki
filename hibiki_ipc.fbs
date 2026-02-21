@@ -1,0 +1,49 @@
+namespace hibiki.ipc;
+
+table LoadInstrument {
+    track_index: int;
+    path: string;
+    plugin_index: int = 0;
+}
+
+table LoadClip {
+    track_index: int;
+    slot_index: int;
+    path: string;
+}
+
+table Play {}
+
+table Stop {}
+
+table PlayClip {
+    track_index: int;
+    slot_index: int;
+}
+
+table StopTrack {
+    track_index: int;
+}
+
+table ShowGui {
+    track_index: int;
+}
+
+table Quit {}
+
+union Command {
+    LoadInstrument,
+    LoadClip,
+    Play,
+    Stop,
+    PlayClip,
+    StopTrack,
+    ShowGui,
+    Quit
+}
+
+table Message {
+    command: Command;
+}
+
+root_type Message;

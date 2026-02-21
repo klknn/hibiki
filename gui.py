@@ -1,15 +1,26 @@
-from __future__ import annotations
+import tkinter as tk
+from tkinter import ttk
+import ctypes
+
+# Fix for X11 threading issues
+try:
+    libx11 = ctypes.CDLL('libX11.so.6')
+    libx11.XInitThreads()
+    # On some systems, synchronization helps avoid xcb sequence number issues
+    # libx11.XSynchronize(None, True) 
+except Exception:
+    pass
 
 import atexit
 import os
 import signal
 import subprocess
-import tkinter as tk
-from tkinter import ttk
+import queue
+import struct
 from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from threading import Thread
+import flatbuffers
+from hibiki.ipc import Message, Command, LoadInstrument, LoadClip, Play, Stop, PlayClip, StopTrack, ShowGui, Quit
 
 class Gui(tk.Tk):
     def __init__(self) -> None:
@@ -58,10 +69,14 @@ class Gui(tk.Tk):
 
         self.create_layout()
         
+        self.msg_queue: queue.Queue[str] = queue.Queue()
+        self.after(100, self.poll_queue)
+        
         # Backend process management
-        self.backend: Optional[subprocess.Popen[str]] = None
-        self.stderr_thread: Optional[Thread] = None
-        self.start_backend()
+        self.backend: Optional[subprocess.Popen[bytes]] = None
+        
+        # Defer backend start to ensure X11 is ready
+        self.after(500, self.start_backend)
         atexit.register(self.stop_backend_process)
 
 
@@ -90,60 +105,146 @@ class Gui(tk.Tk):
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1
+                text=False,
+                bufsize=0,
+                start_new_session=True
             )
             self.status_label.config(text="Backend started in multi-track mode.")
             
-            # Start thread to monitor stderr
-            from threading import Thread
-            self.stderr_thread = Thread(target=self.monitor_backend_stderr, daemon=True)
-            self.stderr_thread.start()
+            if self.backend.stderr:
+                # Set stderr to non-blocking
+                import fcntl
+                fd = self.backend.stderr.fileno()
+                fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+                fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+                
+            # Start non-blocking monitoring
+            self.after(100, self.monitor_backend_stderr)
 
         except Exception as e:
             self.status_label.config(text=f"Failed to start backend: {e}")
 
 
     def monitor_backend_stderr(self) -> None:
-        while self.backend and self.backend.poll() is None:
-            if self.backend.stderr:
-                line: str = self.backend.stderr.readline()
-                if line:
-                    print(f"BACKEND ERROR: {line.strip()}")
-                    def update_status(l: str = line) -> None:
-                        self.status_label.config(text=f"Error: {l.strip()}")
-                    self.after(0, update_status)
-                else:
-                    break
-            else:
-                break
-
-    def send_command(self, cmd: str) -> None:
-        if self.backend and self.backend.poll() is None:
+        if self.backend and self.backend.stderr:
             try:
-                if self.backend.stdin:
-                    self.backend.stdin.write(f"{cmd}\n")
-                    self.backend.stdin.flush()
-                # We could read ACK here if we wanted to be more robust
-            except Exception as e:
-                self.status_label.config(text=f"Command error: {e}")
-        else:
-            print("Backend not running.")
-            try:
-                if self.status_label.winfo_exists():
-                    self.status_label.config(text="Backend not running.")
-            except:
+                while True:
+                    line_bytes = self.backend.stderr.readline()
+                    if not line_bytes:
+                        break
+                    line = line_bytes.decode('utf-8', errors='replace').strip()
+                    if line:
+                        print(f"BACKEND: {line}")
+                        self.msg_queue.put(line)
+            except BlockingIOError:
                 pass
+            except Exception as e:
+                print(f"Monitoring error: {e}")
+            
+        if self.backend and self.backend.poll() is None:
+            self.after(100, self.monitor_backend_stderr)
 
+    def poll_queue(self) -> None:
+        try:
+            while True:
+                msg = self.msg_queue.get_nowait()
+                if "ACK" in msg:
+                    self.status_label.config(text=msg)
+                elif "ERR" in msg:
+                    self.status_label.config(text=f"Error: {msg}")
+        except queue.Empty:
+            pass
+        self.after(100, self.poll_queue)
+
+    def send_to_backend(self, command_type: int, command_offset: int, builder: flatbuffers.Builder) -> None:
+        Message.MessageStart(builder)
+        Message.MessageAddCommandType(builder, command_type)
+        Message.MessageAddCommand(builder, command_offset)
+        msg_offset = Message.MessageEnd(builder)
+        builder.Finish(msg_offset)
+        
+        buf = builder.Output()
+        if self.backend and self.backend.stdin:
+            try:
+                # Length-prefixed binary message
+                self.backend.stdin.write(struct.pack("\u003cI", len(buf)))
+                self.backend.stdin.write(buf)
+                self.backend.stdin.flush()
+            except Exception as e:
+                self.status_label.config(text=f"Send error: {e}")
+
+    def send_command_quit(self) -> None:
+        builder = flatbuffers.Builder(64)
+        Quit.QuitStart(builder)
+        cmd = Quit.QuitEnd(builder)
+        self.send_to_backend(Command.Command.Quit, cmd, builder)
+
+    def send_command_play(self) -> None:
+        builder = flatbuffers.Builder(64)
+        Play.PlayStart(builder)
+        cmd = Play.PlayEnd(builder)
+        self.send_to_backend(Command.Command.Play, cmd, builder)
+
+    def send_command_stop(self) -> None:
+        builder = flatbuffers.Builder(64)
+        Stop.StopStart(builder)
+        cmd = Stop.StopEnd(builder)
+        self.send_to_backend(Command.Command.Stop, cmd, builder)
+
+    def send_command_load_instrument(self, track_idx: int, path: str, plugin_idx: int) -> None:
+        builder = flatbuffers.Builder(128)
+        path_offset = builder.CreateString(path)
+        LoadInstrument.LoadInstrumentStart(builder)
+        LoadInstrument.LoadInstrumentAddTrackIdx(builder, track_idx)
+        LoadInstrument.LoadInstrumentAddPath(builder, path_offset)
+        LoadInstrument.LoadInstrumentAddPluginIdx(builder, plugin_idx)
+        cmd = LoadInstrument.LoadInstrumentEnd(builder)
+        self.send_to_backend(Command.Command.LoadInstrument, cmd, builder)
+
+    def send_command_load_clip(self, track_idx: int, slot_idx: int, path: str) -> None:
+        builder = flatbuffers.Builder(128)
+        path_offset = builder.CreateString(path)
+        LoadClip.LoadClipStart(builder)
+        LoadClip.LoadClipAddTrackIdx(builder, track_idx)
+        LoadClip.LoadClipAddSlotIdx(builder, slot_idx)
+        LoadClip.LoadClipAddPath(builder, path_offset)
+        cmd = LoadClip.LoadClipEnd(builder)
+        self.send_to_backend(Command.Command.LoadClip, cmd, builder)
+
+    def send_command_play_clip(self, track_idx: int, slot_idx: int) -> None:
+        builder = flatbuffers.Builder(64)
+        PlayClip.PlayClipStart(builder)
+        PlayClip.PlayClipAddTrackIdx(builder, track_idx)
+        PlayClip.PlayClipAddSlotIdx(builder, slot_idx)
+        cmd = PlayClip.PlayClipEnd(builder)
+        self.send_to_backend(Command.Command.PlayClip, cmd, builder)
+
+    def send_command_stop_track(self, track_idx: int) -> None:
+        builder = flatbuffers.Builder(64)
+        StopTrack.StopTrackStart(builder)
+        StopTrack.StopTrackAddTrackIdx(builder, track_idx)
+        cmd = StopTrack.StopTrackEnd(builder)
+        self.send_to_backend(Command.Command.StopTrack, cmd, builder)
+
+    def send_command_show_gui(self, track_idx: int) -> None:
+        builder = flatbuffers.Builder(64)
+        ShowGui.ShowGuiStart(builder)
+        ShowGui.ShowGuiAddTrackIdx(builder, track_idx)
+        cmd = ShowGui.ShowGuiEnd(builder)
+        self.send_to_backend(Command.Command.ShowGui, cmd, builder)
 
     def stop_backend_process(self) -> None:
         if self.backend:
-            self.send_command("QUIT")
+            self.send_command_quit()
             try:
                 self.backend.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 self.backend.kill()
             self.backend = None
+
+    def on_closing(self) -> None:
+        self.stop_backend_process()
+        self.destroy()
 
     def create_layout(self) -> None:
         # 1. Top Bar (Control Bar)
@@ -195,12 +296,12 @@ class Gui(tk.Tk):
         playback_frame = tk.Frame(top_frame, bg=self.colors["bg_dark"])
         playback_frame.pack(side=tk.LEFT, padx=20, pady=5)
         
-        self.play_btn = tk.Button(playback_frame, text="▶", bg=self.colors["bg_light"], activebackground=self.colors["btn_play"], width=3, command=lambda: self.send_command("PLAY"))
-        self.play_btn.pack(side=tk.LEFT, padx=1)
+        self.play_btn = tk.Button(playback_frame, text="▶", bg=self.colors["bg_light"], activebackground=self.colors["btn_play"], width=3, command=self.send_command_play)
+        self.play_btn.pack(side=tk.LEFT, padx=2)
         self.add_hover_hint(self.play_btn, "Play: Start playback from the current marker.")
         
-        self.stop_btn = tk.Button(playback_frame, text="■", bg=self.colors["bg_light"], width=3, command=lambda: self.send_command("STOP"))
-        self.stop_btn.pack(side=tk.LEFT, padx=1)
+        self.stop_btn = tk.Button(playback_frame, text="■", bg=self.colors["bg_light"], width=3, command=self.send_command_stop)
+        self.stop_btn.pack(side=tk.LEFT, padx=2)
         self.add_hover_hint(self.stop_btn, "Stop: Stop playback. Click again to return to start.")
         
         rec_btn = tk.Button(playback_frame, text="●", bg=self.colors["bg_light"], activebackground=self.colors["btn_arm"], width=3)
@@ -330,7 +431,7 @@ class Gui(tk.Tk):
         except:
             return []
 
-    def on_browser_double_click(self, event: tk.Event[ttk.Treeview]) -> None:
+    def on_browser_double_click(self, event: tk.Event) -> None:
         selection = self.browser_tree.selection()
         if not selection: return
         item: str = selection[0]

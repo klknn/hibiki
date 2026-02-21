@@ -14,6 +14,7 @@
 #include "alsa_out.hpp"
 #include "vst3_host.hpp"
 
+#include "hibiki_ipc_generated.h"
 
 struct Clip {
     std::unique_ptr<smf::MidiFile> midi;

@@ -13,7 +13,7 @@ AlsaPlayback::AlsaPlayback(int rate, int ch) : sample_rate(rate), channels(ch) {
     snd_pcm_info_t* info;
     snd_pcm_info_alloca(&info);
     if (snd_pcm_info(pcm_handle, info) == 0) {
-        std::cout << "ALSA Audio Device: " << snd_pcm_info_get_id(info) 
+        std::cerr << "ALSA Audio Device: " << snd_pcm_info_get_id(info) 
                   << " (" << snd_pcm_info_get_name(info) << ")\n" << std::flush;
     }
 

@@ -215,12 +215,12 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
         // Sync state
         Steinberg::MemoryStream stream;
         if (impl->component->getState(&stream) == Steinberg::kResultTrue) {
-            std::cout << "Vst3Plugin::load: Syncing state to controller..." << std::endl;
+            std::cerr << "Vst3Plugin::load: Syncing state to controller..." << std::endl;
             stream.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
             impl->controller->setComponentState(&stream);
         }
     } else {
-        std::cout << "Vst3Plugin::load: No controller available." << std::endl;
+        std::cerr << "Vst3Plugin::load: No controller available." << std::endl;
     }
 
     // Activate audio buses
@@ -256,7 +256,7 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
         return false;
     }
 
-    std::cout << "Plugin: " << info.name() << " - Audio Buses - In: " << numInBuses << ", Out: " << numOutBuses << "\n";
+    std::cerr << "Plugin: " << info.name() << " - Audio Buses - In: " << numInBuses << ", Out: " << numOutBuses << "\n";
 
     impl->processor->setProcessing(true);
 

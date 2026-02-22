@@ -9,11 +9,30 @@ table ParamInfo {
 table ParamList {
     track_index: int;
     plugin_index: int;
+    plugin_name: string;
     params: [ParamInfo];
 }
 
+table Log {
+    message: string;
+}
+
+table Acknowledge {
+    command_type: string;
+    success: bool;
+}
+
+table ClipInfo {
+    track_index: int;
+    slot_index: int;
+    name: string;
+}
+
 union Response {
-    ParamList
+    ParamList,
+    Log,
+    Acknowledge,
+    ClipInfo
 }
 
 table Notification {

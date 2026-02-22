@@ -5,6 +5,5 @@ cc_library(
     srcs = glob(["src/*.cpp"]),
     hdrs = glob(["include/*.h"]),
     includes = ["include"],
-    copts = ["-fexceptions", "-fno-asynchronous-unwind-tables", "-fno-unwind-tables"],
     visibility = ["//visibility:public"],
 )

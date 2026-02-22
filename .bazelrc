@@ -4,3 +4,4 @@ build --copt=-fno-exceptions
 build --cxxopt=-fno-asynchronous-unwind-tables
 build --cxxopt=-fno-unwind-tables
 build --cxxopt=-fno-exceptions
+build --cxxopt=-std=c++20

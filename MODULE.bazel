@@ -3,29 +3,32 @@ module(
     version = "0.1.0",
 )
 
-# DO NOT UPDATE THESE VERSIONS FOR X11.
 bazel_dep(name = "rules_cc", version = "0.2.14")
 bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_java", version = "9.0.3")
+bazel_dep(name = "rules_jvm_external", version = "6.7")
 
-# Non-module dependencies via http_archive
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
-    name = "midifile",
-    url = "https://github.com/craigsapp/midifile/archive/refs/heads/master.zip",
-    strip_prefix = "midifile-master",
-    build_file = "//third_party:midifile.BUILD",
-)
-
-http_archive(
     name = "flatbuffers",
-    url = "https://github.com/google/flatbuffers/archive/refs/tags/v25.12.19-2026-02-06-03fffb2.zip",
-    strip_prefix = "flatbuffers-25.12.19-2026-02-06-03fffb2",
-    # To remove rules_swift conflict.
-    patches = ["//third_party:flatbuffers.patch"],
+    url = "https://github.com/google/flatbuffers/archive/refs/tags/v25.1.24.zip",
+    strip_prefix = "flatbuffers-25.1.24",
 )
 
+maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
+maven.install(
+    artifacts = [
+        "com.google.flatbuffers:flatbuffers-java:25.1.24",
+        "com.formdev:flatlaf:3.5.4",
+        "junit:junit:4.13.2",
+    ],
+    repositories = [
+        "https://repo1.maven.org/maven2",
+    ],
+)
+use_repo(maven, "maven")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(python_version = "3.13")
@@ -36,7 +39,6 @@ pip.parse(
     python_version = "3.13",
     requirements_lock = "//:requirements.txt",
 )
-
 use_repo(pip, "pip")
 
 git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")

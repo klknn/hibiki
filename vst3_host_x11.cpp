@@ -48,7 +48,7 @@ void Vst3Plugin::showEditor() {
 
         int width = rect.right - rect.left;
         int height = rect.bottom - rect.top;
-        std::cout << "Plugin View Size: " << width << "x" << height << std::endl;
+        std::cerr << "Plugin View Size: " << width << "x" << height << std::endl;
 
         int screen = DefaultScreen(display);
         Window window = XCreateSimpleWindow(display, RootWindow(display, screen), 0, 0, width, height, 1,
@@ -65,7 +65,7 @@ void Vst3Plugin::showEditor() {
 
         XMapWindow(display, window);
         XFlush(display);
-        std::cout << "X11 Window created and mapped" << std::endl;
+        std::cerr << "X11 Window created and mapped" << std::endl;
 
 
         if (view->attached((void*)window, Steinberg::kPlatformTypeX11EmbedWindowID) != Steinberg::kResultTrue) {
@@ -75,7 +75,7 @@ void Vst3Plugin::showEditor() {
             impl->editorRunning = false;
             return;
         }
-        std::cout << "Plugin View attached successfully" << std::endl;
+        std::cerr << "Plugin View attached successfully" << std::endl;
 
         XEvent event;
         bool windowWasDestroyed = false;
@@ -83,14 +83,14 @@ void Vst3Plugin::showEditor() {
             while (impl->editorRunning && XPending(display)) {
                 XNextEvent(display, &event);
                 if (event.type == DestroyNotify && (event.xdestroywindow.window == window)) {
-                    std::cout << "X11 Window destroyed by WM" << std::endl;
+                    std::cerr << "X11 Window destroyed by WM" << std::endl;
                     windowWasDestroyed = true;
                     impl->editorRunning = false;
                     break;
                 }
                 if (event.type == ClientMessage) {
                     if ((Atom)event.xclient.data.l[0] == wmDeleteMessage) {
-                        std::cout << "X11 Close button clicked" << std::endl;
+                        std::cerr << "X11 Close button clicked" << std::endl;
                         impl->editorRunning = false;
                         break;
                     }
@@ -100,7 +100,7 @@ void Vst3Plugin::showEditor() {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
-        std::cout << "Cleaning up VST3 view..." << std::endl;
+        std::cerr << "Cleaning up VST3 view..." << std::endl;
         view->removed();
         
         if (!windowWasDestroyed) {

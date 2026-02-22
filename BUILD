@@ -1,5 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_test", "py_library")
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_test")
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library", "flatbuffer_library_public")
 
 cc_library(
@@ -33,14 +34,24 @@ cc_library(
 
 cc_binary(
     name = "hbk-play",
-    srcs = ["main.cpp"],
+    srcs = [
+        "main.cpp",
+        "midi.cpp",
+        "midi.hpp",
+    ],
     deps = [
         ":alsa_out",
         ":vst3_host",
         ":vst3_host_x11",
         ":hibiki_request_cc",
-        "@midifile//:midifile",
+        ":hibiki_response_cc",
     ],
+)
+
+cc_test(
+    name = "midi_test",
+    srcs = ["midi_test.cpp", "midi.hpp", "midi.cpp"],
+    data = ["//testdata"],
 )
 
 flatbuffer_cc_library(
@@ -54,87 +65,128 @@ flatbuffer_cc_library(
 )
 
 flatbuffer_library_public(
-    name = "hibiki_request_py_gen",
+    name = "hibiki_request_java_gen",
     srcs = ["hibiki_request.fbs"],
     outs = [
-        "hibiki/ipc/__init__.py",
-        "hibiki/ipc/Command.py",
-        "hibiki/ipc/LoadPlugin.py",
-        "hibiki/ipc/LoadClip.py",
-        "hibiki/ipc/Play.py",
-        "hibiki/ipc/Stop.py",
-        "hibiki/ipc/PlayClip.py",
-        "hibiki/ipc/StopTrack.py",
-        "hibiki/ipc/ShowPluginGui.py",
-        "hibiki/ipc/SetParamValue.py",
-        "hibiki/ipc/RemovePlugin.py",
-        "hibiki/ipc/Quit.py",
-        "hibiki/ipc/Request.py",
+        "hibiki/ipc/Command.java",
+        "hibiki/ipc/CommandUnion.java",
+        "hibiki/ipc/LoadClip.java",
+        "hibiki/ipc/LoadClipT.java",
+        "hibiki/ipc/LoadPlugin.java",
+        "hibiki/ipc/LoadPluginT.java",
+        "hibiki/ipc/Play.java",
+        "hibiki/ipc/PlayT.java",
+        "hibiki/ipc/PlayClip.java",
+        "hibiki/ipc/PlayClipT.java",
+        "hibiki/ipc/Quit.java",
+        "hibiki/ipc/QuitT.java",
+        "hibiki/ipc/RemovePlugin.java",
+        "hibiki/ipc/RemovePluginT.java",
+        "hibiki/ipc/Request.java",
+        "hibiki/ipc/RequestT.java",
+        "hibiki/ipc/SetParamValue.java",
+        "hibiki/ipc/SetParamValueT.java",
+        "hibiki/ipc/ShowPluginGui.java",
+        "hibiki/ipc/ShowPluginGuiT.java",
+        "hibiki/ipc/Stop.java",
+        "hibiki/ipc/StopT.java",
+        "hibiki/ipc/StopTrack.java",
+        "hibiki/ipc/StopTrackT.java",
     ],
-    language_flag = "--python",
+    language_flag = "--java --gen-object-api",
 )
 
 flatbuffer_library_public(
-    name = "hibiki_response_py_gen",
+    name = "hibiki_response_java_gen",
     srcs = ["hibiki_response.fbs"],
     outs = [
-        "hibiki/ipc/ParamInfo.py",
-        "hibiki/ipc/ParamList.py",
-        "hibiki/ipc/Response.py",
-        "hibiki/ipc/Notification.py",
+        "hibiki/ipc/Notification.java",
+        "hibiki/ipc/NotificationT.java",
+        "hibiki/ipc/ParamInfo.java",
+        "hibiki/ipc/ParamInfoT.java",
+        "hibiki/ipc/ParamList.java",
+        "hibiki/ipc/ParamListT.java",
+        "hibiki/ipc/Log.java",
+        "hibiki/ipc/LogT.java",
+        "hibiki/ipc/Acknowledge.java",
+        "hibiki/ipc/AcknowledgeT.java",
+        "hibiki/ipc/ClipInfo.java",
+        "hibiki/ipc/ClipInfoT.java",
+        "hibiki/ipc/Response.java",
+        "hibiki/ipc/ResponseUnion.java",
     ],
-    language_flag = "--python",
+    language_flag = "--java --gen-object-api",
 )
 
-py_library(
-    name = "hibiki_request_py",
-    srcs = [":hibiki_request_py_gen", ":hibiki_response_py_gen"],
-    deps = ["@pip//flatbuffers:pkg"],
+flatbuffer_library_public(
+    name = "hibiki_project_java_gen",
+    srcs = ["hibiki_project.fbs"],
+    outs = [
+        "hibiki/project/Clip.java",
+        "hibiki/project/ClipT.java",
+        "hibiki/project/Parameter.java",
+        "hibiki/project/ParameterT.java",
+        "hibiki/project/Plugin.java",
+        "hibiki/project/PluginT.java",
+        "hibiki/project/Project.java",
+        "hibiki/project/ProjectT.java",
+        "hibiki/project/Track.java",
+        "hibiki/project/TrackT.java",
+    ],
+    language_flag = "--java --gen-object-api",
+)
+
+java_library(
+    name = "hibiki_request_java_lib",
+    srcs = [":hibiki_request_java_gen"],
+    deps = ["@maven//:com_google_flatbuffers_flatbuffers_java"],
+)
+
+java_library(
+    name = "hibiki_response_java_lib",
+    srcs = [":hibiki_response_java_gen"],
+    deps = ["@maven//:com_google_flatbuffers_flatbuffers_java"],
+)
+
+java_library(
+    name = "hibiki_project_java_lib",
+    srcs = [":hibiki_project_java_gen"],
+    deps = ["@maven//:com_google_flatbuffers_flatbuffers_java"],
+)
+
+java_library(
+    name = "hibiki-gui-lib",
+    srcs = glob(["src/main/java/hibiki/**/*.java"]),
+    deps = [
+        ":hibiki_request_java_lib",
+        ":hibiki_response_java_lib",
+        ":hibiki_project_java_lib",
+        "@maven//:com_google_flatbuffers_flatbuffers_java",
+        "@maven//:com_formdev_flatlaf",
+    ],
     visibility = ["//visibility:public"],
 )
 
-flatbuffer_library_public(
-    name = "hibiki_project_py_gen",
-    srcs = ["hibiki_project.fbs"],
-    outs = [
-        "hibiki/project/__init__.py",
-        "hibiki/project/Parameter.py",
-        "hibiki/project/Plugin.py",
-        "hibiki/project/Clip.py",
-        "hibiki/project/Track.py",
-        "hibiki/project/Project.py",
-    ],
-    language_flag = "--python",
+java_binary(
+    name = "hibiki-gui-java",
+    main_class = "hibiki.GuiMain",
+    runtime_deps = [":hibiki-gui-lib"],
+    data = [":hbk-play", "//testdata"],
 )
 
-py_library(
-    name = "hibiki_project_py",
-    srcs = [":hibiki_project_py_gen"],
-    deps = ["@pip//flatbuffers:pkg"],
-)
-
-py_binary(
-    name = "gui",
-    srcs = ["gui.py"],
-    main = "gui.py",
+java_test(
+    name = "backend_manager_test",
+    srcs = ["src/test/java/hibiki/BackendManagerTest.java"],
+    test_class = "hibiki.BackendManagerTest",
     deps = [
-        ":hibiki_request_py",
-        ":hibiki_project_py",
-        "@bazel_tools//tools/python/runfiles",
+        ":hibiki-gui-lib",
+        ":hibiki_request_java_lib",
+        ":hibiki_response_java_lib",
+        "@maven//:junit_junit",
+        "@maven//:com_google_flatbuffers_flatbuffers_java",
     ],
     data = [
         ":hbk-play",
         "//testdata",
     ],
-)
-
-py_test(
-    name = "gui_type_check",
-    srcs = ["mypy_test.py"],
-    main = "mypy_test.py",
-    deps = [
-        ":gui", # This ensures gui.py is available
-        "@pip//mypy:pkg",
-    ],
-    data = ["gui.py"],
 )

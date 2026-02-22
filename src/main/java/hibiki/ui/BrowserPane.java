@@ -35,9 +35,18 @@ public class BrowserPane extends JPanel {
         root = new DefaultMutableTreeNode("Hibiki");
         treeModel = new DefaultTreeModel(root);
         tree = new JTree(treeModel);
-        tree.setBackground(new Color(160, 160, 160));
+        tree.setBackground(new Color(45, 45, 45));
+
+        // Custom renderer for visibility
+        DefaultTreeCellRenderer renderer = new DefaultTreeCellRenderer();
+        renderer.setBackgroundNonSelectionColor(new Color(45, 45, 45));
+        renderer.setTextNonSelectionColor(Color.LIGHT_GRAY);
+        renderer.setTextSelectionColor(Color.WHITE);
+        renderer.setBackgroundSelectionColor(new Color(100, 100, 100));
+        tree.setCellRenderer(renderer);
         
         JScrollPane scrollPane = new JScrollPane(tree);
+        scrollPane.getViewport().setBackground(new Color(45, 45, 45));
         scrollPane.setBorder(null);
         add(scrollPane, BorderLayout.CENTER);
 

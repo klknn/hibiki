@@ -159,6 +159,13 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
 
     auto& info = audioEffects[plugin_index];
     impl->name = info.name();
+    impl->isInstrument = false;
+    for (const auto& cat : info.subCategories()) {
+        if (cat == "Instrument") {
+            impl->isInstrument = true;
+            break;
+        }
+    }
     impl->component = factory.createInstance<Steinberg::Vst::IComponent>(info.ID());
     if (!impl->component) {
         std::cerr << "Failed to create IComponent for " << info.name() << std::endl;
@@ -377,4 +384,7 @@ double Vst3Plugin::getParameterValue(uint32_t id) const {
 }
 const std::string& Vst3Plugin::getName() const {
     return impl->name;
+}
+bool Vst3Plugin::isInstrument() const {
+    return impl->isInstrument;
 }

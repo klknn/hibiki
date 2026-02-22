@@ -47,6 +47,7 @@ public:
     void setParameterValue(uint32_t id, double valueNormalized);
     double getParameterValue(uint32_t id) const;
     const std::string& getName() const;
+    bool isInstrument() const;
 
     static void listPlugins(const std::string& path);
 

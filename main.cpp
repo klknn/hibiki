@@ -35,20 +35,42 @@ public:
 
     Track(int idx) : index(idx) {}
 
-    bool load_plugin(const std::string& path, int plugin_index) {
+    int load_plugin(const std::string& path, int plugin_index) {
         std::lock_guard<std::mutex> lock(mutex);
         auto plugin = std::make_unique<Vst3Plugin>();
         if (!plugin->load(path, plugin_index)) {
-            return false;
+            return -1;
         }
-        plugins.push_back(std::move(plugin));
+
+        int target_idx = -1;
+        if (plugin->isInstrument()) {
+            // Find existing instrument to replace
+            for (size_t i = 0; i < plugins.size(); ++i) {
+                if (plugins[i]->isInstrument()) {
+                    target_idx = (int)i;
+                    break;
+                }
+            }
+        }
+
+        if (target_idx != -1) {
+            plugins[target_idx] = std::move(plugin);
+        } else if (plugin->isInstrument()) {
+            // New instrument, insert at 0
+            plugins.insert(plugins.begin(), std::move(plugin));
+            target_idx = 0;
+        } else {
+            // Effect, append
+            target_idx = (int)plugins.size();
+            plugins.push_back(std::move(plugin));
+        }
 
         // If this is the first plugin, reset playback state
         if (plugins.size() == 1) {
             current_time_sec = 0.0;
             current_midi_idx = 0;
         }
-        return true;
+        return target_idx;
     }
 
 
@@ -234,7 +256,7 @@ void sendAck(const char* cmd_type, bool success) {
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
 }
 
-void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name, const std::vector<VstParamInfo>& params) {
+void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name, bool is_instrument, const std::vector<VstParamInfo>& params) {
     flatbuffers::FlatBufferBuilder builder(1024);
     std::vector<flatbuffers::Offset<hibiki::ipc::ParamInfo>> param_offsets;
     for (const auto& p : params) {
@@ -243,7 +265,7 @@ void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name
     }
     auto params_vec = builder.CreateVector(param_offsets);
     auto name_off = builder.CreateString(plugin_name);
-    auto list_off = hibiki::ipc::CreateParamList(builder, track_idx, plugin_idx, name_off, params_vec);
+    auto list_off = hibiki::ipc::CreateParamList(builder, track_idx, plugin_idx, name_off, is_instrument, params_vec);
     auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ParamList, list_off.Union());
     builder.Finish(nf_off);
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
@@ -307,16 +329,17 @@ int main(int argc, char** argv) {
             std::string vpath = cmd->path()->str();
             int pidx = cmd->plugin_index();
             auto track = state.get_or_create_track(tidx);
-            if (track->load_plugin(vpath, pidx)) {
+            int target_idx = track->load_plugin(vpath, pidx);
+            if (target_idx != -1) {
                 std::vector<VstParamInfo> params;
-                auto& plugin = track->plugins.back();
+                auto& plugin = track->plugins[target_idx];
                 for (int i = 0; i < plugin->getParameterCount(); ++i) {
                     VstParamInfo info;
                     if (plugin->getParameterInfo(i, info)) {
                         params.push_back(info);
                     }
                 }
-                sendParamList(tidx, (int)track->plugins.size() - 1, plugin->getName(), params);
+                sendParamList(tidx, target_idx, plugin->getName(), plugin->isInstrument(), params);
             } else {
                 sendLog("Failed to load plugin: " + vpath);
             }
@@ -364,6 +387,15 @@ int main(int argc, char** argv) {
                 sendAck("REMOVE_PLUGIN", true);
             } else {
                 sendAck("REMOVE_PLUGIN", false);
+            }
+        } else if (command_type == hibiki::ipc::Command_RemovePlugin) {
+            auto cmd = request->command_as_RemovePlugin();
+            int tidx = cmd->track_index();
+            int pidx = cmd->plugin_index();
+            auto track = state.get_or_create_track(tidx);
+            if (pidx >= 0 && pidx < (int)track->plugins.size()) {
+                track->plugins.erase(track->plugins.begin() + pidx);
+                std::cerr << "Removed plugin " << pidx << " from track " << tidx << std::endl;
             }
         } else if (command_type == hibiki::ipc::Command_ShowPluginGui) {
             auto cmd = request->command_as_ShowPluginGui();

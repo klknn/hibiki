@@ -2,6 +2,7 @@ package hibiki.ui;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.*;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
@@ -42,39 +43,75 @@ public class PluginPane extends JPanel {
 
             int pIdx = paramList.pluginIndex();
             DevicePanel panel = devicePanels.get(pIdx);
-            if (panel == null) {
-                panel = new DevicePanel(currentTrackIndex, pIdx, paramList.pluginName());
+            if (panel == null || !panel.pluginName.equals(paramList.pluginName())) {
+                panel = new DevicePanel(currentTrackIndex, pIdx, paramList.pluginName(), paramList.isInstrument());
                 devicePanels.put(pIdx, panel);
-                rebuildDeviceChain();
             }
             panel.setParams(paramList);
+            rebuildDeviceChain();
         });
     }
 
     private void rebuildDeviceChain() {
         deviceChainContent.removeAll();
-        for (DevicePanel panel : devicePanels.values()) {
-            deviceChainContent.add(panel);
+
+        List<DevicePanel> panels = new ArrayList<>(devicePanels.values());
+
+        // Find instrument
+        DevicePanel instrument = null;
+        List<DevicePanel> effects = new ArrayList<>();
+        for (DevicePanel p : panels) {
+            if (p.isInstrument) {
+                instrument = p;
+            } else {
+                effects.add(p);
+            }
         }
+
+        // Add instrument or placeholder
+        if (instrument != null) {
+            deviceChainContent.add(instrument);
+        } else {
+            deviceChainContent.add(createPlaceholder());
+        }
+
+        // Add effects in their original order
+        for (DevicePanel p : effects) {
+            deviceChainContent.add(p);
+        }
+
         deviceChainContent.revalidate();
         deviceChainContent.repaint();
     }
 
-    private static class DevicePanel extends JPanel {
+    private JPanel createPlaceholder() {
+        JPanel p = new JPanel(new GridBagLayout());
+        p.setPreferredSize(new Dimension(250, 220));
+        p.setBackground(new Color(40, 40, 40));
+        p.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+        JLabel l = new JLabel("Empty Instrument");
+        l.setForeground(new Color(100, 100, 100));
+        p.add(l);
+        return p;
+    }
+
+    private class DevicePanel extends JPanel {
         private final int trackIndex;
         private final int pluginIndex;
         private final String pluginName;
+        private final boolean isInstrument;
         private final JPanel paramListPanel;
         private final JTextField searchField;
         private final List<ParamPanel> allParams = new ArrayList<>();
 
-        DevicePanel(int trackIndex, int pluginIndex, String pluginName) {
+        DevicePanel(int trackIndex, int pluginIndex, String pluginName, boolean isInstrument) {
             this.trackIndex = trackIndex;
             this.pluginIndex = pluginIndex;
             this.pluginName = pluginName;
+            this.isInstrument = isInstrument;
 
             setLayout(new BorderLayout());
-            setPreferredSize(new Dimension(220, 220));
+            setPreferredSize(new Dimension(250, 220));
             setBackground(new Color(45, 45, 45));
             setBorder(BorderFactory.createLineBorder(Color.BLACK));
 
@@ -88,23 +125,60 @@ public class PluginPane extends JPanel {
             nameLabel.setFont(new Font("SansSerif", Font.BOLD, 12));
             header.add(nameLabel, BorderLayout.CENTER);
 
+            JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+            btnPanel.setOpaque(false);
+
             JButton editBtn = new JButton("Edit");
             editBtn.setMargin(new Insets(0, 5, 0, 5));
             editBtn.addActionListener(e -> sendShowGui());
-            header.add(editBtn, BorderLayout.EAST);
+            btnPanel.add(editBtn);
+
+            JButton delBtn = new JButton("❌");
+            delBtn.setMargin(new Insets(0, 2, 0, 2));
+            delBtn.addActionListener(e -> sendRemovePlugin());
+            btnPanel.add(delBtn);
+
+            header.add(btnPanel, BorderLayout.EAST);
             add(header, BorderLayout.NORTH);
 
             // Search and Params
             JPanel body = new JPanel(new BorderLayout());
             body.setBackground(new Color(35, 35, 35));
 
-            searchField = new JTextField();
+            searchField = new JTextField() {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    super.paintComponent(g);
+                    if (getText().isEmpty() && !isFocusOwner()) {
+                        Graphics2D g2 = (Graphics2D) g.create();
+                        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                        g2.setColor(new Color(120, 120, 120));
+                        g2.setFont(getFont().deriveFont(Font.ITALIC));
+                        int x = getInsets().left;
+                        int y = (getHeight() - g2.getFontMetrics().getHeight()) / 2 + g2.getFontMetrics().getAscent();
+                        g2.drawString("search...", x, y);
+                        g2.dispose();
+                    }
+                }
+            };
             searchField.setBackground(new Color(50, 50, 50));
             searchField.setForeground(Color.WHITE);
             searchField.setCaretColor(Color.WHITE);
             searchField.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createMatteBorder(0, 0, 1, 0, Color.BLACK),
                     BorderFactory.createEmptyBorder(2, 5, 2, 5)));
+            // Repaint when focus changes to show/hide placeholder
+            searchField.addFocusListener(new FocusAdapter() {
+                @Override
+                public void focusGained(FocusEvent e) {
+                    searchField.repaint();
+                }
+
+                @Override
+                public void focusLost(FocusEvent e) {
+                    searchField.repaint();
+                }
+            });
             searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
                 public void insertUpdate(javax.swing.event.DocumentEvent e) {
                     filterParams();
@@ -161,9 +235,21 @@ public class PluginPane extends JPanel {
             builder.finish(requestOffset);
             BackendManager.getInstance().sendRequest(builder);
         }
+
+        private void sendRemovePlugin() {
+            FlatBufferBuilder builder = new FlatBufferBuilder(128);
+            int removeOff = hibiki.ipc.RemovePlugin.createRemovePlugin(builder, trackIndex, pluginIndex);
+            int requestOffset = Request.createRequest(builder, Command.RemovePlugin, removeOff);
+            builder.finish(requestOffset);
+            BackendManager.getInstance().sendRequest(builder);
+
+            // Immediate local feedback
+            devicePanels.remove(pluginIndex);
+            rebuildDeviceChain();
+        }
     }
 
-    private static class ParamPanel extends JPanel {
+    private class ParamPanel extends JPanel {
         final String name;
 
         ParamPanel(int trackIndex, int pluginIndex, hibiki.ipc.ParamInfo info) {

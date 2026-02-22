@@ -16,14 +16,30 @@ public class SessionView extends JPanel {
     private JButton[][] slotButtons = new JButton[5][5]; // 4 tracks + master, 5 slots
 
     public SessionView() {
-        setLayout(new FlowLayout(FlowLayout.LEFT, 5, 5));
+        setLayout(new BorderLayout());
         setBackground(new Color(128, 128, 128));
 
-        for (int i = 1; i <= 4; i++) {
-            add(createTrackStrip("Track " + i, i));
+        JPanel master = createMasterStrip();
+
+        // Build a chain of split panes for tracks with proportional resizing
+        Component lastComponent = master;
+        for (int i = 4; i >= 1; i--) {
+            JPanel track = createTrackStrip("Track " + i, i);
+            JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, track, lastComponent);
+            split.setContinuousLayout(true);
+            split.setBorder(null);
+            split.setDividerLocation(110);
+
+            // To maintain track proportions (aspect ratio) when resizing the whole window,
+            // we prefer the right component (which eventually contains Master) to grow.
+            // However, the user said "fit to parent", so we share space.
+            // Using 0.0 for the track preserves its width unless manually dragged.
+            split.setResizeWeight(0.0);
+
+            lastComponent = split;
         }
-        
-        add(createMasterStrip());
+
+        add(lastComponent, BorderLayout.CENTER);
 
         // Listen for clip load notifications
         BackendManager.getInstance().addNotificationListener(notification -> {

@@ -10,6 +10,7 @@ table ParamList {
     track_index: int;
     plugin_index: int;
     plugin_name: string;
+    is_instrument: bool;
     params: [ParamInfo];
 }
 

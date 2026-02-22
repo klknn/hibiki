@@ -234,7 +234,7 @@ void sendAck(const char* cmd_type, bool success) {
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
 }
 
-void sendParamList(int track_idx, int plugin_idx, const std::vector<VstParamInfo>& params) {
+void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name, const std::vector<VstParamInfo>& params) {
     flatbuffers::FlatBufferBuilder builder(1024);
     std::vector<flatbuffers::Offset<hibiki::ipc::ParamInfo>> param_offsets;
     for (const auto& p : params) {
@@ -242,7 +242,8 @@ void sendParamList(int track_idx, int plugin_idx, const std::vector<VstParamInfo
         param_offsets.push_back(hibiki::ipc::CreateParamInfo(builder, p.id, name_off, p.defaultValue));
     }
     auto params_vec = builder.CreateVector(param_offsets);
-    auto list_off = hibiki::ipc::CreateParamList(builder, track_idx, plugin_idx, params_vec);
+    auto name_off = builder.CreateString(plugin_name);
+    auto list_off = hibiki::ipc::CreateParamList(builder, track_idx, plugin_idx, name_off, params_vec);
     auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ParamList, list_off.Union());
     builder.Finish(nf_off);
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
@@ -315,7 +316,7 @@ int main(int argc, char** argv) {
                         params.push_back(info);
                     }
                 }
-                sendParamList(tidx, (int)track->plugins.size() - 1, params);
+                sendParamList(tidx, (int)track->plugins.size() - 1, plugin->getName(), params);
             } else {
                 sendLog("Failed to load plugin: " + vpath);
             }

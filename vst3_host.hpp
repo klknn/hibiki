@@ -46,6 +46,7 @@ public:
     bool getParameterInfo(int index, VstParamInfo& info) const;
     void setParameterValue(uint32_t id, double valueNormalized);
     double getParameterValue(uint32_t id) const;
+    const std::string& getName() const;
 
     static void listPlugins(const std::string& path);
 

@@ -16,6 +16,7 @@ struct Vst3PluginImpl {
     Steinberg::IPtr<Steinberg::Vst::IEditController> controller;
     Steinberg::IPtr<Steinberg::Vst::IHostApplication> hostContext;
     
+    std::string name;
     std::thread editorThread;
     std::atomic<bool> editorRunning{false};
     std::atomic<uint64_t> editorWindow{0};

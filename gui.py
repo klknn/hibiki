@@ -736,12 +736,12 @@ class Gui(tk.Tk):
             plugin_offs = []
             for p in plugins:
                 path_off = builder.CreateString(p["path"])
-                Plugin.Plugin.Start(builder)
-                Plugin.Plugin.AddPath(builder, path_off)
-                Plugin.Plugin.AddIndex(builder, p.get("index", 0))
-                plugin_offs.append(Plugin.Plugin.End(builder))
+                Plugin.Start(builder)
+                Plugin.AddPath(builder, path_off)
+                Plugin.AddIndex(builder, p.get("index", 0))
+                plugin_offs.append(Plugin.End(builder))
 
-            Track.Track.StartPluginsVector(builder, len(plugin_offs))
+            Track.StartPluginsVector(builder, len(plugin_offs))
             for po in reversed(plugin_offs):
                 builder.PrependUOffsetTRelative(po)
             plugins_vec = builder.EndVector()
@@ -750,30 +750,30 @@ class Gui(tk.Tk):
             if tidx in self.track_clips:
                 for sidx, cpath in self.track_clips[tidx].items():
                     cpath_off = builder.CreateString(cpath)
-                    Clip.Clip.Start(builder)
-                    Clip.Clip.AddSlotIndex(builder, sidx)
-                    Clip.Clip.AddPath(builder, cpath_off)
-                    clip_offs.append(Clip.Clip.End(builder))
+                    Clip.Start(builder)
+                    Clip.AddSlotIndex(builder, sidx)
+                    Clip.AddPath(builder, cpath_off)
+                    clip_offs.append(Clip.End(builder))
 
-            Track.Track.StartClipsVector(builder, len(clip_offs))
+            Track.StartClipsVector(builder, len(clip_offs))
             for co in reversed(clip_offs):
                 builder.PrependUOffsetTRelative(co)
             clips_vec = builder.EndVector()
 
-            Track.Track.Start(builder)
-            Track.Track.AddIndex(builder, tidx)
-            Track.Track.AddPlugins(builder, plugins_vec)
-            Track.Track.AddClips(builder, clips_vec)
-            track_offs.append(Track.Track.End(builder))
+            Track.Start(builder)
+            Track.AddIndex(builder, tidx)
+            Track.AddPlugins(builder, plugins_vec)
+            Track.AddClips(builder, clips_vec)
+            track_offs.append(Track.End(builder))
 
-        Project.Project.StartTracksVector(builder, len(track_offs))
+        Project.StartTracksVector(builder, len(track_offs))
         for to in reversed(track_offs):
             builder.PrependUOffsetTRelative(to)
         tracks_vec = builder.EndVector()
 
-        Project.Project.Start(builder)
-        Project.Project.AddTracks(builder, tracks_vec)
-        proj_off = Project.Project.End(builder)
+        Project.Start(builder)
+        Project.AddTracks(builder, tracks_vec)
+        proj_off = Project.End(builder)
 
         builder.Finish(proj_off)
 
@@ -788,7 +788,7 @@ class Gui(tk.Tk):
 
         with open(filename, "rb") as f:
             buf = f.read()
-            proj = Project.Project.GetRootAsProject(buf, 0)
+            proj = Project.Project.GetRootAs(buf, 0)
 
         self.status_label.config(text=f"Restoring session from {filename}...")
 

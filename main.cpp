@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -16,9 +17,11 @@
 
 #include "hibiki_request_generated.h"
 #include "hibiki_response_generated.h"
+#include "hibiki_project_generated.h"
 
 struct Clip {
     std::vector<hbk::MidiEvent> events;
+    std::string path;
 };
 
 class Track {
@@ -82,6 +85,7 @@ public:
 
         auto clip = std::make_unique<Clip>();
         clip->events = std::move(events);
+        clip->path = path;
         clips[slot] = std::move(clip);
 
         // If we are currently playing this slot, reset playback
@@ -117,6 +121,7 @@ public:
 
 struct GlobalState {
     std::atomic<bool> quit{false};
+    double bpm = 120.0;
     std::map<int, std::unique_ptr<Track>> tracks;
     std::mutex tracks_mutex;
 
@@ -143,7 +148,7 @@ void playback_thread(GlobalState& state) {
 
     HostProcessContext context;
     context.sampleRate = sample_rate;
-    context.tempo = 120.0;
+    context.tempo = state.bpm;
     context.timeSigNumerator = 4;
     context.timeSigDenominator = 4;
 
@@ -289,6 +294,112 @@ void sendClipInfo(int track_idx, int slot_index, const std::string& name) {
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
 }
 
+void sendClearProject() {
+    flatbuffers::FlatBufferBuilder builder(128);
+    auto clear_off = hibiki::ipc::CreateClearProject(builder);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ClearProject, clear_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
+void save_project(GlobalState& state, const std::string& path) {
+    flatbuffers::FlatBufferBuilder builder(1024);
+    std::vector<flatbuffers::Offset<hibiki::project::Track>> track_offsets;
+
+    std::lock_guard<std::mutex> lock(state.tracks_mutex);
+    for (auto& pair : state.tracks) {
+        Track* track = pair.second.get();
+        std::lock_guard<std::mutex> tlock(track->mutex);
+
+        std::vector<flatbuffers::Offset<hibiki::project::Plugin>> plugin_offsets;
+        for (auto& plugin : track->plugins) {
+            std::vector<flatbuffers::Offset<hibiki::project::Parameter>> params;
+            for (int i = 0; i < plugin->getParameterCount(); i++) {
+                VstParamInfo info;
+                if (plugin->getParameterInfo(i, info)) {
+                    params.push_back(hibiki::project::CreateParameter(builder, info.id, (float)plugin->getParameterValue(info.id)));
+                }
+            }
+            auto params_vec = builder.CreateVector(params);
+            auto path_off = builder.CreateString(plugin->getPath());
+            auto p = hibiki::project::CreatePlugin(builder, path_off, plugin->getPluginIndex(), params_vec);
+            plugin_offsets.push_back(p);
+        }
+
+        std::vector<flatbuffers::Offset<hibiki::project::Clip>> clip_offsets;
+        for (auto const& [slot, clip] : track->clips) {
+            auto path_off = builder.CreateString(clip->path);
+            clip_offsets.push_back(hibiki::project::CreateClip(builder, slot, path_off));
+        }
+
+        auto plugins_vec = builder.CreateVector(plugin_offsets);
+        auto clips_vec = builder.CreateVector(clip_offsets);
+        track_offsets.push_back(hibiki::project::CreateTrack(builder, track->index, plugins_vec, clips_vec));
+    }
+
+    auto tracks_vec = builder.CreateVector(track_offsets);
+    auto project = hibiki::project::CreateProject(builder, (float)state.bpm, tracks_vec);
+    builder.Finish(project);
+
+    std::ofstream os(path, std::ios::binary);
+    os.write((char*)builder.GetBufferPointer(), builder.GetSize());
+}
+
+void load_project(GlobalState& state, const std::string& path) {
+    std::ifstream is(path, std::ios::binary | std::ios::ate);
+    if (!is) return;
+    auto size = is.tellg();
+    is.seekg(0, std::ios::beg);
+    std::vector<char> buffer(size);
+    is.read(buffer.data(), size);
+
+    auto project = hibiki::project::GetProject(buffer.data());
+    state.bpm = project->bpm();
+
+    sendClearProject();
+
+    {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        state.tracks.clear();
+    }
+
+    if (project->tracks()) {
+        for (auto const& track_fb : *project->tracks()) {
+            Track* track = state.get_or_create_track(track_fb->index());
+            if (track_fb->plugins()) {
+                for (auto const& plugin_fb : *track_fb->plugins()) {
+                    int idx = track->load_plugin(plugin_fb->path()->str(), plugin_fb->index());
+                    if (idx != -1) {
+                        auto& plugin = track->plugins[idx];
+                        if (plugin_fb->parameters()) {
+                            for (auto param_fb : *plugin_fb->parameters()) {
+                                plugin->setParameterValue(param_fb->id(), param_fb->value());
+                            }
+                        }
+                        // Notify GUI about the loaded plugin
+                        std::vector<VstParamInfo> params;
+                        for (int i = 0; i < plugin->getParameterCount(); ++i) {
+                            VstParamInfo info;
+                            if (plugin->getParameterInfo(i, info)) params.push_back(info);
+                        }
+                        sendParamList(track->index, idx, plugin->getName(), plugin->isInstrument(), params);
+                    }
+                }
+            }
+            if (track_fb->clips()) {
+                for (auto clip_fb : *track_fb->clips()) {
+                    if (track->load_clip(clip_fb->slot_index(), clip_fb->path()->str())) {
+                        std::string name = clip_fb->path()->str();
+                        size_t last_slash = name.find_last_of("/\\");
+                        if (last_slash != std::string::npos) name = name.substr(last_slash + 1);
+                        sendClipInfo(track->index, clip_fb->slot_index(), name);
+                    }
+                }
+            }
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "--list") {
         if (argc < 3) return 1;
@@ -343,6 +454,14 @@ int main(int argc, char** argv) {
             } else {
                 sendLog("Failed to load plugin: " + vpath);
             }
+        } else if (command_type == hibiki::ipc::Command_SaveProject) {
+            auto cmd = request->command_as_SaveProject();
+            save_project(state, cmd->path()->str());
+            sendAck("SAVE_PROJECT", true);
+        } else if (command_type == hibiki::ipc::Command_LoadProject) {
+            auto cmd = request->command_as_LoadProject();
+            load_project(state, cmd->path()->str());
+            sendAck("LOAD_PROJECT", true);
         } else if (command_type == hibiki::ipc::Command_LoadClip) {
             auto cmd = request->command_as_LoadClip();
             int tidx = cmd->track_index();

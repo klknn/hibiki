@@ -31,6 +31,22 @@ public class PluginPane extends JPanel {
         scrollPane.setBackground(new Color(25, 25, 25));
         scrollPane.getHorizontalScrollBar().setUnitIncrement(16);
         add(scrollPane, BorderLayout.CENTER);
+
+        BackendManager.getInstance().addNotificationListener(notification -> {
+            if (notification.responseType() == Response.ParamList) {
+                updateParams((ParamList) notification.response(new ParamList()));
+            } else if (notification.responseType() == Response.ClearProject) {
+                clearPanels();
+            }
+        });
+    }
+
+    private void clearPanels() {
+        SwingUtilities.invokeLater(() -> {
+            devicePanels.clear();
+            deviceChainContent.removeAll();
+            rebuildDeviceChain();
+        });
     }
 
     public void updateParams(ParamList paramList) {

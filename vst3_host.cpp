@@ -159,6 +159,8 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
 
     auto& info = audioEffects[plugin_index];
     impl->name = info.name();
+    impl->path = path;
+    impl->pluginIndex = plugin_index;
     impl->isInstrument = false;
     for (const auto& cat : info.subCategories()) {
         if (cat == "Instrument") {
@@ -384,6 +386,12 @@ double Vst3Plugin::getParameterValue(uint32_t id) const {
 }
 const std::string& Vst3Plugin::getName() const {
     return impl->name;
+}
+const std::string& Vst3Plugin::getPath() const {
+    return impl->path;
+}
+int Vst3Plugin::getPluginIndex() const {
+    return impl->pluginIndex;
 }
 bool Vst3Plugin::isInstrument() const {
     return impl->isInstrument;

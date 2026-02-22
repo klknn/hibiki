@@ -45,6 +45,7 @@ cc_binary(
         ":vst3_host_x11",
         ":hibiki_request_cc",
         ":hibiki_response_cc",
+        ":hibiki_project_cc",
     ],
 )
 
@@ -62,6 +63,11 @@ flatbuffer_cc_library(
 flatbuffer_cc_library(
     name = "hibiki_response_cc",
     srcs = ["hibiki_response.fbs"],
+)
+
+flatbuffer_cc_library(
+    name = "hibiki_project_cc",
+    srcs = ["hibiki_project.fbs"],
 )
 
 flatbuffer_library_public(
@@ -92,6 +98,10 @@ flatbuffer_library_public(
         "hibiki/ipc/StopT.java",
         "hibiki/ipc/StopTrack.java",
         "hibiki/ipc/StopTrackT.java",
+        "hibiki/ipc/SaveProject.java",
+        "hibiki/ipc/SaveProjectT.java",
+        "hibiki/ipc/LoadProject.java",
+        "hibiki/ipc/LoadProjectT.java",
     ],
     language_flag = "--java --gen-object-api",
 )
@@ -112,6 +122,8 @@ flatbuffer_library_public(
         "hibiki/ipc/AcknowledgeT.java",
         "hibiki/ipc/ClipInfo.java",
         "hibiki/ipc/ClipInfoT.java",
+        "hibiki/ipc/ClearProject.java",
+        "hibiki/ipc/ClearProjectT.java",
         "hibiki/ipc/Response.java",
         "hibiki/ipc/ResponseUnion.java",
     ],

@@ -8,6 +8,9 @@ import hibiki.ipc.Request;
 import hibiki.ipc.Command;
 import hibiki.ipc.Play;
 import hibiki.ipc.Stop;
+import hibiki.ipc.SaveProject;
+import hibiki.ipc.LoadProject;
+import java.io.File;
 
 public class TopBar extends JPanel {
     private JLabel bpmLabel;
@@ -30,6 +33,17 @@ public class TopBar extends JPanel {
 
         leftPanel.add(bpmLabel);
         leftPanel.add(timeSigLabel);
+
+        JButton saveBtn = new JButton("Save");
+        saveBtn.setMargin(new Insets(2, 5, 2, 5));
+        saveBtn.addActionListener(e -> showSaveDialog());
+        leftPanel.add(saveBtn);
+
+        JButton loadBtn = new JButton("Load");
+        loadBtn.setMargin(new Insets(2, 5, 2, 5));
+        loadBtn.addActionListener(e -> showLoadDialog());
+        leftPanel.add(loadBtn);
+
         add(leftPanel, BorderLayout.WEST);
 
         // Center section: Playback Controls
@@ -89,6 +103,38 @@ public class TopBar extends JPanel {
         Stop.startStop(builder);
         int stopOffset = Stop.endStop(builder);
         int requestOffset = Request.createRequest(builder, Command.Stop, stopOffset);
+        builder.finish(requestOffset);
+        BackendManager.getInstance().sendRequest(builder);
+    }
+
+    private void showSaveDialog() {
+        JFileChooser chooser = new JFileChooser();
+        if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            sendSaveProject(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+
+    private void showLoadDialog() {
+        JFileChooser chooser = new JFileChooser();
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            sendLoadProject(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+
+    private void sendSaveProject(String path) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(512);
+        int pathOff = builder.createString(path);
+        int saveOff = SaveProject.createSaveProject(builder, pathOff);
+        int requestOffset = Request.createRequest(builder, Command.SaveProject, saveOff);
+        builder.finish(requestOffset);
+        BackendManager.getInstance().sendRequest(builder);
+    }
+
+    private void sendLoadProject(String path) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(512);
+        int pathOff = builder.createString(path);
+        int loadOff = LoadProject.createLoadProject(builder, pathOff);
+        int requestOffset = Request.createRequest(builder, Command.LoadProject, loadOff);
         builder.finish(requestOffset);
         BackendManager.getInstance().sendRequest(builder);
     }

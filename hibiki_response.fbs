@@ -29,11 +29,14 @@ table ClipInfo {
     name: string;
 }
 
+table ClearProject {}
+
 union Response {
     ParamList,
     Log,
     Acknowledge,
-    ClipInfo
+    ClipInfo,
+    ClearProject
 }
 
 table Notification {

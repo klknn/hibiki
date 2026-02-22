@@ -46,6 +46,22 @@ public class SessionView extends JPanel {
             if (notification.responseType() == Response.ClipInfo) {
                 ClipInfo info = (ClipInfo) notification.response(new ClipInfo());
                 updateSlotLabel(info.trackIndex(), info.slotIndex(), info.name());
+            } else if (notification.responseType() == Response.ClearProject) {
+                clearAllSlots();
+            }
+        });
+    }
+
+    private void clearAllSlots() {
+        SwingUtilities.invokeLater(() -> {
+            for (int t = 1; t <= 4; t++) {
+                for (int s = 0; s < 5; s++) {
+                    JButton btn = slotButtons[t][s];
+                    if (btn != null) {
+                        btn.setText("");
+                        btn.setBackground(null);
+                    }
+                }
             }
         });
     }

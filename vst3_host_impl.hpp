@@ -17,6 +17,8 @@ struct Vst3PluginImpl {
     Steinberg::IPtr<Steinberg::Vst::IHostApplication> hostContext;
     
     std::string name;
+    std::string path;
+    int pluginIndex = 0;
     bool isInstrument = false;
     std::thread editorThread;
     std::atomic<bool> editorRunning{false};

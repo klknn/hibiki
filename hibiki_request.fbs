@@ -10,6 +10,13 @@ table LoadClip {
     track_index: int;
     slot_index: int;
     path: string;
+    is_loop: bool = false;
+}
+
+table SetClipLoop {
+    track_index: int;
+    slot_index: int;
+    is_loop: bool;
 }
 
 table Play {}
@@ -64,6 +71,7 @@ union Command {
     RemovePlugin,
     SaveProject,
     LoadProject,
+    SetClipLoop,
     Quit
 }
 

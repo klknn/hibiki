@@ -8,6 +8,11 @@ import hibiki.ipc.Request;
 import hibiki.ipc.Command;
 import hibiki.ipc.PlayClip;
 import hibiki.ipc.StopTrack;
+import hibiki.ipc.LoadClip;
+import hibiki.ipc.SetClipLoop;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.io.File;
 
 import hibiki.ipc.Response;
 import hibiki.ipc.ClipInfo;
@@ -102,6 +107,15 @@ public class SessionView extends JPanel {
             clipBtn.setFont(new Font("SansSerif", Font.PLAIN, 10));
             int slotIdx = i;
             clipBtn.addActionListener(e -> sendPlayClip(trackIdx, slotIdx));
+
+            clipBtn.addMouseListener(new MouseAdapter() {
+                public void mousePressed(MouseEvent e) {
+                    if (SwingUtilities.isRightMouseButton(e)) {
+                        showClipContextMenu(clipBtn, trackIdx, slotIdx, e.getX(), e.getY());
+                    }
+                }
+            });
+
             slotButtons[trackIdx][slotIdx] = clipBtn;
             strip.add(Box.createVerticalStrut(2));
             strip.add(clipBtn);
@@ -165,9 +179,61 @@ public class SessionView extends JPanel {
         return strip;
     }
 
+    private void showClipContextMenu(JButton btn, int trackIdx, int slotIdx, int x, int y) {
+        JPopupMenu menu = new JPopupMenu();
+
+        JMenuItem loadItem = new JMenuItem("Load Clip...");
+        loadItem.addActionListener(e -> {
+            JFileChooser chooser = new JFileChooser("testdata");
+            if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                File file = chooser.getSelectedFile();
+                sendLoadClip(trackIdx, slotIdx, file.getAbsolutePath(), false);
+            }
+        });
+        menu.add(loadItem);
+
+        JCheckBoxMenuItem loopItem = new JCheckBoxMenuItem("Loop");
+        // We don't have current state easily, so we just toggle
+        loopItem.addActionListener(e -> {
+            sendSetClipLoop(trackIdx, slotIdx, loopItem.isSelected());
+        });
+        menu.add(loopItem);
+
+        menu.show(btn, x, y);
+    }
+
+    private void sendLoadClip(int trackIdx, int slotIdx, String path, boolean isLoop) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(512);
+        int pathOff = builder.createString(path);
+        LoadClip.startLoadClip(builder);
+        LoadClip.addTrackIndex(builder, trackIdx);
+        LoadClip.addSlotIndex(builder, slotIdx);
+        LoadClip.addPath(builder, pathOff);
+        LoadClip.addIsLoop(builder, isLoop);
+        int loadOff = LoadClip.endLoadClip(builder);
+        int requestOffset = Request.createRequest(builder, Command.LoadClip, loadOff);
+        builder.finish(requestOffset);
+        BackendManager.getInstance().sendRequest(builder);
+    }
+
+    private void sendSetClipLoop(int trackIdx, int slotIdx, boolean isLoop) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(128);
+        SetClipLoop.startSetClipLoop(builder);
+        SetClipLoop.addTrackIndex(builder, trackIdx);
+        SetClipLoop.addSlotIndex(builder, slotIdx);
+        SetClipLoop.addIsLoop(builder, isLoop);
+        int setOff = SetClipLoop.endSetClipLoop(builder);
+        int requestOffset = Request.createRequest(builder, Command.SetClipLoop, setOff);
+        builder.finish(requestOffset);
+        BackendManager.getInstance().sendRequest(builder);
+    }
+
     private void sendPlayClip(int trackIdx, int slotIdx) {
         FlatBufferBuilder builder = new FlatBufferBuilder(128);
-        int playClipOffset = PlayClip.createPlayClip(builder, trackIdx, slotIdx);
+        PlayClip.startPlayClip(builder);
+        PlayClip.addTrackIndex(builder, trackIdx);
+        PlayClip.addSlotIndex(builder, slotIdx);
+        int playClipOffset = PlayClip.endPlayClip(builder);
         int requestOffset = Request.createRequest(builder, Command.PlayClip, playClipOffset);
         builder.finish(requestOffset);
         BackendManager.getInstance().sendRequest(builder);
@@ -175,7 +241,9 @@ public class SessionView extends JPanel {
 
     private void sendStopTrack(int trackIdx) {
         FlatBufferBuilder builder = new FlatBufferBuilder(128);
-        int stopTrackOffset = StopTrack.createStopTrack(builder, trackIdx);
+        StopTrack.startStopTrack(builder);
+        StopTrack.addTrackIndex(builder, trackIdx);
+        int stopTrackOffset = StopTrack.endStopTrack(builder);
         int requestOffset = Request.createRequest(builder, Command.StopTrack, stopTrackOffset);
         builder.finish(requestOffset);
         BackendManager.getInstance().sendRequest(builder);

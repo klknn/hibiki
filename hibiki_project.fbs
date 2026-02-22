@@ -11,9 +11,13 @@ table Plugin {
     parameters: [Parameter];
 }
 
+enum ClipType : byte { MIDI = 0, AUDIO = 1 }
+
 table Clip {
     slot_index: int;
     path: string;
+    is_loop: bool = false;
+    type: ClipType = MIDI;
 }
 
 table Track {

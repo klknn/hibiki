@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -20,9 +21,63 @@
 #include "hibiki_project_generated.h"
 
 struct Clip {
-    std::vector<hbk::MidiEvent> events;
+    enum Type { MIDI, AUDIO } type;
+    std::vector<hbk::MidiEvent> midi_events;
+    std::vector<float> audio_data; // Mono or interleaved stereo, but we'll assume stereo for simplicity or handle both
+    int num_channels = 0;
+    double duration_sec = 0.0;
     std::string path;
+    bool is_loop = false;
 };
+
+// Simple WAV loader (16-bit PCM)
+bool loadWav(const std::string& path, std::vector<float>& out_data, int& out_channels, double& out_duration) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+
+    char chunkId[4];
+    f.read(chunkId, 4);
+    if (std::string(chunkId, 4) != "RIFF") return false;
+    f.seekg(4, std::ios::cur); // Skip size
+    f.read(chunkId, 4);
+    if (std::string(chunkId, 4) != "WAVE") return false;
+
+    int sample_rate = 0;
+    int bits_per_sample = 0;
+    int channels = 0;
+
+    while (f.read(chunkId, 4)) {
+        uint32_t size;
+        f.read((char*)&size, 4);
+        if (std::string(chunkId, 4) == "fmt ") {
+            uint16_t format;
+            f.read((char*)&format, 2);
+            if (format != 1) return false; // Only PCM supported
+            uint16_t chans;
+            f.read((char*)&chans, 2);
+            channels = chans;
+            f.read((char*)&sample_rate, 4);
+            f.seekg(6, std::ios::cur); // Skip byte rate and block align
+            f.read((char*)&bits_per_sample, 2);
+            if (bits_per_sample != 16) return false; // Only 16-bit supported
+            if (size > 16) f.seekg(size - 16, std::ios::cur);
+        } else if (std::string(chunkId, 4) == "data") {
+            int num_samples = size / 2;
+            std::vector<int16_t> pcm(num_samples);
+            f.read((char*)pcm.data(), size);
+            out_data.resize(num_samples);
+            for (int i = 0; i < num_samples; ++i) {
+                out_data[i] = pcm[i] / 32768.0f;
+            }
+            out_channels = channels;
+            out_duration = (double)num_samples / (channels * sample_rate);
+            return true;
+        } else {
+            f.seekg(size, std::ios::cur);
+        }
+    }
+    return false;
+}
 
 class Track {
 public:
@@ -78,14 +133,28 @@ public:
 
 
 
-    bool load_clip(int slot, const std::string& path) {
+    bool load_clip(int slot, const std::string& path, bool is_loop = false) {
         std::lock_guard<std::mutex> lock(mutex);
-        auto events = hbk::parseMidi(path);
-        if (events.empty()) return false;
-
+        
         auto clip = std::make_unique<Clip>();
-        clip->events = std::move(events);
         clip->path = path;
+        clip->is_loop = is_loop;
+
+        if (path.size() > 4 && path.substr(path.size() - 4) == ".wav") {
+            if (!loadWav(path, clip->audio_data, clip->num_channels, clip->duration_sec)) {
+                return false;
+            }
+            clip->type = Clip::AUDIO;
+        } else {
+            auto events = hbk::parseMidi(path);
+            if (events.empty()) return false;
+            clip->midi_events = std::move(events);
+            clip->type = Clip::MIDI;
+            if (!clip->midi_events.empty()) {
+                clip->duration_sec = clip->midi_events.back().seconds + 0.1; // Small buffer
+            }
+        }
+
         clips[slot] = std::move(clip);
 
         // If we are currently playing this slot, reset playback
@@ -94,6 +163,13 @@ public:
             current_midi_idx = 0;
         }
         return true;
+    }
+
+    void set_clip_loop(int slot, bool is_loop) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (clips.count(slot)) {
+            clips[slot]->is_loop = is_loop;
+        }
     }
 
 
@@ -174,50 +250,81 @@ void playback_thread(GlobalState& state) {
 
                 any_playing = true;
                 auto& clip = track->clips[track->playing_slot];
-                const auto& events = clip->events;
-                int num_midi_events = events.size();
 
                 context.continuousTimeSamples = track->current_time_sec * sample_rate;
                 context.projectTimeMusic = track->current_time_sec * (context.tempo / 60.0);
 
-                std::vector<MidiNoteEvent> blockEvents;
-                while (track->current_midi_idx < num_midi_events) {
-                    auto& me = events[track->current_midi_idx];
-                    if (me.seconds >= track->current_time_sec + time_per_block) break;
-
-                    if (hbk::isNoteOn(me) || hbk::isNoteOff(me)) {
-                        MidiNoteEvent e;
-                        e.sampleOffset = std::max(0, (int)((me.seconds - track->current_time_sec) * sample_rate));
-                        if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
-                        e.channel = me.channel;
-                        e.pitch = me.note;
-
-                        if (hbk::isNoteOff(me)) {
-                            e.isNoteOn = false;
-                            e.velocity = 0;
-                        } else {
-                            e.isNoteOn = true;
-                            e.velocity = me.velocity / 127.0f;
-                        }
-                        blockEvents.push_back(e);
-                    }
-                    track->current_midi_idx++;
-                }
-
                 std::fill(bufferL, bufferL + block_size, 0.0f);
                 std::fill(bufferR, bufferR + block_size, 0.0f);
 
-                for (size_t i = 0; i < track->plugins.size(); ++i) {
-                    auto& p = track->plugins[i];
-                    if (i == 0) {
-                        // First plugin gets the MIDI events
-                        p->process(nullptr, outChannels, block_size, context, blockEvents);
-                    } else {
-                        // Subsequent plugins get previous audio output as input
+                if (clip->type == Clip::MIDI) {
+                    const auto& events = clip->midi_events;
+                    int num_midi_events = events.size();
+
+                    std::vector<MidiNoteEvent> blockEvents;
+                    // Note: current_midi_idx logic needs to handle looping
+                    int search_idx = track->current_midi_idx;
+                    // If we looped around, we might need to reset search_idx
+                    // But current_time_sec reset should handle it if we are careful.
+                    
+                    while (search_idx < num_midi_events) {
+                        auto& me = events[search_idx];
+                        if (me.seconds >= track->current_time_sec + time_per_block) break;
+
+                        if (me.seconds >= track->current_time_sec) {
+                            if (hbk::isNoteOn(me) || hbk::isNoteOff(me)) {
+                                MidiNoteEvent e;
+                                e.sampleOffset = std::max(0, (int)((me.seconds - track->current_time_sec) * sample_rate));
+                                if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
+                                e.channel = me.channel;
+                                e.pitch = me.note;
+
+                                if (hbk::isNoteOff(me)) {
+                                    e.isNoteOn = false;
+                                    e.velocity = 0;
+                                } else {
+                                    e.isNoteOn = true;
+                                    e.velocity = me.velocity / 127.0f;
+                                }
+                                blockEvents.push_back(e);
+                            }
+                        }
+                        search_idx++;
+                    }
+                    track->current_midi_idx = search_idx;
+
+                    for (size_t i = 0; i < track->plugins.size(); ++i) {
+                        auto& p = track->plugins[i];
+                        if (i == 0) {
+                            p->process(nullptr, outChannels, block_size, context, blockEvents);
+                        } else {
+                            p->process(outChannels, outChannels, block_size, context, {});
+                        }
+                    }
+                } else if (clip->type == Clip::AUDIO) {
+                    // Simple audio playback
+                    int start_sample = (int)(track->current_time_sec * sample_rate);
+                    for (int i = 0; i < block_size; ++i) {
+                        int sample_pos = start_sample + i;
+                        if (clip->num_channels == 2) {
+                            if (sample_pos * 2 + 1 < (int)clip->audio_data.size()) {
+                                bufferL[i] = clip->audio_data[sample_pos * 2];
+                                bufferR[i] = clip->audio_data[sample_pos * 2 + 1];
+                            }
+                        } else if (clip->num_channels == 1) {
+                            if (sample_pos < (int)clip->audio_data.size()) {
+                                bufferL[i] = bufferR[i] = clip->audio_data[sample_pos];
+                            }
+                        }
+                    }
+
+                    // Process through effects (even if it's audio, it starts at index 0 or after instrument)
+                    // For audio tracks, we assume no instrument or instrument ignored
+                    for (size_t i = 0; i < track->plugins.size(); ++i) {
+                        auto& p = track->plugins[i];
                         p->process(outChannels, outChannels, block_size, context, {});
                     }
                 }
-
 
                 for (int i = 0; i < block_size; ++i) {
                     mixBufferL[i] += bufferL[i];
@@ -225,8 +332,13 @@ void playback_thread(GlobalState& state) {
                 }
 
                 track->current_time_sec += time_per_block;
-                if (track->current_midi_idx >= num_midi_events) {
-                    track->playing_slot = -1; // Stop at end of clip for now
+                if (track->current_time_sec >= clip->duration_sec) {
+                    if (clip->is_loop) {
+                        track->current_time_sec = fmod(track->current_time_sec, clip->duration_sec);
+                        track->current_midi_idx = 0; // Reset MIDI search for next block
+                    } else {
+                        track->playing_slot = -1;
+                    }
                 }
             }
         }
@@ -329,7 +441,8 @@ void save_project(GlobalState& state, const std::string& path) {
         std::vector<flatbuffers::Offset<hibiki::project::Clip>> clip_offsets;
         for (auto const& [slot, clip] : track->clips) {
             auto path_off = builder.CreateString(clip->path);
-            clip_offsets.push_back(hibiki::project::CreateClip(builder, slot, path_off));
+            auto type = (clip->type == Clip::AUDIO) ? hibiki::project::ClipType_AUDIO : hibiki::project::ClipType_MIDI;
+            clip_offsets.push_back(hibiki::project::CreateClip(builder, slot, path_off, clip->is_loop, type));
         }
 
         auto plugins_vec = builder.CreateVector(plugin_offsets);
@@ -388,7 +501,7 @@ void load_project(GlobalState& state, const std::string& path) {
             }
             if (track_fb->clips()) {
                 for (auto clip_fb : *track_fb->clips()) {
-                    if (track->load_clip(clip_fb->slot_index(), clip_fb->path()->str())) {
+                    if (track->load_clip(clip_fb->slot_index(), clip_fb->path()->str(), clip_fb->is_loop())) {
                         std::string name = clip_fb->path()->str();
                         size_t last_slash = name.find_last_of("/\\");
                         if (last_slash != std::string::npos) name = name.substr(last_slash + 1);
@@ -467,7 +580,8 @@ int main(int argc, char** argv) {
             int tidx = cmd->track_index();
             int sidx = cmd->slot_index();
             std::string mpath = cmd->path()->str();
-            if (state.get_or_create_track(tidx)->load_clip(sidx, mpath)) {
+            bool is_loop = cmd->is_loop();
+            if (state.get_or_create_track(tidx)->load_clip(sidx, mpath, is_loop)) {
                 sendAck("LOAD_CLIP", true);
                 // Extract filename from path
                 std::string name = mpath;
@@ -479,6 +593,10 @@ int main(int argc, char** argv) {
             } else {
                 sendLog("Failed to load clip: " + mpath);
             }
+        } else if (command_type == hibiki::ipc::Command_SetClipLoop) {
+            auto cmd = request->command_as_SetClipLoop();
+            state.get_or_create_track(cmd->track_index())->set_clip_loop(cmd->slot_index(), cmd->is_loop());
+            sendAck("SET_CLIP_LOOP", true);
         } else if (command_type == hibiki::ipc::Command_Play) {
             sendAck("PLAY", true);
         } else if (command_type == hibiki::ipc::Command_Stop) {

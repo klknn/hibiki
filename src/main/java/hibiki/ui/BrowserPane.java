@@ -182,7 +182,7 @@ public class BrowserPane extends JPanel {
     private void sendLoadClip(String path) {
         FlatBufferBuilder builder = new FlatBufferBuilder(1024);
         int pathOffset = builder.createString(path);
-        int loadClipOffset = LoadClip.createLoadClip(builder, 1, 0, pathOffset); // Default to track 1, slot 0
+        int loadClipOffset = LoadClip.createLoadClip(builder, 1, 0, pathOffset, false); // Default to track 1, slot 0
         int requestOffset = Request.createRequest(builder, Command.LoadClip, loadClipOffset);
         builder.finish(requestOffset);
         BackendManager.getInstance().sendRequest(builder);

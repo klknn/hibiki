@@ -94,6 +94,8 @@ flatbuffer_library_public(
         "hibiki/ipc/SetParamValueT.java",
         "hibiki/ipc/ShowPluginGui.java",
         "hibiki/ipc/ShowPluginGuiT.java",
+        "hibiki/ipc/SetClipLoop.java",
+        "hibiki/ipc/SetClipLoopT.java",
         "hibiki/ipc/Stop.java",
         "hibiki/ipc/StopT.java",
         "hibiki/ipc/StopTrack.java",

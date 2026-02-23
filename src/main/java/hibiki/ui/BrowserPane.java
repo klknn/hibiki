@@ -22,12 +22,15 @@ public class BrowserPane extends JPanel {
 
     public BrowserPane() {
         setLayout(new BorderLayout());
-        setBackground(new Color(160, 160, 160));
-        setPreferredSize(new Dimension(250, 0));
+        setBackground(Theme.BG_DARK);
+        setPreferredSize(new Dimension(220, 0));
+        setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.BORDER));
 
-        JLabel header = new JLabel("Browser", SwingConstants.CENTER);
-        header.setBackground(new Color(80, 80, 80));
-        header.setForeground(Color.WHITE);
+        JLabel header = new JLabel("BROWSER", SwingConstants.LEFT);
+        header.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 0));
+        header.setBackground(Theme.TRACK_HEADER);
+        header.setForeground(Theme.TEXT_BRIGHT);
+        header.setFont(Theme.FONT_UI_BOLD);
         header.setOpaque(true);
         header.setPreferredSize(new Dimension(0, 25));
         add(header, BorderLayout.NORTH);
@@ -35,18 +38,24 @@ public class BrowserPane extends JPanel {
         root = new DefaultMutableTreeNode("Hibiki");
         treeModel = new DefaultTreeModel(root);
         tree = new JTree(treeModel);
-        tree.setBackground(new Color(45, 45, 45));
+        tree.setBackground(Theme.BG_DARK);
+        tree.setFont(Theme.FONT_UI);
+        tree.setRowHeight(20);
 
         // Custom renderer for visibility
         DefaultTreeCellRenderer renderer = new DefaultTreeCellRenderer();
-        renderer.setBackgroundNonSelectionColor(new Color(45, 45, 45));
-        renderer.setTextNonSelectionColor(Color.LIGHT_GRAY);
-        renderer.setTextSelectionColor(Color.WHITE);
-        renderer.setBackgroundSelectionColor(new Color(100, 100, 100));
+        renderer.setBackgroundNonSelectionColor(Theme.BG_DARK);
+        renderer.setTextNonSelectionColor(Theme.TEXT_NORMAL);
+        renderer.setTextSelectionColor(Theme.TEXT_BRIGHT);
+        renderer.setBackgroundSelectionColor(Theme.PANEL_BG_LIGHT);
+        renderer.setBorderSelectionColor(Theme.BORDER);
+        renderer.setLeafIcon(null);
+        renderer.setOpenIcon(null);
+        renderer.setClosedIcon(null);
         tree.setCellRenderer(renderer);
         
         JScrollPane scrollPane = new JScrollPane(tree);
-        scrollPane.getViewport().setBackground(new Color(45, 45, 45));
+        scrollPane.getViewport().setBackground(Theme.BG_DARK);
         scrollPane.setBorder(null);
         add(scrollPane, BorderLayout.CENTER);
 

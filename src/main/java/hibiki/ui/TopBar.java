@@ -20,9 +20,9 @@ public class TopBar extends JPanel {
 
     public TopBar() {
         setLayout(new BorderLayout());
-        setBackground(new Color(45, 45, 45));
-        setPreferredSize(new Dimension(Integer.MAX_VALUE, 50));
-        setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.BLACK));
+        setBackground(Theme.BG_DARK);
+        setPreferredSize(new Dimension(Integer.MAX_VALUE, 40));
+        setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER));
 
         // Left section: Song Info
         JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
@@ -34,15 +34,8 @@ public class TopBar extends JPanel {
         leftPanel.add(bpmLabel);
         leftPanel.add(timeSigLabel);
 
-        JButton saveBtn = new JButton("Save");
-        saveBtn.setMargin(new Insets(2, 5, 2, 5));
-        saveBtn.addActionListener(e -> showSaveDialog());
-        leftPanel.add(saveBtn);
-
-        JButton loadBtn = new JButton("Load");
-        loadBtn.setMargin(new Insets(2, 5, 2, 5));
-        loadBtn.addActionListener(e -> showLoadDialog());
-        leftPanel.add(loadBtn);
+        leftPanel.add(createFlatButton("Save", e -> showSaveDialog()));
+        leftPanel.add(createFlatButton("Load", e -> showLoadDialog()));
 
         add(leftPanel, BorderLayout.WEST);
 
@@ -50,16 +43,18 @@ public class TopBar extends JPanel {
         JPanel centerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 10));
         centerPanel.setOpaque(false);
 
-        JButton playBtn = new JButton("▶");
-        playBtn.addActionListener(e -> sendPlay());
+        JButton playBtn = createFlatButton("▶", e -> sendPlay());
+        playBtn.setForeground(Theme.ACCENT_GREEN);
+        playBtn.setFont(new Font("SansSerif", Font.PLAIN, 14));
 
-        JButton stopBtn = new JButton("■");
-        stopBtn.addActionListener(e -> sendStop());
+        JButton stopBtn = createFlatButton("■", e -> sendStop());
+        stopBtn.setFont(new Font("SansSerif", Font.PLAIN, 14));
 
         positionLabel = createDisplayLabel("1. 1. 1", 80);
 
         centerPanel.add(playBtn);
         centerPanel.add(stopBtn);
+        centerPanel.add(Box.createHorizontalStrut(10));
         centerPanel.add(positionLabel);
         add(centerPanel, BorderLayout.CENTER);
 
@@ -80,13 +75,36 @@ public class TopBar extends JPanel {
 
     private JLabel createDisplayLabel(String text, int width) {
         JLabel label = new JLabel(text, SwingConstants.CENTER);
-        label.setPreferredSize(new Dimension(width, 25));
-        label.setBackground(new Color(208, 208, 208));
-        label.setForeground(Color.BLACK);
+        label.setPreferredSize(new Dimension(width, 22));
+        label.setBackground(Theme.PANEL_BG_LIGHT);
+        label.setForeground(Theme.TEXT_BRIGHT);
         label.setOpaque(true);
-        label.setFont(new Font("Monospaced", Font.BOLD, 12));
-        label.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+        label.setFont(Theme.FONT_DISPLAY);
+        label.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
         return label;
+    }
+
+    private JButton createFlatButton(String text, java.awt.event.ActionListener listener) {
+        JButton btn = new JButton(text);
+        btn.setFont(Theme.FONT_UI);
+        btn.setBackground(Theme.PANEL_BG);
+        btn.setForeground(Theme.TEXT_NORMAL);
+        btn.setFocusPainted(false);
+        btn.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
+        btn.setMargin(new Insets(2, 8, 2, 8));
+        btn.addActionListener(listener);
+
+        btn.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                btn.setBackground(Theme.PANEL_BG_LIGHT);
+            }
+
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                btn.setBackground(Theme.PANEL_BG);
+            }
+        });
+
+        return btn;
     }
 
     private void sendPlay() {

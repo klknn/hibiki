@@ -19,17 +19,18 @@ public class PluginPane extends JPanel {
 
     public PluginPane() {
         setLayout(new BorderLayout());
-        setBackground(new Color(25, 25, 25));
-        setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Color.BLACK));
-        setPreferredSize(new Dimension(0, 250));
+        setBackground(Theme.BG_DARK);
+        setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER));
+        setPreferredSize(new Dimension(0, 200));
 
         deviceChainContent = new JPanel();
         deviceChainContent.setLayout(new FlowLayout(FlowLayout.LEFT, 5, 5));
-        deviceChainContent.setBackground(new Color(25, 25, 25));
+        deviceChainContent.setBackground(Theme.BG_DARK);
 
         JScrollPane scrollPane = new JScrollPane(deviceChainContent);
         scrollPane.setBorder(null);
-        scrollPane.setBackground(new Color(25, 25, 25));
+        scrollPane.setBackground(Theme.BG_DARK);
+        scrollPane.getViewport().setBackground(Theme.BG_DARK);
         scrollPane.getHorizontalScrollBar().setUnitIncrement(16);
         add(scrollPane, BorderLayout.CENTER);
 
@@ -171,6 +172,7 @@ public class PluginPane extends JPanel {
             // Search and Params
             JPanel body = new JPanel(new BorderLayout());
             body.setBackground(new Color(35, 35, 35));
+            body.setBackground(Theme.BG_MEDIUM);
 
             searchField = new JTextField() {
                 @Override
@@ -179,7 +181,7 @@ public class PluginPane extends JPanel {
                     if (getText().isEmpty() && !isFocusOwner()) {
                         Graphics2D g2 = (Graphics2D) g.create();
                         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                        g2.setColor(new Color(120, 120, 120));
+                        g2.setColor(Theme.ACCENT_BLUE);
                         g2.setFont(getFont().deriveFont(Font.ITALIC));
                         int x = getInsets().left;
                         int y = (getHeight() - g2.getFontMetrics().getHeight()) / 2 + g2.getFontMetrics().getAscent();
@@ -188,11 +190,11 @@ public class PluginPane extends JPanel {
                     }
                 }
             };
-            searchField.setBackground(new Color(50, 50, 50));
-            searchField.setForeground(Color.WHITE);
-            searchField.setCaretColor(Color.WHITE);
+            searchField.setBackground(Theme.BG_DARK);
+            searchField.setForeground(Theme.TEXT_LIGHT);
+            searchField.setCaretColor(Theme.TEXT_LIGHT);
             searchField.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createMatteBorder(0, 0, 1, 0, Color.BLACK),
+                    BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER),
                     BorderFactory.createEmptyBorder(2, 5, 2, 5)));
             // Repaint when focus changes to show/hide placeholder
             searchField.addFocusListener(new FocusAdapter() {
@@ -223,7 +225,7 @@ public class PluginPane extends JPanel {
 
             paramListPanel = new JPanel();
             paramListPanel.setLayout(new BoxLayout(paramListPanel, BoxLayout.Y_AXIS));
-            paramListPanel.setBackground(new Color(35, 35, 35));
+            paramListPanel.setBackground(Theme.BG_MEDIUM);
 
             JScrollPane scroll = new JScrollPane(paramListPanel);
             scroll.setBorder(null);
@@ -282,17 +284,17 @@ public class PluginPane extends JPanel {
         ParamPanel(int trackIndex, int pluginIndex, hibiki.ipc.ParamInfo info) {
             this.name = info.name();
             setLayout(new BorderLayout());
-            setBackground(new Color(35, 35, 35));
+            setBackground(Theme.BG_MEDIUM);
             setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
             setMaximumSize(new Dimension(Integer.MAX_VALUE, 45));
 
             JLabel label = new JLabel(name);
-            label.setForeground(Color.LIGHT_GRAY);
+            label.setForeground(Theme.TEXT_LIGHT);
             label.setFont(new Font("SansSerif", Font.PLAIN, 10));
             add(label, BorderLayout.NORTH);
 
             JSlider slider = new JSlider(0, 1000, (int) (info.defaultValue() * 1000));
-            slider.setBackground(new Color(35, 35, 35));
+            slider.setBackground(Theme.BG_MEDIUM);
             slider.setPreferredSize(new Dimension(150, 20));
             slider.addChangeListener(e -> {
                 if (!slider.getValueIsAdjusting()) {

@@ -210,3 +210,22 @@ java_test(
         "//testdata",
     ],
 )
+java_test(
+    name = "theme_test",
+    srcs = ["src/test/java/hibiki/ui/ThemeTest.java"],
+    test_class = "hibiki.ui.ThemeTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "component_initialization_test",
+    srcs = ["src/test/java/hibiki/ui/ComponentTests.java"],
+    test_class = "hibiki.ui.ComponentTests",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)

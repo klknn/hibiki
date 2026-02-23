@@ -10,42 +10,39 @@ public class MainView extends JPanel {
 
     public MainView() {
         setLayout(new BorderLayout());
+        setBackground(Theme.BG_DARK);
 
         TopBar topBar = new TopBar();
         add(topBar, BorderLayout.NORTH);
 
-        // Main split: Browser | (Session / Detail)
-        JSplitPane horizontalSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-        horizontalSplit.setDividerLocation(250);
-
+        SessionView sessionView = new SessionView();
         BrowserPane browserPane = new BrowserPane();
-        horizontalSplit.setLeftComponent(browserPane);
+        pluginPane = new PluginPane();
 
         // Right side split: Session View (Top) / Plugin Pane (Bottom)
-        JSplitPane verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+        JSplitPane verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, sessionView, pluginPane);
         verticalSplit.setDividerLocation(500);
+        verticalSplit.setDividerSize(2);
+        verticalSplit.setBorder(null);
+        verticalSplit.setBackground(Theme.BG_DARK);
 
-        SessionView sessionView = new SessionView();
-        verticalSplit.setTopComponent(sessionView);
+        // Main split: Left=Browser, Right=CenterContent (Session + Plugin)
+        JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, browserPane, verticalSplit);
+        mainSplit.setDividerLocation(220);
+        mainSplit.setDividerSize(2);
+        mainSplit.setBorder(null);
+        mainSplit.setBackground(Theme.BG_DARK);
 
-        pluginPane = new PluginPane();
-        verticalSplit.setBottomComponent(pluginPane);
+        add(mainSplit, BorderLayout.CENTER);
 
-        horizontalSplit.setRightComponent(verticalSplit);
-        add(horizontalSplit, BorderLayout.CENTER);
-
-        // Status Bar
-        JPanel statusBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        statusBar.setBackground(new Color(160, 160, 160));
-        statusBar.setPreferredSize(new Dimension(0, 25));
-        statusBar.add(new JLabel("Ready"));
-        add(statusBar, BorderLayout.SOUTH);
-
-        // Listen for backend notifications
-        BackendManager.getInstance().addNotificationListener(notification -> {
-            if (notification.responseType() == Response.ParamList) {
-                pluginPane.updateParams((hibiki.ipc.ParamList) notification.response(new hibiki.ipc.ParamList()));
-            }
-        });
+        // Status bar or footer
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 2));
+        footer.setBackground(Theme.BG_DARKER);
+        footer.setPreferredSize(new Dimension(0, 20));
+        JLabel statusLabel = new JLabel("Status: Ready");
+        statusLabel.setForeground(Theme.TEXT_DIM);
+        statusLabel.setFont(new Font("SansSerif", Font.PLAIN, 9));
+        footer.add(statusLabel);
+        add(footer, BorderLayout.SOUTH);
     }
 }

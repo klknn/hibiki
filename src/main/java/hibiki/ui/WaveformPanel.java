@@ -8,8 +8,8 @@ public class WaveformPanel extends JPanel {
     private float[] waveform;
 
     public WaveformPanel() {
-        setBackground(new Color(40, 40, 40));
-        setPreferredSize(new Dimension(300, 100));
+        setBackground(Theme.BG_DARKER);
+        setPreferredSize(new Dimension(300, 80));
     }
 
     public void setWaveform(float[] waveform) {
@@ -24,7 +24,7 @@ public class WaveformPanel extends JPanel {
 
         Graphics2D g2 = (Graphics2D) g;
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g2.setColor(new Color(100, 200, 100));
+        g2.setColor(Theme.ACCENT_BLUE);
 
         int w = getWidth();
         int h = getHeight();

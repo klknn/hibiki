@@ -21,7 +21,7 @@ public class MainView extends JPanel {
 
         // Right side split: Session View (Top) / Plugin Pane (Bottom)
         JSplitPane verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, sessionView, pluginPane);
-        verticalSplit.setDividerLocation(500);
+        verticalSplit.setDividerLocation(450);
         verticalSplit.setDividerSize(2);
         verticalSplit.setBorder(null);
         verticalSplit.setBackground(Theme.BG_DARK);

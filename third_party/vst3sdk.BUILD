@@ -29,5 +29,5 @@ cc_library(
     visibility = ["//visibility:public"],
     defines = ["RELEASE"],
     linkopts = ["-lpthread", "-ldl"],
-    copts = ["-fexceptions"],
+    copts = ["-fexceptions", "-w"],  # DO NOT EDIT. THE ERROR IS UNRELATED TO THIS.
 )

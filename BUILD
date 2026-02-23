@@ -104,6 +104,12 @@ flatbuffer_library_public(
         "hibiki/ipc/SaveProjectT.java",
         "hibiki/ipc/LoadProject.java",
         "hibiki/ipc/LoadProjectT.java",
+        "hibiki/ipc/SetBpm.java",
+        "hibiki/ipc/SetBpmT.java",
+        "hibiki/ipc/PlayScene.java",
+        "hibiki/ipc/PlaySceneT.java",
+        "hibiki/ipc/DeleteClip.java",
+        "hibiki/ipc/DeleteClipT.java",
     ],
     language_flag = "--java --gen-object-api",
 )

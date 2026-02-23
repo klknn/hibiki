@@ -10,10 +10,11 @@ import hibiki.ipc.Play;
 import hibiki.ipc.Stop;
 import hibiki.ipc.SaveProject;
 import hibiki.ipc.LoadProject;
+import hibiki.ipc.SetBpm;
 import java.io.File;
 
 public class TopBar extends JPanel {
-    private JLabel bpmLabel;
+    private JTextField bpmField;
     private JLabel timeSigLabel;
     private JLabel positionLabel;
     private JLabel cpuLabel;
@@ -28,10 +29,11 @@ public class TopBar extends JPanel {
         JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
         leftPanel.setOpaque(false);
 
-        bpmLabel = createDisplayLabel("120.00", 60);
+        bpmField = createEditableDisplayField("140.00", 60);
+        bpmField.addActionListener(e -> sendSetBpm(bpmField.getText()));
         timeSigLabel = createDisplayLabel("4 / 4", 50);
 
-        leftPanel.add(bpmLabel);
+        leftPanel.add(bpmField);
         leftPanel.add(timeSigLabel);
 
         leftPanel.add(createFlatButton("Save", e -> showSaveDialog()));
@@ -82,6 +84,18 @@ public class TopBar extends JPanel {
         label.setFont(Theme.FONT_DISPLAY);
         label.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
         return label;
+    }
+
+    private JTextField createEditableDisplayField(String text, int width) {
+        JTextField field = new JTextField(text);
+        field.setPreferredSize(new Dimension(width, 22));
+        field.setBackground(Theme.PANEL_BG_LIGHT);
+        field.setForeground(Theme.TEXT_BRIGHT);
+        field.setCaretColor(Theme.TEXT_BRIGHT);
+        field.setFont(Theme.FONT_DISPLAY);
+        field.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
+        field.setHorizontalAlignment(JTextField.CENTER);
+        return field;
     }
 
     private JButton createFlatButton(String text, java.awt.event.ActionListener listener) {
@@ -155,5 +169,18 @@ public class TopBar extends JPanel {
         int requestOffset = Request.createRequest(builder, Command.LoadProject, loadOff);
         builder.finish(requestOffset);
         BackendManager.getInstance().sendRequest(builder);
+    }
+
+    private void sendSetBpm(String bpmStr) {
+        try {
+            float bpm = Float.parseFloat(bpmStr);
+            FlatBufferBuilder builder = new FlatBufferBuilder(128);
+            int setBpmOff = SetBpm.createSetBpm(builder, bpm);
+            int requestOffset = Request.createRequest(builder, Command.SetBpm, setBpmOff);
+            builder.finish(requestOffset);
+            BackendManager.getInstance().sendRequest(builder);
+        } catch (NumberFormatException ex) {
+            // Revert or ignore
+        }
     }
 }

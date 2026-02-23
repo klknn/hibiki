@@ -57,6 +57,19 @@ table LoadProject {
     path: string;
 }
 
+table SetBpm {
+    bpm: float;
+}
+
+table PlayScene {
+    slot_index: int;
+}
+
+table DeleteClip {
+    track_index: int;
+    slot_index: int;
+}
+
 table Quit {}
 
 union Command {
@@ -72,6 +85,9 @@ union Command {
     SaveProject,
     LoadProject,
     SetClipLoop,
+    SetBpm,
+    PlayScene,
+    DeleteClip,
     Quit
 }
 

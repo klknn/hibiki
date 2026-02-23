@@ -10,6 +10,8 @@ import hibiki.ipc.PlayClip;
 import hibiki.ipc.StopTrack;
 import hibiki.ipc.LoadClip;
 import hibiki.ipc.SetClipLoop;
+import hibiki.ipc.PlayScene;
+import hibiki.ipc.DeleteClip;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
@@ -22,7 +24,7 @@ import hibiki.ipc.ClipWaveform;
 
 public class SessionView extends JPanel {
     private JButton[][] slotButtons = new JButton[5][5]; // 4 tracks + master, 5 slots
-    private LevelMeter[] trackMeters = new LevelMeter[5]; // 1-4 for tracks, 0 for Master (unused here for now)
+    private LevelMeter[] trackMeters = new LevelMeter[5]; // 1-4 for tracks
 
     public SessionView() {
         setLayout(new BorderLayout());
@@ -30,21 +32,32 @@ public class SessionView extends JPanel {
 
         JPanel master = createMasterStrip();
 
-        // Build a chain of split panes for tracks with proportional resizing
-        Component lastComponent = master;
-        for (int i = 4; i >= 1; i--) {
-            JPanel track = createTrackStrip("Track " + i, i);
-            JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, track, lastComponent);
-            split.setContinuousLayout(true);
-            split.setBorder(null);
-            split.setDividerLocation(110);
-            split.setDividerSize(2);
-            split.setBackground(Theme.BG_DARK);
+        JPanel trackPanel = new JPanel() {
+            @Override
+            public Dimension getPreferredSize() {
+                Dimension d = super.getPreferredSize();
+                if (getParent() instanceof JViewport) {
+                    d.height = Math.max(d.height, getParent().getHeight());
+                }
+                return d;
+            }
+        };
+        trackPanel.setLayout(new BoxLayout(trackPanel, BoxLayout.X_AXIS));
+        trackPanel.setBackground(Theme.BG_DARK);
 
-            lastComponent = split;
+        for (int i = 1; i <= 4; i++) {
+            trackPanel.add(createTrackStrip("Track " + i, i));
         }
 
-        add(lastComponent, BorderLayout.CENTER);
+        JScrollPane scrollPane = new JScrollPane(trackPanel);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
+        scrollPane.setBorder(null);
+        scrollPane.setBackground(Theme.BG_DARK);
+        scrollPane.getHorizontalScrollBar().setUnitIncrement(16);
+
+        add(scrollPane, BorderLayout.CENTER);
+        add(master, BorderLayout.EAST);
 
         // Listen for clip load notifications
         BackendManager.getInstance().addNotificationListener(notification -> {
@@ -70,7 +83,8 @@ public class SessionView extends JPanel {
                     JButton btn = slotButtons[t][s];
                     if (btn != null) {
                         btn.setText("");
-                        btn.setBackground(null);
+                        btn.setBackground(Theme.PANEL_BG_LIGHT);
+                        btn.setForeground(Theme.TEXT_NORMAL);
                     }
                 }
             }
@@ -82,9 +96,15 @@ public class SessionView extends JPanel {
             if (trackIdx >= 1 && trackIdx <= 4 && slotIdx >= 0 && slotIdx < 5) {
                 JButton btn = slotButtons[trackIdx][slotIdx];
                 if (btn != null) {
-                    btn.setText("<html><center>" + name + "<br>▶</center></html>");
-                    btn.setBackground(Theme.CLIP_PLAYING);
-                    btn.setForeground(Color.BLACK);
+                    if (name.isEmpty()) {
+                        btn.setText("");
+                        btn.setBackground(Theme.PANEL_BG_LIGHT);
+                        btn.setForeground(Theme.TEXT_NORMAL);
+                    } else {
+                        btn.setText("<html><center>" + name + "<br>▶</center></html>");
+                        btn.setBackground(Theme.CLIP_PLAYING);
+                        btn.setForeground(Color.BLACK);
+                    }
                 }
             }
         });
@@ -104,13 +124,16 @@ public class SessionView extends JPanel {
         JPanel strip = new JPanel();
         strip.setLayout(new BoxLayout(strip, BoxLayout.Y_AXIS));
         strip.setBackground(Theme.PANEL_BG);
-        strip.setPreferredSize(new Dimension(100, 400));
+        strip.setPreferredSize(new Dimension(110, 400));
+        strip.setMaximumSize(new Dimension(110, 32767));
         strip.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.BORDER));
 
         // Header
         JLabel header = new JLabel(trackIdx + " " + name, SwingConstants.CENTER);
         header.setAlignmentX(Component.CENTER_ALIGNMENT);
-        header.setMaximumSize(new Dimension(100, 25));
+        header.setMinimumSize(new Dimension(110, 30));
+        header.setMaximumSize(new Dimension(110, 30));
+        header.setPreferredSize(new Dimension(110, 30));
         header.setBackground(Theme.TRACK_HEADER);
         header.setForeground(Theme.TEXT_BRIGHT);
         header.setFont(Theme.FONT_UI_BOLD);
@@ -122,7 +145,9 @@ public class SessionView extends JPanel {
         for (int i = 0; i < 5; i++) {
             JButton clipBtn = new JButton("");
             clipBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
-            clipBtn.setMaximumSize(new Dimension(92, 28));
+            clipBtn.setMinimumSize(new Dimension(100, 30));
+            clipBtn.setMaximumSize(new Dimension(100, 30));
+            clipBtn.setPreferredSize(new Dimension(100, 30));
             clipBtn.setFont(Theme.FONT_UI);
             clipBtn.setBackground(Theme.PANEL_BG_LIGHT);
             clipBtn.setForeground(Theme.TEXT_NORMAL);
@@ -147,11 +172,34 @@ public class SessionView extends JPanel {
 
         strip.add(Box.createVerticalGlue());
 
-        // Level Meter
+        // Level Meter and Controls
+        JPanel controls = new JPanel();
+        controls.setLayout(new BoxLayout(controls, BoxLayout.X_AXIS));
+        controls.setOpaque(false);
+        controls.setMaximumSize(new Dimension(110, 150));
+
         LevelMeter meter = new LevelMeter();
+        meter.setPreferredSize(new Dimension(12, 100));
         trackMeters[trackIdx] = meter;
+
+        JPanel volPanel = new JPanel();
+        volPanel.setLayout(new BoxLayout(volPanel, BoxLayout.Y_AXIS));
+        volPanel.setOpaque(false);
+
+        // Vol
+        JSlider volSlider = new JSlider(JSlider.VERTICAL, -70, 6, 0);
+        volSlider.setMaximumSize(new Dimension(30, 100));
+        volSlider.setBackground(Theme.PANEL_BG);
+        volPanel.add(volSlider);
+
+        controls.add(Box.createHorizontalStrut(10));
+        controls.add(meter);
+        controls.add(Box.createHorizontalStrut(5));
+        controls.add(volPanel);
+        controls.add(Box.createHorizontalStrut(10));
+
+        strip.add(controls);
         strip.add(Box.createVerticalStrut(5));
-        strip.add(meter);
 
         // Pan
         JSlider panSlider = new JSlider(-50, 50, 0);
@@ -160,16 +208,9 @@ public class SessionView extends JPanel {
         strip.add(createControlLabel("Pan"));
         strip.add(panSlider);
 
-        // Vol
-        JSlider volSlider = new JSlider(JSlider.VERTICAL, -70, 6, 0);
-        volSlider.setMaximumSize(new Dimension(90, 80));
-        volSlider.setBackground(Theme.PANEL_BG);
-        strip.add(createControlLabel("Vol"));
-        strip.add(volSlider);
-
         // Activator
         JButton activeBtn = createFlatButton("" + trackIdx, e -> sendStopTrack(trackIdx));
-        activeBtn.setBackground(new Color(200, 160, 50)); // Mute/Solo button style
+        activeBtn.setBackground(new Color(200, 160, 50));
         activeBtn.setForeground(Color.BLACK);
         strip.add(Box.createVerticalStrut(5));
         strip.add(activeBtn);
@@ -182,12 +223,15 @@ public class SessionView extends JPanel {
         JPanel strip = new JPanel();
         strip.setLayout(new BoxLayout(strip, BoxLayout.Y_AXIS));
         strip.setBackground(Theme.PANEL_BG);
-        strip.setPreferredSize(new Dimension(100, 400));
+        strip.setPreferredSize(new Dimension(110, 400));
+        strip.setMaximumSize(new Dimension(110, 32767));
         strip.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.BORDER));
 
         JLabel header = new JLabel("Master", SwingConstants.CENTER);
         header.setAlignmentX(Component.CENTER_ALIGNMENT);
-        header.setMaximumSize(new Dimension(100, 25));
+        header.setMinimumSize(new Dimension(110, 30));
+        header.setMaximumSize(new Dimension(110, 30));
+        header.setPreferredSize(new Dimension(110, 30));
         header.setBackground(Theme.TRACK_HEADER);
         header.setForeground(Theme.TEXT_BRIGHT);
         header.setFont(Theme.FONT_UI_BOLD);
@@ -196,8 +240,11 @@ public class SessionView extends JPanel {
         strip.add(header);
 
         for (int i = 0; i < 5; i++) {
-            JButton sceneBtn = createFlatButton((i + 1) + " ►", null);
-            sceneBtn.setMaximumSize(new Dimension(92, 28));
+            int sceneIdx = i;
+            JButton sceneBtn = createFlatButton((i + 1) + " ►", e -> sendPlayScene(sceneIdx));
+            sceneBtn.setMinimumSize(new Dimension(100, 30));
+            sceneBtn.setMaximumSize(new Dimension(100, 30));
+            sceneBtn.setPreferredSize(new Dimension(100, 30));
             strip.add(Box.createVerticalStrut(2));
             strip.add(sceneBtn);
         }
@@ -205,7 +252,7 @@ public class SessionView extends JPanel {
         strip.add(Box.createVerticalGlue());
 
         JSlider masterVol = new JSlider(JSlider.VERTICAL, -70, 6, 0);
-        masterVol.setMaximumSize(new Dimension(90, 80));
+        masterVol.setMaximumSize(new Dimension(30, 100));
         masterVol.setBackground(Theme.PANEL_BG);
         strip.add(createControlLabel("Master"));
         strip.add(masterVol);
@@ -246,11 +293,15 @@ public class SessionView extends JPanel {
         menu.add(loadItem);
 
         JCheckBoxMenuItem loopItem = new JCheckBoxMenuItem("Loop");
-        // We don't have current state easily, so we just toggle
         loopItem.addActionListener(e -> {
             sendSetClipLoop(trackIdx, slotIdx, loopItem.isSelected());
         });
         menu.add(loopItem);
+
+        menu.addSeparator();
+        JMenuItem deleteItem = new JMenuItem("Delete Clip");
+        deleteItem.addActionListener(e -> sendDeleteClip(trackIdx, slotIdx));
+        menu.add(deleteItem);
 
         menu.show(btn, x, y);
     }
@@ -302,12 +353,36 @@ public class SessionView extends JPanel {
         BackendManager.getInstance().sendRequest(builder);
     }
 
+    private void sendPlayScene(int slotIdx) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(128);
+        PlayScene.startPlayScene(builder);
+        PlayScene.addSlotIndex(builder, slotIdx);
+        int playSceneOff = PlayScene.endPlayScene(builder);
+        int requestOffset = Request.createRequest(builder, Command.PlayScene, playSceneOff);
+        builder.finish(requestOffset);
+        BackendManager.getInstance().sendRequest(builder);
+    }
+
+    private void sendDeleteClip(int trackIdx, int slotIdx) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(128);
+        DeleteClip.startDeleteClip(builder);
+        DeleteClip.addTrackIndex(builder, trackIdx);
+        DeleteClip.addSlotIndex(builder, slotIdx);
+        int deleteOff = DeleteClip.endDeleteClip(builder);
+        int requestOffset = Request.createRequest(builder, Command.DeleteClip, deleteOff);
+        builder.finish(requestOffset);
+        BackendManager.getInstance().sendRequest(builder);
+
+        // Optimistically clear the UI
+        updateSlotLabel(trackIdx, slotIdx, "");
+    }
+
     private static class LevelMeter extends JPanel {
         private float levelL = 0;
         private float levelR = 0;
 
         LevelMeter() {
-            setPreferredSize(new Dimension(20, 100));
+            setPreferredSize(new Dimension(12, 100));
             setBackground(Color.BLACK);
         }
 
@@ -325,21 +400,21 @@ public class SessionView extends JPanel {
 
             // Draw level meters
             g.setColor(Theme.ACCENT_GREEN.darker().darker());
-            g.fillRect(5, 0, w / 2 - 6, h);
-            g.fillRect(w / 2 + 1, 0, w / 2 - 6, h);
+            g.fillRect(1, 0, w / 2 - 2, h);
+            g.fillRect(w / 2 + 1, 0, w / 2 - 2, h);
 
             g.setColor(Theme.ACCENT_GREEN);
             int hL = (int) (levelL * h);
             int hR = (int) (levelR * h);
 
-            g.fillRect(5, h - hL, w / 2 - 6, hL);
-            g.fillRect(w / 2 + 1, h - hR, w / 2 - 6, hR);
+            g.fillRect(1, h - hL, w / 2 - 2, hL);
+            g.fillRect(w / 2 + 1, h - hR, w / 2 - 2, hR);
 
             // Draw scale lines
             g.setColor(new Color(255, 255, 255, 50));
             for (int i = 1; i < 4; i++) {
                 int y = i * h / 4;
-                g.drawLine(5, y, w - 5, y);
+                g.drawLine(1, y, w - 1, y);
             }
         }
     }

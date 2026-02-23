@@ -44,7 +44,7 @@ public class PluginPane extends JPanel {
                 float[] wf = new float[cw.waveformLength()];
                 for (int i = 0; i < wf.length; i++)
                     wf[i] = cw.waveform(i);
-                waveformPanel.setWaveform(wf);
+                waveformPanel.setWaveform(cw.trackIndex(), cw.slotIndex(), wf);
                 rebuildDeviceChain();
             }
         });
@@ -67,6 +67,12 @@ public class PluginPane extends JPanel {
             }
 
             int pIdx = paramList.pluginIndex();
+            if (paramList.pluginName().isEmpty()) {
+                devicePanels.remove(pIdx);
+                rebuildDeviceChain();
+                return;
+            }
+
             DevicePanel panel = devicePanels.get(pIdx);
             if (panel == null || !panel.pluginName.equals(paramList.pluginName())) {
                 panel = new DevicePanel(currentTrackIndex, pIdx, paramList.pluginName(), paramList.isInstrument());
@@ -94,13 +100,13 @@ public class PluginPane extends JPanel {
         }
 
         // Add waveform if any
-        deviceChainContent.add(waveformPanel);
+        if (waveformPanel.hasData()) {
+            deviceChainContent.add(waveformPanel);
+        }
 
-        // Add instrument or placeholder
+        // Add instrument if any (removed placeholder)
         if (instrument != null) {
             deviceChainContent.add(instrument);
-        } else {
-            deviceChainContent.add(createPlaceholder());
         }
 
         // Add effects in their original order
@@ -112,16 +118,6 @@ public class PluginPane extends JPanel {
         deviceChainContent.repaint();
     }
 
-    private JPanel createPlaceholder() {
-        JPanel p = new JPanel(new GridBagLayout());
-        p.setPreferredSize(new Dimension(250, 220));
-        p.setBackground(new Color(40, 40, 40));
-        p.setBorder(BorderFactory.createLineBorder(Color.BLACK));
-        JLabel l = new JLabel("Empty Instrument");
-        l.setForeground(new Color(100, 100, 100));
-        p.add(l);
-        return p;
-    }
 
     private class DevicePanel extends JPanel {
         private final int trackIndex;

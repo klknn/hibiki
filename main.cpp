@@ -20,7 +20,65 @@
 #include "hibiki_response_generated.h"
 #include "hibiki_project_generated.h"
 
-void sendNotification(const uint8_t* buf, size_t size);
+void sendNotification(const uint8_t* buf, size_t size) {
+    static std::mutex cout_mutex;
+    std::lock_guard<std::mutex> lock(cout_mutex);
+    uint32_t msg_size = static_cast<uint32_t>(size);
+    std::cout.write(reinterpret_cast<const char*>(&msg_size), sizeof(msg_size));
+    std::cout.write(reinterpret_cast<const char*>(buf), size);
+    std::cout.flush();
+}
+
+void sendAck(const char* cmd_type, bool success) {
+    flatbuffers::FlatBufferBuilder builder(128);
+    auto cmd_type_off = builder.CreateString(cmd_type);
+    auto ack_off = hibiki::ipc::CreateAcknowledge(builder, cmd_type_off, success);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_Acknowledge, ack_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
+void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name, bool is_instrument, const std::vector<VstParamInfo>& params) {
+    flatbuffers::FlatBufferBuilder builder(1024);
+    std::vector<flatbuffers::Offset<hibiki::ipc::ParamInfo>> param_offsets;
+    for (const auto& p : params) {
+        auto name_off = builder.CreateString(p.name);
+        param_offsets.push_back(hibiki::ipc::CreateParamInfo(builder, p.id, name_off, p.defaultValue));
+    }
+    auto params_vec = builder.CreateVector(param_offsets);
+    auto name_off = builder.CreateString(plugin_name);
+    auto list_off = hibiki::ipc::CreateParamList(builder, track_idx, plugin_idx, name_off, is_instrument, params_vec);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ParamList, list_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
+void sendLog(const std::string& msg) {
+    flatbuffers::FlatBufferBuilder builder(512);
+    auto msg_off = builder.CreateString(msg);
+    auto log_off = hibiki::ipc::CreateLog(builder, msg_off);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_Log, log_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
+void sendClipInfo(int track_idx, int slot_index, const std::string& name) {
+    flatbuffers::FlatBufferBuilder builder(512);
+    auto name_off = builder.CreateString(name);
+    auto clip_off = hibiki::ipc::CreateClipInfo(builder, track_idx, slot_index, name_off);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ClipInfo, clip_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
+void sendClearProject() {
+    flatbuffers::FlatBufferBuilder builder(128);
+    auto clear_off = hibiki::ipc::CreateClearProject(builder);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ClearProject, clear_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
 
 struct Clip {
     enum Type { MIDI, AUDIO } type;
@@ -103,8 +161,9 @@ public:
             return -1;
         }
 
+        bool is_instrument = plugin->isInstrument();
         int target_idx = -1;
-        if (plugin->isInstrument()) {
+        if (is_instrument) {
             // Find existing instrument to replace
             for (size_t i = 0; i < plugins.size(); ++i) {
                 if (plugins[i]->isInstrument()) {
@@ -116,7 +175,7 @@ public:
 
         if (target_idx != -1) {
             plugins[target_idx] = std::move(plugin);
-        } else if (plugin->isInstrument()) {
+        } else if (is_instrument) {
             // New instrument, insert at 0
             plugins.insert(plugins.begin(), std::move(plugin));
             target_idx = 0;
@@ -131,7 +190,32 @@ public:
             current_time_sec = 0.0;
             current_midi_idx = 0;
         }
+
+        // Exclusivity rule: If loading an instrument, clear audio clips
+        if (is_instrument) {
+            std::vector<int> audio_slots;
+            for (auto const& [slot, clip] : clips) {
+                if (clip->type == Clip::AUDIO) audio_slots.push_back(slot);
+            }
+            for (int slot : audio_slots) {
+                clips.erase(slot);
+                sendClipInfo(index, slot, "");
+            }
+        }
+
         return target_idx;
+    }
+
+    bool delete_clip(int slot) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (clips.count(slot)) {
+            clips.erase(slot);
+            if (playing_slot == slot) {
+                playing_slot = -1;
+            }
+            return true;
+        }
+        return false;
     }
 
 
@@ -156,6 +240,19 @@ public:
             if (!clip->midi_events.empty()) {
                 clip->duration_sec = clip->midi_events.back().seconds + 0.1; // Small buffer
             }
+        }
+
+
+        // Exclusivity rule: If loading an audio clip, clear instruments
+        if (clip->type == Clip::AUDIO) {
+            for (size_t i = 0; i < plugins.size(); ++i) {
+                if (plugins[i]->isInstrument()) {
+                    sendParamList(index, (int)i, "", true, {});
+                }
+            }
+            plugins.erase(std::remove_if(plugins.begin(), plugins.end(), [](const auto& p) {
+                return p->isInstrument();
+            }), plugins.end());
         }
 
         // Generate waveform summary for AUDIO clips
@@ -227,7 +324,7 @@ public:
 
 struct GlobalState {
     std::atomic<bool> quit{false};
-    double bpm = 120.0;
+    double bpm = 140.0;
     std::map<int, std::unique_ptr<Track>> tracks;
     std::mutex tracks_mutex;
     std::map<int, std::pair<float, float>> track_levels; // Peak L/R
@@ -396,7 +493,7 @@ void playback_thread(GlobalState& state) {
         }
 
         // Send levels periodically
-        if (++level_counter >= 10) {
+        if (++level_counter >= 4) {
             level_counter = 0;
             flatbuffers::FlatBufferBuilder builder(512);
             std::vector<flatbuffers::Offset<hibiki::ipc::TrackLevel>> level_offsets;
@@ -425,64 +522,6 @@ void playback_thread(GlobalState& state) {
     }
 }
 
-void sendNotification(const uint8_t* buf, size_t size) {
-    static std::mutex cout_mutex;
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    uint32_t msg_size = static_cast<uint32_t>(size);
-    std::cout.write(reinterpret_cast<const char*>(&msg_size), sizeof(msg_size));
-    std::cout.write(reinterpret_cast<const char*>(buf), size);
-    std::cout.flush();
-}
-
-void sendAck(const char* cmd_type, bool success) {
-    flatbuffers::FlatBufferBuilder builder(128);
-    auto cmd_type_off = builder.CreateString(cmd_type);
-    auto ack_off = hibiki::ipc::CreateAcknowledge(builder, cmd_type_off, success);
-    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_Acknowledge, ack_off.Union());
-    builder.Finish(nf_off);
-    sendNotification(builder.GetBufferPointer(), builder.GetSize());
-}
-
-void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name, bool is_instrument, const std::vector<VstParamInfo>& params) {
-    flatbuffers::FlatBufferBuilder builder(1024);
-    std::vector<flatbuffers::Offset<hibiki::ipc::ParamInfo>> param_offsets;
-    for (const auto& p : params) {
-        auto name_off = builder.CreateString(p.name);
-        param_offsets.push_back(hibiki::ipc::CreateParamInfo(builder, p.id, name_off, p.defaultValue));
-    }
-    auto params_vec = builder.CreateVector(param_offsets);
-    auto name_off = builder.CreateString(plugin_name);
-    auto list_off = hibiki::ipc::CreateParamList(builder, track_idx, plugin_idx, name_off, is_instrument, params_vec);
-    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ParamList, list_off.Union());
-    builder.Finish(nf_off);
-    sendNotification(builder.GetBufferPointer(), builder.GetSize());
-}
-
-void sendLog(const std::string& msg) {
-    flatbuffers::FlatBufferBuilder builder(512);
-    auto msg_off = builder.CreateString(msg);
-    auto log_off = hibiki::ipc::CreateLog(builder, msg_off);
-    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_Log, log_off.Union());
-    builder.Finish(nf_off);
-    sendNotification(builder.GetBufferPointer(), builder.GetSize());
-}
-
-void sendClipInfo(int track_idx, int slot_index, const std::string& name) {
-    flatbuffers::FlatBufferBuilder builder(512);
-    auto name_off = builder.CreateString(name);
-    auto clip_off = hibiki::ipc::CreateClipInfo(builder, track_idx, slot_index, name_off);
-    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ClipInfo, clip_off.Union());
-    builder.Finish(nf_off);
-    sendNotification(builder.GetBufferPointer(), builder.GetSize());
-}
-
-void sendClearProject() {
-    flatbuffers::FlatBufferBuilder builder(128);
-    auto clear_off = hibiki::ipc::CreateClearProject(builder);
-    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ClearProject, clear_off.Union());
-    builder.Finish(nf_off);
-    sendNotification(builder.GetBufferPointer(), builder.GetSize());
-}
 
 void save_project(GlobalState& state, const std::string& path) {
     flatbuffers::FlatBufferBuilder builder(1024);
@@ -695,15 +734,6 @@ int main(int argc, char** argv) {
             } else {
                 sendAck("REMOVE_PLUGIN", false);
             }
-        } else if (command_type == hibiki::ipc::Command_RemovePlugin) {
-            auto cmd = request->command_as_RemovePlugin();
-            int tidx = cmd->track_index();
-            int pidx = cmd->plugin_index();
-            auto track = state.get_or_create_track(tidx);
-            if (pidx >= 0 && pidx < (int)track->plugins.size()) {
-                track->plugins.erase(track->plugins.begin() + pidx);
-                std::cerr << "Removed plugin " << pidx << " from track " << tidx << std::endl;
-            }
         } else if (command_type == hibiki::ipc::Command_ShowPluginGui) {
             auto cmd = request->command_as_ShowPluginGui();
             int track_idx = cmd->track_index();
@@ -727,6 +757,28 @@ int main(int argc, char** argv) {
                 if (plugin_idx >= 0 && plugin_idx < (int)plugins.size()) {
                     plugins[plugin_idx]->setParameterValue(param_id, value);
                 }
+            }
+        } else if (command_type == hibiki::ipc::Command_SetBpm) {
+            auto cmd = request->command_as_SetBpm();
+            state.bpm = cmd->bpm();
+            sendAck("SET_BPM", true);
+        } else if (command_type == hibiki::ipc::Command_PlayScene) {
+            auto cmd = request->command_as_PlayScene();
+            int sidx = cmd->slot_index();
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            for (auto& pair : state.tracks) {
+                pair.second->play_clip(sidx);
+            }
+            sendAck("PLAY_SCENE", true);
+        } else if (command_type == hibiki::ipc::Command_DeleteClip) {
+            auto cmd = request->command_as_DeleteClip();
+            int tidx = cmd->track_index();
+            int sidx = cmd->slot_index();
+            if (state.get_or_create_track(tidx)->delete_clip(sidx)) {
+                sendAck("DELETE_CLIP", true);
+                sendClipInfo(tidx, sidx, "");
+            } else {
+                sendAck("DELETE_CLIP", false);
             }
         } else if (command_type == hibiki::ipc::Command_Quit) {
             state.quit = true;

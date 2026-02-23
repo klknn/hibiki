@@ -32,7 +32,7 @@ public class BrowserPane extends JPanel {
         header.setForeground(Theme.TEXT_BRIGHT);
         header.setFont(Theme.FONT_UI_BOLD);
         header.setOpaque(true);
-        header.setPreferredSize(new Dimension(0, 25));
+        header.setPreferredSize(new Dimension(0, 30));
         add(header, BorderLayout.NORTH);
 
         root = new DefaultMutableTreeNode("Hibiki");

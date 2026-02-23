@@ -22,40 +22,40 @@ public class BrowserPane extends JPanel {
 
     public BrowserPane() {
         setLayout(new BorderLayout());
-        setBackground(Theme.BG_DARK);
-        setPreferredSize(new Dimension(220, 0));
-        setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.BORDER));
+        setBackground(Theme.getInstance().BG_DARK);
+        setPreferredSize(new Dimension(Theme.getInstance().scale(220), 0));
+        setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.getInstance().BORDER));
 
         JLabel header = new JLabel("BROWSER", SwingConstants.LEFT);
         header.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 0));
-        header.setBackground(Theme.TRACK_HEADER);
-        header.setForeground(Theme.TEXT_BRIGHT);
-        header.setFont(Theme.FONT_UI_BOLD);
+        header.setBackground(Theme.getInstance().TRACK_HEADER);
+        header.setForeground(Theme.getInstance().TEXT_BRIGHT);
+        header.setFont(Theme.getInstance().FONT_UI_BOLD);
         header.setOpaque(true);
-        header.setPreferredSize(new Dimension(0, 30));
+        header.setPreferredSize(new Dimension(0, Theme.getInstance().scale(30)));
         add(header, BorderLayout.NORTH);
 
         root = new DefaultMutableTreeNode("Hibiki");
         treeModel = new DefaultTreeModel(root);
         tree = new JTree(treeModel);
-        tree.setBackground(Theme.BG_DARK);
-        tree.setFont(Theme.FONT_UI);
-        tree.setRowHeight(20);
+        tree.setBackground(Theme.getInstance().BG_DARK);
+        tree.setFont(Theme.getInstance().FONT_UI);
+        tree.setRowHeight(Theme.getInstance().scale(20));
 
         // Custom renderer for visibility
         DefaultTreeCellRenderer renderer = new DefaultTreeCellRenderer();
-        renderer.setBackgroundNonSelectionColor(Theme.BG_DARK);
-        renderer.setTextNonSelectionColor(Theme.TEXT_NORMAL);
-        renderer.setTextSelectionColor(Theme.TEXT_BRIGHT);
-        renderer.setBackgroundSelectionColor(Theme.PANEL_BG_LIGHT);
-        renderer.setBorderSelectionColor(Theme.BORDER);
+        renderer.setBackgroundNonSelectionColor(Theme.getInstance().BG_DARK);
+        renderer.setTextNonSelectionColor(Theme.getInstance().TEXT_NORMAL);
+        renderer.setTextSelectionColor(Theme.getInstance().TEXT_BRIGHT);
+        renderer.setBackgroundSelectionColor(Theme.getInstance().PANEL_BG_LIGHT);
+        renderer.setBorderSelectionColor(Theme.getInstance().BORDER);
         renderer.setLeafIcon(null);
         renderer.setOpenIcon(null);
         renderer.setClosedIcon(null);
         tree.setCellRenderer(renderer);
         
         JScrollPane scrollPane = new JScrollPane(tree);
-        scrollPane.getViewport().setBackground(Theme.BG_DARK);
+        scrollPane.getViewport().setBackground(Theme.getInstance().BG_DARK);
         scrollPane.setBorder(null);
         add(scrollPane, BorderLayout.CENTER);
 

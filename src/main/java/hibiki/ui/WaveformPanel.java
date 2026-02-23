@@ -17,12 +17,12 @@ public class WaveformPanel extends JPanel {
 
     public WaveformPanel() {
         setLayout(new BorderLayout());
-        setBackground(Theme.BG_DARKER);
-        setPreferredSize(new Dimension(300, 150));
-        setBorder(BorderFactory.createLineBorder(Theme.BORDER));
+        setBackground(Theme.getInstance().BG_DARKER);
+        setPreferredSize(new Dimension(Theme.getInstance().scale(300), Theme.getInstance().scale(150)));
+        setBorder(BorderFactory.createLineBorder(Theme.getInstance().BORDER));
 
         deleteBtn = new JButton("Delete Clip");
-        deleteBtn.setFont(Theme.FONT_UI);
+        deleteBtn.setFont(Theme.getInstance().FONT_UI);
         deleteBtn.setVisible(false);
         deleteBtn.addActionListener(e -> sendDeleteClip());
 
@@ -88,7 +88,7 @@ public class WaveformPanel extends JPanel {
 
         Graphics2D g2 = (Graphics2D) g;
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g2.setColor(Theme.ACCENT_BLUE);
+        g2.setColor(Theme.getInstance().ACCENT_BLUE);
 
         int w = getWidth();
         int h = getHeight();

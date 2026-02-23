@@ -28,7 +28,7 @@ public class SessionView extends JPanel {
 
     public SessionView() {
         setLayout(new BorderLayout());
-        setBackground(Theme.BG_DARK);
+        setBackground(Theme.getInstance().BG_DARK);
 
         JPanel master = createMasterStrip();
 
@@ -43,7 +43,7 @@ public class SessionView extends JPanel {
             }
         };
         trackPanel.setLayout(new BoxLayout(trackPanel, BoxLayout.X_AXIS));
-        trackPanel.setBackground(Theme.BG_DARK);
+        trackPanel.setBackground(Theme.getInstance().BG_DARK);
 
         for (int i = 1; i <= 4; i++) {
             trackPanel.add(createTrackStrip("Track " + i, i));
@@ -53,8 +53,8 @@ public class SessionView extends JPanel {
         scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
         scrollPane.setBorder(null);
-        scrollPane.setBackground(Theme.BG_DARK);
-        scrollPane.getHorizontalScrollBar().setUnitIncrement(16);
+        scrollPane.setBackground(Theme.getInstance().BG_DARK);
+        scrollPane.getHorizontalScrollBar().setUnitIncrement(Theme.getInstance().scale(16));
 
         add(scrollPane, BorderLayout.CENTER);
         add(master, BorderLayout.EAST);
@@ -83,8 +83,8 @@ public class SessionView extends JPanel {
                     JButton btn = slotButtons[t][s];
                     if (btn != null) {
                         btn.setText("");
-                        btn.setBackground(Theme.PANEL_BG_LIGHT);
-                        btn.setForeground(Theme.TEXT_NORMAL);
+                        btn.setBackground(Theme.getInstance().PANEL_BG_LIGHT);
+                        btn.setForeground(Theme.getInstance().TEXT_NORMAL);
                     }
                 }
             }
@@ -98,11 +98,11 @@ public class SessionView extends JPanel {
                 if (btn != null) {
                     if (name.isEmpty()) {
                         btn.setText("");
-                        btn.setBackground(Theme.PANEL_BG_LIGHT);
-                        btn.setForeground(Theme.TEXT_NORMAL);
+                        btn.setBackground(Theme.getInstance().PANEL_BG_LIGHT);
+                        btn.setForeground(Theme.getInstance().TEXT_NORMAL);
                     } else {
                         btn.setText("<html><center>" + name + "<br>▶</center></html>");
-                        btn.setBackground(Theme.CLIP_PLAYING);
+                        btn.setBackground(Theme.getInstance().CLIP_PLAYING);
                         btn.setForeground(Color.BLACK);
                     }
                 }
@@ -123,35 +123,35 @@ public class SessionView extends JPanel {
     private JPanel createTrackStrip(String name, int trackIdx) {
         JPanel strip = new JPanel();
         strip.setLayout(new BoxLayout(strip, BoxLayout.Y_AXIS));
-        strip.setBackground(Theme.PANEL_BG);
-        strip.setPreferredSize(new Dimension(110, 400));
-        strip.setMaximumSize(new Dimension(110, 32767));
-        strip.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.BORDER));
+        strip.setBackground(Theme.getInstance().PANEL_BG);
+        strip.setPreferredSize(new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(400)));
+        strip.setMaximumSize(new Dimension(Theme.getInstance().scale(110), 32767));
+        strip.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.getInstance().BORDER));
 
         // Header
         JLabel header = new JLabel(trackIdx + " " + name, SwingConstants.CENTER);
         header.setAlignmentX(Component.CENTER_ALIGNMENT);
-        header.setMinimumSize(new Dimension(110, 30));
-        header.setMaximumSize(new Dimension(110, 30));
-        header.setPreferredSize(new Dimension(110, 30));
-        header.setBackground(Theme.TRACK_HEADER);
-        header.setForeground(Theme.TEXT_BRIGHT);
-        header.setFont(Theme.FONT_UI_BOLD);
+        header.setMinimumSize(new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(30)));
+        header.setMaximumSize(new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(30)));
+        header.setPreferredSize(new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(30)));
+        header.setBackground(Theme.getInstance().TRACK_HEADER);
+        header.setForeground(Theme.getInstance().TEXT_BRIGHT);
+        header.setFont(Theme.getInstance().FONT_UI_BOLD);
         header.setOpaque(true);
-        header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER));
+        header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.getInstance().BORDER));
         strip.add(header);
 
         // Clips
         for (int i = 0; i < 5; i++) {
             JButton clipBtn = new JButton("");
             clipBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
-            clipBtn.setMinimumSize(new Dimension(100, 30));
-            clipBtn.setMaximumSize(new Dimension(100, 30));
-            clipBtn.setPreferredSize(new Dimension(100, 30));
-            clipBtn.setFont(Theme.FONT_UI);
-            clipBtn.setBackground(Theme.PANEL_BG_LIGHT);
-            clipBtn.setForeground(Theme.TEXT_NORMAL);
-            clipBtn.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
+            clipBtn.setMinimumSize(new Dimension(Theme.getInstance().scale(100), Theme.getInstance().scale(30)));
+            clipBtn.setMaximumSize(new Dimension(Theme.getInstance().scale(100), Theme.getInstance().scale(30)));
+            clipBtn.setPreferredSize(new Dimension(Theme.getInstance().scale(100), Theme.getInstance().scale(30)));
+            clipBtn.setFont(Theme.getInstance().FONT_UI);
+            clipBtn.setBackground(Theme.getInstance().PANEL_BG_LIGHT);
+            clipBtn.setForeground(Theme.getInstance().TEXT_NORMAL);
+            clipBtn.setBorder(BorderFactory.createLineBorder(Theme.getInstance().BORDER));
             clipBtn.setFocusPainted(false);
 
             int slotIdx = i;
@@ -166,7 +166,7 @@ public class SessionView extends JPanel {
             });
 
             slotButtons[trackIdx][slotIdx] = clipBtn;
-            strip.add(Box.createVerticalStrut(2));
+            strip.add(Box.createVerticalStrut(Theme.getInstance().scale(2)));
             strip.add(clipBtn);
         }
 
@@ -176,10 +176,10 @@ public class SessionView extends JPanel {
         JPanel controls = new JPanel();
         controls.setLayout(new BoxLayout(controls, BoxLayout.X_AXIS));
         controls.setOpaque(false);
-        controls.setMaximumSize(new Dimension(110, 150));
+        controls.setMaximumSize(new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(150)));
 
         LevelMeter meter = new LevelMeter();
-        meter.setPreferredSize(new Dimension(12, 100));
+        meter.setPreferredSize(new Dimension(Theme.getInstance().scale(12), Theme.getInstance().scale(100)));
         trackMeters[trackIdx] = meter;
 
         JPanel volPanel = new JPanel();
@@ -188,23 +188,23 @@ public class SessionView extends JPanel {
 
         // Vol
         JSlider volSlider = new JSlider(JSlider.VERTICAL, -70, 6, 0);
-        volSlider.setMaximumSize(new Dimension(30, 100));
-        volSlider.setBackground(Theme.PANEL_BG);
+        volSlider.setMaximumSize(new Dimension(Theme.getInstance().scale(30), Theme.getInstance().scale(100)));
+        volSlider.setBackground(Theme.getInstance().PANEL_BG);
         volPanel.add(volSlider);
 
-        controls.add(Box.createHorizontalStrut(10));
+        controls.add(Box.createHorizontalStrut(Theme.getInstance().scale(10)));
         controls.add(meter);
-        controls.add(Box.createHorizontalStrut(5));
+        controls.add(Box.createHorizontalStrut(Theme.getInstance().scale(5)));
         controls.add(volPanel);
-        controls.add(Box.createHorizontalStrut(10));
+        controls.add(Box.createHorizontalStrut(Theme.getInstance().scale(10)));
 
         strip.add(controls);
-        strip.add(Box.createVerticalStrut(5));
+        strip.add(Box.createVerticalStrut(Theme.getInstance().scale(5)));
 
         // Pan
         JSlider panSlider = new JSlider(-50, 50, 0);
-        panSlider.setMaximumSize(new Dimension(90, 20));
-        panSlider.setBackground(Theme.PANEL_BG);
+        panSlider.setMaximumSize(new Dimension(Theme.getInstance().scale(90), Theme.getInstance().scale(20)));
+        panSlider.setBackground(Theme.getInstance().PANEL_BG);
         strip.add(createControlLabel("Pan"));
         strip.add(panSlider);
 
@@ -212,9 +212,9 @@ public class SessionView extends JPanel {
         JButton activeBtn = createFlatButton("" + trackIdx, e -> sendStopTrack(trackIdx));
         activeBtn.setBackground(new Color(200, 160, 50));
         activeBtn.setForeground(Color.BLACK);
-        strip.add(Box.createVerticalStrut(5));
+        strip.add(Box.createVerticalStrut(Theme.getInstance().scale(5)));
         strip.add(activeBtn);
-        strip.add(Box.createVerticalStrut(5));
+        strip.add(Box.createVerticalStrut(Theme.getInstance().scale(5)));
 
         return strip;
     }
@@ -222,38 +222,38 @@ public class SessionView extends JPanel {
     private JPanel createMasterStrip() {
         JPanel strip = new JPanel();
         strip.setLayout(new BoxLayout(strip, BoxLayout.Y_AXIS));
-        strip.setBackground(Theme.PANEL_BG);
-        strip.setPreferredSize(new Dimension(110, 400));
-        strip.setMaximumSize(new Dimension(110, 32767));
-        strip.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.BORDER));
+        strip.setBackground(Theme.getInstance().PANEL_BG);
+        strip.setPreferredSize(new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(400)));
+        strip.setMaximumSize(new Dimension(Theme.getInstance().scale(110), 32767));
+        strip.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.getInstance().BORDER));
 
         JLabel header = new JLabel("Master", SwingConstants.CENTER);
         header.setAlignmentX(Component.CENTER_ALIGNMENT);
-        header.setMinimumSize(new Dimension(110, 30));
-        header.setMaximumSize(new Dimension(110, 30));
-        header.setPreferredSize(new Dimension(110, 30));
-        header.setBackground(Theme.TRACK_HEADER);
-        header.setForeground(Theme.TEXT_BRIGHT);
-        header.setFont(Theme.FONT_UI_BOLD);
+        header.setMinimumSize(new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(30)));
+        header.setMaximumSize(new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(30)));
+        header.setPreferredSize(new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(30)));
+        header.setBackground(Theme.getInstance().TRACK_HEADER);
+        header.setForeground(Theme.getInstance().TEXT_BRIGHT);
+        header.setFont(Theme.getInstance().FONT_UI_BOLD);
         header.setOpaque(true);
-        header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER));
+        header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.getInstance().BORDER));
         strip.add(header);
 
         for (int i = 0; i < 5; i++) {
             int sceneIdx = i;
             JButton sceneBtn = createFlatButton((i + 1) + " ►", e -> sendPlayScene(sceneIdx));
-            sceneBtn.setMinimumSize(new Dimension(100, 30));
-            sceneBtn.setMaximumSize(new Dimension(100, 30));
-            sceneBtn.setPreferredSize(new Dimension(100, 30));
-            strip.add(Box.createVerticalStrut(2));
+            sceneBtn.setMinimumSize(new Dimension(Theme.getInstance().scale(100), Theme.getInstance().scale(30)));
+            sceneBtn.setMaximumSize(new Dimension(Theme.getInstance().scale(100), Theme.getInstance().scale(30)));
+            sceneBtn.setPreferredSize(new Dimension(Theme.getInstance().scale(100), Theme.getInstance().scale(30)));
+            strip.add(Box.createVerticalStrut(Theme.getInstance().scale(2)));
             strip.add(sceneBtn);
         }
 
         strip.add(Box.createVerticalGlue());
 
         JSlider masterVol = new JSlider(JSlider.VERTICAL, -70, 6, 0);
-        masterVol.setMaximumSize(new Dimension(30, 100));
-        masterVol.setBackground(Theme.PANEL_BG);
+        masterVol.setMaximumSize(new Dimension(Theme.getInstance().scale(30), Theme.getInstance().scale(100)));
+        masterVol.setBackground(Theme.getInstance().PANEL_BG);
         strip.add(createControlLabel("Master"));
         strip.add(masterVol);
 
@@ -263,17 +263,17 @@ public class SessionView extends JPanel {
     private JLabel createControlLabel(String text) {
         JLabel l = new JLabel(text, SwingConstants.CENTER);
         l.setAlignmentX(Component.CENTER_ALIGNMENT);
-        l.setFont(new Font("SansSerif", Font.PLAIN, 9));
-        l.setForeground(Theme.TEXT_DIM);
+        l.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(9)));
+        l.setForeground(Theme.getInstance().TEXT_DIM);
         return l;
     }
 
     private JButton createFlatButton(String text, java.awt.event.ActionListener listener) {
         JButton btn = new JButton(text);
         btn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        btn.setFont(Theme.FONT_UI_BOLD);
+        btn.setFont(Theme.getInstance().FONT_UI_BOLD);
         btn.setFocusPainted(false);
-        btn.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
+        btn.setBorder(BorderFactory.createLineBorder(Theme.getInstance().BORDER));
         if (listener != null)
             btn.addActionListener(listener);
         return btn;
@@ -382,7 +382,7 @@ public class SessionView extends JPanel {
         private float levelR = 0;
 
         LevelMeter() {
-            setPreferredSize(new Dimension(12, 100));
+            setPreferredSize(new Dimension(Theme.getInstance().scale(12), Theme.getInstance().scale(100)));
             setBackground(Color.BLACK);
         }
 
@@ -399,11 +399,11 @@ public class SessionView extends JPanel {
             int w = getWidth();
 
             // Draw level meters
-            g.setColor(Theme.ACCENT_GREEN.darker().darker());
+            g.setColor(Theme.getInstance().ACCENT_GREEN.darker().darker());
             g.fillRect(1, 0, w / 2 - 2, h);
             g.fillRect(w / 2 + 1, 0, w / 2 - 2, h);
 
-            g.setColor(Theme.ACCENT_GREEN);
+            g.setColor(Theme.getInstance().ACCENT_GREEN);
             int hL = (int) (levelL * h);
             int hR = (int) (levelR * h);
 

@@ -143,7 +143,7 @@ bool loadWav(const std::string& path, std::vector<float>& out_data, int& out_cha
 class Track {
 public:
     int index;
-    std::vector<std::unique_ptr<Vst3Plugin>> plugins;
+    std::vector<std::unique_ptr<BasePlugin>> plugins;
     std::map<int, std::unique_ptr<Clip>> clips;
 
     int playing_slot = -1;
@@ -340,8 +340,8 @@ struct GlobalState {
 };
 
 void playback_thread(GlobalState& state) {
-    AlsaPlayback alsa(44100, 2);
-    if (!alsa.is_ready()) return;
+    std::unique_ptr<BasePlayback> alsa = std::make_unique<AlsaPlayback>(44100, 2);
+    if (!alsa->is_ready()) return;
 
     int block_size = 512;
     float sample_rate = 44100.0f;
@@ -518,7 +518,7 @@ void playback_thread(GlobalState& state) {
             interleaved[i * 2 + 1] = mixBufferR[i];
         }
 
-        alsa.write(interleaved, block_size);
+        alsa->write(interleaved, block_size);
     }
 }
 

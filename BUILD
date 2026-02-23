@@ -3,9 +3,27 @@ load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_test")
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library", "flatbuffer_library_public")
 
 cc_library(
+    name = "audio_types",
+    hdrs = ["audio_types.hpp"],
+)
+
+cc_library(
+    name = "playback_base",
+    hdrs = ["playback_base.hpp"],
+    deps = [":audio_types"],
+)
+
+cc_library(
+    name = "plugin_base",
+    hdrs = ["plugin_base.hpp"],
+    deps = [":audio_types"],
+)
+
+cc_library(
     name = "alsa_out",
     srcs = ["alsa_out.cpp"],
     hdrs = ["alsa_out.hpp"],
+    deps = [":playback_base"],
     linkopts = ["-lasound"],
 )
 
@@ -14,6 +32,8 @@ cc_library(
     srcs = ["vst3_host.cpp"],
     hdrs = ["vst3_host.hpp", "vst3_host_impl.hpp"],
     deps = [
+        ":audio_types",
+        ":plugin_base",
         "@vst3sdk//:vst3sdk",
     ],
     linkopts = ["-lpthread", "-ldl"],
@@ -24,8 +44,6 @@ cc_library(
     srcs = ["vst3_host_x11.cpp"],
     deps = [
         ":vst3_host",
-        "@vst3sdk//:vst3sdk",
-
     ],
     linkopts = ["-lX11", "-lXcursor"],
     alwayslink = True,
@@ -46,7 +64,16 @@ cc_binary(
         ":hibiki_response_cc",
         ":hibiki_project_cc",
     ],
-    linkstatic = True,
+)
+
+cc_test(
+    name = "core_logic_test",
+    srcs = ["core_logic_test.cpp", "mock_audio.hpp", "audio_types.hpp", "playback_base.hpp", "plugin_base.hpp"],
+    deps = [
+        ":audio_types",
+        ":plugin_base",
+        ":playback_base",
+    ],
 )
 
 cc_test(

@@ -1,20 +1,22 @@
 #pragma once
 
-#include "playback_base.hpp"
-#include "plugin_base.hpp"
+#include "base_playback.hpp"
+#include "base_plugin.hpp"
 #include <cmath>
 #include <iostream>
+#include <optional>
 
-class MockPlayback : public BasePlayback {
+class MockPlayback : public Playback {
 public:
     std::vector<float> recorded_data;
+
     bool is_ready() const override { return true; }
     void write(const std::vector<float>& interleaved_data, int num_frames) override {
         recorded_data.insert(recorded_data.end(), interleaved_data.begin(), interleaved_data.end());
     }
 };
 
-class MockPlugin : public BasePlugin {
+class MockPlugin : public BasePlugin, public PluginParameters, public PluginEditor {
     std::string name = "MockPlugin";
     std::string path = "mock://plugin";
     bool note_on = false;
@@ -26,8 +28,8 @@ public:
         path = p;
         return true;
     }
-    void showEditor() override {}
-    void stopEditor() override {}
+    void open() override {}
+    void close() override {}
     void process(float** inputs, float** outputs, int numSamples, 
                  const HostProcessContext& context, 
                  const std::vector<MidiNoteEvent>& events) override {
@@ -52,10 +54,13 @@ public:
         }
     }
 
-    int getParameterCount() const override { return 0; }
-    bool getParameterInfo(int index, VstParamInfo& info) const override { return false; }
-    void setParameterValue(uint32_t id, double valueNormalized) override {}
-    double getParameterValue(uint32_t id) const override { return 0.0; }
+    PluginParameters* getParameters() override { return this; }
+    PluginEditor* getEditor() override { return this; }
+
+    int size() const override { return 0; }
+    std::optional<ParamInfo> info(int index) const override { return std::nullopt; }
+    void setNormalized(uint32_t id, double valueNormalized) override {}
+    double getNormalized(uint32_t id) const override { return 0.0; }
     const std::string& getName() const override { return name; }
     const std::string& getPath() const override { return path; }
     int getPluginIndex() const override { return 0; }

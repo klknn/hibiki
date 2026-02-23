@@ -38,7 +38,7 @@ void sendAck(const char* cmd_type, bool success) {
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
 }
 
-void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name, bool is_instrument, const std::vector<VstParamInfo>& params) {
+void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name, bool is_instrument, const std::vector<ParamInfo>& params) {
     flatbuffers::FlatBufferBuilder builder(1024);
     std::vector<flatbuffers::Offset<hibiki::ipc::ParamInfo>> param_offsets;
     for (const auto& p : params) {
@@ -340,7 +340,7 @@ struct GlobalState {
 };
 
 void playback_thread(GlobalState& state) {
-    std::unique_ptr<BasePlayback> alsa = std::make_unique<AlsaPlayback>(44100, 2);
+    std::unique_ptr<Playback> alsa = std::make_unique<AlsaPlayback>(44100, 2);
     if (!alsa->is_ready()) return;
 
     int block_size = 512;
@@ -535,10 +535,13 @@ void save_project(GlobalState& state, const std::string& path) {
         std::vector<flatbuffers::Offset<hibiki::project::Plugin>> plugin_offsets;
         for (auto& plugin : track->plugins) {
             std::vector<flatbuffers::Offset<hibiki::project::Parameter>> params;
-            for (int i = 0; i < plugin->getParameterCount(); i++) {
-                VstParamInfo info;
-                if (plugin->getParameterInfo(i, info)) {
-                    params.push_back(hibiki::project::CreateParameter(builder, info.id, (float)plugin->getParameterValue(info.id)));
+            auto param_iface = plugin->getParameters();
+            if (param_iface) {
+                for (int i = 0; i < param_iface->size(); i++) {
+                    auto info_opt = param_iface->info(i);
+                    if (info_opt) {
+                        params.push_back(hibiki::project::CreateParameter(builder, info_opt->id, (float)param_iface->getNormalized(info_opt->id)));
+                    }
                 }
             }
             auto params_vec = builder.CreateVector(params);
@@ -593,16 +596,19 @@ void load_project(GlobalState& state, const std::string& path) {
                     int idx = track->load_plugin(plugin_fb->path()->str(), plugin_fb->index());
                     if (idx != -1) {
                         auto& plugin = track->plugins[idx];
-                        if (plugin_fb->parameters()) {
+                        auto param_iface = plugin->getParameters();
+                        if (plugin_fb->parameters() && param_iface) {
                             for (auto param_fb : *plugin_fb->parameters()) {
-                                plugin->setParameterValue(param_fb->id(), param_fb->value());
+                                param_iface->setNormalized(param_fb->id(), param_fb->value());
                             }
                         }
                         // Notify GUI about the loaded plugin
-                        std::vector<VstParamInfo> params;
-                        for (int i = 0; i < plugin->getParameterCount(); ++i) {
-                            VstParamInfo info;
-                            if (plugin->getParameterInfo(i, info)) params.push_back(info);
+                        std::vector<ParamInfo> params;
+                        if (param_iface) {
+                            for (int i = 0; i < param_iface->size(); ++i) {
+                                auto info_opt = param_iface->info(i);
+                                if (info_opt) params.push_back(*info_opt);
+                            }
                         }
                         sendParamList(track->index, idx, plugin->getName(), plugin->isInstrument(), params);
                     }
@@ -664,12 +670,15 @@ int main(int argc, char** argv) {
             auto track = state.get_or_create_track(tidx);
             int target_idx = track->load_plugin(vpath, pidx);
             if (target_idx != -1) {
-                std::vector<VstParamInfo> params;
+                std::vector<ParamInfo> params;
                 auto& plugin = track->plugins[target_idx];
-                for (int i = 0; i < plugin->getParameterCount(); ++i) {
-                    VstParamInfo info;
-                    if (plugin->getParameterInfo(i, info)) {
-                        params.push_back(info);
+                auto param_iface = plugin->getParameters();
+                if (param_iface) {
+                    for (int i = 0; i < param_iface->size(); ++i) {
+                        auto info_opt = param_iface->info(i);
+                        if (info_opt) {
+                            params.push_back(*info_opt);
+                        }
                     }
                 }
                 sendParamList(tidx, target_idx, plugin->getName(), plugin->isInstrument(), params);
@@ -742,7 +751,8 @@ int main(int argc, char** argv) {
             if (state.tracks.count(track_idx)) {
                 auto& plugins = state.tracks[track_idx]->plugins;
                 if (plugin_idx >= 0 && plugin_idx < (int)plugins.size()) {
-                    plugins[plugin_idx]->showEditor();
+                    auto editor = plugins[plugin_idx]->getEditor();
+                    if (editor) editor->open();
                 }
             }
         } else if (command_type == hibiki::ipc::Command_SetParamValue) {
@@ -755,7 +765,8 @@ int main(int argc, char** argv) {
             if (state.tracks.count(track_idx)) {
                 auto& plugins = state.tracks[track_idx]->plugins;
                 if (plugin_idx >= 0 && plugin_idx < (int)plugins.size()) {
-                    plugins[plugin_idx]->setParameterValue(param_id, value);
+                    auto param_iface = plugins[plugin_idx]->getParameters();
+                    if (param_iface) param_iface->setNormalized(param_id, value);
                 }
             }
         } else if (command_type == hibiki::ipc::Command_SetBpm) {

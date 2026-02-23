@@ -2,28 +2,24 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_test")
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library", "flatbuffer_library_public")
 
+# Common types are now in base_plugin.hpp
+
 cc_library(
-    name = "audio_types",
-    hdrs = ["audio_types.hpp"],
+    name = "base_playback",
+    hdrs = ["base_playback.hpp"],
+    deps = [":base_plugin"],
 )
 
 cc_library(
-    name = "playback_base",
-    hdrs = ["playback_base.hpp"],
-    deps = [":audio_types"],
-)
-
-cc_library(
-    name = "plugin_base",
-    hdrs = ["plugin_base.hpp"],
-    deps = [":audio_types"],
+    name = "base_plugin",
+    hdrs = ["base_plugin.hpp"],
 )
 
 cc_library(
     name = "alsa_out",
     srcs = ["alsa_out.cpp"],
     hdrs = ["alsa_out.hpp"],
-    deps = [":playback_base"],
+    deps = [":base_playback"],
     linkopts = ["-lasound"],
 )
 
@@ -32,8 +28,7 @@ cc_library(
     srcs = ["vst3_host.cpp"],
     hdrs = ["vst3_host.hpp", "vst3_host_impl.hpp"],
     deps = [
-        ":audio_types",
-        ":plugin_base",
+        ":base_plugin",
         "@vst3sdk//:vst3sdk",
     ],
     linkopts = ["-lpthread", "-ldl"],
@@ -68,11 +63,10 @@ cc_binary(
 
 cc_test(
     name = "core_logic_test",
-    srcs = ["core_logic_test.cpp", "mock_audio.hpp", "audio_types.hpp", "playback_base.hpp", "plugin_base.hpp"],
+    srcs = ["core_logic_test.cpp", "mock_audio.hpp", "base_playback.hpp", "base_plugin.hpp"],
     deps = [
-        ":audio_types",
-        ":plugin_base",
-        ":playback_base",
+        ":base_plugin",
+        ":base_playback",
     ],
 )
 

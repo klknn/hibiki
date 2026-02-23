@@ -2,12 +2,11 @@
 
 #include <vector>
 
+#include "base_playback.hpp"
 
-#include "playback_base.hpp"
+typedef struct _snd_pcm snd_pcm_t; // from alsa.
 
-typedef struct _snd_pcm snd_pcm_t;
-
-class AlsaPlayback : public BasePlayback {
+class AlsaPlayback : public Playback {
     snd_pcm_t *pcm_handle = nullptr;
     int sample_rate;
     int channels;

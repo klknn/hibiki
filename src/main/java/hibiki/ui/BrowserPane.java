@@ -70,20 +70,22 @@ public class BrowserPane extends JPanel {
     private void populateTree() {
         DefaultMutableTreeNode pluginsNode = new DefaultMutableTreeNode("Plugins");
         DefaultMutableTreeNode midiNode = new DefaultMutableTreeNode("MIDI Files");
+        DefaultMutableTreeNode audioNode = new DefaultMutableTreeNode("Audio Clips");
         root.add(pluginsNode);
         root.add(midiNode);
+        root.add(audioNode);
 
         // Scan testdata directory
         File testData = new File("testdata");
         if (testData.exists() && testData.isDirectory()) {
-            scanDirectory(testData, pluginsNode, midiNode);
+          scanDirectory(testData, pluginsNode, midiNode, audioNode);
         }
 
         // Scan standard VST3 directories
         String home = System.getProperty("user.home");
-        scanDirectory(new File(home + "/.vst3"), pluginsNode, null);
-        scanDirectory(new File("/usr/lib/vst3"), pluginsNode, null);
-        scanDirectory(new File("/usr/local/lib/vst3"), pluginsNode, null);
+        scanDirectory(new File(home + "/.vst3"), pluginsNode, null, null);
+        scanDirectory(new File("/usr/lib/vst3"), pluginsNode, null, null);
+        scanDirectory(new File("/usr/local/lib/vst3"), pluginsNode, null, null);
 
         treeModel.reload();
     }
@@ -121,7 +123,8 @@ public class BrowserPane extends JPanel {
       return plugins;
     }
 
-    private void scanDirectory(File dir, DefaultMutableTreeNode pluginsNode, DefaultMutableTreeNode midiNode) {
+    private void scanDirectory(File dir, DefaultMutableTreeNode pluginsNode, DefaultMutableTreeNode midiNode,
+        DefaultMutableTreeNode audioNode) {
         File[] files = dir.listFiles();
         if (files == null) return;
 
@@ -145,13 +148,17 @@ public class BrowserPane extends JPanel {
                       pluginsNode.add(new DefaultMutableTreeNode(new FileItem(f, "vst", f.getName(), 0)));
                     }
                   } else {
-                    scanDirectory(f, pluginsNode, midiNode);
+                    scanDirectory(f, pluginsNode, midiNode, audioNode);
                 }
             } else {
                 String name = f.getName().toLowerCase();
                 if (name.endsWith(".mid") || name.endsWith(".midi")) {
                   if (midiNode != null) {
                     midiNode.add(new DefaultMutableTreeNode(new FileItem(f, "midi", f.getName())));
+                  }
+                } else if (name.endsWith(".wav")) {
+                  if (audioNode != null) {
+                    audioNode.add(new DefaultMutableTreeNode(new FileItem(f, "audio", f.getName())));
                   }
                 }
             }
@@ -165,7 +172,10 @@ public class BrowserPane extends JPanel {
             if ("vst".equals(item.type)) {
               sendLoadPlugin(item.file.getAbsolutePath(), item.pluginIndex);
             } else if ("midi".equals(item.type)) {
-                sendLoadClip(item.file.getAbsolutePath());
+              sendLoadClip(item.file.getAbsolutePath(), false);
+            } else if ("audio".equals(item.type)) {
+              sendLoadClip(item.file.getAbsolutePath(), true); // Default to loop for audio clips from browser? Or
+                                                               // follow a rule
             }
         }
     }
@@ -179,10 +189,10 @@ public class BrowserPane extends JPanel {
         BackendManager.getInstance().sendRequest(builder);
     }
 
-    private void sendLoadClip(String path) {
+    private void sendLoadClip(String path, boolean isLoop) {
         FlatBufferBuilder builder = new FlatBufferBuilder(1024);
         int pathOffset = builder.createString(path);
-        int loadClipOffset = LoadClip.createLoadClip(builder, 1, 0, pathOffset, false); // Default to track 1, slot 0
+        int loadClipOffset = LoadClip.createLoadClip(builder, 1, 0, pathOffset, isLoop); // Default to track 1, slot 0
         int requestOffset = Request.createRequest(builder, Command.LoadClip, loadClipOffset);
         builder.finish(requestOffset);
         BackendManager.getInstance().sendRequest(builder);

@@ -31,12 +31,30 @@ table ClipInfo {
 
 table ClearProject {}
 
+table TrackLevel {
+    track_index: int;
+    peak_l: float;
+    peak_r: float;
+}
+
+table TrackLevels {
+    levels: [TrackLevel];
+}
+
+table ClipWaveform {
+    track_index: int;
+    slot_index: int;
+    waveform: [float];
+}
+
 union Response {
     ParamList,
     Log,
     Acknowledge,
     ClipInfo,
-    ClearProject
+    ClearProject,
+    TrackLevels,
+    ClipWaveform
 }
 
 table Notification {

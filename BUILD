@@ -1,4 +1,3 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_test", "py_library")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_test")
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library", "flatbuffer_library_public")
@@ -47,6 +46,7 @@ cc_binary(
         ":hibiki_response_cc",
         ":hibiki_project_cc",
     ],
+    linkstatic = True,
 )
 
 cc_test(
@@ -126,6 +126,12 @@ flatbuffer_library_public(
         "hibiki/ipc/ClipInfoT.java",
         "hibiki/ipc/ClearProject.java",
         "hibiki/ipc/ClearProjectT.java",
+        "hibiki/ipc/TrackLevel.java",
+        "hibiki/ipc/TrackLevelT.java",
+        "hibiki/ipc/TrackLevels.java",
+        "hibiki/ipc/TrackLevelsT.java",
+        "hibiki/ipc/ClipWaveform.java",
+        "hibiki/ipc/ClipWaveformT.java",
         "hibiki/ipc/Response.java",
         "hibiki/ipc/ResponseUnion.java",
     ],

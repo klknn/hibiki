@@ -16,9 +16,13 @@ import java.io.File;
 
 import hibiki.ipc.Response;
 import hibiki.ipc.ClipInfo;
+import hibiki.ipc.TrackLevels;
+import hibiki.ipc.TrackLevel;
+import hibiki.ipc.ClipWaveform;
 
 public class SessionView extends JPanel {
     private JButton[][] slotButtons = new JButton[5][5]; // 4 tracks + master, 5 slots
+    private LevelMeter[] trackMeters = new LevelMeter[5]; // 1-4 for tracks, 0 for Master (unused here for now)
 
     public SessionView() {
         setLayout(new BorderLayout());
@@ -53,6 +57,12 @@ public class SessionView extends JPanel {
                 updateSlotLabel(info.trackIndex(), info.slotIndex(), info.name());
             } else if (notification.responseType() == Response.ClearProject) {
                 clearAllSlots();
+            } else if (notification.responseType() == Response.TrackLevels) {
+                TrackLevels tl = (TrackLevels) notification.response(new TrackLevels());
+                for (int i = 0; i < tl.levelsLength(); i++) {
+                    TrackLevel l = tl.levels(i);
+                    updateLevel(l.trackIndex(), l.peakL(), l.peakR());
+                }
             }
         });
     }
@@ -78,6 +88,16 @@ public class SessionView extends JPanel {
                 if (btn != null) {
                     btn.setText("<html><center>" + name + "<br>►</center></html>");
                     btn.setBackground(new Color(100, 200, 100));
+                }
+            }
+        });
+    }
+
+    private void updateLevel(int trackIdx, float peakL, float peakR) {
+        SwingUtilities.invokeLater(() -> {
+            if (trackIdx >= 1 && trackIdx <= 4) {
+                if (trackMeters[trackIdx] != null) {
+                    trackMeters[trackIdx].setLevels(peakL, peakR);
                 }
             }
         });
@@ -122,6 +142,12 @@ public class SessionView extends JPanel {
         }
 
         strip.add(Box.createVerticalGlue());
+
+        // Level Meter
+        LevelMeter meter = new LevelMeter();
+        trackMeters[trackIdx] = meter;
+        strip.add(Box.createVerticalStrut(5));
+        strip.add(meter);
 
         // Pan
         JSlider panSlider = new JSlider(-50, 50, 0);
@@ -247,5 +273,35 @@ public class SessionView extends JPanel {
         int requestOffset = Request.createRequest(builder, Command.StopTrack, stopTrackOffset);
         builder.finish(requestOffset);
         BackendManager.getInstance().sendRequest(builder);
+    }
+
+    private static class LevelMeter extends JPanel {
+        private float levelL = 0;
+        private float levelR = 0;
+
+        LevelMeter() {
+            setPreferredSize(new Dimension(20, 100));
+            setBackground(Color.BLACK);
+        }
+
+        void setLevels(float l, float r) {
+            this.levelL = l;
+            this.levelR = r;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            int h = getHeight();
+            int w = getWidth();
+
+            g.setColor(new Color(0, 200, 0));
+            int hL = (int) (levelL * h);
+            int hR = (int) (levelR * h);
+
+            g.fillRect(2, h - hL, w / 2 - 3, hL);
+            g.fillRect(w / 2 + 1, h - hR, w / 2 - 3, hR);
+        }
     }
 }

@@ -14,6 +14,7 @@ import com.google.flatbuffers.FlatBufferBuilder;
 public class PluginPane extends JPanel {
     private final JPanel deviceChainContent;
     private final Map<Integer, DevicePanel> devicePanels = new TreeMap<>();
+    private final WaveformPanel waveformPanel = new WaveformPanel();
     private int currentTrackIndex = -1;
 
     public PluginPane() {
@@ -37,6 +38,13 @@ public class PluginPane extends JPanel {
                 updateParams((ParamList) notification.response(new ParamList()));
             } else if (notification.responseType() == Response.ClearProject) {
                 clearPanels();
+            } else if (notification.responseType() == Response.ClipWaveform) {
+                ClipWaveform cw = (ClipWaveform) notification.response(new ClipWaveform());
+                float[] wf = new float[cw.waveformLength()];
+                for (int i = 0; i < wf.length; i++)
+                    wf[i] = cw.waveform(i);
+                waveformPanel.setWaveform(wf);
+                rebuildDeviceChain();
             }
         });
     }
@@ -83,6 +91,9 @@ public class PluginPane extends JPanel {
                 effects.add(p);
             }
         }
+
+        // Add waveform if any
+        deviceChainContent.add(waveformPanel);
 
         // Add instrument or placeholder
         if (instrument != null) {

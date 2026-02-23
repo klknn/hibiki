@@ -20,6 +20,8 @@
 #include "hibiki_response_generated.h"
 #include "hibiki_project_generated.h"
 
+void sendNotification(const uint8_t* buf, size_t size);
+
 struct Clip {
     enum Type { MIDI, AUDIO } type;
     std::vector<hbk::MidiEvent> midi_events;
@@ -28,6 +30,7 @@ struct Clip {
     double duration_sec = 0.0;
     std::string path;
     bool is_loop = false;
+    std::vector<float> waveform_summary;
 };
 
 // Simple WAV loader (16-bit PCM)
@@ -155,6 +158,33 @@ public:
             }
         }
 
+        // Generate waveform summary for AUDIO clips
+        if (clip->type == Clip::AUDIO && !clip->audio_data.empty()) {
+            int num_points = 256;
+            clip->waveform_summary.resize(num_points);
+            int samples_per_point = clip->audio_data.size() / (clip->num_channels * num_points);
+            if (samples_per_point < 1) samples_per_point = 1;
+
+            for (int i = 0; i < num_points; i++) {
+                float max_val = 0;
+                for (int j = 0; j < samples_per_point; j++) {
+                    int idx = (i * samples_per_point + j) * clip->num_channels;
+                    if (idx < (int)clip->audio_data.size()) {
+                        max_val = std::max(max_val, std::abs(clip->audio_data[idx]));
+                    }
+                }
+                clip->waveform_summary[i] = max_val;
+            }
+
+            // Send waveform to GUI
+            flatbuffers::FlatBufferBuilder builder(1024 + num_points * 4);
+            auto wf_vec = builder.CreateVector(clip->waveform_summary);
+            auto wf_off = hibiki::ipc::CreateClipWaveform(builder, index, slot, wf_vec);
+            auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ClipWaveform, wf_off.Union());
+            builder.Finish(nf_off);
+            sendNotification(builder.GetBufferPointer(), builder.GetSize());
+        }
+
         clips[slot] = std::move(clip);
 
         // If we are currently playing this slot, reset playback
@@ -200,6 +230,8 @@ struct GlobalState {
     double bpm = 120.0;
     std::map<int, std::unique_ptr<Track>> tracks;
     std::mutex tracks_mutex;
+    std::map<int, std::pair<float, float>> track_levels; // Peak L/R
+    std::mutex levels_mutex;
 
     Track* get_or_create_track(int idx) {
         std::lock_guard<std::mutex> lock(tracks_mutex);
@@ -233,6 +265,8 @@ void playback_thread(GlobalState& state) {
     std::vector<float> mixBufferR(block_size);
     std::vector<float> interleaved(block_size * num_channels);
 
+    int level_counter = 0;
+
     while (!state.quit) {
 
         std::fill(mixBufferL.begin(), mixBufferL.end(), 0.0f);
@@ -246,7 +280,7 @@ void playback_thread(GlobalState& state) {
                 Track* track = pair.second.get();
                 std::lock_guard<std::mutex> tlock(track->mutex);
 
-                if (track->plugins.empty() || track->playing_slot == -1) continue;
+                if (track->playing_slot == -1) continue;
 
                 any_playing = true;
                 auto& clip = track->clips[track->playing_slot];
@@ -262,10 +296,7 @@ void playback_thread(GlobalState& state) {
                     int num_midi_events = events.size();
 
                     std::vector<MidiNoteEvent> blockEvents;
-                    // Note: current_midi_idx logic needs to handle looping
                     int search_idx = track->current_midi_idx;
-                    // If we looped around, we might need to reset search_idx
-                    // But current_time_sec reset should handle it if we are careful.
                     
                     while (search_idx < num_midi_events) {
                         auto& me = events[search_idx];
@@ -295,7 +326,7 @@ void playback_thread(GlobalState& state) {
 
                     for (size_t i = 0; i < track->plugins.size(); ++i) {
                         auto& p = track->plugins[i];
-                        if (i == 0) {
+                        if (i == 0 && p->isInstrument()) {
                             p->process(nullptr, outChannels, block_size, context, blockEvents);
                         } else {
                             p->process(outChannels, outChannels, block_size, context, {});
@@ -318,10 +349,10 @@ void playback_thread(GlobalState& state) {
                         }
                     }
 
-                    // Process through effects (even if it's audio, it starts at index 0 or after instrument)
-                    // For audio tracks, we assume no instrument or instrument ignored
+                    // Process through effects
                     for (size_t i = 0; i < track->plugins.size(); ++i) {
                         auto& p = track->plugins[i];
+                        if (p->isInstrument()) continue; // Audio clips bypass instruments
                         p->process(outChannels, outChannels, block_size, context, {});
                     }
                 }
@@ -340,12 +371,49 @@ void playback_thread(GlobalState& state) {
                         track->playing_slot = -1;
                     }
                 }
+
+                // Calculate levels
+                float peakL = 0, peakR = 0;
+                for (int i = 0; i < block_size; i++) {
+                    peakL = std::max(peakL, std::abs(bufferL[i]));
+                    peakR = std::max(peakR, std::abs(bufferR[i]));
+                }
+                {
+                    std::lock_guard<std::mutex> llock(state.levels_mutex);
+                    state.track_levels[track->index] = {peakL, peakR};
+                }
             }
         }
 
         if (!any_playing) {
+            // Clear levels if nothing playing? Or just let them decay
+            {
+                std::lock_guard<std::mutex> llock(state.levels_mutex);
+                for (auto& p : state.track_levels) p.second = {0, 0};
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
+        }
+
+        // Send levels periodically
+        if (++level_counter >= 10) {
+            level_counter = 0;
+            flatbuffers::FlatBufferBuilder builder(512);
+            std::vector<flatbuffers::Offset<hibiki::ipc::TrackLevel>> level_offsets;
+            {
+                std::lock_guard<std::mutex> llock(state.levels_mutex);
+                for (auto& pair : state.track_levels) {
+                    level_offsets.push_back(hibiki::ipc::CreateTrackLevel(builder, pair.first, pair.second.first, pair.second.second));
+                }
+            }
+            auto levels_vec = builder.CreateVector(level_offsets);
+            auto levels_off = hibiki::ipc::CreateTrackLevels(builder, levels_vec);
+            auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_TrackLevels, levels_off.Union());
+            builder.Finish(nf_off);
+            // We need a thread-safe way to send notifications if main thread is also sending
+            // For now, assume playback_thread can write to cout too, but we should be careful with mutex
+            // Actually main.cpp sendNotification doesn't have a mutex. Let's add one.
+            sendNotification(builder.GetBufferPointer(), builder.GetSize());
         }
 
         for (int i = 0; i < block_size; ++i) {
@@ -358,6 +426,8 @@ void playback_thread(GlobalState& state) {
 }
 
 void sendNotification(const uint8_t* buf, size_t size) {
+    static std::mutex cout_mutex;
+    std::lock_guard<std::mutex> lock(cout_mutex);
     uint32_t msg_size = static_cast<uint32_t>(size);
     std::cout.write(reinterpret_cast<const char*>(&msg_size), sizeof(msg_size));
     std::cout.write(reinterpret_cast<const char*>(buf), size);

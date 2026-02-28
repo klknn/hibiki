@@ -13,7 +13,13 @@
 
 #include "midi.hpp"
 
+#ifndef _WIN32
 #include "alsa_out.hpp"
+#else
+#include "win32_out.hpp"
+#include <fcntl.h>
+#include <io.h>
+#endif
 #include "vst3_host.hpp"
 
 #include "hibiki_request_generated.h"
@@ -340,7 +346,11 @@ struct GlobalState {
 };
 
 void playback_thread(GlobalState& state) {
-    AlsaPlayback alsa(44100, 2);
+#ifndef _WIN32
+  AlsaPlayback alsa(44100, 2);
+#else
+  Win32Playback alsa(44100, 2);
+#endif
     if (!alsa.is_ready()) return;
 
     int block_size = 512;
@@ -628,6 +638,12 @@ int main(int argc, char** argv) {
         Vst3Plugin::listPlugins(argv[2]);
         return 0;
     }
+
+#ifdef _WIN32
+  // Ensure binary mode for IPC on Windows
+  _setmode(_fileno(stdin), _O_BINARY);
+  _setmode(_fileno(stdout), _O_BINARY);
+#endif
 
     GlobalState state;
     std::thread audio_thread(playback_thread, std::ref(state));

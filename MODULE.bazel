@@ -29,12 +29,10 @@ maven.install(
 )
 use_repo(maven, "maven")
 
-git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
-
-git_repository(
+http_archive(
     name = "vst3sdk",
-    tag = "v3.8.0_build_66",
-    remote = "https://github.com/steinbergmedia/vst3sdk",
-    recursive_init_submodules = True,
-    build_file = "//third_party:vst3sdk.BUILD"
+    url = "https://download.steinberg.net/sdk_downloads/vst-sdk_3.8.0_build-66_2025-10-20.zip",
+    strip_prefix = "VST_SDK/vst3sdk",
+    integrity = "sha256-ectJXl7G+94lct9qOP1bL3U1KNSzS5vtf+rlW+O2IcM=",
+    build_file = "//third_party:vst3sdk.BUILD",
 )

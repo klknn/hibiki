@@ -31,14 +31,28 @@ public class BackendManager {
 
     public void start() {
         try {
-            // Path to hbk-play binary relative to runfiles
-            String hbkPlayPath = "./hbk-play";
+            // Path to hbk-play binary
+            String os = System.getProperty("os.name").toLowerCase();
+            boolean isWindows = os.contains("win");
+            String binaryName = isWindows ? "hbk-play.exe" : "hbk-play";
+            
+            String hbkPlayPath = "./" + binaryName;
             if (!new File(hbkPlayPath).exists()) {
-                // Try alternate path if running from bazel
-                hbkPlayPath = "bazel-bin/hbk-play";
+                // Try search in bazel-bin or bazel-out
+                String[] potentials = {
+                    "bazel-bin/" + binaryName,
+                    "bazel-out/x64_windows-opt/bin/" + binaryName,
+                    "bazel-out/k8-opt/bin/" + binaryName
+                };
+                for (String p : potentials) {
+                    if (new File(p).exists()) {
+                        hbkPlayPath = p;
+                        break;
+                    }
+                }
             }
             if (!new File(hbkPlayPath).exists()) {
-                System.err.println("Warning: hbk-play not found at ./hbk-play or bazel-bin/hbk-play");
+                System.err.println("Warning: " + binaryName + " not found");
             }
 
             ProcessBuilder pb = new ProcessBuilder(hbkPlayPath);

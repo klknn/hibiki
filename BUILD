@@ -6,7 +6,16 @@ cc_library(
     name = "alsa_out",
     srcs = ["alsa_out.cpp"],
     hdrs = ["alsa_out.hpp"],
+    target_compatible_with = ["@platforms//os:linux"],
     linkopts = ["-lasound"],
+)
+
+cc_library(
+    name = "win32_out",
+    srcs = ["win32_out.cpp"],
+    hdrs = ["win32_out.hpp"],
+    target_compatible_with = ["@platforms//os:windows"],
+    linkopts = ["-DEFAULTLIB:ole32"],
 )
 
 cc_library(
@@ -16,7 +25,13 @@ cc_library(
     deps = [
         "@vst3sdk//:vst3sdk",
     ],
-    linkopts = ["-lpthread", "-ldl"],
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "-lpthread",
+            "-ldl",
+        ],
+    }),
 )
 
 cc_library(
@@ -31,6 +46,17 @@ cc_library(
     alwayslink = True,
 )
 
+cc_library(
+    name = "vst3_host_win32",
+    srcs = ["vst3_host_win32.cpp"],
+    deps = [
+        ":vst3_host",
+        "@vst3sdk//:vst3sdk",
+    ],
+    linkopts = ["-DEFAULTLIB:user32"],
+    alwayslink = True,
+)
+
 cc_binary(
     name = "hbk-play",
     srcs = [
@@ -39,13 +65,20 @@ cc_binary(
         "midi.hpp",
     ],
     deps = [
-        ":alsa_out",
         ":vst3_host",
-        ":vst3_host_x11",
         ":hibiki_request_cc",
         ":hibiki_response_cc",
         ":hibiki_project_cc",
-    ],
+    ] + select({
+        "@platforms//os:windows": [
+            ":win32_out",
+            ":vst3_host_win32",
+        ],
+        "//conditions:default": [
+            ":alsa_out",
+            ":vst3_host_x11",
+        ],
+    }),
     linkstatic = True,
 )
 

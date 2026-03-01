@@ -1,5 +1,3 @@
-#include <windows.h>
-#include <direct.h>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -24,7 +22,7 @@ std::string find_test_file(const std::string& path) {
         for (int i = 0; i < 10; ++i) {
             std::string p = dir + "/" + path;
             if (std::ifstream(p).good()) return p;
-            
+
             // Try in runfiles if it exists
             std::string pr = dir + "/midi_test.exe.runfiles/_main/" + path;
             if (std::ifstream(pr).good()) return pr;
@@ -37,7 +35,7 @@ std::string find_test_file(const std::string& path) {
         }
     }
 
-    return path; 
+    return path;
 }
 
 void test_parse_midi() {
@@ -45,7 +43,7 @@ void test_parse_midi() {
     auto events = hbk::parseMidi(find_test_file("testdata/test.mid"));
     assert(!events.empty());
     assert(events.size() == 894);
-    
+
     // Check first event
     const auto& first = events.front();
     assert(first.seconds == 0.0);
@@ -54,7 +52,7 @@ void test_parse_midi() {
     // Check last event
     const auto& last = events.back();
     assert(std::abs(last.seconds - 154.286) < 0.001);
-    
+
     std::cout << "test.mid: Found " << events.size() << " events. First type=" << (int)first.type << " Last time=" << last.seconds << " - PASSED" << std::endl;
 }
 
@@ -69,7 +67,7 @@ void test_rickroll_midi() {
 
     const auto& last = events.back();
     assert(std::abs(last.seconds - 222.545) < 0.001);
-    
+
     std::cout << "rickroll.mid: Found " << events.size() << " events. First type=" << (int)first.type << " Last time=" << last.seconds << " - PASSED" << std::endl;
 }
 

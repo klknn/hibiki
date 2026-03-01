@@ -135,7 +135,7 @@ Vst3Plugin::~Vst3Plugin() {
 }
 
 
-bool Vst3Plugin::load(const std::string& path, int plugin_index) {
+bool Vst3Plugin::load(const std::string& path, int plugin_index, double sample_rate) {
     std::string error;
     impl->module = VST3::Hosting::Module::create(path, error);
     if (!impl->module) {
@@ -258,7 +258,7 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index) {
     setup.processMode = Steinberg::Vst::kRealtime;
     setup.symbolicSampleSize = Steinberg::Vst::kSample32;
     setup.maxSamplesPerBlock = 512;
-    setup.sampleRate = 44100.0;
+    setup.sampleRate = sample_rate;
     
     if (impl->processor->setupProcessing(setup) != Steinberg::kResultTrue) {
         std::cerr << "Failed to setup processing" << std::endl;

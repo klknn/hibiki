@@ -93,8 +93,14 @@ public class BrowserPane extends JPanel {
         // Scan standard VST3 directories
         String home = System.getProperty("user.home");
         scanDirectory(new File(home + "/.vst3"), pluginsNode, null, null);
-        scanDirectory(new File("/usr/lib/vst3"), pluginsNode, null, null);
-        scanDirectory(new File("/usr/local/lib/vst3"), pluginsNode, null, null);
+        
+        String os = System.getProperty("os.name").toLowerCase();
+        if (os.contains("win")) {
+            scanDirectory(new File("C:\\Program Files\\Common Files\\VST3"), pluginsNode, null, null);
+        } else {
+            scanDirectory(new File("/usr/lib/vst3"), pluginsNode, null, null);
+            scanDirectory(new File("/usr/local/lib/vst3"), pluginsNode, null, null);
+        }
 
         treeModel.reload();
     }

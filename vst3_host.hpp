@@ -35,10 +35,10 @@ public:
     Vst3Plugin();
     ~Vst3Plugin();
 
-    bool load(const std::string& path, int plugin_index = 0);
+    bool load(const std::string& path, int plugin_index = 0, double sample_rate = 44100.0);
     void showEditor();
     void stopEditor();
-    void process(float** inputs, float** outputs, int numSamples, 
+    void process(float** inputs, float** outputs, int num_samples, 
                  const HostProcessContext& context, 
                  const std::vector<MidiNoteEvent>& events);
 

@@ -160,10 +160,10 @@ public:
 
     Track(int idx) : index(idx) {}
 
-    int load_plugin(const std::string& path, int plugin_index) {
+    int load_plugin(const std::string& path, int plugin_index, double sample_rate) {
         std::lock_guard<std::mutex> lock(mutex);
         auto plugin = std::make_unique<Vst3Plugin>();
-        if (!plugin->load(path, plugin_index)) {
+        if (!plugin->load(path, plugin_index, sample_rate)) {
             return -1;
         }
 
@@ -331,6 +331,7 @@ public:
 struct GlobalState {
     std::atomic<bool> quit{false};
     double bpm = 140.0;
+    std::atomic<double> sample_rate{44100.0};
     std::map<int, std::unique_ptr<Track>> tracks;
     std::mutex tracks_mutex;
     std::map<int, std::pair<float, float>> track_levels; // Peak L/R
@@ -348,14 +349,17 @@ struct GlobalState {
 void playback_thread(GlobalState& state) {
 #ifndef _WIN32
   AlsaPlayback alsa(44100, 2);
+  float sample_rate = 44100.0f;
+  int actual_channels = 2;
 #else
   Win32Playback alsa(44100, 2);
+  float sample_rate = (float)alsa.get_sample_rate();
+  int actual_channels = alsa.get_channels();
 #endif
+    state.sample_rate = (double)sample_rate;
     if (!alsa.is_ready()) return;
 
     int block_size = 512;
-    float sample_rate = 44100.0f;
-    int num_channels = 2;
 
     alignas(32) float bufferL[512];
     alignas(32) float bufferR[512];
@@ -370,7 +374,7 @@ void playback_thread(GlobalState& state) {
     double time_per_block = block_size / (double)sample_rate;
     std::vector<float> mixBufferL(block_size);
     std::vector<float> mixBufferR(block_size);
-    std::vector<float> interleaved(block_size * num_channels);
+    std::vector<float> interleaved(block_size * actual_channels);
 
     int level_counter = 0;
 
@@ -523,9 +527,19 @@ void playback_thread(GlobalState& state) {
             sendNotification(builder.GetBufferPointer(), builder.GetSize());
         }
 
-        for (int i = 0; i < block_size; ++i) {
-            interleaved[i * 2 + 0] = mixBufferL[i];
-            interleaved[i * 2 + 1] = mixBufferR[i];
+        if (actual_channels >= 2) {
+            for (int i = 0; i < block_size; ++i) {
+                interleaved[i * actual_channels + 0] = mixBufferL[i];
+                interleaved[i * actual_channels + 1] = mixBufferR[i];
+                for (int c = 2; c < actual_channels; ++c) {
+                    interleaved[i * actual_channels + c] = 0.0f;
+                }
+            }
+        } else {
+            // Mono
+            for (int i = 0; i < block_size; ++i) {
+                interleaved[i] = (mixBufferL[i] + mixBufferR[i]) * 0.5f;
+            }
         }
 
         alsa.write(interleaved, block_size);
@@ -578,6 +592,7 @@ void save_project(GlobalState& state, const std::string& path) {
 }
 
 void load_project(GlobalState& state, const std::string& path) {
+    double sample_rate = state.sample_rate;
     std::ifstream is(path, std::ios::binary | std::ios::ate);
     if (!is) return;
     auto size = is.tellg();
@@ -600,7 +615,7 @@ void load_project(GlobalState& state, const std::string& path) {
             Track* track = state.get_or_create_track(track_fb->index());
             if (track_fb->plugins()) {
                 for (auto const& plugin_fb : *track_fb->plugins()) {
-                    int idx = track->load_plugin(plugin_fb->path()->str(), plugin_fb->index());
+                    int idx = track->load_plugin(plugin_fb->path()->str(), plugin_fb->index(), sample_rate);
                     if (idx != -1) {
                         auto& plugin = track->plugins[idx];
                         if (plugin_fb->parameters()) {
@@ -678,7 +693,7 @@ int main(int argc, char** argv) {
             std::string vpath = cmd->path()->str();
             int pidx = cmd->plugin_index();
             auto track = state.get_or_create_track(tidx);
-            int target_idx = track->load_plugin(vpath, pidx);
+            int target_idx = track->load_plugin(vpath, pidx, state.sample_rate);
             if (target_idx != -1) {
                 std::vector<VstParamInfo> params;
                 auto& plugin = track->plugins[target_idx];

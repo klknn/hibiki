@@ -46,31 +46,43 @@ Win32Playback::Win32Playback(int rate, int ch)
     return;
   }
 
-  WAVEFORMATEXTENSIBLE wfx = {};
-  wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
-  wfx.Format.nChannels = channels;
-  wfx.Format.nSamplesPerSec = sample_rate;
-  wfx.Format.wBitsPerSample = 32;
-  wfx.Format.nBlockAlign =
-      (wfx.Format.nChannels * wfx.Format.wBitsPerSample) / 8;
-  wfx.Format.nAvgBytesPerSec =
-      wfx.Format.nSamplesPerSec * wfx.Format.nBlockAlign;
-  wfx.Format.cbSize = 22;
-  wfx.Samples.wValidBitsPerSample = 32;
-  wfx.dwChannelMask = (channels == 2)
-                          ? (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT)
-                          : SPEAKER_FRONT_LEFT;
-  wfx.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+  WAVEFORMATEX *pwfx = nullptr;
+  hr = impl->pAudioClient->GetMixFormat(&pwfx);
+  if (FAILED(hr)) {
+    std::cerr << "GetMixFormat failed" << std::endl;
+    return;
+  }
+
+  // Update actual sample rate and channels from mix format
+  sample_rate = pwfx->nSamplesPerSec;
+  channels = pwfx->nChannels;
+  std::cerr << "[Win32Playback] Selected format: " << sample_rate << " Hz, "
+            << channels << " channels" << std::endl;
+
+  // Ensure we are using float format for our internal processing
+  if (pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+    WAVEFORMATEXTENSIBLE *pEx = (WAVEFORMATEXTENSIBLE *)pwfx;
+    if (pEx->SubFormat != KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) {
+      std::cerr << "[Win32Playback] Warning: Mix format is not IEEE Float. "
+                   "Audio might be distorted."
+                << std::endl;
+    }
+  } else if (pwfx->wFormatTag != WAVE_FORMAT_IEEE_FLOAT) {
+    std::cerr << "[Win32Playback] Warning: Mix format is not IEEE Float."
+              << std::endl;
+  }
 
   REFERENCE_TIME hnsRequestedDuration = 500000; // 50ms
   hr = impl->pAudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, 0,
-                                      hnsRequestedDuration, 0,
-                                      (WAVEFORMATEX *)&wfx, NULL);
+                                       hnsRequestedDuration, 0,
+                                       pwfx, NULL);
   if (FAILED(hr)) {
     std::cerr << "IAudioClient::Initialize failed: " << std::hex << hr
               << std::endl;
+    CoTaskMemFree(pwfx);
     return;
   }
+  CoTaskMemFree(pwfx);
 
   hr = impl->pAudioClient->GetBufferSize(&impl->bufferFrameCount);
   hr = impl->pAudioClient->GetService(__uuidof(IAudioRenderClient),

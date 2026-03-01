@@ -37,10 +37,10 @@ cc_library(
 cc_library(
     name = "vst3_host_x11",
     srcs = ["vst3_host_x11.cpp"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":vst3_host",
         "@vst3sdk//:vst3sdk",
-
     ],
     linkopts = ["-lX11", "-lXcursor"],
     alwayslink = True,
@@ -49,6 +49,7 @@ cc_library(
 cc_library(
     name = "vst3_host_win32",
     srcs = ["vst3_host_win32.cpp"],
+    target_compatible_with = ["@platforms//os:windows"],
     deps = [
         ":vst3_host",
         "@vst3sdk//:vst3sdk",

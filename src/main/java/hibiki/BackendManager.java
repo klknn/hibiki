@@ -36,23 +36,12 @@ public class BackendManager {
             boolean isWindows = os.contains("win");
             String binaryName = isWindows ? "hbk-play.exe" : "hbk-play";
             
-            String hbkPlayPath = "./" + binaryName;
-            if (!new File(hbkPlayPath).exists()) {
-                // Try search in bazel-bin or bazel-out
-                String[] potentials = {
-                    "bazel-bin/" + binaryName,
-                    "bazel-out/x64_windows-opt/bin/" + binaryName,
-                    "bazel-out/k8-opt/bin/" + binaryName
-                };
-                for (String p : potentials) {
-                    if (new File(p).exists()) {
-                        hbkPlayPath = p;
-                        break;
-                    }
-                }
-            }
-            if (!new File(hbkPlayPath).exists()) {
-                System.err.println("Warning: " + binaryName + " not found");
+            String hbkPlayPath = findBinary(binaryName);
+            if (hbkPlayPath == null) {
+                System.err.println("Warning: " + binaryName + " not found, defaulting to ./" + binaryName);
+                hbkPlayPath = "./" + binaryName;
+            } else {
+                System.err.println("Found " + binaryName + " at " + hbkPlayPath);
             }
 
             ProcessBuilder pb = new ProcessBuilder(hbkPlayPath);
@@ -140,5 +129,44 @@ public class BackendManager {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+
+    private String findBinary(String binaryName) {
+        // Try simple relative
+        if (new File("./" + binaryName).exists()) return "./" + binaryName;
+        
+        // Search up for bazel-bin or root
+        File dir = new File(".").getAbsoluteFile();
+        for (int i = 0; i < 10; i++) {
+            if (dir == null) break;
+            
+            // Try in bazel-bin
+            File bin = new File(dir, "bazel-bin/" + binaryName);
+            if (bin.exists()) return bin.getAbsolutePath();
+            
+            // Try in bazel-out
+            File outWin = new File(dir, "bazel-out/x64_windows-opt/bin/" + binaryName);
+            if (outWin.exists()) return outWin.getAbsolutePath();
+            File outLinux = new File(dir, "bazel-out/k8-opt/bin/" + binaryName);
+            if (outLinux.exists()) return outLinux.getAbsolutePath();
+
+            // Try in runfiles sibling to jar (if executed via java_binary)
+            File rf = new File(dir, binaryName + ".runfiles/_main/" + binaryName);
+            if (rf.exists()) return rf.getAbsolutePath();
+
+            dir = dir.getParentFile();
+        }
+        
+        // Try environment
+        String runfilesDir = System.getenv("RUNFILES_DIR");
+        if (runfilesDir != null) {
+            File f1 = new File(runfilesDir, "_main/" + binaryName);
+            if (f1.exists()) return f1.getAbsolutePath();
+            File f2 = new File(runfilesDir, "hibiki/" + binaryName);
+            if (f2.exists()) return f2.getAbsolutePath();
+        }
+        
+        return null;
     }
 }

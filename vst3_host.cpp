@@ -301,7 +301,7 @@ void Vst3Plugin::process(float** inputs, float** outputs, int numSamples,
     if (!impl->processor) return;
 
     Steinberg::Vst::AudioBusBuffers inBuses = {}, outBuses = {};
-    inBuses.numChannels = 2; // Assuming stereo for now
+    inBuses.numChannels = inputs ? 2 : 0; // Fixed: 0 channels if no inputs
     inBuses.silenceFlags = 0;
     inBuses.channelBuffers32 = inputs;
 

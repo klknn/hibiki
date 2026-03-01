@@ -14,6 +14,17 @@ public class BackendManagerTest {
   public void testBackendCommunication() throws Exception {
     BackendManager backend = BackendManager.getInstance();
     backend.start();
+    System.err.println("DEBUG_TEST: CWD=" + new File(".").getAbsolutePath());
+    System.err.println("DEBUG_TEST: RUNFILES_DIR=" + System.getenv("RUNFILES_DIR"));
+    
+    // Debug: List testdata
+    File td = new File("testdata");
+    if (td.exists()) {
+        System.err.println("DEBUG_TEST: testdata exists. Contents:");
+        for (String f : td.list()) System.err.println("  " + f);
+    } else {
+        System.err.println("DEBUG_TEST: testdata does not exist at CWD");
+    }
 
     CompletableFuture<hibiki.ipc.ParamList> paramListFuture = new CompletableFuture<>();
     CompletableFuture<String> logFuture = new CompletableFuture<>();
@@ -36,8 +47,8 @@ public class BackendManagerTest {
     Thread.sleep(1000);
 
     // Send LoadPlugin request for Dexed
-    File vstFile = new File("testdata/Dexed.vst3");
-    assertTrue("Dexed VST3 should exist at " + vstFile.getAbsolutePath(), vstFile.exists());
+    File vstFile = findTestData("testdata/Dexed.vst3");
+    assertTrue("Dexed VST3 should exist", vstFile != null && vstFile.exists());
     String vstPath = vstFile.getAbsolutePath();
 
     System.out.println("Sending LoadPlugin request for " + vstPath);
@@ -63,5 +74,33 @@ public class BackendManagerTest {
         fail("Timed out waiting for ParamList or Log.");
       }
     }
+  }
+
+  private File findTestData(String path) {
+    if (new File(path).exists()) return new File(path);
+    
+    File dir = new File(".").getAbsoluteFile();
+    for (int i = 0; i < 10; i++) {
+        if (dir == null) break;
+        File f = new File(dir, path);
+        if (f.exists()) return f;
+        
+        // Try in runfiles
+        File rf1 = new File(dir, "backend_manager_test.runfiles/_main/" + path);
+        if (rf1.exists()) return rf1;
+        File rf2 = new File(dir, "backend_manager_test.runfiles/hibiki/" + path);
+        if (rf2.exists()) return rf2;
+        
+        dir = dir.getParentFile();
+    }
+    
+    String runfilesDir = System.getenv("RUNFILES_DIR");
+    if (runfilesDir != null) {
+        File f1 = new File(runfilesDir, "_main/" + path);
+        if (f1.exists()) return f1;
+        File f2 = new File(runfilesDir, "hibiki/" + path);
+        if (f2.exists()) return f2;
+    }
+    return new File(path);
   }
 }

@@ -3,6 +3,8 @@
 #include <iostream>
 #include <mmdeviceapi.h>
 #include <windows.h>
+#include <thread>
+#include <chrono>
 
 
 struct Win32Playback::Impl {
@@ -108,18 +110,36 @@ Win32Playback::~Win32Playback() {
 
 bool Win32Playback::is_ready() const { return impl->pRenderClient != nullptr; }
 
+
 void Win32Playback::write(const std::vector<float> &interleaved_data,
                           int num_frames) {
   if (!impl->pRenderClient)
     return;
 
+  // Simple back-pressure: if the buffer is too full, wait a bit
+  UINT32 padding = 0;
+  int retry = 0;
+  while (SUCCEEDED(impl->pAudioClient->GetCurrentPadding(&padding)) && retry < 100) {
+      if (impl->bufferFrameCount - padding >= (UINT32)num_frames) {
+          break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      retry++;
+  }
+
   BYTE *pData;
   HRESULT hr = impl->pRenderClient->GetBuffer(num_frames, &pData);
   if (SUCCEEDED(hr)) {
-    memcpy(pData, interleaved_data.data(),
-           num_frames * channels * sizeof(float));
+    float* floatData = (float*)pData;
+    for (size_t i = 0; i < interleaved_data.size(); ++i) {
+        float sample = interleaved_data[i];
+        if (!std::isfinite(sample)) sample = 0.0f;
+        if (sample > 1.0f) sample = 1.0f;
+        if (sample < -1.0f) sample = -1.0f;
+        floatData[i] = sample;
+    }
     impl->pRenderClient->ReleaseBuffer(num_frames, 0);
   } else if (hr == AUDCLNT_E_BUFFER_TOO_LARGE) {
-    // Just skip if buffer is full, for simplicity
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 }

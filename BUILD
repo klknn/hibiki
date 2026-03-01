@@ -49,7 +49,10 @@ cc_library(
 cc_library(
     name = "vst3_host_win32",
     srcs = ["vst3_host_win32.cpp"],
+<<<<<<< HEAD
     target_compatible_with = ["@platforms//os:windows"],
+=======
+>>>>>>> 47601e7bb99debf560fbb194795a6862d325182c
     deps = [
         ":vst3_host",
         "@vst3sdk//:vst3sdk",

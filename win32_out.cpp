@@ -3,8 +3,11 @@
 #include <iostream>
 #include <mmdeviceapi.h>
 #include <windows.h>
+<<<<<<< HEAD
 #include <thread>
 #include <chrono>
+=======
+>>>>>>> 47601e7bb99debf560fbb194795a6862d325182c
 
 
 struct Win32Playback::Impl {
@@ -48,6 +51,7 @@ Win32Playback::Win32Playback(int rate, int ch)
     return;
   }
 
+<<<<<<< HEAD
   WAVEFORMATEX *pwfx = nullptr;
   hr = impl->pAudioClient->GetMixFormat(&pwfx);
   if (FAILED(hr)) {
@@ -85,6 +89,33 @@ Win32Playback::Win32Playback(int rate, int ch)
     return;
   }
   CoTaskMemFree(pwfx);
+=======
+  WAVEFORMATEXTENSIBLE wfx = {};
+  wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+  wfx.Format.nChannels = channels;
+  wfx.Format.nSamplesPerSec = sample_rate;
+  wfx.Format.wBitsPerSample = 32;
+  wfx.Format.nBlockAlign =
+      (wfx.Format.nChannels * wfx.Format.wBitsPerSample) / 8;
+  wfx.Format.nAvgBytesPerSec =
+      wfx.Format.nSamplesPerSec * wfx.Format.nBlockAlign;
+  wfx.Format.cbSize = 22;
+  wfx.Samples.wValidBitsPerSample = 32;
+  wfx.dwChannelMask = (channels == 2)
+                          ? (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT)
+                          : SPEAKER_FRONT_LEFT;
+  wfx.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+
+  REFERENCE_TIME hnsRequestedDuration = 500000; // 50ms
+  hr = impl->pAudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, 0,
+                                      hnsRequestedDuration, 0,
+                                      (WAVEFORMATEX *)&wfx, NULL);
+  if (FAILED(hr)) {
+    std::cerr << "IAudioClient::Initialize failed: " << std::hex << hr
+              << std::endl;
+    return;
+  }
+>>>>>>> 47601e7bb99debf560fbb194795a6862d325182c
 
   hr = impl->pAudioClient->GetBufferSize(&impl->bufferFrameCount);
   hr = impl->pAudioClient->GetService(__uuidof(IAudioRenderClient),
@@ -110,12 +141,16 @@ Win32Playback::~Win32Playback() {
 
 bool Win32Playback::is_ready() const { return impl->pRenderClient != nullptr; }
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 47601e7bb99debf560fbb194795a6862d325182c
 void Win32Playback::write(const std::vector<float> &interleaved_data,
                           int num_frames) {
   if (!impl->pRenderClient)
     return;
 
+<<<<<<< HEAD
   // Simple back-pressure: if the buffer is too full, wait a bit
   UINT32 padding = 0;
   int retry = 0;
@@ -141,5 +176,15 @@ void Win32Playback::write(const std::vector<float> &interleaved_data,
     impl->pRenderClient->ReleaseBuffer(num_frames, 0);
   } else if (hr == AUDCLNT_E_BUFFER_TOO_LARGE) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+=======
+  BYTE *pData;
+  HRESULT hr = impl->pRenderClient->GetBuffer(num_frames, &pData);
+  if (SUCCEEDED(hr)) {
+    memcpy(pData, interleaved_data.data(),
+           num_frames * channels * sizeof(float));
+    impl->pRenderClient->ReleaseBuffer(num_frames, 0);
+  } else if (hr == AUDCLNT_E_BUFFER_TOO_LARGE) {
+    // Just skip if buffer is full, for simplicity
+>>>>>>> 47601e7bb99debf560fbb194795a6862d325182c
   }
 }

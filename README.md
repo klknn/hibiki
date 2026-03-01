@@ -8,6 +8,10 @@ A modern DAW with a Java Swing GUI and a high-performance C++ backend.
 - **ALSA**: Standard Linux audio development headers/libraries.
 - **X11**: Required for VST3 plugin editors.
 
+(Windows)
+- JDK 21 or later. https://download.oracle.com/java/21/latest/jdk-21_windows-x64_bin.zip (see https://www.oracle.com/java/technologies/downloads/#jdk21-windows)
+- MSYS2 and set BAZEL_SH=C:\msys64\usr\bin\bash.exe in environment variables. (see https://bazel.build/configure/windows)
+
 ## For developers
 
 ### Main Application (Java GUI)

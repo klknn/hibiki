@@ -58,14 +58,19 @@ cc_library(
     alwayslink = True,
 )
 
+cc_library(
+    name = "midi",
+    srcs = ["midi.cpp"],
+    hdrs = ["midi.hpp"],
+)
+
 cc_binary(
     name = "hbk-play",
     srcs = [
         "main.cpp",
-        "midi.cpp",
-        "midi.hpp",
     ],
     deps = [
+        ":midi",
         ":vst3_host",
         ":hibiki_request_cc",
         ":hibiki_response_cc",
@@ -85,8 +90,12 @@ cc_binary(
 
 cc_test(
     name = "midi_test",
-    srcs = ["midi_test.cpp", "midi.hpp", "midi.cpp"],
+    srcs = ["midi_test.cpp"],
     data = ["//testdata"],
+    deps = [
+        ":midi",
+        "@catch2//:catch2",
+    ],
 )
 
 flatbuffer_cc_library(

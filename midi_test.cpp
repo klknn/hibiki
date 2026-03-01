@@ -1,3 +1,6 @@
+#include <catch2/catch_session.hpp>
+#include <catch2/catch_test_macros.hpp>
+
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -38,7 +41,9 @@ std::string find_test_file(const std::string& path) {
     return path;
 }
 
-void test_parse_midi() {
+//void test_parse_midi() {
+TEST_CASE( "Parse test.mid", "[midi]" ) {
+
     std::cout << "Testing parseMidi with test.mid..." << std::endl;
     auto events = hbk::parseMidi(find_test_file("testdata/test.mid"));
     assert(!events.empty());
@@ -56,7 +61,8 @@ void test_parse_midi() {
     std::cout << "test.mid: Found " << events.size() << " events. First type=" << (int)first.type << " Last time=" << last.seconds << " - PASSED" << std::endl;
 }
 
-void test_rickroll_midi() {
+// void test_rickroll_midi() {
+TEST_CASE("Parse rickroll.mid", "[midi]") {
     std::cout << "Testing parseMidi with rickroll.mid..." << std::endl;
     auto events = hbk::parseMidi(find_test_file("testdata/rickroll.mid"));
     assert(!events.empty());
@@ -73,8 +79,11 @@ void test_rickroll_midi() {
 
 int main(int argc, char** argv) {
     g_argv0 = argv[0];
-    test_parse_midi();
-    test_rickroll_midi();
+    //test_parse_midi();
+    //test_rickroll_midi();
+    int result = Catch::Session().run( argc, argv );
+
     std::cout << "All tests passed!" << std::endl;
     return 0;
 }
+

@@ -5,4 +5,5 @@ build --cxxopt=-fno-asynchronous-unwind-tables
 build --cxxopt=-fno-unwind-tables
 build --cxxopt=-fno-exceptions
 build --cxxopt=-std=c++23
+build:windows --cxxopt=/std:c++latest
 build --java_runtime_version=remotejdk_21

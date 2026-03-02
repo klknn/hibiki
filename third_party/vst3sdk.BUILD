@@ -49,7 +49,7 @@ cc_library(
         ],
     }),
     copts = select({
-        "@platforms//os:windows": ["/EHsc", "/W0"],
+        "@platforms//os:windows": ["/EHsc", "/W0", "/std:c++17"],
         "//conditions:default": ["-fexceptions", "-w"],
     }),
 )

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <vector>
 #include <string>
 #include <memory>
@@ -20,5 +21,6 @@ struct Clip {
 };
 
 std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop = false);
+std::expected<Clip, std::string> MaybeLoadClip(const std::string& path, bool is_loop = false);
 
 } // namespace hibiki

@@ -94,7 +94,7 @@ cc_test(
     data = ["//testdata"],
     deps = [
         ":midi",
-        "@catch2//:catch2",
+        "@googletest//:gtest_main",
     ],
 )
 

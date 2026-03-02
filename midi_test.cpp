@@ -11,35 +11,11 @@
 
 // No debug prints in final version
 
-std::string find_test_file(const std::string& path) {
-    if (std::ifstream(path).good()) return path;
-
-    // Check if bazel TEST_SRCDIR is set
-    if (const char* srcdir = std::getenv("TEST_SRCDIR")) {
-        std::string p = std::string(srcdir) + "/hibiki/" + path;
-        if (std::ifstream(p).good()) return p;
-    }
-    
-    // Search up to find testdata
-    std::string dir = ".";
-    for (int i = 0; i < 10; ++i) {
-        std::string p = dir + "/" + path;
-        if (std::ifstream(p).good()) return p;
-
-        std::string pr = dir + "/midi_test.exe.runfiles/_main/" + path;
-        if (std::ifstream(pr).good()) return pr;
-        std::string pr2 = dir + "/midi_test.exe.runfiles/hibiki/" + path;
-        if (std::ifstream(pr2).good()) return pr2;
-
-        dir = dir + "/..";
-    }
-
-    return path;
-}
+#include "test_utils.hpp"
 
 TEST(MidiTest, ParseTestMid) {
     std::cout << "Testing parseMidi with test.mid..." << std::endl;
-    auto events = hbk::parseMidi(find_test_file("testdata/test.mid"));
+    auto events = hibiki::parseMidi(hibiki::find_test_file("testdata/test.mid"));
     ASSERT_FALSE(events.empty());
     EXPECT_EQ(events.size(), 894u);
 
@@ -57,7 +33,7 @@ TEST(MidiTest, ParseTestMid) {
 
 TEST(MidiTest, ParseRickrollMid) {
     std::cout << "Testing parseMidi with rickroll.mid..." << std::endl;
-    auto events = hbk::parseMidi(find_test_file("testdata/rickroll.mid"));
+    auto events = hibiki::parseMidi(hibiki::find_test_file("testdata/rickroll.mid"));
     ASSERT_FALSE(events.empty());
     EXPECT_EQ(events.size(), 2446u);
 

@@ -26,327 +26,15 @@
 #include "hibiki_response_generated.h"
 #include "hibiki_project_generated.h"
 
-void sendNotification(const uint8_t* buf, size_t size) {
-    static std::mutex cout_mutex;
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    uint32_t msg_size = static_cast<uint32_t>(size);
-    std::cout.write(reinterpret_cast<const char*>(&msg_size), sizeof(msg_size));
-    std::cout.write(reinterpret_cast<const char*>(buf), size);
-    std::cout.flush();
-}
+#include "ipc.hpp"
+#include "audio_file.hpp"
+#include "clip.hpp"
+#include "track.hpp"
+#include "project.hpp"
 
-void sendAck(const char* cmd_type, bool success) {
-    flatbuffers::FlatBufferBuilder builder(128);
-    auto cmd_type_off = builder.CreateString(cmd_type);
-    auto ack_off = hibiki::ipc::CreateAcknowledge(builder, cmd_type_off, success);
-    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_Acknowledge, ack_off.Union());
-    builder.Finish(nf_off);
-    sendNotification(builder.GetBufferPointer(), builder.GetSize());
-}
+namespace hibiki {
 
-void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name, bool is_instrument, const std::vector<VstParamInfo>& params) {
-    flatbuffers::FlatBufferBuilder builder(1024);
-    std::vector<flatbuffers::Offset<hibiki::ipc::ParamInfo>> param_offsets;
-    for (const auto& p : params) {
-        auto name_off = builder.CreateString(p.name);
-        param_offsets.push_back(hibiki::ipc::CreateParamInfo(builder, p.id, name_off, p.defaultValue));
-    }
-    auto params_vec = builder.CreateVector(param_offsets);
-    auto name_off = builder.CreateString(plugin_name);
-    auto list_off = hibiki::ipc::CreateParamList(builder, track_idx, plugin_idx, name_off, is_instrument, params_vec);
-    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ParamList, list_off.Union());
-    builder.Finish(nf_off);
-    sendNotification(builder.GetBufferPointer(), builder.GetSize());
-}
-
-void sendLog(const std::string& msg) {
-    flatbuffers::FlatBufferBuilder builder(512);
-    auto msg_off = builder.CreateString(msg);
-    auto log_off = hibiki::ipc::CreateLog(builder, msg_off);
-    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_Log, log_off.Union());
-    builder.Finish(nf_off);
-    sendNotification(builder.GetBufferPointer(), builder.GetSize());
-}
-
-void sendClipInfo(int track_idx, int slot_index, const std::string& name) {
-    flatbuffers::FlatBufferBuilder builder(512);
-    auto name_off = builder.CreateString(name);
-    auto clip_off = hibiki::ipc::CreateClipInfo(builder, track_idx, slot_index, name_off);
-    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ClipInfo, clip_off.Union());
-    builder.Finish(nf_off);
-    sendNotification(builder.GetBufferPointer(), builder.GetSize());
-}
-
-void sendClearProject() {
-    flatbuffers::FlatBufferBuilder builder(128);
-    auto clear_off = hibiki::ipc::CreateClearProject(builder);
-    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ClearProject, clear_off.Union());
-    builder.Finish(nf_off);
-    sendNotification(builder.GetBufferPointer(), builder.GetSize());
-}
-
-
-struct Clip {
-    enum Type { MIDI, AUDIO } type;
-    std::vector<hbk::MidiEvent> midi_events;
-    std::vector<float> audio_data; // Mono or interleaved stereo, but we'll assume stereo for simplicity or handle both
-    int num_channels = 0;
-    double duration_sec = 0.0;
-    std::string path;
-    bool is_loop = false;
-    std::vector<float> waveform_summary;
-};
-
-// Simple WAV loader (16-bit PCM)
-bool loadWav(const std::string& path, std::vector<float>& out_data, int& out_channels, double& out_duration) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return false;
-
-    char chunkId[4];
-    f.read(chunkId, 4);
-    if (std::string(chunkId, 4) != "RIFF") return false;
-    f.seekg(4, std::ios::cur); // Skip size
-    f.read(chunkId, 4);
-    if (std::string(chunkId, 4) != "WAVE") return false;
-
-    int sample_rate = 0;
-    int bits_per_sample = 0;
-    int channels = 0;
-
-    while (f.read(chunkId, 4)) {
-        uint32_t size;
-        f.read((char*)&size, 4);
-        if (std::string(chunkId, 4) == "fmt ") {
-            uint16_t format;
-            f.read((char*)&format, 2);
-            if (format != 1) return false; // Only PCM supported
-            uint16_t chans;
-            f.read((char*)&chans, 2);
-            channels = chans;
-            f.read((char*)&sample_rate, 4);
-            f.seekg(6, std::ios::cur); // Skip byte rate and block align
-            f.read((char*)&bits_per_sample, 2);
-            if (bits_per_sample != 16) return false; // Only 16-bit supported
-            if (size > 16) f.seekg(size - 16, std::ios::cur);
-        } else if (std::string(chunkId, 4) == "data") {
-            int num_samples = size / 2;
-            std::vector<int16_t> pcm(num_samples);
-            f.read((char*)pcm.data(), size);
-            out_data.resize(num_samples);
-            for (int i = 0; i < num_samples; ++i) {
-                out_data[i] = pcm[i] / 32768.0f;
-            }
-            out_channels = channels;
-            out_duration = (double)num_samples / (channels * sample_rate);
-            return true;
-        } else {
-            f.seekg(size, std::ios::cur);
-        }
-    }
-    return false;
-}
-
-class Track {
-public:
-    int index;
-    std::vector<std::unique_ptr<Vst3Plugin>> plugins;
-    std::map<int, std::unique_ptr<Clip>> clips;
-
-    int playing_slot = -1;
-    double current_time_sec = 0.0;
-    int current_midi_idx = 0;
-
-    std::mutex mutex;
-
-    Track(int idx) : index(idx) {}
-
-    int load_plugin(const std::string& path, int plugin_index, double sample_rate) {
-        std::lock_guard<std::mutex> lock(mutex);
-        auto plugin = std::make_unique<Vst3Plugin>();
-        if (!plugin->load(path, plugin_index, sample_rate)) {
-            return -1;
-        }
-
-        bool is_instrument = plugin->isInstrument();
-        int target_idx = -1;
-        if (is_instrument) {
-            // Find existing instrument to replace
-            for (size_t i = 0; i < plugins.size(); ++i) {
-                if (plugins[i]->isInstrument()) {
-                    target_idx = (int)i;
-                    break;
-                }
-            }
-        }
-
-        if (target_idx != -1) {
-            plugins[target_idx] = std::move(plugin);
-        } else if (is_instrument) {
-            // New instrument, insert at 0
-            plugins.insert(plugins.begin(), std::move(plugin));
-            target_idx = 0;
-        } else {
-            // Effect, append
-            target_idx = (int)plugins.size();
-            plugins.push_back(std::move(plugin));
-        }
-
-        // If this is the first plugin, reset playback state
-        if (plugins.size() == 1) {
-            current_time_sec = 0.0;
-            current_midi_idx = 0;
-        }
-
-        // Exclusivity rule: If loading an instrument, clear audio clips
-        if (is_instrument) {
-            std::vector<int> audio_slots;
-            for (auto const& [slot, clip] : clips) {
-                if (clip->type == Clip::AUDIO) audio_slots.push_back(slot);
-            }
-            for (int slot : audio_slots) {
-                clips.erase(slot);
-                sendClipInfo(index, slot, "");
-            }
-        }
-
-        return target_idx;
-    }
-
-    bool delete_clip(int slot) {
-        std::lock_guard<std::mutex> lock(mutex);
-        if (clips.count(slot)) {
-            clips.erase(slot);
-            if (playing_slot == slot) {
-                playing_slot = -1;
-            }
-            return true;
-        }
-        return false;
-    }
-
-
-
-    bool load_clip(int slot, const std::string& path, bool is_loop = false) {
-        std::lock_guard<std::mutex> lock(mutex);
-        
-        auto clip = std::make_unique<Clip>();
-        clip->path = path;
-        clip->is_loop = is_loop;
-
-        if (path.size() > 4 && path.substr(path.size() - 4) == ".wav") {
-            if (!loadWav(path, clip->audio_data, clip->num_channels, clip->duration_sec)) {
-                return false;
-            }
-            clip->type = Clip::AUDIO;
-        } else {
-            auto events = hbk::parseMidi(path);
-            if (events.empty()) return false;
-            clip->midi_events = std::move(events);
-            clip->type = Clip::MIDI;
-            if (!clip->midi_events.empty()) {
-                clip->duration_sec = clip->midi_events.back().seconds + 0.1; // Small buffer
-            }
-        }
-
-
-        // Exclusivity rule: If loading an audio clip, clear instruments
-        if (clip->type == Clip::AUDIO) {
-            for (size_t i = 0; i < plugins.size(); ++i) {
-                if (plugins[i]->isInstrument()) {
-                    sendParamList(index, (int)i, "", true, {});
-                }
-            }
-            plugins.erase(std::remove_if(plugins.begin(), plugins.end(), [](const auto& p) {
-                return p->isInstrument();
-            }), plugins.end());
-        }
-
-        // Generate waveform summary for AUDIO clips
-        if (clip->type == Clip::AUDIO && !clip->audio_data.empty()) {
-            int num_points = 256;
-            clip->waveform_summary.resize(num_points);
-            int samples_per_point = clip->audio_data.size() / (clip->num_channels * num_points);
-            if (samples_per_point < 1) samples_per_point = 1;
-
-            for (int i = 0; i < num_points; i++) {
-                float max_val = 0;
-                for (int j = 0; j < samples_per_point; j++) {
-                    int idx = (i * samples_per_point + j) * clip->num_channels;
-                    if (idx < (int)clip->audio_data.size()) {
-                        max_val = std::max(max_val, std::abs(clip->audio_data[idx]));
-                    }
-                }
-                clip->waveform_summary[i] = max_val;
-            }
-
-            // Send waveform to GUI
-            flatbuffers::FlatBufferBuilder builder(1024 + num_points * 4);
-            auto wf_vec = builder.CreateVector(clip->waveform_summary);
-            auto wf_off = hibiki::ipc::CreateClipWaveform(builder, index, slot, wf_vec);
-            auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ClipWaveform, wf_off.Union());
-            builder.Finish(nf_off);
-            sendNotification(builder.GetBufferPointer(), builder.GetSize());
-        }
-
-        clips[slot] = std::move(clip);
-
-        // If we are currently playing this slot, reset playback
-        if (playing_slot == slot) {
-            current_time_sec = 0.0;
-            current_midi_idx = 0;
-        }
-        return true;
-    }
-
-    void set_clip_loop(int slot, bool is_loop) {
-        std::lock_guard<std::mutex> lock(mutex);
-        if (clips.count(slot)) {
-            clips[slot]->is_loop = is_loop;
-        }
-    }
-
-
-    void play_clip(int slot) {
-        std::lock_guard<std::mutex> lock(mutex);
-        if (clips.count(slot)) {
-            playing_slot = slot;
-            current_time_sec = 0.0;
-            current_midi_idx = 0;
-        }
-    }
-
-    void stop() {
-        std::lock_guard<std::mutex> lock(mutex);
-        playing_slot = -1;
-    }
-
-    bool remove_plugin(size_t pidx) {
-        std::lock_guard<std::mutex> lock(mutex);
-        if (pidx >= plugins.size()) return false;
-        plugins.erase(plugins.begin() + pidx);
-        return true;
-    }
-};
-
-struct GlobalState {
-    std::atomic<bool> quit{false};
-    double bpm = 140.0;
-    std::atomic<double> sample_rate{44100.0};
-    std::map<int, std::unique_ptr<Track>> tracks;
-    std::mutex tracks_mutex;
-    std::map<int, std::pair<float, float>> track_levels; // Peak L/R
-    std::mutex levels_mutex;
-
-    Track* get_or_create_track(int idx) {
-        std::lock_guard<std::mutex> lock(tracks_mutex);
-        if (!tracks.count(idx)) {
-            tracks[idx] = std::make_unique<Track>(idx);
-        }
-        return tracks[idx].get();
-    }
-};
-
-void playback_thread(GlobalState& state) {
+void playback_thread(ProjectState& state) {
 #ifndef _WIN32
   AlsaPlayback alsa(44100, 2);
   float sample_rate = 44100.0f;
@@ -386,10 +74,10 @@ void playback_thread(GlobalState& state) {
         bool any_playing = false;
 
         {
-            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            // std::lock_guard<std::mutex> lock(state.tracks_mutex); // Mutex removed from POD
             for (auto& pair : state.tracks) {
                 Track* track = pair.second.get();
-                std::lock_guard<std::mutex> tlock(track->mutex);
+                // std::lock_guard<std::mutex> tlock(track->mutex);
 
                 if (track->playing_slot == -1) continue;
 
@@ -402,7 +90,7 @@ void playback_thread(GlobalState& state) {
                 std::fill(bufferL, bufferL + block_size, 0.0f);
                 std::fill(bufferR, bufferR + block_size, 0.0f);
 
-                if (clip->type == Clip::MIDI) {
+                if (clip->type == Clip::Type::MIDI) {
                     const auto& events = clip->midi_events;
                     int num_midi_events = events.size();
 
@@ -414,14 +102,14 @@ void playback_thread(GlobalState& state) {
                         if (me.seconds >= track->current_time_sec + time_per_block) break;
 
                         if (me.seconds >= track->current_time_sec) {
-                            if (hbk::isNoteOn(me) || hbk::isNoteOff(me)) {
+                            if (hibiki::isNoteOn(me) || hibiki::isNoteOff(me)) {
                                 MidiNoteEvent e;
                                 e.sampleOffset = std::max(0, (int)((me.seconds - track->current_time_sec) * sample_rate));
                                 if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
                                 e.channel = me.channel;
                                 e.pitch = me.note;
 
-                                if (hbk::isNoteOff(me)) {
+                                if (hibiki::isNoteOff(me)) {
                                     e.isNoteOn = false;
                                     e.velocity = 0;
                                 } else {
@@ -443,7 +131,7 @@ void playback_thread(GlobalState& state) {
                             p->process(outChannels, outChannels, block_size, context, {});
                         }
                     }
-                } else if (clip->type == Clip::AUDIO) {
+                } else if (clip->type == Clip::Type::AUDIO) {
                     // Simple audio playback
                     int start_sample = (int)(track->current_time_sec * sample_rate);
                     for (int i = 0; i < block_size; ++i) {
@@ -489,25 +177,25 @@ void playback_thread(GlobalState& state) {
                     peakL = std::max(peakL, std::abs(bufferL[i]));
                     peakR = std::max(peakR, std::abs(bufferR[i]));
                 }
-                {
+                if (any_playing) {
                     std::lock_guard<std::mutex> llock(state.levels_mutex);
                     state.track_levels[track->index] = {peakL, peakR};
                 }
             }
         }
-
+        
         if (!any_playing) {
-            // Clear levels if nothing playing? Or just let them decay
-            {
+            if (state.is_playing) {
                 std::lock_guard<std::mutex> llock(state.levels_mutex);
                 for (auto& p : state.track_levels) p.second = {0, 0};
+                state.is_playing = false;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            continue;
+        } else {
+            state.is_playing = true;
         }
 
-        // Send levels periodically
-        if (++level_counter >= 4) {
+        level_counter++;
+        if (level_counter >= 10) { // Send levels periodically
             level_counter = 0;
             flatbuffers::FlatBufferBuilder builder(512);
             std::vector<flatbuffers::Offset<hibiki::ipc::TrackLevel>> level_offsets;
@@ -546,106 +234,7 @@ void playback_thread(GlobalState& state) {
     }
 }
 
-
-void save_project(GlobalState& state, const std::string& path) {
-    flatbuffers::FlatBufferBuilder builder(1024);
-    std::vector<flatbuffers::Offset<hibiki::project::Track>> track_offsets;
-
-    std::lock_guard<std::mutex> lock(state.tracks_mutex);
-    for (auto& pair : state.tracks) {
-        Track* track = pair.second.get();
-        std::lock_guard<std::mutex> tlock(track->mutex);
-
-        std::vector<flatbuffers::Offset<hibiki::project::Plugin>> plugin_offsets;
-        for (auto& plugin : track->plugins) {
-            std::vector<flatbuffers::Offset<hibiki::project::Parameter>> params;
-            for (int i = 0; i < plugin->getParameterCount(); i++) {
-                VstParamInfo info;
-                if (plugin->getParameterInfo(i, info)) {
-                    params.push_back(hibiki::project::CreateParameter(builder, info.id, (float)plugin->getParameterValue(info.id)));
-                }
-            }
-            auto params_vec = builder.CreateVector(params);
-            auto path_off = builder.CreateString(plugin->getPath());
-            auto p = hibiki::project::CreatePlugin(builder, path_off, plugin->getPluginIndex(), params_vec);
-            plugin_offsets.push_back(p);
-        }
-
-        std::vector<flatbuffers::Offset<hibiki::project::Clip>> clip_offsets;
-        for (auto const& [slot, clip] : track->clips) {
-            auto path_off = builder.CreateString(clip->path);
-            auto type = (clip->type == Clip::AUDIO) ? hibiki::project::ClipType_AUDIO : hibiki::project::ClipType_MIDI;
-            clip_offsets.push_back(hibiki::project::CreateClip(builder, slot, path_off, clip->is_loop, type));
-        }
-
-        auto plugins_vec = builder.CreateVector(plugin_offsets);
-        auto clips_vec = builder.CreateVector(clip_offsets);
-        track_offsets.push_back(hibiki::project::CreateTrack(builder, track->index, plugins_vec, clips_vec));
-    }
-
-    auto tracks_vec = builder.CreateVector(track_offsets);
-    auto project = hibiki::project::CreateProject(builder, (float)state.bpm, tracks_vec);
-    builder.Finish(project);
-
-    std::ofstream os(path, std::ios::binary);
-    os.write((char*)builder.GetBufferPointer(), builder.GetSize());
-}
-
-void load_project(GlobalState& state, const std::string& path) {
-    double sample_rate = state.sample_rate;
-    std::ifstream is(path, std::ios::binary | std::ios::ate);
-    if (!is) return;
-    auto size = is.tellg();
-    is.seekg(0, std::ios::beg);
-    std::vector<char> buffer(size);
-    is.read(buffer.data(), size);
-
-    auto project = hibiki::project::GetProject(buffer.data());
-    state.bpm = project->bpm();
-
-    sendClearProject();
-
-    {
-        std::lock_guard<std::mutex> lock(state.tracks_mutex);
-        state.tracks.clear();
-    }
-
-    if (project->tracks()) {
-        for (auto const& track_fb : *project->tracks()) {
-            Track* track = state.get_or_create_track(track_fb->index());
-            if (track_fb->plugins()) {
-                for (auto const& plugin_fb : *track_fb->plugins()) {
-                    int idx = track->load_plugin(plugin_fb->path()->str(), plugin_fb->index(), sample_rate);
-                    if (idx != -1) {
-                        auto& plugin = track->plugins[idx];
-                        if (plugin_fb->parameters()) {
-                            for (auto param_fb : *plugin_fb->parameters()) {
-                                plugin->setParameterValue(param_fb->id(), param_fb->value());
-                            }
-                        }
-                        // Notify GUI about the loaded plugin
-                        std::vector<VstParamInfo> params;
-                        for (int i = 0; i < plugin->getParameterCount(); ++i) {
-                            VstParamInfo info;
-                            if (plugin->getParameterInfo(i, info)) params.push_back(info);
-                        }
-                        sendParamList(track->index, idx, plugin->getName(), plugin->isInstrument(), params);
-                    }
-                }
-            }
-            if (track_fb->clips()) {
-                for (auto clip_fb : *track_fb->clips()) {
-                    if (track->load_clip(clip_fb->slot_index(), clip_fb->path()->str(), clip_fb->is_loop())) {
-                        std::string name = clip_fb->path()->str();
-                        size_t last_slash = name.find_last_of("/\\");
-                        if (last_slash != std::string::npos) name = name.substr(last_slash + 1);
-                        sendClipInfo(track->index, clip_fb->slot_index(), name);
-                    }
-                }
-            }
-        }
-    }
-}
+} // namespace hibiki
 
 int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "--list") {
@@ -660,8 +249,8 @@ int main(int argc, char** argv) {
   _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
-    GlobalState state;
-    std::thread audio_thread(playback_thread, std::ref(state));
+    hibiki::ProjectState state;
+    std::thread audio_thread(hibiki::playback_thread, std::ref(state));
 
     while (true) {
         uint32_t msg_size = 0;
@@ -692,8 +281,9 @@ int main(int argc, char** argv) {
             int tidx = cmd->track_index();
             std::string vpath = cmd->path()->str();
             int pidx = cmd->plugin_index();
-            auto track = state.get_or_create_track(tidx);
-            int target_idx = track->load_plugin(vpath, pidx, state.sample_rate);
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            auto track = hibiki::GetOrCreateTrack(state, tidx);
+            int target_idx = track->LoadPlugin(vpath, pidx, state.sample_rate);
             if (target_idx != -1) {
                 std::vector<VstParamInfo> params;
                 auto& plugin = track->plugins[target_idx];
@@ -703,67 +293,78 @@ int main(int argc, char** argv) {
                         params.push_back(info);
                     }
                 }
-                sendParamList(tidx, target_idx, plugin->getName(), plugin->isInstrument(), params);
+                hibiki::sendParamList(tidx, target_idx, plugin->getName(), plugin->isInstrument(), params);
             } else {
-                sendLog("Failed to load plugin: " + vpath);
+                hibiki::sendLog("Failed to load plugin: " + vpath);
             }
         } else if (command_type == hibiki::ipc::Command_SaveProject) {
             auto cmd = request->command_as_SaveProject();
-            save_project(state, cmd->path()->str());
-            sendAck("SAVE_PROJECT", true);
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            hibiki::SaveProject(state, cmd->path()->str());
+            hibiki::sendAck("SAVE_PROJECT", true);
         } else if (command_type == hibiki::ipc::Command_LoadProject) {
             auto cmd = request->command_as_LoadProject();
-            load_project(state, cmd->path()->str());
-            sendAck("LOAD_PROJECT", true);
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            hibiki::LoadProject(state, cmd->path()->str());
+            hibiki::sendAck("LOAD_PROJECT", true);
         } else if (command_type == hibiki::ipc::Command_LoadClip) {
             auto cmd = request->command_as_LoadClip();
             int tidx = cmd->track_index();
             int sidx = cmd->slot_index();
             std::string mpath = cmd->path()->str();
             bool is_loop = cmd->is_loop();
-            if (state.get_or_create_track(tidx)->load_clip(sidx, mpath, is_loop)) {
-                sendAck("LOAD_CLIP", true);
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            auto track = hibiki::GetOrCreateTrack(state, tidx);
+            if (track->LoadClip(sidx, mpath, is_loop)) {
+                hibiki::sendAck("LOAD_CLIP", true);
                 // Extract filename from path
                 std::string name = mpath;
                 size_t last_slash = mpath.find_last_of("/\\");
                 if (last_slash != std::string::npos) {
                     name = mpath.substr(last_slash + 1);
                 }
-                sendClipInfo(tidx, sidx, name);
+                hibiki::sendClipInfo(tidx, sidx, name);
             } else {
-                sendLog("Failed to load clip: " + mpath);
+                hibiki::sendLog("Failed to load clip: " + mpath);
             }
         } else if (command_type == hibiki::ipc::Command_SetClipLoop) {
             auto cmd = request->command_as_SetClipLoop();
-            state.get_or_create_track(cmd->track_index())->set_clip_loop(cmd->slot_index(), cmd->is_loop());
-            sendAck("SET_CLIP_LOOP", true);
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            hibiki::GetOrCreateTrack(state, cmd->track_index())->SetClipLoop(cmd->slot_index(), cmd->is_loop());
+            hibiki::sendAck("SET_CLIP_LOOP", true);
         } else if (command_type == hibiki::ipc::Command_Play) {
-            sendAck("PLAY", true);
+            hibiki::sendAck("PLAY", true);
         } else if (command_type == hibiki::ipc::Command_Stop) {
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             for (auto& pair : state.tracks) {
-                pair.second->stop();
+                pair.second->Stop();
             }
-            sendAck("STOP", true);
+            hibiki::sendAck("STOP", true);
         } else if (command_type == hibiki::ipc::Command_PlayClip) {
             auto cmd = request->command_as_PlayClip();
             int tidx = cmd->track_index();
             int sidx = cmd->slot_index();
-            state.get_or_create_track(tidx)->play_clip(sidx);
-            sendAck("PLAY_CLIP", true);
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            auto track = hibiki::GetOrCreateTrack(state, tidx);
+            track->PlayClip(sidx);
+            hibiki::sendAck("PLAY_CLIP", true);
         } else if (command_type == hibiki::ipc::Command_StopTrack) {
             auto cmd = request->command_as_StopTrack();
             int tidx = cmd->track_index();
-            state.get_or_create_track(tidx)->stop();
-            sendAck("STOP_TRACK", true);
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            auto track = hibiki::GetOrCreateTrack(state, tidx);
+            track->Stop();
+            hibiki::sendAck("STOP_TRACK", true);
         } else if (command_type == hibiki::ipc::Command_RemovePlugin) {
             auto cmd = request->command_as_RemovePlugin();
             int tidx = cmd->track_index();
             int pidx = cmd->plugin_index();
-            if (state.get_or_create_track(tidx)->remove_plugin(pidx)) {
-                sendAck("REMOVE_PLUGIN", true);
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            auto track = hibiki::GetOrCreateTrack(state, tidx);
+            if (track->RemovePlugin(pidx)) {
+                hibiki::sendAck("REMOVE_PLUGIN", true);
             } else {
-                sendAck("REMOVE_PLUGIN", false);
+                hibiki::sendAck("REMOVE_PLUGIN", false);
             }
         } else if (command_type == hibiki::ipc::Command_ShowPluginGui) {
             auto cmd = request->command_as_ShowPluginGui();
@@ -789,27 +390,46 @@ int main(int argc, char** argv) {
                     plugins[plugin_idx]->setParameterValue(param_id, value);
                 }
             }
+        // Disable Scrub, UpdateParams, ClearProject routing to track temporary
+        // } else if (command_type == hibiki::ipc::Command_UpdateParams) {
+        //     auto cmd = request->command_as_UpdateParams();
+        //     std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        //     auto track = hibiki::GetOrCreateTrack(state, cmd->track_index());
+        //     if (cmd->plugin_index() < (int)track->plugins.size()) {
+        //         track->plugins[cmd->plugin_index()]->setParameterValue(cmd->param_index(), cmd->value());
+        //     }
+        // } else if (command_type == hibiki::ipc::Command_ClearProject) {
+        //     std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        //     state.tracks.clear();
+        //     hibiki::sendAck("CLEAR_PROJECT", true);
+        // } else if (command_type == hibiki::ipc::Command_Scrub) {
+        //     auto cmd = request->command_as_Scrub();
+        //     std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        //     for (auto& pair : state.tracks) {
+        //         pair.second->Scrub(cmd->time_sec());
+        //     }
+        //     hibiki::sendAck("SCRUB", true);
         } else if (command_type == hibiki::ipc::Command_SetBpm) {
             auto cmd = request->command_as_SetBpm();
             state.bpm = cmd->bpm();
-            sendAck("SET_BPM", true);
+            hibiki::sendAck("SET_BPM", true);
         } else if (command_type == hibiki::ipc::Command_PlayScene) {
             auto cmd = request->command_as_PlayScene();
             int sidx = cmd->slot_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             for (auto& pair : state.tracks) {
-                pair.second->play_clip(sidx);
+                pair.second->PlayClip(sidx);
             }
-            sendAck("PLAY_SCENE", true);
+            hibiki::sendAck("PLAY_SCENE", true);
         } else if (command_type == hibiki::ipc::Command_DeleteClip) {
             auto cmd = request->command_as_DeleteClip();
-            int tidx = cmd->track_index();
-            int sidx = cmd->slot_index();
-            if (state.get_or_create_track(tidx)->delete_clip(sidx)) {
-                sendAck("DELETE_CLIP", true);
-                sendClipInfo(tidx, sidx, "");
+            int track_idx = cmd->track_index();
+            int slot_index = cmd->slot_index();
+            if (hibiki::GetOrCreateTrack(state, track_idx)->DeleteClip(slot_index)) {
+                hibiki::sendAck("DELETE_CLIP", true);
+                hibiki::sendClipInfo(track_idx, slot_index, "");
             } else {
-                sendAck("DELETE_CLIP", false);
+                hibiki::sendAck("DELETE_CLIP", false);
             }
         } else if (command_type == hibiki::ipc::Command_Quit) {
             state.quit = true;

@@ -64,14 +64,24 @@ cc_library(
     hdrs = ["midi.hpp"],
 )
 
-cc_binary(
-    name = "hbk-play",
+cc_library(
+    name = "hibiki_core",
     srcs = [
-        "main.cpp",
+        "audio_file.cpp",
+        "clip.cpp",
+        "track.cpp",
+        "project.cpp",
+        "ipc.cpp",
+    ],
+    hdrs = [
+        "audio_file.hpp",
+        "clip.hpp",
+        "track.hpp",
+        "project.hpp",
+        "ipc.hpp",
     ],
     deps = [
         ":midi",
-        ":vst3_host",
         ":hibiki_request_cc",
         ":hibiki_response_cc",
         ":hibiki_project_cc",
@@ -85,17 +95,71 @@ cc_binary(
             ":vst3_host_x11",
         ],
     }),
+)
+
+cc_binary(
+    name = "hbk-play",
+    srcs = [
+        "main.cpp",
+    ],
+    deps = [
+        ":hibiki_core",
+    ],
     linkstatic = True,
 )
 
 cc_test(
     name = "midi_test",
-    srcs = ["midi_test.cpp"],
+    srcs = ["midi_test.cpp", "test_utils.hpp"],
     data = ["//testdata"],
     deps = [
         ":midi",
         "@googletest//:gtest_main",
     ],
+)
+
+cc_test(
+    name = "audio_file_test",
+    srcs = ["audio_file_test.cpp", "test_utils.hpp"],
+    data = ["//testdata"],
+    deps = [
+        ":hibiki_core",
+        "@googletest//:gtest_main",
+    ],
+    linkstatic = True,
+)
+
+cc_test(
+    name = "clip_test",
+    srcs = ["clip_test.cpp", "test_utils.hpp"],
+    data = ["//testdata"],
+    deps = [
+        ":hibiki_core",
+        "@googletest//:gtest_main",
+    ],
+    linkstatic = True,
+)
+
+cc_test(
+    name = "track_test",
+    srcs = ["track_test.cpp", "test_utils.hpp"],
+    data = ["//testdata"],
+    deps = [
+        ":hibiki_core",
+        "@googletest//:gtest_main",
+    ],
+    linkstatic = True,
+)
+
+cc_test(
+    name = "project_test",
+    srcs = ["project_test.cpp", "test_utils.hpp"],
+    data = ["//testdata"],
+    deps = [
+        ":hibiki_core",
+        "@googletest//:gtest_main",
+    ],
+    linkstatic = True,
 )
 
 flatbuffer_cc_library(

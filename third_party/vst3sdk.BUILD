@@ -4,6 +4,7 @@ common_excludes = [
     "vstgui4/**",
     "public.sdk/source/vst/hosting/vst2wrapper.cpp",
     "**/*vstgui*.cpp",
+    "public.sdk/source/vst/vstsinglecomponenteffect.cpp",
 ]
 
 cc_library(

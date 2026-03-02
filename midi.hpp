@@ -4,7 +4,7 @@
 #include <string>
 #include <cstdint>
 
-namespace hbk {
+namespace hibiki {
 
 struct MidiEvent {
     double seconds;
@@ -20,4 +20,4 @@ bool isNoteOff(const MidiEvent& ev);
 
 std::vector<MidiEvent> parseMidi(const std::string& path);
 
-} // namespace hbk
+} // namespace hibiki

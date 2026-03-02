@@ -2,7 +2,7 @@
 #include <fstream>
 #include <algorithm>
 
-namespace hbk {
+namespace hibiki {
 
 bool isNoteOn(const MidiEvent& ev) {
     return (ev.type >= 0x90 && ev.type <= 0x9F) && ev.velocity > 0;
@@ -116,4 +116,4 @@ std::vector<MidiEvent> parseMidi(const std::string& path) {
     return allEvents;
 }
 
-} // namespace hbk
+} // namespace hibiki

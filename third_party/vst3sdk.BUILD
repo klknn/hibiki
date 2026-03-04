@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "objc_library")
 
 common_excludes = [
     "vstgui4/**",
@@ -6,6 +6,35 @@ common_excludes = [
     "**/*vstgui*.cpp",
     "public.sdk/source/vst/vstsinglecomponenteffect.cpp",
 ]
+
+
+cc_library(
+    name = "pluginterfaces",
+    hdrs = glob(["pluginterfaces/**/*.h"]),
+    srcs = glob(["pluginterfaces/**/*.cpp"]),
+    visibility = ["//visibility:public"],
+    linkopts = select({
+        "@platforms//os:windows": ["ole32.lib"],  # For COM in funknown.h.
+        "@platforms//os:osx": [],
+        "@platforms//os:linux": [],
+    })
+)
+
+objc_library(
+    name = "public_sdk_mac",
+    hdrs = glob(
+        ["public.sdk/source/**/*.h"],
+    ),
+    copts = ["-ObjC++","-std=c++20"],
+    srcs = [
+        "public.sdk/source/vst/hosting/module_mac.mm",
+        "public.sdk/source/common/threadchecker_mac.mm"
+    ],
+    linkopts = ["-framework Cocoa", "-framework CoreFoundation"],
+    deps = [
+        ":pluginterfaces",
+    ],
+)
 
 cc_library(
     name = "vst3sdk",
@@ -26,6 +55,7 @@ cc_library(
             "**/*win32*.cpp",
         ],
     ) + select({
+        "@platforms//os:macos": glob(["**/*mac*.cpp"], exclude = common_excludes),
         "@platforms//os:windows": glob(["**/*win32*.cpp"], exclude = common_excludes),
         "//conditions:default": glob(["**/*linux*.cpp"], exclude = common_excludes),
     }),
@@ -51,5 +81,9 @@ cc_library(
     copts = select({
         "@platforms//os:windows": ["/EHsc", "/W0", "/std:c++17"],
         "//conditions:default": ["-fexceptions", "-w"],
+    }),
+    deps = select({
+        "@platforms//os:macos": [":public_sdk_mac"],
+        "//conditions:default": [],
     }),
 )

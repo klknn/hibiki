@@ -67,20 +67,19 @@ cc_library(
 cc_library(
     name = "hibiki_core",
     srcs = [
-        "audio_file.cpp",
         "clip.cpp",
         "track.cpp",
         "project.cpp",
         "ipc.cpp",
     ],
     hdrs = [
-        "audio_file.hpp",
         "clip.hpp",
         "track.hpp",
         "project.hpp",
         "ipc.hpp",
     ],
     deps = [
+        ":audio_file",
         ":midi",
         ":hibiki_request_cc",
         ":hibiki_response_cc",
@@ -108,33 +107,58 @@ cc_binary(
     linkstatic = True,
 )
 
+cc_library(
+    name = "test_utils",
+    hdrs = ["test_utils.hpp"],
+    testonly = True,
+)
+
 cc_test(
     name = "midi_test",
-    srcs = ["midi_test.cpp", "test_utils.hpp"],
+    srcs = ["midi_test.cpp"],
     data = ["//testdata"],
     deps = [
         ":midi",
+        ":test_utils",
         "@googletest//:gtest_main",
     ],
 )
 
+cc_library(
+    name = "audio_file",
+    srcs = ["audio_file.cpp"],
+    hdrs = ["audio_file.hpp"],
+)
+
 cc_test(
     name = "audio_file_test",
-    srcs = ["audio_file_test.cpp", "test_utils.hpp"],
+    srcs = ["audio_file_test.cpp"],
     data = ["//testdata"],
     deps = [
-        ":hibiki_core",
+        ":audio_file",
+        ":test_utils",
         "@googletest//:gtest_main",
     ],
     linkstatic = True,
 )
 
+cc_library(
+    name = "clip",
+    srcs = ["clip.cpp"],
+    hdrs = ["clip.hpp"],
+    deps = [
+        ":audio_file",
+        ":midi",
+    ],
+)
+
 cc_test(
     name = "clip_test",
-    srcs = ["clip_test.cpp", "test_utils.hpp"],
+    srcs = ["clip_test.cpp"],
     data = ["//testdata"],
     deps = [
-        ":hibiki_core",
+        ":clip",
+        ":test_utils",
         "@googletest//:gtest_main",
     ],
     linkstatic = True,
@@ -142,10 +166,11 @@ cc_test(
 
 cc_test(
     name = "track_test",
-    srcs = ["track_test.cpp", "test_utils.hpp"],
+    srcs = ["track_test.cpp"],
     data = ["//testdata"],
     deps = [
         ":hibiki_core",
+        ":test_utils",
         "@googletest//:gtest_main",
     ],
     linkstatic = True,
@@ -153,10 +178,11 @@ cc_test(
 
 cc_test(
     name = "project_test",
-    srcs = ["project_test.cpp", "test_utils.hpp"],
+    srcs = ["project_test.cpp"],
     data = ["//testdata"],
     deps = [
         ":hibiki_core",
+        ":test_utils",
         "@googletest//:gtest_main",
     ],
     linkstatic = True,

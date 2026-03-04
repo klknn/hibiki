@@ -13,7 +13,9 @@
 
 #include "midi.hpp"
 
-#ifndef _WIN32
+#if defined(__APPLE__)
+#include "coreaudio_out.hpp"
+#elif !defined(_WIN32)
 #include "alsa_out.hpp"
 #else
 #include "win32_out.hpp"
@@ -35,7 +37,11 @@
 namespace hibiki {
 
 void playback_thread(ProjectState& state) {
-#ifndef _WIN32
+#if defined(__APPLE__)
+  CoreAudioPlayback alsa(44100, 2);
+  float sample_rate = 44100.0f;
+  int actual_channels = 2;
+#elif !defined(_WIN32)
   AlsaPlayback alsa(44100, 2);
   float sample_rate = 44100.0f;
   int actual_channels = 2;

@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test", "objc_library")
 load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_test")
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library", "flatbuffer_library_public")
 
@@ -59,6 +59,29 @@ cc_library(
 )
 
 cc_library(
+    name = "coreaudio_out",
+    srcs = ["coreaudio_out.cpp"],
+    hdrs = ["coreaudio_out.hpp"],
+    target_compatible_with = ["@platforms//os:macos"],
+    linkopts = [
+        "-framework CoreAudio",
+        "-framework AudioUnit",
+        "-framework AudioToolbox",
+    ],
+)
+
+objc_library(
+    name = "vst3_host_mac",
+    srcs = ["vst3_host_mac.mm"],
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [
+        ":vst3_host",
+        "@vst3sdk//:vst3sdk",
+    ],
+    alwayslink = True,
+)
+
+cc_library(
     name = "midi",
     srcs = ["midi.cpp"],
     hdrs = ["midi.hpp"],
@@ -112,6 +135,10 @@ cc_binary(
         "@platforms//os:windows": [
             ":win32_out",
             ":vst3_host_win32",
+        ],
+        "@platforms//os:macos": [
+            ":coreaudio_out",
+            ":vst3_host_mac",
         ],
         "//conditions:default": [
             ":alsa_out",

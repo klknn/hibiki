@@ -65,25 +65,49 @@ cc_library(
 )
 
 cc_library(
-    name = "hibiki_core",
-    srcs = [
-        "clip.cpp",
-        "track.cpp",
-        "project.cpp",
-        "ipc.cpp",
+    name = "track",
+    srcs = ["track.cpp"],
+    hdrs = ["track.hpp"],
+    deps = [
+        ":ipc",
+        ":clip",
+        ":vst3_host",
     ],
-    hdrs = [
-        "clip.hpp",
-        "track.hpp",
-        "project.hpp",
-        "ipc.hpp",
+)
+
+cc_library(
+    name = "project",
+    srcs = ["project.cpp"],
+    hdrs = ["project.hpp"],
+    deps = [
+        ":track",
+        ":hibiki_project_cc",
+    ],
+)
+
+cc_library(
+    name = "ipc",
+    srcs = ["ipc.cpp"],
+    hdrs = ["ipc.hpp"],
+    deps = [
+        ":vst3_host",
+        ":hibiki_request_cc",
+        ":hibiki_response_cc",
+    ],
+)
+
+cc_binary(
+    name = "hbk-play",
+    srcs = [
+        "main.cpp",
     ],
     deps = [
         ":audio_file",
+        ":clip",
+        ":ipc",
         ":midi",
-        ":hibiki_request_cc",
-        ":hibiki_response_cc",
-        ":hibiki_project_cc",
+        ":project",
+        ":track",
     ] + select({
         "@platforms//os:windows": [
             ":win32_out",
@@ -94,16 +118,6 @@ cc_library(
             ":vst3_host_x11",
         ],
     }),
-)
-
-cc_binary(
-    name = "hbk-play",
-    srcs = [
-        "main.cpp",
-    ],
-    deps = [
-        ":hibiki_core",
-    ],
     linkstatic = True,
 )
 
@@ -169,7 +183,7 @@ cc_test(
     srcs = ["track_test.cpp"],
     data = ["//testdata"],
     deps = [
-        ":hibiki_core",
+        ":track",
         ":test_utils",
         "@googletest//:gtest_main",
     ],
@@ -181,7 +195,7 @@ cc_test(
     srcs = ["project_test.cpp"],
     data = ["//testdata"],
     deps = [
-        ":hibiki_core",
+        ":project",
         ":test_utils",
         "@googletest//:gtest_main",
     ],

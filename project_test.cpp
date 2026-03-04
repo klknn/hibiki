@@ -3,6 +3,8 @@
 #include "test_utils.hpp"
 #include <cstdio>
 
+void Vst3Plugin::stopEditor() {}  // for test.
+
 TEST(ProjectTest, GetOrCreateTrack) {
     hibiki::ProjectState state;
     auto track0 = hibiki::GetOrCreateTrack(state, 0);

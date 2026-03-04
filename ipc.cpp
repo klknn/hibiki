@@ -1,4 +1,5 @@
 #include "ipc.hpp"
+#include "vst3_host.hpp"
 #include <iostream>
 #include <mutex>
 #include "hibiki_request_generated.h"

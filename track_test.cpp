@@ -2,6 +2,8 @@
 #include "track.hpp"
 #include "test_utils.hpp"
 
+void Vst3Plugin::stopEditor() {} // for test
+
 TEST(TrackTest, AddAndRemoveClips) {
     hibiki::Track track(0);
     auto audio_path = hibiki::find_test_file("testdata/loop140.wav");

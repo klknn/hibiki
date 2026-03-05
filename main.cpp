@@ -329,7 +329,7 @@ int main(int argc, char** argv) {
                 if (last_slash != std::string::npos) {
                     name = mpath.substr(last_slash + 1);
                 }
-                hibiki::sendClipInfo(tidx, sidx, name);
+                hibiki::sendClipInfo(tidx, sidx, name, mpath);
             } else {
                 hibiki::sendLog("Failed to load clip: " + mpath);
             }
@@ -433,7 +433,7 @@ int main(int argc, char** argv) {
             int slot_index = cmd->slot_index();
             if (hibiki::GetOrCreateTrack(state, track_idx)->DeleteClip(slot_index)) {
                 hibiki::sendAck("DELETE_CLIP", true);
-                hibiki::sendClipInfo(track_idx, slot_index, "");
+                hibiki::sendClipInfo(track_idx, slot_index, "", "");
             } else {
                 hibiki::sendAck("DELETE_CLIP", false);
             }

@@ -27,6 +27,7 @@ table ClipInfo {
     track_index: int;
     slot_index: int;
     name: string;
+    path: string;
 }
 
 table ClearProject {}

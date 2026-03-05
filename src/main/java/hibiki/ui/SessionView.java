@@ -24,6 +24,7 @@ import hibiki.ipc.ClipWaveform;
 
 public class SessionView extends JPanel {
     private JButton[][] slotButtons = new JButton[5][5]; // 4 tracks + master, 5 slots
+    private String[][] slotPaths = new String[5][5]; // paths to loaded clips
     private LevelMeter[] trackMeters = new LevelMeter[5]; // 1-4 for tracks
 
     public SessionView() {
@@ -59,11 +60,15 @@ public class SessionView extends JPanel {
         add(scrollPane, BorderLayout.CENTER);
         add(master, BorderLayout.EAST);
 
-        // Listen for clip load notifications
         BackendManager.getInstance().addNotificationListener(notification -> {
             if (notification.responseType() == Response.ClipInfo) {
                 ClipInfo info = (ClipInfo) notification.response(new ClipInfo());
                 updateSlotLabel(info.trackIndex(), info.slotIndex(), info.name());
+                if (info.path() != null && !info.path().isEmpty()) {
+                    slotPaths[info.trackIndex()][info.slotIndex()] = info.path();
+                } else {
+                    slotPaths[info.trackIndex()][info.slotIndex()] = null;
+                }
             } else if (notification.responseType() == Response.ClearProject) {
                 clearAllSlots();
             } else if (notification.responseType() == Response.TrackLevels) {
@@ -80,6 +85,7 @@ public class SessionView extends JPanel {
         SwingUtilities.invokeLater(() -> {
             for (int t = 1; t <= 4; t++) {
                 for (int s = 0; s < 5; s++) {
+                    slotPaths[t][s] = null;
                     JButton btn = slotButtons[t][s];
                     if (btn != null) {
                         btn.setText("");
@@ -292,6 +298,21 @@ public class SessionView extends JPanel {
         });
         menu.add(loadItem);
 
+        JMenuItem editItem = new JMenuItem("Edit Clip...");
+        editItem.addActionListener(e -> {
+            String path = slotPaths[trackIdx][slotIdx];
+            if (path != null && path.endsWith(".mid")) {
+                File file = new File(path);
+                JFrame ownerFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
+                PianoRoll pr = new PianoRoll(ownerFrame, file, trackIdx, slotIdx);
+                pr.setVisible(true);
+            } else {
+                JOptionPane.showMessageDialog(this, "Can only edit MIDI (.mid) clips.", "Error",
+                        JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        menu.add(editItem);
+
         JCheckBoxMenuItem loopItem = new JCheckBoxMenuItem("Loop");
         loopItem.addActionListener(e -> {
             sendSetClipLoop(trackIdx, slotIdx, loopItem.isSelected());
@@ -306,7 +327,8 @@ public class SessionView extends JPanel {
         menu.show(btn, x, y);
     }
 
-    private void sendLoadClip(int trackIdx, int slotIdx, String path, boolean isLoop) {
+    void sendLoadClip(int trackIdx, int slotIdx, String path, boolean isLoop) {
+        slotPaths[trackIdx][slotIdx] = path; // Remember the path locally
         FlatBufferBuilder builder = new FlatBufferBuilder(512);
         int pathOff = builder.createString(path);
         LoadClip.startLoadClip(builder);
@@ -374,6 +396,7 @@ public class SessionView extends JPanel {
         BackendManager.getInstance().sendRequest(builder);
 
         // Optimistically clear the UI
+        slotPaths[trackIdx][slotIdx] = null;
         updateSlotLabel(trackIdx, slotIdx, "");
     }
 

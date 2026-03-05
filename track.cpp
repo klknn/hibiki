@@ -52,7 +52,7 @@ int Track::LoadPlugin(const std::string& path, int plugin_index, double sample_r
         }
         for (int slot : audio_slots) {
             clips.erase(slot);
-            hibiki::sendClipInfo(index, slot, "");
+            hibiki::sendClipInfo(index, slot, "", "");
         }
     }
 

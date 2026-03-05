@@ -32,4 +32,14 @@ public class ComponentTests {
         assertNotNull("MainView should be initialized", mainView);
         assertEquals(Theme.getInstance().BG_DARK, mainView.getBackground());
     }
+
+    @Test
+    public void testPianoRollInitialization() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
+        java.io.File dummyFile = new java.io.File("dummy.mid");
+        PianoRoll pianoRoll = new PianoRoll(null, dummyFile, 1, 1);
+        assertNotNull("PianoRoll should be initialized", pianoRoll);
+        assertEquals(Theme.getInstance().BG_DARKER, pianoRoll.getContentPane().getBackground());
+    }
 }

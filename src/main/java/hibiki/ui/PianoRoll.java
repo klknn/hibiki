@@ -195,7 +195,7 @@ public class PianoRoll extends JDialog {
 
     private void initUI() {
         setLayout(new BorderLayout());
-        setBackground(Theme.getInstance().BG_DARKER);
+        getContentPane().setBackground(Theme.getInstance().BG_DARKER);
         
         // Toolbar
         JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));

@@ -72,7 +72,7 @@ cc_library(
     visibility = ["//visibility:public"],
     defines = ["RELEASE"],
     linkopts = select({
-        "@platforms//os:windows": [],
+        "@platforms//os:windows": ["ole32.lib"],  # For COM in funknown.h.
         "//conditions:default": [
             "-lpthread",
             "-ldl",

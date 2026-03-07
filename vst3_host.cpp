@@ -275,6 +275,7 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index, double sample_r
 
 
 void Vst3Plugin::listPlugins(const std::string& path) {
+    std::cerr << "BACKEND: Listing plugins in " << path << std::endl;
     std::string error;
     auto mod = VST3::Hosting::Module::create(path, error);
     if (!mod) {
@@ -287,7 +288,7 @@ void Vst3Plugin::listPlugins(const std::string& path) {
     int idx = 0;
     for (auto& info : classes) {
         if (info.category() == kVstAudioEffectClass) {
-            std::cout << idx << ":" << info.name() << "\n";
+            std::cout << idx << ":" << info.name() << ":" << info.vendor() << "\n";
             idx++;
         }
     }

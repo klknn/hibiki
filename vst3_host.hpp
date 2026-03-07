@@ -52,6 +52,7 @@ public:
     bool isInstrument() const;
 
     static void listPlugins(const std::string& path);
+    static void runMainLoop(); // For platforms that need a UI loop on the main thread
 
 private:
     std::unique_ptr<Vst3PluginImpl> impl;

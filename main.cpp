@@ -80,10 +80,8 @@ void playback_thread(ProjectState& state) {
         bool any_playing = false;
 
         {
-            // std::lock_guard<std::mutex> lock(state.tracks_mutex); // Mutex removed from POD
             for (auto& pair : state.tracks) {
                 Track* track = pair.second.get();
-                // std::lock_guard<std::mutex> tlock(track->mutex);
 
                 if (track->playing_slot == -1) continue;
 
@@ -138,7 +136,6 @@ void playback_thread(ProjectState& state) {
                         }
                     }
                 } else if (clip->type == Clip::Type::AUDIO) {
-                    // Simple audio playback
                     int start_sample = (int)(track->current_time_sec * sample_rate);
                     for (int i = 0; i < block_size; ++i) {
                         int sample_pos = start_sample + i;
@@ -154,10 +151,9 @@ void playback_thread(ProjectState& state) {
                         }
                     }
 
-                    // Process through effects
                     for (size_t i = 0; i < track->plugins.size(); ++i) {
                         auto& p = track->plugins[i];
-                        if (p->isInstrument()) continue; // Audio clips bypass instruments
+                        if (p->isInstrument()) continue;
                         p->process(outChannels, outChannels, block_size, context, {});
                     }
                 }
@@ -171,13 +167,12 @@ void playback_thread(ProjectState& state) {
                 if (track->current_time_sec >= clip->duration_sec) {
                     if (clip->is_loop) {
                         track->current_time_sec = fmod(track->current_time_sec, clip->duration_sec);
-                        track->current_midi_idx = 0; // Reset MIDI search for next block
+                        track->current_midi_idx = 0;
                     } else {
                         track->playing_slot = -1;
                     }
                 }
 
-                // Calculate levels
                 float peakL = 0, peakR = 0;
                 for (int i = 0; i < block_size; i++) {
                     peakL = std::max(peakL, std::abs(bufferL[i]));
@@ -201,7 +196,7 @@ void playback_thread(ProjectState& state) {
         }
 
         level_counter++;
-        if (level_counter >= 10) { // Send levels periodically
+        if (level_counter >= 10) {
             level_counter = 0;
             flatbuffers::FlatBufferBuilder builder(512);
             std::vector<flatbuffers::Offset<hibiki::ipc::TrackLevel>> level_offsets;
@@ -215,9 +210,6 @@ void playback_thread(ProjectState& state) {
             auto levels_off = hibiki::ipc::CreateTrackLevels(builder, levels_vec);
             auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_TrackLevels, levels_off.Union());
             builder.Finish(nf_off);
-            // We need a thread-safe way to send notifications if main thread is also sending
-            // For now, assume playback_thread can write to cout too, but we should be careful with mutex
-            // Actually main.cpp sendNotification doesn't have a mutex. Let's add one.
             sendNotification(builder.GetBufferPointer(), builder.GetSize());
         }
 
@@ -230,7 +222,6 @@ void playback_thread(ProjectState& state) {
                 }
             }
         } else {
-            // Mono
             for (int i = 0; i < block_size; ++i) {
                 interleaved[i] = (mixBufferL[i] + mixBufferR[i]) * 0.5f;
             }
@@ -240,24 +231,7 @@ void playback_thread(ProjectState& state) {
     }
 }
 
-} // namespace hibiki
-
-int main(int argc, char** argv) {
-    if (argc >= 2 && std::string(argv[1]) == "--list") {
-        if (argc < 3) return 1;
-        Vst3Plugin::listPlugins(argv[2]);
-        return 0;
-    }
-
-#ifdef _WIN32
-  // Ensure binary mode for IPC on Windows
-  _setmode(_fileno(stdin), _O_BINARY);
-  _setmode(_fileno(stdout), _O_BINARY);
-#endif
-
-    hibiki::ProjectState state;
-    std::thread audio_thread(hibiki::playback_thread, std::ref(state));
-
+void run_ipc_loop(ProjectState& state) {
     while (true) {
         uint32_t msg_size = 0;
         std::cin.read(reinterpret_cast<char*>(&msg_size), sizeof(msg_size));
@@ -323,7 +297,6 @@ int main(int argc, char** argv) {
             auto track = hibiki::GetOrCreateTrack(state, tidx);
             if (track->LoadClip(sidx, mpath, is_loop)) {
                 hibiki::sendAck("LOAD_CLIP", true);
-                // Extract filename from path
                 std::string name = mpath;
                 size_t last_slash = mpath.find_last_of("/\\");
                 if (last_slash != std::string::npos) {
@@ -380,8 +353,14 @@ int main(int argc, char** argv) {
             if (state.tracks.count(track_idx)) {
                 auto& plugins = state.tracks[track_idx]->plugins;
                 if (plugin_idx >= 0 && plugin_idx < (int)plugins.size()) {
+                    std::cerr << "BACKEND: Showing editor for " << plugins[plugin_idx]->getName() << std::endl;
                     plugins[plugin_idx]->showEditor();
+                    hibiki::sendAck("SHOW_PLUGIN_GUI", true);
+                } else {
+                    hibiki::sendAck("SHOW_PLUGIN_GUI", false);
                 }
+            } else {
+                hibiki::sendAck("SHOW_PLUGIN_GUI", false);
             }
         } else if (command_type == hibiki::ipc::Command_SetParamValue) {
             auto cmd = request->command_as_SetParamValue();
@@ -396,25 +375,6 @@ int main(int argc, char** argv) {
                     plugins[plugin_idx]->setParameterValue(param_id, value);
                 }
             }
-        // Disable Scrub, UpdateParams, ClearProject routing to track temporary
-        // } else if (command_type == hibiki::ipc::Command_UpdateParams) {
-        //     auto cmd = request->command_as_UpdateParams();
-        //     std::lock_guard<std::mutex> lock(state.tracks_mutex);
-        //     auto track = hibiki::GetOrCreateTrack(state, cmd->track_index());
-        //     if (cmd->plugin_index() < (int)track->plugins.size()) {
-        //         track->plugins[cmd->plugin_index()]->setParameterValue(cmd->param_index(), cmd->value());
-        //     }
-        // } else if (command_type == hibiki::ipc::Command_ClearProject) {
-        //     std::lock_guard<std::mutex> lock(state.tracks_mutex);
-        //     state.tracks.clear();
-        //     hibiki::sendAck("CLEAR_PROJECT", true);
-        // } else if (command_type == hibiki::ipc::Command_Scrub) {
-        //     auto cmd = request->command_as_Scrub();
-        //     std::lock_guard<std::mutex> lock(state.tracks_mutex);
-        //     for (auto& pair : state.tracks) {
-        //         pair.second->Scrub(cmd->time_sec());
-        //     }
-        //     hibiki::sendAck("SCRUB", true);
         } else if (command_type == hibiki::ipc::Command_SetBpm) {
             auto cmd = request->command_as_SetBpm();
             state.bpm = cmd->bpm();
@@ -442,6 +402,33 @@ int main(int argc, char** argv) {
             break;
         }
     }
+}
+
+} // namespace hibiki
+
+int main(int argc, char** argv) {
+    if (argc >= 2 && std::string(argv[1]) == "--list") {
+        if (argc < 3) return 1;
+        Vst3Plugin::listPlugins(argv[2]);
+        return 0;
+    }
+
+#ifdef _WIN32
+  // Ensure binary mode for IPC on Windows
+  _setmode(_fileno(stdin), _O_BINARY);
+  _setmode(_fileno(stdout), _O_BINARY);
+#endif
+
+    hibiki::ProjectState state;
+    std::thread audio_thread(hibiki::playback_thread, std::ref(state));
+
+#if defined(__APPLE__)
+    std::thread ipc_thread(hibiki::run_ipc_loop, std::ref(state));
+    Vst3Plugin::runMainLoop();
+    if (ipc_thread.joinable()) ipc_thread.join();
+#else
+    hibiki::run_ipc_loop(state);
+#endif
 
     if (audio_thread.joinable()) audio_thread.join();
     return 0;

@@ -119,6 +119,10 @@ public class BackendManager {
     }
 
     public synchronized void sendRequest(FlatBufferBuilder builder) {
+        if (out == null) {
+            System.err.println("Warning: Backend not ready, request dropped.");
+            return;
+        }
         try {
             byte[] data = builder.sizedByteArray();
             int size = data.length;

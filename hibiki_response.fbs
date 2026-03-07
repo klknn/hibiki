@@ -48,6 +48,17 @@ table ClipWaveform {
     waveform: [float];
 }
 
+table PluginDescription {
+    index: int;
+    name: string;
+    vendor: string;
+}
+
+table PluginList {
+    path: string;
+    plugins: [PluginDescription];
+}
+
 union Response {
     ParamList,
     Log,
@@ -55,7 +66,8 @@ union Response {
     ClipInfo,
     ClearProject,
     TrackLevels,
-    ClipWaveform
+    ClipWaveform,
+    PluginList
 }
 
 table Notification {

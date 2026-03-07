@@ -14,6 +14,9 @@ public class GuiMain {
             System.err.println("Failed to initialize LaF");
         }
 
+        // Start backend connection
+        BackendManager.getInstance().start();
+
         SwingUtilities.invokeLater(() -> {
             JFrame frame = new JFrame("Hibiki DAW");
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -24,9 +27,6 @@ public class GuiMain {
             
             frame.setLocationRelativeTo(null);
             frame.setVisible(true);
-            
-            // Start backend connection
-            BackendManager.getInstance().start();
         });
     }
 }

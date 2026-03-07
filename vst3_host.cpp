@@ -274,13 +274,14 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index, double sample_r
 }
 
 
-void Vst3Plugin::listPlugins(const std::string& path) {
+std::vector<PluginDescription> Vst3Plugin::listPlugins(const std::string& path) {
     std::cerr << "BACKEND: Listing plugins in " << path << std::endl;
+    std::vector<PluginDescription> plugins;
     std::string error;
     auto mod = VST3::Hosting::Module::create(path, error);
     if (!mod) {
         std::cerr << "Error: " << error << std::endl;
-        return;
+        return plugins;
     }
 
     auto factory = mod->getFactory();
@@ -288,10 +289,10 @@ void Vst3Plugin::listPlugins(const std::string& path) {
     int idx = 0;
     for (auto& info : classes) {
         if (info.category() == kVstAudioEffectClass) {
-            std::cout << idx << ":" << info.name() << ":" << info.vendor() << "\n";
-            idx++;
+            plugins.push_back({idx++, info.name(), info.vendor()});
         }
     }
+    return plugins;
 }
 
 
@@ -396,4 +397,50 @@ int Vst3Plugin::getPluginIndex() const {
 }
 bool Vst3Plugin::isInstrument() const {
     return impl->isInstrument;
+}
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
+std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(const std::string& path) {
+    std::vector<PluginDescription> plugins;
+    
+    char executable_path[1024];
+    uint32_t size = sizeof(executable_path);
+#if defined(__APPLE__)
+    if (_NSGetExecutablePath(executable_path, &size) != 0) {
+        return listPlugins(path); // Fallback to same-process if we can't find ourselves
+    }
+#else
+    // Fallback for other platforms
+    return listPlugins(path);
+#endif
+
+    std::string cmd = std::string("\"") + executable_path + "\" --list \"" + path + "\" 2>/dev/null";
+    FILE* fp = popen(cmd.c_str(), "r");
+    if (!fp) return plugins;
+
+    char line[1024];
+    while (fgets(line, sizeof(line), fp)) {
+        std::string s(line);
+        size_t first_colon = s.find(':');
+        size_t last_colon = s.find_last_of(':');
+        if (first_colon != std::string::npos && last_colon != std::string::npos && first_colon != last_colon) {
+            std::string idx_str = s.substr(0, first_colon);
+            bool all_digits = !idx_str.empty();
+            for (char c : idx_str) if (!isdigit(c)) all_digits = false;
+            if (all_digits) {
+                int idx = std::stoi(idx_str);
+                std::string name = s.substr(first_colon + 1, last_colon - first_colon - 1);
+                std::string vendor = s.substr(last_colon + 1);
+                // Trim newline from vendor
+                if (!vendor.empty() && (vendor.back() == '\n' || vendor.back() == '\r')) vendor.pop_back();
+                if (!vendor.empty() && (vendor.back() == '\n' || vendor.back() == '\r')) vendor.pop_back();
+                plugins.push_back({idx, name, vendor});
+            }
+        }
+    }
+    pclose(fp);
+    return plugins;
 }

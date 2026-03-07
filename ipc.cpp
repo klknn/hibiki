@@ -67,4 +67,20 @@ void sendClearProject() {
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
 }
 
+void sendPluginList(const std::string& path, const std::vector<PluginDescription>& plugins) {
+    flatbuffers::FlatBufferBuilder builder(2048);
+    std::vector<flatbuffers::Offset<hibiki::ipc::PluginDescription>> plugin_offsets;
+    for (const auto& p : plugins) {
+        auto name_off = builder.CreateString(p.name);
+        auto vendor_off = builder.CreateString(p.vendor);
+        plugin_offsets.push_back(hibiki::ipc::CreatePluginDescription(builder, p.index, name_off, vendor_off));
+    }
+    auto plugins_vec = builder.CreateVector(plugin_offsets);
+    auto path_off = builder.CreateString(path);
+    auto list_off = hibiki::ipc::CreatePluginList(builder, path_off, plugins_vec);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_PluginList, list_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
 } // namespace hibiki

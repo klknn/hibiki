@@ -397,6 +397,13 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendAck("DELETE_CLIP", false);
             }
+        } else if (command_type == hibiki::ipc::Command_ListPlugins) {
+            auto cmd = request->command_as_ListPlugins();
+            std::string path = cmd->path()->str();
+            // Start a thread for each scan to avoid blocking IPC loop and allow parallelism
+            std::thread([path]() {
+                hibiki::sendPluginList(path, Vst3Plugin::listPluginsIsolated(path));
+            }).detach();
         } else if (command_type == hibiki::ipc::Command_Quit) {
             state.quit = true;
             break;
@@ -409,7 +416,10 @@ void run_ipc_loop(ProjectState& state) {
 int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "--list") {
         if (argc < 3) return 1;
-        Vst3Plugin::listPlugins(argv[2]);
+        auto plugins = Vst3Plugin::listPlugins(argv[2]);
+        for (const auto& p : plugins) {
+            std::cout << p.index << ":" << p.name << ":" << p.vendor << "\n";
+        }
         return 0;
     }
 

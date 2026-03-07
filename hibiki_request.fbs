@@ -72,6 +72,10 @@ table DeleteClip {
 
 table Quit {}
 
+table ListPlugins {
+    path: string;
+}
+
 union Command {
     LoadPlugin,
     LoadClip,
@@ -88,7 +92,8 @@ union Command {
     SetBpm,
     PlayScene,
     DeleteClip,
-    Quit
+    Quit,
+    ListPlugins
 }
 
 table Request {

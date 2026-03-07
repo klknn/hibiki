@@ -15,5 +15,6 @@ void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name
 void sendLog(const std::string& msg);
 void sendClipInfo(int track_idx, int slot_index, const std::string& name, const std::string& path);
 void sendClearProject();
+void sendPluginList(const std::string& path, const std::vector<PluginDescription>& plugins);
 
 } // namespace hibiki

@@ -9,12 +9,18 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import hibiki.BackendManager;
 import com.google.flatbuffers.FlatBufferBuilder;
 import hibiki.ipc.Request;
 import hibiki.ipc.Command;
 import hibiki.ipc.LoadPlugin;
 import hibiki.ipc.LoadClip;
+import hibiki.ipc.ListPlugins;
+import hibiki.ipc.PluginList;
+import hibiki.ipc.PluginDescription;
+import hibiki.ipc.Response;
+import hibiki.ipc.Notification;
 import java.io.PrintWriter;
 import java.io.FileWriter;
 import java.nio.file.Files;
@@ -25,9 +31,11 @@ public class BrowserPane extends JPanel {
     private JTree tree;
     private DefaultTreeModel treeModel;
     private DefaultMutableTreeNode root;
-    private Map<String, CacheEntry> cache = new HashMap<>();
-    private final String HIBIKI_DIR = System.getProperty("user.home") + "/.hibiki";
-    private final String CACHE_FILE = HIBIKI_DIR + "/vst3_cache";
+    private DefaultMutableTreeNode pluginsNode;
+    private DefaultMutableTreeNode midiNode;
+    private DefaultMutableTreeNode audioNode;
+    
+    private Map<String, List<PluginMetadata>> bundlesDiscovered = new ConcurrentHashMap<>();
 
     private static class PluginMetadata {
         int index;
@@ -38,16 +46,6 @@ public class BrowserPane extends JPanel {
             this.index = index;
             this.name = name;
             this.vendor = vendor;
-        }
-    }
-
-    private static class CacheEntry {
-        long timestamp;
-        List<PluginMetadata> plugins;
-
-        CacheEntry(long timestamp, List<PluginMetadata> plugins) {
-            this.timestamp = timestamp;
-            this.plugins = plugins;
         }
     }
 
@@ -90,9 +88,9 @@ public class BrowserPane extends JPanel {
         scrollPane.setBorder(null);
         add(scrollPane, BorderLayout.CENTER);
 
-        loadCache();
+        BackendManager.getInstance().addNotificationListener(this::handleNotification);
+
         populateTree();
-        saveCache();
 
         tree.addMouseListener(new MouseAdapter() {
             public void mouseClicked(MouseEvent e) {
@@ -109,10 +107,39 @@ public class BrowserPane extends JPanel {
         });
     }
 
+    private void handleNotification(Notification n) {
+        if (n.responseType() == Response.PluginList) {
+            PluginList list = (PluginList) n.response(new PluginList());
+            String path = list.path();
+            List<PluginMetadata> plugins = new ArrayList<>();
+            for (int i = 0; i < list.pluginsLength(); i++) {
+                PluginDescription p = list.plugins(i);
+                plugins.add(new PluginMetadata(p.index(), p.name(), p.vendor()));
+            }
+            bundlesDiscovered.put(path, plugins);
+            SwingUtilities.invokeLater(this::refreshPluginsTree);
+        }
+    }
+
+    private synchronized void refreshPluginsTree() {
+        pluginsNode.removeAllChildren();
+        
+        for (Map.Entry<String, List<PluginMetadata>> entry : bundlesDiscovered.entrySet()) {
+            File bundleFile = new File(entry.getKey());
+            List<PluginMetadata> plugins = entry.getValue();
+            for (PluginMetadata meta : plugins) {
+                pluginsNode.add(new DefaultMutableTreeNode(new FileItem(bundleFile, "vst", meta.name, meta.vendor, meta.index)));
+            }
+        }
+
+        sortAndGroupPlugins(pluginsNode);
+        treeModel.reload(pluginsNode);
+    }
+
     private void populateTree() {
-        DefaultMutableTreeNode pluginsNode = new DefaultMutableTreeNode("Plugins");
-        DefaultMutableTreeNode midiNode = new DefaultMutableTreeNode("MIDI Files");
-        DefaultMutableTreeNode audioNode = new DefaultMutableTreeNode("Audio Clips");
+        pluginsNode = new DefaultMutableTreeNode("Plugins");
+        midiNode = new DefaultMutableTreeNode("MIDI Files");
+        audioNode = new DefaultMutableTreeNode("Audio Clips");
         root.add(pluginsNode);
         root.add(midiNode);
         root.add(audioNode);
@@ -137,9 +164,6 @@ public class BrowserPane extends JPanel {
             scanDirectory(new File("/usr/lib/vst3"), pluginsNode, null, null);
             scanDirectory(new File("/usr/local/lib/vst3"), pluginsNode, null, null);
         }
-
-        // Apply vendor grouping and sorting
-        sortAndGroupPlugins(pluginsNode);
 
         treeModel.reload();
     }
@@ -178,107 +202,15 @@ public class BrowserPane extends JPanel {
         }
     }
 
-    private void loadCache() {
-        try {
-            File file = new File(CACHE_FILE);
-            if (!file.exists()) return;
-            for (String line : Files.readAllLines(Paths.get(CACHE_FILE))) {
-                String[] parts = line.split("\\|", 3);
-                if (parts.length >= 2) {
-                    String path = parts[0];
-                    long ts = Long.parseLong(parts[1]);
-                    List<PluginMetadata> plugins = new ArrayList<>();
-                    if (parts.length == 3 && !parts[2].isEmpty()) {
-                        for (String p : parts[2].split(";")) {
-                            String[] kv = p.split(":", 3);
-                            if (kv.length >= 2) {
-                                plugins.add(new PluginMetadata(Integer.parseInt(kv[0]), kv[1], kv.length == 3 ? kv[2] : ""));
-                            }
-                        }
-                    }
-                    cache.put(path, new CacheEntry(ts, plugins));
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("Failed to load VST3 cache: " + e.getMessage());
-        }
-    }
-
-    private void saveCache() {
-        try {
-            File dir = new File(HIBIKI_DIR);
-            if (!dir.exists()) dir.mkdirs();
-
-            try (PrintWriter writer = new PrintWriter(new FileWriter(CACHE_FILE))) {
-                for (Map.Entry<String, CacheEntry> entry : cache.entrySet()) {
-                    String pluginsStr = entry.getValue().plugins.stream()
-                            .map(p -> p.index + ":" + p.name + ":" + p.vendor)
-                            .collect(Collectors.joining(";"));
-                    writer.println(entry.getKey() + "|" + entry.getValue().timestamp + "|" + pluginsStr);
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("Failed to save VST3 cache: " + e.getMessage());
-        }
-    }
-
-    private List<PluginMetadata> getPluginsInBundle(File bundle) {
-      String path = bundle.getAbsolutePath();
-      long ts = bundle.lastModified();
-      if (cache.containsKey(path)) {
-          CacheEntry entry = cache.get(path);
-          if (entry.timestamp == ts) {
-              return entry.plugins;
-          }
-      }
-
-      List<PluginMetadata> plugins = new ArrayList<>();
-      try {
-        // Find hbk-play binary
-        String hbkPlayPath = "./hbk-play";
-        if (!new File(hbkPlayPath).exists()) {
-          hbkPlayPath = "bazel-bin/hbk-play";
-        }
-        
-        if (!new File(hbkPlayPath).exists()) {
-            String os = System.getProperty("os.name").toLowerCase();
-            String binaryName = os.contains("win") ? "hbk-play.exe" : "hbk-play";
-            File currentDir = new File(".");
-            File bin = new File(currentDir, binaryName);
-            if (bin.exists()) hbkPlayPath = bin.getAbsolutePath();
-            else {
-                bin = new File(currentDir, "bazel-bin/" + binaryName);
-                if (bin.exists()) hbkPlayPath = bin.getAbsolutePath();
-            }
-        }
-
-        if (!new File(hbkPlayPath).exists())
-          return plugins;
-
-        ProcessBuilder pb = new ProcessBuilder(hbkPlayPath, "--list", bundle.getAbsolutePath());
-        Process p = pb.start();
-        BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
-        String line;
-        while ((line = r.readLine()) != null) {
-          if (line.contains(":")) {
-            String[] parts = line.split(":", 3);
-            try {
-              int idx = Integer.parseInt(parts[0]);
-              String name = parts[1];
-              String vendor = parts.length == 3 ? parts[2] : "";
-              plugins.add(new PluginMetadata(idx, name, vendor));
-            } catch (NumberFormatException e) {
-              // Ignore invalid lines
-            }
-          }
-        }
-        p.waitFor();
-      } catch (Exception e) {
-        // Fallback
-      }
-      
-      cache.put(path, new CacheEntry(ts, plugins));
-      return plugins;
+    private void requestPluginsInBundle(File bundle) {
+        String path = bundle.getAbsolutePath();
+        // Send IPC request
+        FlatBufferBuilder builder = new FlatBufferBuilder(1024);
+        int pathOffset = builder.createString(path);
+        int listPluginsOffset = ListPlugins.createListPlugins(builder, pathOffset);
+        int requestOffset = Request.createRequest(builder, Command.ListPlugins, listPluginsOffset);
+        builder.finish(requestOffset);
+        BackendManager.getInstance().sendRequest(builder);
     }
 
     private void scanDirectory(File dir, DefaultMutableTreeNode pluginsNode, DefaultMutableTreeNode midiNode,
@@ -289,13 +221,7 @@ public class BrowserPane extends JPanel {
         for (File f : files) {
             if (f.isDirectory()) {
                 if (f.getName().endsWith(".vst3")) {
-                  List<PluginMetadata> plugins = getPluginsInBundle(f);
-                  for (PluginMetadata meta : plugins) {
-                    pluginsNode.add(new DefaultMutableTreeNode(new FileItem(f, "vst", meta.name, meta.vendor, meta.index)));
-                  }
-                  if (plugins.isEmpty()) {
-                      pluginsNode.add(new DefaultMutableTreeNode(new FileItem(f, "vst", f.getName(), "", 0)));
-                  }
+                  requestPluginsInBundle(f);
                 } else {
                     scanDirectory(f, pluginsNode, midiNode, audioNode);
                 }
@@ -323,8 +249,7 @@ public class BrowserPane extends JPanel {
             } else if ("midi".equals(item.type)) {
               sendLoadClip(item.file.getAbsolutePath(), false);
             } else if ("audio".equals(item.type)) {
-              sendLoadClip(item.file.getAbsolutePath(), true); // Default to loop for audio clips from browser? Or
-                                                               // follow a rule
+              sendLoadClip(item.file.getAbsolutePath(), true);
             }
         }
     }

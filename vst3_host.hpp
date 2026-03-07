@@ -28,6 +28,12 @@ struct VstParamInfo {
     double defaultValue;
 };
 
+struct PluginDescription {
+    int index;
+    std::string name;
+    std::string vendor;
+};
+
 struct Vst3PluginImpl;
 
 class Vst3Plugin {
@@ -51,7 +57,8 @@ public:
     int getPluginIndex() const;
     bool isInstrument() const;
 
-    static void listPlugins(const std::string& path);
+    static std::vector<PluginDescription> listPlugins(const std::string& path);
+    static std::vector<PluginDescription> listPluginsIsolated(const std::string& path);
     static void runMainLoop(); // For platforms that need a UI loop on the main thread
 
 private:

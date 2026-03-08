@@ -104,6 +104,12 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                             int trackIndex = (p.y - Theme.getInstance().scale(TIME_RULER_HEIGHT)) / Theme.getInstance().scale(TRACK_HEIGHT);
                             double timeSec = p.x / PIXELS_PER_SECOND;
 
+                            // Snap to nearest bar boundary
+                            if (gridUnit == GridUnit.BARS) {
+                                float secondsPerBar = (60.0f / bpm) * 4.0f;
+                                timeSec = Math.round(timeSec / secondsPerBar) * secondsPerBar;
+                            }
+
                             if (trackIndex >= 0 && trackIndex < tracks.size()) {
                                 BackendManager.getInstance().addTimelineClip(trackIndex, path, (float)timeSec);
                             }
@@ -183,6 +189,25 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             g2.fillRect(0, y, contentPanel.getWidth(), scaleTrackHeight);
             g2.setColor(Theme.getInstance().PANEL_BG_LIGHT.darker());
             g2.drawLine(0, y + scaleTrackHeight - 1, contentPanel.getWidth(), y + scaleTrackHeight - 1);
+        }
+
+        // Draw vertical grid lines through track area
+        int trackAreaBottom = scaleTimeRuler + tracks.size() * scaleTrackHeight;
+        g2.setColor(new Color(255, 255, 255, 20));
+        if (gridUnit == GridUnit.BARS) {
+            float secondsPerBeat = 60.0f / bpm;
+            float secondsPerBar = secondsPerBeat * 4;
+            for (int b = 0; b < 200; b++) {
+                int x = (int) (b * secondsPerBar * PIXELS_PER_SECOND);
+                if (x > contentPanel.getWidth()) break;
+                g2.setColor(new Color(255, 255, 255, b % 4 == 0 ? 40 : 15));
+                g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
+            }
+        } else {
+            for (int s = 0; s < 600; s += 5) {
+                int x = (int) (s * PIXELS_PER_SECOND);
+                g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
+            }
         }
 
         // Draw clips

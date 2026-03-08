@@ -18,7 +18,7 @@ public class GuiMain {
 
         // Use FlatLaf for a modern look
         try {
-            UIManager.setLookAndFeel(new FlatDarkLaf());
+            UIManager.setLookAndFeel(new SimpleLaf()); // FlatDarkLaf());
         } catch (Exception ex) {
             System.err.println("Failed to initialize LaF");
         }

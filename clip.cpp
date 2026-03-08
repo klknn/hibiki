@@ -48,17 +48,36 @@ std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
         }
     } else {
         auto events = hibiki::parseMidi(path);
-        if (events.empty()) {
-            return nullptr; // std::unexpected("Failed to load or empty midi: " + path);
-        }
+        // Do not return nullptr even if empty, to allow dropping empty/invalid MIDI clips
         clip.midi_events = std::move(events);
         clip.type = Clip::Type::MIDI;
         if (!clip.midi_events.empty()) {
             clip.duration_sec = clip.midi_events.back().seconds + 0.1; // Small buffer
+        } else {
+            clip.duration_sec = 4.0; // Default duration of 4 seconds if no events
+        }
+
+        // Encode midi events into waveform_summary: [start_sec, pitch, duration_sec]
+        for (size_t i = 0; i < clip.midi_events.size(); ++i) {
+            auto& ev = clip.midi_events[i];
+            if (hibiki::isNoteOn(ev)) {
+                double duration = 0.1; // Default short duration if no NoteOff found
+                // Search for corresponding NoteOff
+                for (size_t j = i + 1; j < clip.midi_events.size(); ++j) {
+                    auto& off_ev = clip.midi_events[j];
+                    if (off_ev.note == ev.note && off_ev.channel == ev.channel && hibiki::isNoteOff(off_ev)) {
+                        duration = off_ev.seconds - ev.seconds;
+                        break;
+                    }
+                }
+                clip.waveform_summary.push_back((float)ev.seconds);
+                clip.waveform_summary.push_back((float)ev.note);
+                clip.waveform_summary.push_back((float)duration);
+            }
         }
     }
 
-    return std::make_unique<Clip>(clip); // clip;
+    return std::make_unique<Clip>(clip);
 }
 
 } // namespace hibiki

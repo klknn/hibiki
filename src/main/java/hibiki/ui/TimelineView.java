@@ -168,10 +168,15 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             }
         } else if (n.responseType() == hibiki.ipc.Response.PlayheadInfo) {
             hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) n.response(new hibiki.ipc.PlayheadInfo());
-            this.playheadPos = info.positionSec();
-            this.bpm = info.bpm();
-            this.isPlaying = info.isPlaying();
-            repaint();
+            float pos = info.positionSec();
+            float newBpm = info.bpm();
+            boolean playing = info.isPlaying();
+            SwingUtilities.invokeLater(() -> {
+                this.playheadPos = pos;
+                this.bpm = newBpm;
+                this.isPlaying = playing;
+                repaint();
+            });
         }
     }
 
@@ -221,17 +226,50 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
                 g2.fillRoundRect(x, y, w, h, 8, 8);
 
-                // Draw waveform inside clip
-                if (clip.waveform != null && clip.waveform.length > 0) {
-                    g2.setColor(new Color(255, 255, 255, 120));
-                    int midY = y + h / 2;
-                    int halfH = h / 2 - 4;
-                    for (int px = 0; px < w && px < clip.waveform.length; px++) {
-                        int wfIdx = (int)((float)px / w * clip.waveform.length);
-                        if (wfIdx >= clip.waveform.length) wfIdx = clip.waveform.length - 1;
-                        float amp = clip.waveform[wfIdx];
-                        int barH = (int)(amp * halfH);
-                        g2.drawLine(x + px, midY - barH, x + px, midY + barH);
+                boolean isMidi = clip.path.toLowerCase().endsWith(".mid") || clip.path.toLowerCase().endsWith(".midi");
+
+                if (isMidi) {
+                    if (clip.waveform != null && clip.waveform.length > 0) {
+                        g2.setColor(new Color(255, 255, 255, 200));
+                        for (int nIdx = 0; nIdx + 2 < clip.waveform.length; nIdx += 3) {
+                            float startSec = clip.waveform[nIdx];
+                            float pitch = clip.waveform[nIdx+1];
+                            float durationSec = clip.waveform[nIdx+2];
+
+                            int nx = x + (int)((startSec / clip.duration) * w);
+                            int nw = (int)((durationSec / clip.duration) * w);
+                            if (nw < 2) nw = 2; // Minimum visible width
+                            
+                            int minPitch = 21; // A0
+                            int maxPitch = 108; // C8
+                            float normalizedPitch = (pitch - minPitch) / (float)(maxPitch - minPitch);
+                            if (normalizedPitch < 0) normalizedPitch = 0;
+                            if (normalizedPitch > 1) normalizedPitch = 1;
+                            
+                            int nh = Math.max(2, h / 40);
+                            int ny = y + h - (int)(normalizedPitch * (h - nh)) - nh;
+
+                            // Clip to box
+                            if (nx < x + w && nx + nw >= x) {
+                                int drawX = Math.max(x, nx);
+                                int drawW = Math.min(x + w - drawX, nx + nw - drawX);
+                                g2.fillRect(drawX, ny, drawW, nh);
+                            }
+                        }
+                    }
+                } else {
+                    // Draw waveform inside audio clip
+                    if (clip.waveform != null && clip.waveform.length > 0) {
+                        g2.setColor(new Color(255, 255, 255, 120));
+                        int midY = y + h / 2;
+                        int halfH = h / 2 - 4;
+                        for (int px = 0; px < w && px < clip.waveform.length; px++) {
+                            int wfIdx = (int)((float)px / w * clip.waveform.length);
+                            if (wfIdx >= clip.waveform.length) wfIdx = clip.waveform.length - 1;
+                            float amp = clip.waveform[wfIdx];
+                            int barH = (int)(amp * halfH);
+                            g2.drawLine(x + px, midY - barH, x + px, midY + barH);
+                        }
                     }
                 }
 

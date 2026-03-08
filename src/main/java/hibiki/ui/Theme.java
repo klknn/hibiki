@@ -38,6 +38,7 @@ public class Theme {
     private float scaling = 1.0f;
     private int baseFontSize = 11;
     private Preset currentPreset = Preset.ABLETON_DARK;
+    private String fontFamily = "SansSerif";
 
     public interface ThemeListener {
       void onThemeChanged();
@@ -50,13 +51,18 @@ public class Theme {
     }
 
     private Theme(Preset preset, float scaling, int fontSize) {
-      update(preset, scaling, fontSize);
+      update(preset, scaling, fontSize, fontFamily);
     }
 
     public void update(Preset preset, float scaling, int fontSize) {
+      update(preset, scaling, fontSize, this.fontFamily);
+    }
+
+    public void update(Preset preset, float scaling, int fontSize, String fontFamily) {
       this.currentPreset = preset;
       this.scaling = scaling;
       this.baseFontSize = fontSize;
+      this.fontFamily = fontFamily;
 
       applyPreset(preset);
       applyScaling();
@@ -80,6 +86,10 @@ public class Theme {
 
     public int getBaseFontSize() {
       return baseFontSize;
+    }
+
+    public String getFontFamily() {
+      return fontFamily;
     }
 
     private void applyPreset(Preset preset) {
@@ -203,8 +213,8 @@ public class Theme {
 
     private void applyScaling() {
       int scaledSize = (int) (baseFontSize * scaling);
-      FONT_UI = new Font("SansSerif", Font.PLAIN, scaledSize);
-      FONT_UI_BOLD = new Font("SansSerif", Font.BOLD, scaledSize);
+      FONT_UI = new Font(fontFamily, Font.PLAIN, scaledSize);
+      FONT_UI_BOLD = new Font(fontFamily, Font.BOLD, scaledSize);
       FONT_DISPLAY = new Font("Monospaced", Font.BOLD, (int) (14 * scaling));
     }
 

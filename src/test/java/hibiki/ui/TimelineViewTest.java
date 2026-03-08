@@ -25,8 +25,11 @@ public class TimelineViewTest {
         FlatBufferBuilder builder = new FlatBufferBuilder(1024);
         int nameOff = builder.createString("TestClip");
         int pathOff = builder.createString("/path/to/test.wav");
+        // Create sample waveform data
+        float[] waveformData = {0.1f, 0.5f, 0.8f, 0.3f};
+        int wfOff = TimelineClipInfo.createWaveformVector(builder, waveformData);
         
-        int timelineOff = TimelineClipInfo.createTimelineClipInfo(builder, 0, 0, nameOff, pathOff, 10.0f, 5.0f);
+        int timelineOff = TimelineClipInfo.createTimelineClipInfo(builder, 0, 0, nameOff, pathOff, 10.0f, 5.0f, wfOff);
         int nfOff = Notification.createNotification(builder, Response.TimelineClipInfo, timelineOff);
         builder.finish(nfOff);
         

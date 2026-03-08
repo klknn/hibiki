@@ -246,7 +246,7 @@ void SyncProjectToGui(const ProjectState& state) {
             if (last_slash != std::string::npos) {
                 cname = cname.substr(last_slash + 1);
             }
-            hibiki::sendTimelineClipInfo(tidx, tc_idx, cname, tc->clip->path, tc->start_time_sec, tc->duration_sec);
+            hibiki::sendTimelineClipInfo(tidx, tc_idx, cname, tc->clip->path, tc->start_time_sec, tc->duration_sec, tc->clip->waveform_summary);
         }
     }
 }

@@ -66,6 +66,7 @@ table TimelineClipInfo {
     path: string;
     start_time: float;
     duration: float;
+    waveform: [float];
 }
 
 table PlayheadInfo {

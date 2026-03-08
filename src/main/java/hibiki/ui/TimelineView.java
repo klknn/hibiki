@@ -220,6 +220,21 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
                 g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
                 g2.fillRoundRect(x, y, w, h, 8, 8);
+
+                // Draw waveform inside clip
+                if (clip.waveform != null && clip.waveform.length > 0) {
+                    g2.setColor(new Color(255, 255, 255, 120));
+                    int midY = y + h / 2;
+                    int halfH = h / 2 - 4;
+                    for (int px = 0; px < w && px < clip.waveform.length; px++) {
+                        int wfIdx = (int)((float)px / w * clip.waveform.length);
+                        if (wfIdx >= clip.waveform.length) wfIdx = clip.waveform.length - 1;
+                        float amp = clip.waveform[wfIdx];
+                        int barH = (int)(amp * halfH);
+                        g2.drawLine(x + px, midY - barH, x + px, midY + barH);
+                    }
+                }
+
                 g2.setColor(Theme.getInstance().ACCENT_BLUE);
                 g2.drawRoundRect(x, y, w, h, 8, 8);
 
@@ -290,6 +305,14 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             cr.path = info.path();
             cr.startTime = info.startTime();
             cr.duration = info.duration();
+            // Extract waveform data
+            int wfLen = info.waveformLength();
+            if (wfLen > 0) {
+                cr.waveform = new float[wfLen];
+                for (int i = 0; i < wfLen; i++) {
+                    cr.waveform[i] = info.waveform(i);
+                }
+            }
         }
     }
 
@@ -298,5 +321,6 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         String path;
         float startTime;
         float duration;
+        float[] waveform;
     }
 }

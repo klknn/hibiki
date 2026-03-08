@@ -144,12 +144,13 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec) {
 
     auto tc = std::make_unique<TimelineClip>();
     tc->duration_sec = clip->duration_sec;
+    std::vector<float> waveform = clip->waveform_summary; // copy before move
     tc->clip = std::move(clip);
     tc->start_time_sec = start_time_sec;
     float duration = (float)tc->duration_sec;
     timeline_clips.push_back(std::move(tc));
     int clip_idx = (int)timeline_clips.size() - 1;
-    hibiki::sendTimelineClipInfo(index, clip_idx, path, path, (float)start_time_sec, duration);
+    hibiki::sendTimelineClipInfo(index, clip_idx, path, path, (float)start_time_sec, duration, waveform);
 }
 
 void Track::RemoveTimelineClip(int clip_index) {

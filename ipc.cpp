@@ -123,11 +123,12 @@ void sendPluginList(const std::string& path, const std::vector<PluginDescription
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
 }
 
-void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name, const std::string& path, float start_time, float duration) {
-    flatbuffers::FlatBufferBuilder builder(512);
+void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name, const std::string& path, float start_time, float duration, const std::vector<float>& waveform) {
+    flatbuffers::FlatBufferBuilder builder(1024 + waveform.size() * 4);
     auto name_off = builder.CreateString(name.c_str());
     auto path_off = builder.CreateString(path.c_str());
-    auto timeline_off = hibiki::ipc::CreateTimelineClipInfo(builder, track_idx, clip_idx, name_off, path_off, start_time, duration);
+    auto wf_off = builder.CreateVector(waveform);
+    auto timeline_off = hibiki::ipc::CreateTimelineClipInfo(builder, track_idx, clip_idx, name_off, path_off, start_time, duration, wf_off);
     auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_TimelineClipInfo, timeline_off.Union());
     builder.Finish(nf_off);
     sendNotification(builder.GetBufferPointer(), builder.GetSize());

@@ -22,18 +22,28 @@ public class MainView extends JPanel implements Theme.ThemeListener {
         TopBar topBar = new TopBar();
         add(topBar, BorderLayout.NORTH);
 
+        JPanel centerContainer = new JPanel(new CardLayout());
         SessionView sessionView = new SessionView();
+        TimelineView timelineView = new TimelineView();
+        centerContainer.add(sessionView, "SESSION");
+        centerContainer.add(timelineView, "TIMELINE");
+
+        topBar.setViewToggleListener(isTimeline -> {
+            CardLayout cl = (CardLayout) centerContainer.getLayout();
+            cl.show(centerContainer, isTimeline ? "TIMELINE" : "SESSION");
+        });
+
         BrowserPane browserPane = new BrowserPane();
         pluginPane = new PluginPane();
-
-        // Right side split: Session View (Top) / Plugin Pane (Bottom)
-        JSplitPane verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, sessionView, pluginPane);
+        
+        // Right side split: Center Content (Top) / Plugin Pane (Bottom)
+        JSplitPane verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, centerContainer, pluginPane);
         verticalSplit.setDividerLocation(Theme.getInstance().scale(450));
         verticalSplit.setDividerSize(Theme.getInstance().scale(2));
         verticalSplit.setBorder(null);
         verticalSplit.setBackground(Theme.getInstance().BG_DARK);
 
-        // Main split: Left=Browser, Right=CenterContent (Session + Plugin)
+        // Main split: Left=Browser, Right=CenterContent (Session/Timeline + Plugin)
         JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, browserPane, verticalSplit);
         mainSplit.setDividerLocation(Theme.getInstance().scale(220));
         mainSplit.setDividerSize(Theme.getInstance().scale(2));

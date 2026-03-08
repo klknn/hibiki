@@ -10,17 +10,28 @@
 
 namespace hibiki {
 
+struct DummyMutex {
+    void lock() {}
+    void unlock() {}
+};
+
+struct TimelineClip {
+    std::unique_ptr<Clip> clip;
+    double start_time_sec = 0.0;
+    double duration_sec = 0.0;
+};
+
 class Track {
 public:
+    DummyMutex mutex;
     int index;
     std::vector<std::unique_ptr<Vst3Plugin>> plugins;
     std::map<int, std::unique_ptr<Clip>> clips;
+    std::vector<std::unique_ptr<TimelineClip>> timeline_clips;
 
     int playing_slot = -1;
     double current_time_sec = 0.0;
     int current_midi_idx = 0;
-
-    std::mutex mutex;
 
     Track(int idx) : index(idx) {}
 
@@ -31,6 +42,9 @@ public:
     void PlayClip(int slot);
     void Stop();
     bool RemovePlugin(size_t pidx);
+
+    void AddTimelineClip(const std::string& path, double start_time_sec);
+    void RemoveTimelineClip(int clip_index);
 };
 
 } // namespace hibiki

@@ -8,7 +8,7 @@
 namespace hibiki {
 
 int Track::LoadPlugin(const std::string& path, int plugin_index, double sample_rate) {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<DummyMutex> lock(mutex);
     auto plugin = std::make_unique<Vst3Plugin>();
     if (!plugin->load(path, plugin_index, sample_rate)) {
         return -1;
@@ -60,7 +60,7 @@ int Track::LoadPlugin(const std::string& path, int plugin_index, double sample_r
 }
 
 bool Track::DeleteClip(int slot) {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<DummyMutex> lock(mutex);
     if (clips.count(slot)) {
         clips.erase(slot);
         if (playing_slot == slot) {
@@ -72,7 +72,7 @@ bool Track::DeleteClip(int slot) {
 }
 
 bool Track::LoadClip(int slot, const std::string& path, bool is_loop) {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<DummyMutex> lock(mutex);
     
     auto clip = hibiki::LoadClip(path, is_loop);
     if (!clip) return false;
@@ -110,14 +110,14 @@ bool Track::LoadClip(int slot, const std::string& path, bool is_loop) {
 }
 
 void Track::SetClipLoop(int slot, bool is_loop) {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<DummyMutex> lock(mutex);
     if (clips.count(slot)) {
         clips[slot]->is_loop = is_loop;
     }
 }
 
 void Track::PlayClip(int slot) {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<DummyMutex> lock(mutex);
     if (clips.count(slot)) {
         playing_slot = slot;
         current_time_sec = 0.0;
@@ -126,15 +126,37 @@ void Track::PlayClip(int slot) {
 }
 
 void Track::Stop() {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<DummyMutex> lock(mutex);
     playing_slot = -1;
 }
 
 bool Track::RemovePlugin(size_t pidx) {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<DummyMutex> lock(mutex);
     if (pidx >= plugins.size()) return false;
     plugins.erase(plugins.begin() + pidx);
     return true;
+}
+
+void Track::AddTimelineClip(const std::string& path, double start_time_sec) {
+    std::lock_guard<DummyMutex> lock(mutex);
+    auto clip = hibiki::LoadClip(path);
+    if (!clip) return;
+
+    auto tc = std::make_unique<TimelineClip>();
+    tc->duration_sec = clip->duration_sec;
+    tc->clip = std::move(clip);
+    tc->start_time_sec = start_time_sec;
+    float duration = (float)tc->duration_sec;
+    timeline_clips.push_back(std::move(tc));
+    int clip_idx = (int)timeline_clips.size() - 1;
+    hibiki::sendTimelineClipInfo(index, clip_idx, path, path, (float)start_time_sec, duration);
+}
+
+void Track::RemoveTimelineClip(int clip_index) {
+    std::lock_guard<DummyMutex> lock(mutex);
+    if (clip_index >= 0 && clip_index < (int)timeline_clips.size()) {
+        timeline_clips.erase(timeline_clips.begin() + clip_index);
+    }
 }
 
 } // namespace hibiki

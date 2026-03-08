@@ -79,84 +79,124 @@ void playback_thread(ProjectState& state) {
         std::fill(mixBufferR.begin(), mixBufferR.end(), 0.0f);
 
         bool any_playing = false;
+        if (state.is_timeline_playing) {
+            any_playing = true;
+        }
 
         {
             for (auto& pair : state.tracks) {
                 Track* track = pair.second.get();
-
-                if (track->playing_slot == -1) continue;
-
-                any_playing = true;
-                auto& clip = track->clips[track->playing_slot];
-
-                context.continuousTimeSamples = track->current_time_sec * sample_rate;
-                context.projectTimeMusic = track->current_time_sec * (context.tempo / 60.0);
-
                 std::fill(bufferL, bufferL + block_size, 0.0f);
                 std::fill(bufferR, bufferR + block_size, 0.0f);
+                bool track_playing = false;
 
-                if (clip->type == Clip::Type::MIDI) {
-                    const auto& events = clip->midi_events;
-                    int num_midi_events = events.size();
-
-                    std::vector<MidiNoteEvent> blockEvents;
-                    int search_idx = track->current_midi_idx;
+                // 1. Process Session View Clip
+                if (track->playing_slot != -1) {
+                    track_playing = true;
+                    any_playing = true;
+                    auto& clip = track->clips[track->playing_slot];
                     
-                    while (search_idx < num_midi_events) {
-                        auto& me = events[search_idx];
-                        if (me.seconds >= track->current_time_sec + time_per_block) break;
+                    context.continuousTimeSamples = track->current_time_sec * sample_rate;
+                    context.projectTimeMusic = track->current_time_sec * (context.tempo / 60.0);
 
-                        if (me.seconds >= track->current_time_sec) {
-                            if (hibiki::isNoteOn(me) || hibiki::isNoteOff(me)) {
-                                MidiNoteEvent e;
-                                e.sampleOffset = std::max(0, (int)((me.seconds - track->current_time_sec) * sample_rate));
-                                if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
-                                e.channel = me.channel;
-                                e.pitch = me.note;
-
-                                if (hibiki::isNoteOff(me)) {
-                                    e.isNoteOn = false;
-                                    e.velocity = 0;
-                                } else {
-                                    e.isNoteOn = true;
-                                    e.velocity = me.velocity / 127.0f;
+                    // Mix Session Clip into buffer (abstracted in a lambda or local logic)
+                    // (For brevity in this plan, I'll keep the logic inline but optimized)
+                    if (clip->type == Clip::Type::MIDI) {
+                        std::vector<MidiNoteEvent> blockEvents;
+                        int search_idx = track->current_midi_idx;
+                        while (search_idx < (int)clip->midi_events.size()) {
+                            auto& me = clip->midi_events[search_idx];
+                            if (me.seconds >= track->current_time_sec + time_per_block) break;
+                            if (me.seconds >= track->current_time_sec) {
+                                if (hibiki::isNoteOn(me) || hibiki::isNoteOff(me)) {
+                                    MidiNoteEvent e;
+                                    e.sampleOffset = std::max(0, (int)((me.seconds - track->current_time_sec) * sample_rate));
+                                    if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
+                                    e.channel = me.channel;
+                                    e.pitch = me.note;
+                                    e.isNoteOn = hibiki::isNoteOn(me);
+                                    e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+                                    blockEvents.push_back(e);
                                 }
-                                blockEvents.push_back(e);
+                            }
+                            search_idx++;
+                        }
+                        track->current_midi_idx = search_idx;
+                        if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
+                            track->plugins[0]->process(nullptr, outChannels, block_size, context, blockEvents);
+                        }
+                    } else {
+                        int start_sample = (int)(track->current_time_sec * sample_rate);
+                        for (int i = 0; i < block_size; ++i) {
+                            int sample_pos = start_sample + i;
+                            if (clip->num_channels == 2 && sample_pos * 2 + 1 < (int)clip->audio_data.size()) {
+                                bufferL[i] += clip->audio_data[sample_pos * 2];
+                                bufferR[i] += clip->audio_data[sample_pos * 2 + 1];
+                            } else if (clip->num_channels == 1 && sample_pos < (int)clip->audio_data.size()) {
+                                float s = clip->audio_data[sample_pos];
+                                bufferL[i] += s; bufferR[i] += s;
                             }
                         }
-                        search_idx++;
                     }
-                    track->current_midi_idx = search_idx;
 
-                    for (size_t i = 0; i < track->plugins.size(); ++i) {
-                        auto& p = track->plugins[i];
-                        if (i == 0 && p->isInstrument()) {
-                            p->process(nullptr, outChannels, block_size, context, blockEvents);
+                    track->current_time_sec += time_per_block;
+                    if (track->current_time_sec >= clip->duration_sec) {
+                        if (clip->is_loop) {
+                            track->current_time_sec = fmod(track->current_time_sec, clip->duration_sec);
+                            track->current_midi_idx = 0;
                         } else {
-                            p->process(outChannels, outChannels, block_size, context, {});
+                            track->playing_slot = -1;
                         }
                     }
-                } else if (clip->type == Clip::Type::AUDIO) {
-                    int start_sample = (int)(track->current_time_sec * sample_rate);
-                    for (int i = 0; i < block_size; ++i) {
-                        int sample_pos = start_sample + i;
-                        if (clip->num_channels == 2) {
-                            if (sample_pos * 2 + 1 < (int)clip->audio_data.size()) {
-                                bufferL[i] = clip->audio_data[sample_pos * 2];
-                                bufferR[i] = clip->audio_data[sample_pos * 2 + 1];
-                            }
-                        } else if (clip->num_channels == 1) {
-                            if (sample_pos < (int)clip->audio_data.size()) {
-                                bufferL[i] = bufferR[i] = clip->audio_data[sample_pos];
-                            }
-                        }
-                    }
+                }
 
-                    for (size_t i = 0; i < track->plugins.size(); ++i) {
-                        auto& p = track->plugins[i];
-                        if (p->isInstrument()) continue;
-                        p->process(outChannels, outChannels, block_size, context, {});
+                // 2. Process Timeline Clips
+                for (const auto& tc : track->timeline_clips) {
+                    if (state.playhead_pos_sec + time_per_block > tc->start_time_sec &&
+                        state.playhead_pos_sec < tc->start_time_sec + tc->duration_sec) {
+                        
+                        track_playing = true;
+                        any_playing = true;
+                        double clip_local_time = state.playhead_pos_sec - tc->start_time_sec;
+                        
+                        if (tc->clip->type == Clip::Type::MIDI) {
+                             std::vector<MidiNoteEvent> blockEvents;
+                             for (const auto& me : tc->clip->midi_events) {
+                                 if (me.seconds >= clip_local_time && me.seconds < clip_local_time + time_per_block) {
+                                     MidiNoteEvent e;
+                                     e.sampleOffset = std::max(0, (int)((me.seconds - clip_local_time) * sample_rate));
+                                     if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
+                                     e.channel = me.channel;
+                                     e.pitch = me.note;
+                                     e.isNoteOn = hibiki::isNoteOn(me);
+                                     e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+                                     blockEvents.push_back(e);
+                                 }
+                             }
+                             if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
+                                 track->plugins[0]->process(nullptr, outChannels, block_size, context, blockEvents);
+                             }
+                        } else {
+                            int start_sample = (int)(clip_local_time * sample_rate);
+                            for (int i = 0; i < block_size; ++i) {
+                                int sample_pos = start_sample + i;
+                                if (sample_pos < 0) continue;
+                                if (tc->clip->num_channels == 2 && sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
+                                    bufferL[i] += tc->clip->audio_data[sample_pos * 2];
+                                    bufferR[i] += tc->clip->audio_data[sample_pos * 2 + 1];
+                                } else if (tc->clip->num_channels == 1 && sample_pos < (int)tc->clip->audio_data.size()) {
+                                    float s = tc->clip->audio_data[sample_pos];
+                                    bufferL[i] += s; bufferR[i] += s;
+                                }
+                            }
+                        }
                     }
+                }
+
+                // Apply Effects (skip instrument if already processed)
+                for (size_t i = 0; i < track->plugins.size(); ++i) {
+                    if (i == 0 && track->plugins[i]->isInstrument()) continue;
+                    track->plugins[i]->process(outChannels, outChannels, block_size, context, {});
                 }
 
                 for (int i = 0; i < block_size; ++i) {
@@ -164,26 +204,20 @@ void playback_thread(ProjectState& state) {
                     mixBufferR[i] += bufferR[i];
                 }
 
-                track->current_time_sec += time_per_block;
-                if (track->current_time_sec >= clip->duration_sec) {
-                    if (clip->is_loop) {
-                        track->current_time_sec = fmod(track->current_time_sec, clip->duration_sec);
-                        track->current_midi_idx = 0;
-                    } else {
-                        track->playing_slot = -1;
-                    }
-                }
-
                 float peakL = 0, peakR = 0;
                 for (int i = 0; i < block_size; i++) {
                     peakL = std::max(peakL, std::abs(bufferL[i]));
                     peakR = std::max(peakR, std::abs(bufferR[i]));
                 }
-                if (any_playing) {
+                if (track_playing) {
                     std::lock_guard<std::mutex> llock(state.levels_mutex);
                     state.track_levels[track->index] = {peakL, peakR};
                 }
             }
+        }
+        
+        if (state.is_timeline_playing) {
+            state.playhead_pos_sec += time_per_block;
         }
         
         if (!any_playing) {
@@ -196,9 +230,13 @@ void playback_thread(ProjectState& state) {
             state.is_playing = true;
         }
 
-        level_counter++;
-        if (level_counter >= 10) {
-            level_counter = 0;
+        if (state.is_timeline_playing) {
+            state.playhead_pos_sec += time_per_block;
+        }
+
+        if (level_counter++ % 16 == 0) { // Approx 20Hz update
+            hibiki::sendPlayheadInfo((float)state.playhead_pos_sec, (float)state.bpm, state.is_timeline_playing);
+            
             flatbuffers::FlatBufferBuilder builder(512);
             std::vector<flatbuffers::Offset<hibiki::ipc::TrackLevel>> level_offsets;
             {
@@ -318,9 +356,11 @@ void run_ipc_loop(ProjectState& state) {
             hibiki::GetOrCreateTrack(state, cmd->track_index())->SetClipLoop(cmd->slot_index(), cmd->is_loop());
             hibiki::sendAck("SET_CLIP_LOOP", true);
         } else if (command_type == hibiki::ipc::Command_Play) {
+            state.is_timeline_playing = true;
             hibiki::sendAck("PLAY", true);
         } else if (command_type == hibiki::ipc::Command_Stop) {
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            state.is_timeline_playing = false;
             for (auto& pair : state.tracks) {
                 pair.second->Stop();
             }
@@ -406,6 +446,27 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendAck("DELETE_CLIP", false);
             }
+        } else if (command_type == hibiki::ipc::Command_Seek) {
+            auto cmd = request->command_as_Seek();
+            state.playhead_pos_sec = cmd->position();
+            hibiki::sendAck("SEEK", true);
+        } else if (command_type == hibiki::ipc::Command_AddTimelineClip) {
+            auto cmd = request->command_as_AddTimelineClip();
+            int tidx = cmd->track_index();
+            std::string path = cmd->path()->str();
+            double start = cmd->start_time();
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
+            hibiki::GetOrCreateTrack(state, tidx)->AddTimelineClip(path, start);
+            hibiki::sendAck("ADD_TIMELINE_CLIP", true);
+        } else if (command_type == hibiki::ipc::Command_RemoveTimelineClip) {
+            auto cmd = request->command_as_RemoveTimelineClip();
+            int tidx = cmd->track_index();
+            int cidx = cmd->clip_index();
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
+            hibiki::GetOrCreateTrack(state, tidx)->RemoveTimelineClip(cidx);
+            hibiki::sendAck("REMOVE_TIMELINE_CLIP", true);
         } else if (command_type == hibiki::ipc::Command_ListPlugins) {
             auto cmd = request->command_as_ListPlugins();
             std::string path = cmd->path()->str();

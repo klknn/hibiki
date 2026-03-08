@@ -95,7 +95,25 @@ union Command {
     Quit,
     ListPlugins,
     Undo,
-    Redo
+    Redo,
+    AddTimelineClip,
+    RemoveTimelineClip,
+    Seek
+}
+
+table AddTimelineClip {
+    track_index: int;
+    path: string;
+    start_time: float;
+}
+
+table RemoveTimelineClip {
+    track_index: int;
+    clip_index: int;
+}
+
+table Seek {
+    position: float;
 }
 
 table Undo {}

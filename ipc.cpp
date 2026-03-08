@@ -7,7 +7,10 @@
 
 namespace hibiki {
 
+bool g_ipc_enabled = true;
+
 void sendNotification(const uint8_t* buf, size_t size) {
+    if (!g_ipc_enabled) return;
     static std::mutex cout_mutex;
     std::lock_guard<std::mutex> lock(cout_mutex);
     uint32_t msg_size = static_cast<uint32_t>(size);
@@ -79,6 +82,24 @@ void sendPluginList(const std::string& path, const std::vector<PluginDescription
     auto path_off = builder.CreateString(path);
     auto list_off = hibiki::ipc::CreatePluginList(builder, path_off, plugins_vec);
     auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_PluginList, list_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
+void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name, const std::string& path, float start_time, float duration) {
+    flatbuffers::FlatBufferBuilder builder(512);
+    auto name_off = builder.CreateString(name.c_str());
+    auto path_off = builder.CreateString(path.c_str());
+    auto timeline_off = hibiki::ipc::CreateTimelineClipInfo(builder, track_idx, clip_idx, name_off, path_off, start_time, duration);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_TimelineClipInfo, timeline_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
+void sendPlayheadInfo(float position_sec, float bpm, bool is_playing) {
+    flatbuffers::FlatBufferBuilder builder(128);
+    auto playhead_off = hibiki::ipc::CreatePlayheadInfo(builder, position_sec, bpm, is_playing);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_PlayheadInfo, playhead_off.Union());
     builder.Finish(nf_off);
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
 }

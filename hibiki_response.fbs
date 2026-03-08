@@ -59,6 +59,21 @@ table PluginList {
     plugins: [PluginDescription];
 }
 
+table TimelineClipInfo {
+    track_index: int;
+    clip_index: int;
+    name: string;
+    path: string;
+    start_time: float;
+    duration: float;
+}
+
+table PlayheadInfo {
+    position_sec: float;
+    bpm: float;
+    is_playing: bool;
+}
+
 union Response {
     ParamList,
     Log,
@@ -67,7 +82,9 @@ union Response {
     ClearProject,
     TrackLevels,
     ClipWaveform,
-    PluginList
+    PluginList,
+    TimelineClipInfo,
+    PlayheadInfo
 }
 
 table Notification {

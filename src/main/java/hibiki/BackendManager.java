@@ -135,6 +135,49 @@ public class BackendManager {
         }
     }
 
+    public void startPlayback() {
+        FlatBufferBuilder builder = new FlatBufferBuilder(16);
+        hibiki.ipc.Play.startPlay(builder);
+        int playOff = hibiki.ipc.Play.endPlay(builder);
+        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.Play, playOff);
+        builder.finish(reqOff);
+        sendRequest(builder);
+    }
+
+    public void stopPlayback() {
+        FlatBufferBuilder builder = new FlatBufferBuilder(16);
+        hibiki.ipc.Stop.startStop(builder);
+        int stopOff = hibiki.ipc.Stop.endStop(builder);
+        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.Stop, stopOff);
+        builder.finish(reqOff);
+        sendRequest(builder);
+    }
+
+    public void seek(float position) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(32);
+        int seekOff = hibiki.ipc.Seek.createSeek(builder, position);
+        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.Seek, seekOff);
+        builder.finish(reqOff);
+        sendRequest(builder);
+    }
+
+    public void addTimelineClip(int trackIndex, String path, float startTime) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(512);
+        int pathOff = builder.createString(path);
+        int addOff = hibiki.ipc.AddTimelineClip.createAddTimelineClip(builder, trackIndex, pathOff, startTime);
+        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.AddTimelineClip, addOff);
+        builder.finish(reqOff);
+        sendRequest(builder);
+    }
+
+    public void removeTimelineClip(int trackIndex, int clipIndex) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(32);
+        int remOff = hibiki.ipc.RemoveTimelineClip.createRemoveTimelineClip(builder, trackIndex, clipIndex);
+        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.RemoveTimelineClip, remOff);
+        builder.finish(reqOff);
+        sendRequest(builder);
+    }
+
 
     private String findBinary(String binaryName) {
         // Try simple relative

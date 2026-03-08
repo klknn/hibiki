@@ -5,8 +5,6 @@ import javax.swing.tree.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,11 +19,6 @@ import hibiki.ipc.PluginList;
 import hibiki.ipc.PluginDescription;
 import hibiki.ipc.Response;
 import hibiki.ipc.Notification;
-import java.io.PrintWriter;
-import java.io.FileWriter;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.stream.Collectors;
 
 public class BrowserPane extends JPanel {
     private JTree tree;
@@ -91,6 +84,28 @@ public class BrowserPane extends JPanel {
         BackendManager.getInstance().addNotificationListener(this::handleNotification);
 
         populateTree();
+
+        tree.setDragEnabled(true);
+        tree.setTransferHandler(new TransferHandler() {
+            @Override
+            public int getSourceActions(JComponent c) {
+                return COPY;
+            }
+
+            @Override
+            protected java.awt.datatransfer.Transferable createTransferable(JComponent c) {
+                TreePath path = tree.getSelectionPath();
+                if (path != null) {
+                    DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
+                    Object userObject = node.getUserObject();
+                    if (userObject instanceof FileItem) {
+                        FileItem item = (FileItem) userObject;
+                        return new java.awt.datatransfer.StringSelection(item.type + ":" + item.file.getAbsolutePath());
+                    }
+                }
+                return null;
+            }
+        });
 
         tree.addMouseListener(new MouseAdapter() {
             public void mouseClicked(MouseEvent e) {
@@ -272,18 +287,18 @@ public class BrowserPane extends JPanel {
         BackendManager.getInstance().sendRequest(builder);
     }
 
-    private static class FileItem {
-        File file;
-        String type;
-        String displayName;
-        String vendor;
-        int pluginIndex;
+    public static class FileItem {
+        public File file;
+        public String type;
+        public String displayName;
+        public String vendor;
+        public int pluginIndex;
 
-        FileItem(File file, String type, String displayName) {
+        public FileItem(File file, String type, String displayName) {
           this(file, type, displayName, "", 0);
         }
 
-        FileItem(File file, String type, String displayName, String vendor, int pluginIndex) {
+        public FileItem(File file, String type, String displayName, String vendor, int pluginIndex) {
             this.file = file;
             this.type = type;
             this.displayName = displayName;

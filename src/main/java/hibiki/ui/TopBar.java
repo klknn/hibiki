@@ -18,6 +18,15 @@ public class TopBar extends JPanel {
     private JLabel timeSigLabel;
     private JLabel positionLabel;
     private JLabel cpuLabel;
+    private ViewToggleListener viewToggleListener;
+
+    public interface ViewToggleListener {
+        void onViewToggle(boolean isTimeline);
+    }
+
+    public void setViewToggleListener(ViewToggleListener listener) {
+        this.viewToggleListener = listener;
+    }
 
     public TopBar() {
         setLayout(new BorderLayout());
@@ -38,6 +47,17 @@ public class TopBar extends JPanel {
 
         leftPanel.add(createFlatButton("Save", e -> showSaveDialog()));
         leftPanel.add(createFlatButton("Load", e -> showLoadDialog()));
+
+        // View Toggles
+        leftPanel.add(Box.createHorizontalStrut(Theme.getInstance().scale(20)));
+        JButton sessionBtn = createFlatButton("Session", e -> {
+            if (viewToggleListener != null) viewToggleListener.onViewToggle(false);
+        });
+        JButton timelineBtn = createFlatButton("Timeline", e -> {
+            if (viewToggleListener != null) viewToggleListener.onViewToggle(true);
+        });
+        leftPanel.add(sessionBtn);
+        leftPanel.add(timelineBtn);
 
         add(leftPanel, BorderLayout.WEST);
 
@@ -132,21 +152,11 @@ public class TopBar extends JPanel {
     }
 
     private void sendPlay() {
-        FlatBufferBuilder builder = new FlatBufferBuilder(128);
-        Play.startPlay(builder);
-        int playOffset = Play.endPlay(builder);
-        int requestOffset = Request.createRequest(builder, Command.Play, playOffset);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        BackendManager.getInstance().startPlayback();
     }
 
     private void sendStop() {
-        FlatBufferBuilder builder = new FlatBufferBuilder(128);
-        Stop.startStop(builder);
-        int stopOffset = Stop.endStop(builder);
-        int requestOffset = Request.createRequest(builder, Command.Stop, stopOffset);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        BackendManager.getInstance().stopPlayback();
     }
 
     private void showSaveDialog() {

@@ -12,6 +12,9 @@ struct ProjectState {
     double bpm = 120.0;
     bool is_playing = false;
     double sample_rate = 44100.0;
+    
+    double playhead_pos_sec = 0.0;
+    bool is_timeline_playing = false;
     std::vector<float> levels = {0.0f, 0.0f};
 
     std::map<int, std::pair<float, float>> track_levels;

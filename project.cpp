@@ -18,11 +18,9 @@ bool SaveProject(const ProjectState& state, const std::string& path) {
 
     std::vector<flatbuffers::Offset<hibiki::project::Track>> track_offsets;
     for (const auto& [idx, track] : state.tracks) {
-        
         std::vector<flatbuffers::Offset<hibiki::project::Plugin>> plugin_offsets;
         for (const auto& plugin : track->plugins) {
             auto path_str = builder.CreateString(plugin->getPath());
-            
             std::vector<flatbuffers::Offset<hibiki::project::Parameter>> param_offsets;
             int num_params = plugin->getParameterCount();
             for (int p = 0; p < num_params; ++p) {
@@ -45,13 +43,20 @@ bool SaveProject(const ProjectState& state, const std::string& path) {
             clip_offsets.push_back(hibiki::project::CreateClip(builder, slot, path_str, clip->is_loop, clip_type));
         }
 
+        std::vector<flatbuffers::Offset<hibiki::project::TimelineClip>> timeline_clip_offsets;
+        for (const auto& tc : track->timeline_clips) {
+            auto path_str = builder.CreateString(tc->clip->path);
+            timeline_clip_offsets.push_back(hibiki::project::CreateTimelineClip(builder, path_str, tc->start_time_sec, tc->duration_sec));
+        }
+
         auto plugins_vec = builder.CreateVector(plugin_offsets);
         auto clips_vec = builder.CreateVector(clip_offsets);
-        track_offsets.push_back(hibiki::project::CreateTrack(builder, idx, plugins_vec, clips_vec));
+        auto timeline_clips_vec = builder.CreateVector(timeline_clip_offsets);
+        track_offsets.push_back(hibiki::project::CreateTrack(builder, idx, plugins_vec, clips_vec, timeline_clips_vec));
     }
 
     auto tracks_vec = builder.CreateVector(track_offsets);
-    auto project_data = hibiki::project::CreateProject(builder, state.bpm, tracks_vec);
+    auto project_data = hibiki::project::CreateProject(builder, state.bpm, state.playhead_pos_sec, tracks_vec);
     builder.Finish(project_data);
 
     std::ofstream out(path, std::ios::binary);
@@ -82,6 +87,7 @@ bool LoadProject(ProjectState& state, const std::string& path) {
     auto project_data = hibiki::project::GetProject(buffer.data());
     
     state.bpm = project_data->bpm();
+    state.playhead_pos_sec = project_data->playhead_pos();
     state.tracks.clear();
 
     if (project_data->tracks()) {
@@ -101,6 +107,15 @@ bool LoadProject(ProjectState& state, const std::string& path) {
             if (track_data->clips()) {
                 for (const auto* clip_data : *track_data->clips()) {
                     track->LoadClip(clip_data->slot_index(), clip_data->path()->str(), clip_data->is_loop());
+                }
+            }
+            if (track_data->timeline_clips()) {
+                for (const auto* tc_data : *track_data->timeline_clips()) {
+                    auto tc = std::make_unique<TimelineClip>();
+                    tc->clip = hibiki::LoadClip(tc_data->path()->str());
+                    tc->start_time_sec = tc_data->start_time();
+                    tc->duration_sec = tc_data->duration();
+                    track->timeline_clips.push_back(std::move(tc));
                 }
             }
         }
@@ -138,13 +153,20 @@ std::vector<uint8_t> CaptureProjectState(const ProjectState& state) {
             clip_offsets.push_back(hibiki::project::CreateClip(builder, slot, path_str, clip->is_loop, clip_type));
         }
 
+        std::vector<flatbuffers::Offset<hibiki::project::TimelineClip>> timeline_clip_offsets;
+        for (const auto& tc : track->timeline_clips) {
+            auto path_str = builder.CreateString(tc->clip->path);
+            timeline_clip_offsets.push_back(hibiki::project::CreateTimelineClip(builder, path_str, tc->start_time_sec, tc->duration_sec));
+        }
+
         auto plugins_vec = builder.CreateVector(plugin_offsets);
         auto clips_vec = builder.CreateVector(clip_offsets);
-        track_offsets.push_back(hibiki::project::CreateTrack(builder, idx, plugins_vec, clips_vec));
+        auto timeline_clips_vec = builder.CreateVector(timeline_clip_offsets);
+        track_offsets.push_back(hibiki::project::CreateTrack(builder, idx, plugins_vec, clips_vec, timeline_clips_vec));
     }
 
     auto tracks_vec = builder.CreateVector(track_offsets);
-    auto project_data = hibiki::project::CreateProject(builder, state.bpm, tracks_vec);
+    auto project_data = hibiki::project::CreateProject(builder, state.bpm, state.playhead_pos_sec, tracks_vec);
     builder.Finish(project_data);
 
     uint8_t* buf = builder.GetBufferPointer();
@@ -157,6 +179,7 @@ bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data) {
     auto project_data = hibiki::project::GetProject(data.data());
     
     state.bpm = project_data->bpm();
+    state.playhead_pos_sec = project_data->playhead_pos();
     state.tracks.clear();
 
     if (project_data->tracks()) {
@@ -177,6 +200,15 @@ bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data) {
                     track->LoadClip(clip_data->slot_index(), clip_data->path()->str(), clip_data->is_loop());
                 }
             }
+            if (track_data->timeline_clips()) {
+                for (const auto* tc_data : *track_data->timeline_clips()) {
+                    auto tc = std::make_unique<TimelineClip>();
+                    tc->clip = hibiki::LoadClip(tc_data->path()->str());
+                    tc->start_time_sec = tc_data->start_time();
+                    tc->duration_sec = tc_data->duration();
+                    track->timeline_clips.push_back(std::move(tc));
+                }
+            }
         }
     }
     return true;
@@ -185,7 +217,7 @@ bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data) {
 void SyncProjectToGui(const ProjectState& state) {
     hibiki::sendClearProject();
     for (const auto& [tidx, track] : state.tracks) {
-        // Sync Clips
+        // Sync Session Clips
         for (const auto& [sidx, clip] : track->clips) {
             std::string cname = clip->path;
             size_t last_slash = cname.find_last_of("/\\");
@@ -205,6 +237,16 @@ void SyncProjectToGui(const ProjectState& state) {
                 }
             }
             hibiki::sendParamList(tidx, pidx, plugin->getName(), plugin->isInstrument(), params);
+        }
+        // Sync Timeline Clips
+        for (int tc_idx = 0; tc_idx < (int)track->timeline_clips.size(); ++tc_idx) {
+            const auto& tc = track->timeline_clips[tc_idx];
+            std::string cname = tc->clip->path;
+            size_t last_slash = cname.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+                cname = cname.substr(last_slash + 1);
+            }
+            hibiki::sendTimelineClipInfo(tidx, tc_idx, cname, tc->clip->path, tc->start_time_sec, tc->duration_sec);
         }
     }
 }

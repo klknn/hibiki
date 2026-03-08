@@ -20,14 +20,22 @@ table Clip {
     type: ClipType = MIDI;
 }
 
+table TimelineClip {
+    path: string;
+    start_time: float;
+    duration: float;
+}
+
 table Track {
     index: int;
     plugins: [Plugin];
     clips: [Clip];
+    timeline_clips: [TimelineClip];
 }
 
 table Project {
     bpm: float = 120.0;
+    playhead_pos: float = 0.0;
     tracks: [Track];
 }
 

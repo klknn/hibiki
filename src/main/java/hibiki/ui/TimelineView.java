@@ -1,0 +1,277 @@
+package hibiki.ui;
+
+import hibiki.BackendManager;
+import hibiki.ipc.Notification;
+import hibiki.ipc.TimelineClipInfo;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+
+public class TimelineView extends JPanel implements Theme.ThemeListener {
+    private static final int TRACK_HEIGHT = 80;
+    private static final int TIME_RULER_HEIGHT = 30;
+    private static final float PIXELS_PER_SECOND = 50.0f;
+ 
+    enum GridUnit { SECONDS, BARS }
+    private GridUnit gridUnit = GridUnit.BARS;
+    private float bpm = 120.0f;
+    private boolean isPlaying = false;
+
+    float playheadPos = 0.0f;
+    final List<TrackTimeline> tracks = new ArrayList<>();
+    private final JScrollPane scrollPane;
+    private final JPanel contentPanel;
+    private final Timer repaintTimer;
+
+    public TimelineView() {
+        Theme.getInstance().addListener(this);
+        setLayout(new BorderLayout());
+        setBackground(Theme.getInstance().BG_DARK);
+
+        contentPanel = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                drawTimeline(g);
+            }
+        };
+        contentPanel.setLayout(null);
+        contentPanel.setBackground(Theme.getInstance().BG_DARK);
+
+        scrollPane = new JScrollPane(contentPanel);
+        scrollPane.setBorder(null);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        add(scrollPane, BorderLayout.CENTER);
+
+        // Initial tracks
+        for (int i = 0; i < 8; i++) {
+            tracks.add(new TrackTimeline(i));
+        }
+        updateContentSize();
+
+        repaintTimer = new Timer(33, e -> {
+            repaint();
+        });
+        repaintTimer.start();
+
+        BackendManager.getInstance().addNotificationListener(this::handleNotification);
+        
+        setupMouseListeners();
+        setupDropTarget();
+        setupControls();
+    }
+
+    private void setupControls() {
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        controls.setOpaque(false);
+        
+        JComboBox<GridUnit> unitCombo = new JComboBox<>(GridUnit.values());
+        unitCombo.setSelectedItem(gridUnit);
+        unitCombo.addActionListener(e -> {
+            gridUnit = (GridUnit) unitCombo.getSelectedItem();
+            repaint();
+        });
+        
+        JLabel label = new JLabel("Grid:");
+        label.setForeground(Theme.getInstance().TEXT_DIM);
+        controls.add(label);
+        controls.add(unitCombo);
+        
+        add(controls, BorderLayout.NORTH);
+    }
+
+    private void setupDropTarget() {
+        new java.awt.dnd.DropTarget(contentPanel, new java.awt.dnd.DropTargetAdapter() {
+            @Override
+            public void drop(java.awt.dnd.DropTargetDropEvent dtde) {
+                try {
+                    if (dtde.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.stringFlavor)) {
+                        dtde.acceptDrop(java.awt.dnd.DnDConstants.ACTION_COPY);
+                        String data = (String) dtde.getTransferable().getTransferData(java.awt.datatransfer.DataFlavor.stringFlavor);
+                        dtde.dropComplete(true);
+
+                        String[] parts = data.split(":", 2);
+                        if (parts.length == 2) {
+                            String type = parts[0];
+                            String path = parts[1];
+                            
+                            Point p = dtde.getLocation();
+                            int trackIndex = (p.y - Theme.getInstance().scale(TIME_RULER_HEIGHT)) / Theme.getInstance().scale(TRACK_HEIGHT);
+                            double timeSec = p.x / PIXELS_PER_SECOND;
+
+                            if (trackIndex >= 0 && trackIndex < tracks.size()) {
+                                BackendManager.getInstance().addTimelineClip(trackIndex, path, (float)timeSec);
+                            }
+                        }
+                    } else {
+                        dtde.rejectDrop();
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    dtde.rejectDrop();
+                }
+            }
+        });
+    }
+
+    private void updateContentSize() {
+        int width = (int) (PIXELS_PER_SECOND * 600); // 10 minutes
+        int height = tracks.size() * Theme.getInstance().scale(TRACK_HEIGHT) + Theme.getInstance().scale(TIME_RULER_HEIGHT);
+        contentPanel.setPreferredSize(new Dimension(width, height));
+        contentPanel.revalidate();
+    }
+
+    private void setupMouseListeners() {
+        contentPanel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (e.getY() < Theme.getInstance().scale(TIME_RULER_HEIGHT)) {
+                    updatePlayhead(e.getX());
+                }
+            }
+        });
+
+        contentPanel.addMouseMotionListener(new MouseMotionAdapter() {
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                if (e.getY() < Theme.getInstance().scale(TIME_RULER_HEIGHT)) {
+                    updatePlayhead(e.getX());
+                }
+            }
+        });
+    }
+
+    private void updatePlayhead(int x) {
+        playheadPos = Math.max(0, x / PIXELS_PER_SECOND);
+        BackendManager.getInstance().seek(playheadPos);
+        repaint();
+    }
+
+    void handleNotification(Notification n) {
+        if (n.responseType() == hibiki.ipc.Response.TimelineClipInfo) {
+            TimelineClipInfo info = (TimelineClipInfo) n.response(new TimelineClipInfo());
+            int tidx = info.trackIndex();
+            if (tidx >= 0 && tidx < tracks.size()) {
+                tracks.get(tidx).addOrUpdateClip(info);
+                repaint();
+            }
+        } else if (n.responseType() == hibiki.ipc.Response.PlayheadInfo) {
+            hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) n.response(new hibiki.ipc.PlayheadInfo());
+            this.playheadPos = info.positionSec();
+            this.bpm = info.bpm();
+            this.isPlaying = info.isPlaying();
+            repaint();
+        }
+    }
+
+    private void drawTimeline(Graphics g) {
+        Graphics2D g2 = (Graphics2D) g;
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
+        int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+
+        // Draw tracks background
+        for (int i = 0; i < tracks.size(); i++) {
+            int y = scaleTimeRuler + i * scaleTrackHeight;
+            g2.setColor(i % 2 == 0 ? Theme.getInstance().BG_DARK : Theme.getInstance().BG_DARKER);
+            g2.fillRect(0, y, contentPanel.getWidth(), scaleTrackHeight);
+            g2.setColor(Theme.getInstance().PANEL_BG_LIGHT.darker());
+            g2.drawLine(0, y + scaleTrackHeight - 1, contentPanel.getWidth(), y + scaleTrackHeight - 1);
+        }
+
+        // Draw clips
+        for (int i = 0; i < tracks.size(); i++) {
+            int y = scaleTimeRuler + i * scaleTrackHeight + 5;
+            for (ClipRect clip : tracks.get(i).clips) {
+                int x = (int) (clip.startTime * PIXELS_PER_SECOND);
+                int w = (int) (clip.duration * PIXELS_PER_SECOND);
+                int h = scaleTrackHeight - 10;
+
+                g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
+                g2.fillRoundRect(x, y, w, h, 8, 8);
+                g2.setColor(Theme.getInstance().ACCENT_BLUE);
+                g2.drawRoundRect(x, y, w, h, 8, 8);
+
+                g2.setColor(Color.WHITE);
+                g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
+                g2.drawString(clip.name, x + 5, y + 15);
+            }
+        }
+
+        // Draw time ruler
+        g2.setColor(Theme.getInstance().BG_DARKER);
+        g2.fillRect(0, 0, contentPanel.getWidth(), scaleTimeRuler);
+        g2.setColor(Theme.getInstance().TEXT_DIM);
+
+        if (gridUnit == GridUnit.SECONDS) {
+            for (int s = 0; s < 600; s += 5) {
+                int x = (int) (s * PIXELS_PER_SECOND);
+                g2.drawLine(x, scaleTimeRuler - 10, x, scaleTimeRuler);
+                g2.drawString(s + "s", x + 2, scaleTimeRuler - 12);
+            }
+        } else {
+            float secondsPerBeat = 60.0f / bpm;
+            float secondsPerBar = secondsPerBeat * 4;
+            for (int b = 0; b < 200; b++) {
+                float time = b * secondsPerBar;
+                int x = (int) (time * PIXELS_PER_SECOND);
+                if (x > contentPanel.getWidth()) break;
+                g2.drawLine(x, scaleTimeRuler - 15, x, scaleTimeRuler);
+                g2.drawString((b + 1) + ".1", x + 2, scaleTimeRuler - 15);
+            }
+        }
+
+        // Draw playhead
+        int px = (int) (playheadPos * PIXELS_PER_SECOND);
+        g2.setColor(Color.RED);
+        g2.setStroke(new BasicStroke(2.0f));
+        g2.drawLine(px, 0, px, contentPanel.getHeight());
+    }
+
+    @Override
+    public void onThemeChanged() {
+        SwingUtilities.invokeLater(() -> {
+            setBackground(Theme.getInstance().BG_DARK);
+            contentPanel.setBackground(Theme.getInstance().BG_DARK);
+            updateContentSize();
+            repaint();
+        });
+    }
+
+    static class TrackTimeline {
+        int index;
+        List<ClipRect> clips = new ArrayList<>();
+        Map<Integer, ClipRect> clipMap = new HashMap<>();
+
+        TrackTimeline(int index) {
+            this.index = index;
+        }
+
+        void addOrUpdateClip(TimelineClipInfo info) {
+            int cidx = info.clipIndex();
+            ClipRect cr = clipMap.get(cidx);
+            if (cr == null) {
+                cr = new ClipRect();
+                clips.add(cr);
+                clipMap.put(cidx, cr);
+            }
+            cr.name = info.name();
+            cr.path = info.path();
+            cr.startTime = info.startTime();
+            cr.duration = info.duration();
+        }
+    }
+
+    static class ClipRect {
+        String name;
+        String path;
+        float startTime;
+        float duration;
+    }
+}

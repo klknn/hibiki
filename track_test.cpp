@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 #include "track.hpp"
 #include "test_utils.hpp"
+#include "ipc.hpp"
 
 void Vst3Plugin::stopEditor() {} // for test
 
 TEST(TrackTest, AddAndRemoveClips) {
+    hibiki::g_ipc_enabled = false;
     hibiki::Track track(0);
     auto audio_path = hibiki::find_test_file("testdata/loop140.wav");
     auto midi_path = hibiki::find_test_file("testdata/test.mid");

@@ -307,6 +307,12 @@ flatbuffer_library_public(
         "hibiki/ipc/UndoT.java",
         "hibiki/ipc/Redo.java",
         "hibiki/ipc/RedoT.java",
+        "hibiki/ipc/AddTimelineClip.java",
+        "hibiki/ipc/AddTimelineClipT.java",
+        "hibiki/ipc/RemoveTimelineClip.java",
+        "hibiki/ipc/RemoveTimelineClipT.java",
+        "hibiki/ipc/Seek.java",
+        "hibiki/ipc/SeekT.java",
     ],
     language_flag = "--java --gen-object-api",
 )
@@ -341,6 +347,10 @@ flatbuffer_library_public(
         "hibiki/ipc/PluginListT.java",
         "hibiki/ipc/Response.java",
         "hibiki/ipc/ResponseUnion.java",
+        "hibiki/ipc/TimelineClipInfo.java",
+        "hibiki/ipc/TimelineClipInfoT.java",
+        "hibiki/ipc/PlayheadInfo.java",
+        "hibiki/ipc/PlayheadInfoT.java",
     ],
     language_flag = "--java --gen-object-api",
 )
@@ -359,6 +369,8 @@ flatbuffer_library_public(
         "hibiki/project/ProjectT.java",
         "hibiki/project/Track.java",
         "hibiki/project/TrackT.java",
+        "hibiki/project/TimelineClip.java",
+        "hibiki/project/TimelineClipT.java",
     ],
     language_flag = "--java --gen-object-api",
 )
@@ -435,5 +447,17 @@ java_test(
     deps = [
         ":hibiki-gui-lib",
         "@maven//:junit_junit",
+    ],
+)
+ 
+java_test(
+    name = "timeline_view_test",
+    srcs = ["src/test/java/hibiki/ui/TimelineViewTest.java"],
+    test_class = "hibiki.ui.TimelineViewTest",
+    deps = [
+        ":hibiki-gui-lib",
+        ":hibiki_response_java_lib",
+        "@maven//:junit_junit",
+        "@maven//:com_google_flatbuffers_flatbuffers_java",
     ],
 )

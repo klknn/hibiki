@@ -106,6 +106,7 @@ cc_library(
         ":track",
         ":ipc",
         ":hibiki_project_cc",
+        ":audio_file",
     ],
 )
 
@@ -313,6 +314,8 @@ flatbuffer_library_public(
         "hibiki/ipc/RemoveTimelineClipT.java",
         "hibiki/ipc/Seek.java",
         "hibiki/ipc/SeekT.java",
+        "hibiki/ipc/BounceProject.java",
+        "hibiki/ipc/BounceProjectT.java",
     ],
     language_flag = "--java --gen-object-api",
 )
@@ -351,6 +354,8 @@ flatbuffer_library_public(
         "hibiki/ipc/TimelineClipInfoT.java",
         "hibiki/ipc/PlayheadInfo.java",
         "hibiki/ipc/PlayheadInfoT.java",
+        "hibiki/ipc/BounceFinished.java",
+        "hibiki/ipc/BounceFinishedT.java",
     ],
     language_flag = "--java --gen-object-api",
 )

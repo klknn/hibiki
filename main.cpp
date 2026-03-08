@@ -270,7 +270,6 @@ void notification_thread(ProjectState& state) {
     }
 }
 
-
 void run_ipc_loop(ProjectState& state) {
     HistoryManager history;
     while (true) {
@@ -474,6 +473,12 @@ void run_ipc_loop(ProjectState& state) {
             // Start a thread for each scan to avoid blocking IPC loop and allow parallelism
             std::thread([path]() {
                 hibiki::sendPluginList(path, Vst3Plugin::listPluginsIsolated(path));
+            }).detach();
+        } else if (command_type == hibiki::ipc::Command_BounceProject) {
+            auto cmd = request->command_as_BounceProject();
+            std::string path = cmd->path()->str();
+            std::thread([&state, path]() {
+                hibiki::BounceProject(state, path);
             }).detach();
         } else if (command_type == hibiki::ipc::Command_Undo) {
             std::lock_guard<std::mutex> lock(state.tracks_mutex);

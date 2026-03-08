@@ -1,5 +1,6 @@
 #include "project.hpp"
 #include "ipc.hpp"
+#include "audio_file.hpp"
 #include "hibiki_project_generated.h"
 #include <fstream>
 #include <iostream>
@@ -249,6 +250,130 @@ void SyncProjectToGui(const ProjectState& state) {
             hibiki::sendTimelineClipInfo(tidx, tc_idx, cname, tc->clip->path, tc->start_time_sec, tc->duration_sec, tc->clip->waveform_summary);
         }
     }
+}
+
+double GetProjectDuration(const ProjectState& state) {
+    double max_duration = 0.0;
+    for (const auto& [idx, track] : state.tracks) {
+        for (const auto& tc : track->timeline_clips) {
+            double end_time = tc->start_time_sec + tc->duration_sec;
+            if (end_time > max_duration) {
+                max_duration = end_time;
+            }
+        }
+    }
+    return max_duration > 0.0 ? max_duration + 2.0 : 0.0;
+}
+
+void BounceProject(ProjectState& live_state, const std::string& path) {
+    std::vector<uint8_t> snapshot;
+    double duration = 0.0;
+    {
+        std::lock_guard<std::mutex> lock(live_state.tracks_mutex);
+        snapshot = CaptureProjectState(live_state);
+        duration = GetProjectDuration(live_state);
+    }
+    
+    if (duration <= 0.0) {
+        hibiki::sendBounceFinished(path, false);
+        return;
+    }
+    
+    ProjectState state;
+    state.sample_rate = live_state.sample_rate;
+    ApplyProjectState(state, snapshot);
+    state.is_timeline_playing = true;
+    state.playhead_pos_sec = 0.0;
+    
+    int block_size = 512;
+    float sample_rate = state.sample_rate;
+    int actual_channels = 2;
+    std::vector<float> output_buffer;
+    
+    HostProcessContext context;
+    context.sampleRate = sample_rate;
+    context.tempo = state.bpm;
+    context.timeSigNumerator = 4;
+    context.timeSigDenominator = 4;
+    
+    alignas(32) float bufferL[512];
+    alignas(32) float bufferR[512];
+    float* outChannels[] = {bufferL, bufferR};
+    
+    double time_per_block = block_size / (double)sample_rate;
+    
+    while (state.playhead_pos_sec < duration) {
+        std::vector<float> mixBufferL(block_size, 0.0f);
+        std::vector<float> mixBufferR(block_size, 0.0f);
+        
+        for (auto& pair : state.tracks) {
+            Track* track = pair.second.get();
+            std::fill(bufferL, bufferL + block_size, 0.0f);
+            std::fill(bufferR, bufferR + block_size, 0.0f);
+            
+            for (const auto& tc : track->timeline_clips) {
+                if (state.playhead_pos_sec + time_per_block > tc->start_time_sec &&
+                    state.playhead_pos_sec < tc->start_time_sec + tc->duration_sec) {
+                    
+                    double clip_local_time = state.playhead_pos_sec - tc->start_time_sec;
+                    
+                    if (tc->clip->type == Clip::Type::MIDI) {
+                         std::vector<MidiNoteEvent> blockEvents;
+                         for (const auto& me : tc->clip->midi_events) {
+                             if (me.seconds >= clip_local_time && me.seconds < clip_local_time + time_per_block) {
+                                 MidiNoteEvent e;
+                                 e.sampleOffset = std::max(0, (int)((me.seconds - clip_local_time) * sample_rate));
+                                 if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
+                                 e.channel = me.channel;
+                                 e.pitch = me.note;
+                                 e.isNoteOn = hibiki::isNoteOn(me);
+                                 e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+                                 blockEvents.push_back(e);
+                             }
+                         }
+                         if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
+                             track->plugins[0]->process(nullptr, outChannels, block_size, context, blockEvents);
+                         }
+                    } else {
+                        int start_sample = (int)(clip_local_time * sample_rate);
+                        for (int i = 0; i < block_size; ++i) {
+                            int sample_pos = start_sample + i;
+                            if (sample_pos < 0) continue;
+                            if (tc->clip->num_channels == 2 && sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
+                                bufferL[i] += tc->clip->audio_data[sample_pos * 2];
+                                bufferR[i] += tc->clip->audio_data[sample_pos * 2 + 1];
+                            } else if (tc->clip->num_channels == 1 && sample_pos < (int)tc->clip->audio_data.size()) {
+                                float s = tc->clip->audio_data[sample_pos];
+                                bufferL[i] += s; bufferR[i] += s;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            for (size_t i = 0; i < track->plugins.size(); ++i) {
+                if (i == 0 && track->plugins[i]->isInstrument()) continue;
+                track->plugins[i]->process(outChannels, outChannels, block_size, context, {});
+            }
+            
+            for (int i = 0; i < block_size; ++i) {
+                mixBufferL[i] += bufferL[i];
+                mixBufferR[i] += bufferR[i];
+            }
+        }
+        
+        for (int i = 0; i < block_size; ++i) {
+            output_buffer.push_back(mixBufferL[i]);
+            output_buffer.push_back(mixBufferR[i]);
+        }
+        
+        state.playhead_pos_sec += time_per_block;
+        context.continuousTimeSamples = state.playhead_pos_sec * sample_rate;
+        context.projectTimeMusic = state.playhead_pos_sec * (context.tempo / 60.0);
+    }
+    
+    bool success = SaveWav(path, output_buffer, actual_channels, sample_rate);
+    hibiki::sendBounceFinished(path, success);
 }
 
 } // namespace hibiki

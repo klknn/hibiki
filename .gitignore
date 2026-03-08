@@ -13,3 +13,7 @@ output.wav
 .DS_Store
 *.swp
 *~
+
+# Temporary files
+*.log
+*.txt

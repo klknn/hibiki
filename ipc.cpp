@@ -142,4 +142,13 @@ void sendPlayheadInfo(float position_sec, float bpm, bool is_playing) {
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
 }
 
+void sendBounceFinished(const std::string& path, bool success) {
+    flatbuffers::FlatBufferBuilder builder(512);
+    auto path_off = builder.CreateString(path.c_str());
+    auto bf_off = hibiki::ipc::CreateBounceFinished(builder, path_off, success);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_BounceFinished, bf_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
 } // namespace hibiki

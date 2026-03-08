@@ -75,6 +75,11 @@ table PlayheadInfo {
     is_playing: bool;
 }
 
+table BounceFinished {
+    path: string;
+    success: bool;
+}
+
 union Response {
     ParamList,
     Log,
@@ -85,7 +90,8 @@ union Response {
     ClipWaveform,
     PluginList,
     TimelineClipInfo,
-    PlayheadInfo
+    PlayheadInfo,
+    BounceFinished
 }
 
 table Notification {

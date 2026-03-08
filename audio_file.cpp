@@ -59,4 +59,44 @@ bool LoadWav(const std::string& path, std::vector<float>& out_data, int& out_cha
     return false;
 }
 
+bool SaveWav(const std::string& path, const std::vector<float>& interleaved_data, int channels, int sample_rate) {
+    if (channels <= 0 || sample_rate <= 0) return false;
+    
+    std::ofstream out(path, std::ios::binary);
+    if (!out) return false;
+    
+    int num_samples = interleaved_data.size() / channels;
+    int bits_per_sample = 16;
+    int byte_rate = sample_rate * channels * bits_per_sample / 8;
+    uint16_t block_align = channels * bits_per_sample / 8;
+    int data_size = num_samples * channels * bits_per_sample / 8;
+    int chunk_size = 36 + data_size;
+
+    out.write("RIFF", 4);
+    out.write(reinterpret_cast<const char*>(&chunk_size), 4);
+    out.write("WAVE", 4);
+    out.write("fmt ", 4);
+    uint32_t fmt_size = 16;
+    out.write(reinterpret_cast<const char*>(&fmt_size), 4);
+    uint16_t audio_format = 1;
+    out.write(reinterpret_cast<const char*>(&audio_format), 2);
+    uint16_t num_channels = channels;
+    out.write(reinterpret_cast<const char*>(&num_channels), 2);
+    out.write(reinterpret_cast<const char*>(&sample_rate), 4);
+    out.write(reinterpret_cast<const char*>(&byte_rate), 4);
+    out.write(reinterpret_cast<const char*>(&block_align), 2);
+    uint16_t bps = bits_per_sample;
+    out.write(reinterpret_cast<const char*>(&bps), 2);
+    
+    out.write("data", 4);
+    out.write(reinterpret_cast<const char*>(&data_size), 4);
+    
+    for (float f : interleaved_data) {
+        f = std::max(-1.0f, std::min(1.0f, f));
+        int16_t sample = static_cast<int16_t>(f * 32767.0f);
+        out.write(reinterpret_cast<const char*>(&sample), 2);
+    }
+    return true;
+}
+
 } // namespace hibiki

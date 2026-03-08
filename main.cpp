@@ -419,17 +419,7 @@ void run_ipc_loop(ProjectState& state) {
             std::vector<uint8_t> prev;
             if (history.undo(current, prev)) {
                 ApplyProjectState(state, prev);
-                hibiki::sendClearProject();
-                for (const auto& [tidx, track] : state.tracks) {
-                    for (const auto& [sidx, clip] : track->clips) {
-                        std::string cname = clip->path;
-                        size_t last_slash = cname.find_last_of("/\\");
-                        if (last_slash != std::string::npos) {
-                            cname = cname.substr(last_slash + 1);
-                        }
-                        hibiki::sendClipInfo(tidx, sidx, cname, clip->path);
-                    }
-                }
+                SyncProjectToGui(state);
                 hibiki::sendAck("UNDO", true);
             } else {
                 hibiki::sendAck("UNDO", false);
@@ -440,17 +430,7 @@ void run_ipc_loop(ProjectState& state) {
             std::vector<uint8_t> next;
             if (history.redo(current, next)) {
                 ApplyProjectState(state, next);
-                hibiki::sendClearProject();
-                for (const auto& [tidx, track] : state.tracks) {
-                    for (const auto& [sidx, clip] : track->clips) {
-                        std::string cname = clip->path;
-                        size_t last_slash = cname.find_last_of("/\\");
-                        if (last_slash != std::string::npos) {
-                            cname = cname.substr(last_slash + 1);
-                        }
-                        hibiki::sendClipInfo(tidx, sidx, cname, clip->path);
-                    }
-                }
+                SyncProjectToGui(state);
                 hibiki::sendAck("REDO", true);
             } else {
                 hibiki::sendAck("REDO", false);

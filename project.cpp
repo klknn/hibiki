@@ -1,4 +1,5 @@
 #include "project.hpp"
+#include "ipc.hpp"
 #include "hibiki_project_generated.h"
 #include <fstream>
 #include <iostream>
@@ -179,6 +180,33 @@ bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data) {
         }
     }
     return true;
+}
+
+void SyncProjectToGui(const ProjectState& state) {
+    hibiki::sendClearProject();
+    for (const auto& [tidx, track] : state.tracks) {
+        // Sync Clips
+        for (const auto& [sidx, clip] : track->clips) {
+            std::string cname = clip->path;
+            size_t last_slash = cname.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+                cname = cname.substr(last_slash + 1);
+            }
+            hibiki::sendClipInfo(tidx, sidx, cname, clip->path);
+        }
+        // Sync Plugins
+        for (int pidx = 0; pidx < (int)track->plugins.size(); ++pidx) {
+            auto& plugin = track->plugins[pidx];
+            std::vector<VstParamInfo> params;
+            for (int i = 0; i < plugin->getParameterCount(); ++i) {
+                VstParamInfo info;
+                if (plugin->getParameterInfo(i, info)) {
+                    params.push_back(info);
+                }
+            }
+            hibiki::sendParamList(tidx, pidx, plugin->getName(), plugin->isInstrument(), params);
+        }
+    }
 }
 
 } // namespace hibiki

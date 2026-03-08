@@ -28,5 +28,6 @@ bool LoadProject(ProjectState& state, const std::string& path);
 
 std::vector<uint8_t> CaptureProjectState(const ProjectState& state);
 bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data);
+void SyncProjectToGui(const ProjectState& state);
 
 } // namespace hibiki

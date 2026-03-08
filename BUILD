@@ -104,6 +104,7 @@ cc_library(
     hdrs = ["project.hpp"],
     deps = [
         ":track",
+        ":ipc",
         ":hibiki_project_cc",
     ],
 )
@@ -119,15 +120,30 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "history",
+    srcs = ["history.cpp"],
+    hdrs = ["history.hpp"],
+)
+
+cc_test(
+    name = "history_test",
+    srcs = ["history_test.cpp"],
+    deps = [
+        ":history",
+        "@googletest//:gtest_main",
+    ],
+)
+
 cc_binary(
     name = "hbk-play",
     srcs = [
-        "history.hpp",
         "main.cpp",
     ],
     deps = [
         ":audio_file",
         ":clip",
+        ":history",
         ":ipc",
         ":midi",
         ":project",

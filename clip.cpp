@@ -4,7 +4,7 @@
 #include <algorithm>
 
 namespace hibiki {
-
+/*
 std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
     auto clip = MaybeLoadClip(path, is_loop);
     if (clip) {
@@ -16,13 +16,15 @@ std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
 }
 
 std::expected<Clip, std::string> MaybeLoadClip(const std::string& path, bool is_loop) {
+*/
+std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
     Clip clip;
     clip.path = path;
     clip.is_loop = is_loop;
 
     if (path.size() > 4 && path.substr(path.size() - 4) == ".wav") {
         if (!LoadWav(path, clip.audio_data, clip.num_channels, clip.duration_sec)) {
-            return std::unexpected("Cannot load wav: " + path);
+            return nullptr; //std::unexpected("Cannot load wav: " + path);
         }
         clip.type = Clip::Type::AUDIO;
 
@@ -47,7 +49,7 @@ std::expected<Clip, std::string> MaybeLoadClip(const std::string& path, bool is_
     } else {
         auto events = hibiki::parseMidi(path);
         if (events.empty()) {
-            return std::unexpected("Failed to load or empty midi: " + path);
+            return nullptr; // std::unexpected("Failed to load or empty midi: " + path);
         }
         clip.midi_events = std::move(events);
         clip.type = Clip::Type::MIDI;
@@ -56,7 +58,7 @@ std::expected<Clip, std::string> MaybeLoadClip(const std::string& path, bool is_
         }
     }
 
-    return clip;
+    return std::make_unique<Clip>(clip); // clip;
 }
 
 } // namespace hibiki

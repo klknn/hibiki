@@ -363,6 +363,7 @@ java_library(
 java_library(
     name = "hibiki-gui-lib",
     srcs = glob(["src/main/java/hibiki/**/*.java"]),
+    resources = glob(["src/main/resources/**/*"]),
     deps = [
         ":hibiki_request_java_lib",
         ":hibiki_response_java_lib",

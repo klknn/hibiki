@@ -8,7 +8,10 @@
 #include <memory>
 #include <thread>
 #include <vector>
-
+#include <fstream>
+#include <cstdlib>
+#include <cstdio>
+#include <string>
 
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/gui/iplugview.h"
@@ -417,13 +420,19 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(const std::string
     return listPlugins(path);
 #endif
 
-    std::string cmd = std::string("\"") + executable_path + "\" --list \"" + path + "\" 2>/dev/null";
-    FILE* fp = popen(cmd.c_str(), "r");
-    if (!fp) return plugins;
+    std::string tmp_file = "vst3_plugins_temp_output.txt";
+#ifdef _WIN32
+    std::string cmd = std::string("\"\"") + executable_path + "\" --list \"" + path + "\" > " + tmp_file + " 2> NUL\"";
+#else
+    std::string cmd = std::string("\"") + executable_path + "\" --list \"" + path + "\" > " + tmp_file + " 2>/dev/null";
+#endif
+    std::system(cmd.c_str());
 
-    char line[1024];
-    while (fgets(line, sizeof(line), fp)) {
-        std::string s(line);
+    std::ifstream ifs(tmp_file);
+    if (!ifs.is_open()) return plugins;
+
+    std::string s;
+    while (std::getline(ifs, s)) {
         size_t first_colon = s.find(':');
         size_t last_colon = s.find_last_of(':');
         if (first_colon != std::string::npos && last_colon != std::string::npos && first_colon != last_colon) {
@@ -441,6 +450,7 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(const std::string
             }
         }
     }
-    pclose(fp);
+    ifs.close();
+    std::remove(tmp_file.c_str());
     return plugins;
 }

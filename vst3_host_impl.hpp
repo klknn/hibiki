@@ -22,6 +22,7 @@ struct Vst3PluginImpl {
     std::string path;
     int pluginIndex = 0;
     bool isInstrument = false;
+    std::thread editorThread;
     std::atomic<bool> editorRunning{false};
     std::atomic<uint64_t> editorWindow{0};
     void* windowDelegate = nullptr;

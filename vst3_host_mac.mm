@@ -20,7 +20,7 @@ void Vst3Plugin::runMainLoop() {
     @autoreleasepool {
         std::cerr << "BACKEND: Starting macOS main loop..." << std::endl;
         [NSApplication sharedApplication];
-        [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
         [NSApp run];
         std::cerr << "BACKEND: macOS main loop exited." << std::endl;
     }

@@ -29,6 +29,7 @@ public class BrowserPane extends JPanel {
     private DefaultMutableTreeNode audioNode;
     
     private Map<String, List<PluginMetadata>> bundlesDiscovered = new ConcurrentHashMap<>();
+    private javax.swing.Timer refreshDebounceTimer;
 
     private static class PluginMetadata {
         int index;
@@ -132,11 +133,36 @@ public class BrowserPane extends JPanel {
                 plugins.add(new PluginMetadata(p.index(), p.name(), p.vendor()));
             }
             bundlesDiscovered.put(path, plugins);
-            SwingUtilities.invokeLater(this::refreshPluginsTree);
+            // Debounce: wait 300ms after last notification before refreshing
+            SwingUtilities.invokeLater(() -> {
+                if (refreshDebounceTimer != null) {
+                    refreshDebounceTimer.stop();
+                }
+                refreshDebounceTimer = new javax.swing.Timer(300, ev -> refreshPluginsTree());
+                refreshDebounceTimer.setRepeats(false);
+                refreshDebounceTimer.start();
+            });
         }
     }
 
     private synchronized void refreshPluginsTree() {
+        // Save current selection and expanded paths
+        TreePath selectionPath = tree.getSelectionPath();
+        String selectedNodeName = null;
+        if (selectionPath != null) {
+            DefaultMutableTreeNode selNode = (DefaultMutableTreeNode) selectionPath.getLastPathComponent();
+            selectedNodeName = selNode.toString();
+        }
+        java.util.Enumeration<TreePath> expandedPaths = tree.getExpandedDescendants(new TreePath(root));
+        Set<String> expandedNames = new java.util.HashSet<>();
+        if (expandedPaths != null) {
+            while (expandedPaths.hasMoreElements()) {
+                TreePath ep = expandedPaths.nextElement();
+                DefaultMutableTreeNode epNode = (DefaultMutableTreeNode) ep.getLastPathComponent();
+                expandedNames.add(epNode.toString());
+            }
+        }
+
         pluginsNode.removeAllChildren();
         
         for (Map.Entry<String, List<PluginMetadata>> entry : bundlesDiscovered.entrySet()) {
@@ -149,6 +175,37 @@ public class BrowserPane extends JPanel {
 
         sortAndGroupPlugins(pluginsNode);
         treeModel.reload(pluginsNode);
+
+        // Restore expanded paths
+        restoreExpansion(new TreePath(root), expandedNames);
+
+        // Restore selection
+        if (selectedNodeName != null) {
+            restoreSelection(new TreePath(root), selectedNodeName);
+        }
+    }
+
+    private void restoreExpansion(TreePath parent, Set<String> expandedNames) {
+        DefaultMutableTreeNode node = (DefaultMutableTreeNode) parent.getLastPathComponent();
+        if (expandedNames.contains(node.toString())) {
+            tree.expandPath(parent);
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            DefaultMutableTreeNode child = (DefaultMutableTreeNode) node.getChildAt(i);
+            restoreExpansion(parent.pathByAddingChild(child), expandedNames);
+        }
+    }
+
+    private void restoreSelection(TreePath parent, String targetName) {
+        DefaultMutableTreeNode node = (DefaultMutableTreeNode) parent.getLastPathComponent();
+        if (node.toString().equals(targetName) && node.isLeaf()) {
+            tree.setSelectionPath(parent);
+            return;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            DefaultMutableTreeNode child = (DefaultMutableTreeNode) node.getChildAt(i);
+            restoreSelection(parent.pathByAddingChild(child), targetName);
+        }
     }
 
     private void populateTree() {

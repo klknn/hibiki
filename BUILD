@@ -122,6 +122,7 @@ cc_library(
 cc_binary(
     name = "hbk-play",
     srcs = [
+        "history.hpp",
         "main.cpp",
     ],
     deps = [
@@ -286,6 +287,10 @@ flatbuffer_library_public(
         "hibiki/ipc/DeleteClipT.java",
         "hibiki/ipc/ListPlugins.java",
         "hibiki/ipc/ListPluginsT.java",
+        "hibiki/ipc/Undo.java",
+        "hibiki/ipc/UndoT.java",
+        "hibiki/ipc/Redo.java",
+        "hibiki/ipc/RedoT.java",
     ],
     language_flag = "--java --gen-object-api",
 )

@@ -9,6 +9,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include "history.hpp"
 #include <vector>
 
 #include "midi.hpp"
@@ -232,6 +233,7 @@ void playback_thread(ProjectState& state) {
 }
 
 void run_ipc_loop(ProjectState& state) {
+    HistoryManager history;
     while (true) {
         uint32_t msg_size = 0;
         std::cin.read(reinterpret_cast<char*>(&msg_size), sizeof(msg_size));
@@ -262,6 +264,7 @@ void run_ipc_loop(ProjectState& state) {
             std::string vpath = cmd->path()->str();
             int pidx = cmd->plugin_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
             auto track = hibiki::GetOrCreateTrack(state, tidx);
             int target_idx = track->LoadPlugin(vpath, pidx, state.sample_rate);
             if (target_idx != -1) {
@@ -285,6 +288,7 @@ void run_ipc_loop(ProjectState& state) {
         } else if (command_type == hibiki::ipc::Command_LoadProject) {
             auto cmd = request->command_as_LoadProject();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
             hibiki::LoadProject(state, cmd->path()->str());
             hibiki::sendAck("LOAD_PROJECT", true);
         } else if (command_type == hibiki::ipc::Command_LoadClip) {
@@ -294,6 +298,7 @@ void run_ipc_loop(ProjectState& state) {
             std::string mpath = cmd->path()->str();
             bool is_loop = cmd->is_loop();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
             auto track = hibiki::GetOrCreateTrack(state, tidx);
             if (track->LoadClip(sidx, mpath, is_loop)) {
                 hibiki::sendAck("LOAD_CLIP", true);
@@ -309,6 +314,7 @@ void run_ipc_loop(ProjectState& state) {
         } else if (command_type == hibiki::ipc::Command_SetClipLoop) {
             auto cmd = request->command_as_SetClipLoop();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
             hibiki::GetOrCreateTrack(state, cmd->track_index())->SetClipLoop(cmd->slot_index(), cmd->is_loop());
             hibiki::sendAck("SET_CLIP_LOOP", true);
         } else if (command_type == hibiki::ipc::Command_Play) {
@@ -339,6 +345,7 @@ void run_ipc_loop(ProjectState& state) {
             int tidx = cmd->track_index();
             int pidx = cmd->plugin_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
             auto track = hibiki::GetOrCreateTrack(state, tidx);
             if (track->RemovePlugin(pidx)) {
                 hibiki::sendAck("REMOVE_PLUGIN", true);
@@ -391,6 +398,8 @@ void run_ipc_loop(ProjectState& state) {
             auto cmd = request->command_as_DeleteClip();
             int track_idx = cmd->track_index();
             int slot_index = cmd->slot_index();
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
             if (hibiki::GetOrCreateTrack(state, track_idx)->DeleteClip(slot_index)) {
                 hibiki::sendAck("DELETE_CLIP", true);
                 hibiki::sendClipInfo(track_idx, slot_index, "", "");
@@ -404,6 +413,48 @@ void run_ipc_loop(ProjectState& state) {
             std::thread([path]() {
                 hibiki::sendPluginList(path, Vst3Plugin::listPluginsIsolated(path));
             }).detach();
+        } else if (command_type == hibiki::ipc::Command_Undo) {
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            std::vector<uint8_t> current = CaptureProjectState(state);
+            std::vector<uint8_t> prev;
+            if (history.undo(current, prev)) {
+                ApplyProjectState(state, prev);
+                hibiki::sendClearProject();
+                for (const auto& [tidx, track] : state.tracks) {
+                    for (const auto& [sidx, clip] : track->clips) {
+                        std::string cname = clip->path;
+                        size_t last_slash = cname.find_last_of("/\\");
+                        if (last_slash != std::string::npos) {
+                            cname = cname.substr(last_slash + 1);
+                        }
+                        hibiki::sendClipInfo(tidx, sidx, cname, clip->path);
+                    }
+                }
+                hibiki::sendAck("UNDO", true);
+            } else {
+                hibiki::sendAck("UNDO", false);
+            }
+        } else if (command_type == hibiki::ipc::Command_Redo) {
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            std::vector<uint8_t> current = CaptureProjectState(state);
+            std::vector<uint8_t> next;
+            if (history.redo(current, next)) {
+                ApplyProjectState(state, next);
+                hibiki::sendClearProject();
+                for (const auto& [tidx, track] : state.tracks) {
+                    for (const auto& [sidx, clip] : track->clips) {
+                        std::string cname = clip->path;
+                        size_t last_slash = cname.find_last_of("/\\");
+                        if (last_slash != std::string::npos) {
+                            cname = cname.substr(last_slash + 1);
+                        }
+                        hibiki::sendClipInfo(tidx, sidx, cname, clip->path);
+                    }
+                }
+                hibiki::sendAck("REDO", true);
+            } else {
+                hibiki::sendAck("REDO", false);
+            }
         } else if (command_type == hibiki::ipc::Command_Quit) {
             state.quit = true;
             break;

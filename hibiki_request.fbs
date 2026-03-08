@@ -93,8 +93,13 @@ union Command {
     PlayScene,
     DeleteClip,
     Quit,
-    ListPlugins
+    ListPlugins,
+    Undo,
+    Redo
 }
+
+table Undo {}
+table Redo {}
 
 table Request {
     command: Command;

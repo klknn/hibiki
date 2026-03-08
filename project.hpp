@@ -26,4 +26,7 @@ Track* GetOrCreateTrack(ProjectState& state, int track_index);
 bool SaveProject(const ProjectState& state, const std::string& path);
 bool LoadProject(ProjectState& state, const std::string& path);
 
+std::vector<uint8_t> CaptureProjectState(const ProjectState& state);
+bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data);
+
 } // namespace hibiki

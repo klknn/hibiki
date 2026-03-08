@@ -2,6 +2,9 @@
 #include "vst3_host.hpp"
 #include <iostream>
 #include <mutex>
+#include <queue>
+#include <thread>
+#include <condition_variable>
 #include "hibiki_request_generated.h"
 #include "hibiki_response_generated.h"
 
@@ -9,14 +12,48 @@ namespace hibiki {
 
 bool g_ipc_enabled = true;
 
+// Async IPC queue to avoid blocking the audio thread on stdout writes.
+// The audio thread pushes serialized messages into a queue, and a dedicated
+// sender thread drains it to stdout asynchronously.
+static std::mutex g_queue_mutex;
+static std::condition_variable g_queue_cv;
+static std::queue<std::vector<uint8_t>> g_msg_queue;
+static bool g_sender_running = false;
+static std::thread g_sender_thread;
+
+static void senderLoop() {
+    while (true) {
+        std::vector<uint8_t> msg;
+        {
+            std::unique_lock<std::mutex> lock(g_queue_mutex);
+            g_queue_cv.wait(lock, [] { return !g_msg_queue.empty() || !g_sender_running; });
+            if (!g_sender_running && g_msg_queue.empty()) break;
+            msg = std::move(g_msg_queue.front());
+            g_msg_queue.pop();
+        }
+        uint32_t msg_size = static_cast<uint32_t>(msg.size());
+        std::cout.write(reinterpret_cast<const char*>(&msg_size), sizeof(msg_size));
+        std::cout.write(reinterpret_cast<const char*>(msg.data()), msg.size());
+        std::cout.flush();
+    }
+}
+
+static void ensureSenderThread() {
+    if (!g_sender_running) {
+        g_sender_running = true;
+        g_sender_thread = std::thread(senderLoop);
+        g_sender_thread.detach();
+    }
+}
+
 void sendNotification(const uint8_t* buf, size_t size) {
     if (!g_ipc_enabled) return;
-    static std::mutex cout_mutex;
-    std::lock_guard<std::mutex> lock(cout_mutex);
-    uint32_t msg_size = static_cast<uint32_t>(size);
-    std::cout.write(reinterpret_cast<const char*>(&msg_size), sizeof(msg_size));
-    std::cout.write(reinterpret_cast<const char*>(buf), size);
-    std::cout.flush();
+    ensureSenderThread();
+    {
+        std::lock_guard<std::mutex> lock(g_queue_mutex);
+        g_msg_queue.emplace(buf, buf + size);
+    }
+    g_queue_cv.notify_one();
 }
 
 void sendAck(const char* cmd_type, bool success) {

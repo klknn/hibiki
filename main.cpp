@@ -71,8 +71,6 @@ void playback_thread(ProjectState& state) {
     std::vector<float> mixBufferR(block_size);
     std::vector<float> interleaved(block_size * actual_channels);
 
-    int level_counter = 0;
-
     while (!state.quit) {
 
         std::fill(mixBufferL.begin(), mixBufferL.end(), 0.0f);
@@ -99,8 +97,6 @@ void playback_thread(ProjectState& state) {
                     context.continuousTimeSamples = track->current_time_sec * sample_rate;
                     context.projectTimeMusic = track->current_time_sec * (context.tempo / 60.0);
 
-                    // Mix Session Clip into buffer (abstracted in a lambda or local logic)
-                    // (For brevity in this plan, I'll keep the logic inline but optimized)
                     if (clip->type == Clip::Type::MIDI) {
                         std::vector<MidiNoteEvent> blockEvents;
                         int search_idx = track->current_midi_idx;
@@ -230,27 +226,7 @@ void playback_thread(ProjectState& state) {
             state.is_playing = true;
         }
 
-        if (state.is_timeline_playing) {
-            state.playhead_pos_sec += time_per_block;
-        }
-
-        if (level_counter++ % 16 == 0) { // Approx 20Hz update
-            hibiki::sendPlayheadInfo((float)state.playhead_pos_sec, (float)state.bpm, state.is_timeline_playing);
-            
-            flatbuffers::FlatBufferBuilder builder(512);
-            std::vector<flatbuffers::Offset<hibiki::ipc::TrackLevel>> level_offsets;
-            {
-                std::lock_guard<std::mutex> llock(state.levels_mutex);
-                for (auto& pair : state.track_levels) {
-                    level_offsets.push_back(hibiki::ipc::CreateTrackLevel(builder, pair.first, pair.second.first, pair.second.second));
-                }
-            }
-            auto levels_vec = builder.CreateVector(level_offsets);
-            auto levels_off = hibiki::ipc::CreateTrackLevels(builder, levels_vec);
-            auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_TrackLevels, levels_off.Union());
-            builder.Finish(nf_off);
-            sendNotification(builder.GetBufferPointer(), builder.GetSize());
-        }
+        // NO IPC work here — notification_thread handles it separately
 
         if (actual_channels >= 2) {
             for (int i = 0; i < block_size; ++i) {
@@ -269,6 +245,31 @@ void playback_thread(ProjectState& state) {
         alsa.write(interleaved, block_size);
     }
 }
+
+// Separate thread for sending GUI notifications (playhead, levels).
+// Runs at ~30Hz, completely independent of the audio thread.
+void notification_thread(ProjectState& state) {
+    while (!state.quit) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(33)); // ~30Hz
+
+        hibiki::sendPlayheadInfo((float)state.playhead_pos_sec, (float)state.bpm, state.is_timeline_playing);
+
+        flatbuffers::FlatBufferBuilder builder(512);
+        std::vector<flatbuffers::Offset<hibiki::ipc::TrackLevel>> level_offsets;
+        {
+            std::lock_guard<std::mutex> llock(state.levels_mutex);
+            for (auto& pair : state.track_levels) {
+                level_offsets.push_back(hibiki::ipc::CreateTrackLevel(builder, pair.first, pair.second.first, pair.second.second));
+            }
+        }
+        auto levels_vec = builder.CreateVector(level_offsets);
+        auto levels_off = hibiki::ipc::CreateTrackLevels(builder, levels_vec);
+        auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_TrackLevels, levels_off.Union());
+        builder.Finish(nf_off);
+        sendNotification(builder.GetBufferPointer(), builder.GetSize());
+    }
+}
+
 
 void run_ipc_loop(ProjectState& state) {
     HistoryManager history;
@@ -523,6 +524,7 @@ int main(int argc, char** argv) {
 
     hibiki::ProjectState state;
     std::thread audio_thread(hibiki::playback_thread, std::ref(state));
+    std::thread notif_thread(hibiki::notification_thread, std::ref(state));
 
 #if defined(__APPLE__)
     std::thread ipc_thread(hibiki::run_ipc_loop, std::ref(state));
@@ -532,6 +534,7 @@ int main(int argc, char** argv) {
     hibiki::run_ipc_loop(state);
 #endif
 
+    if (notif_thread.joinable()) notif_thread.join();
     if (audio_thread.joinable()) audio_thread.join();
     return 0;
 }

@@ -328,6 +328,7 @@ void run_ipc_loop(ProjectState& state) {
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
             hibiki::LoadProject(state, cmd->path()->str());
+            hibiki::SyncProjectToGui(state);
             hibiki::sendAck("LOAD_PROJECT", true);
         } else if (command_type == hibiki::ipc::Command_LoadClip) {
             auto cmd = request->command_as_LoadClip();

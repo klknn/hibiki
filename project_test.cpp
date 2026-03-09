@@ -97,3 +97,44 @@ TEST_F(ProjectTest, BounceProjectWithDexed) {
     
     std::remove(tmp_wav.c_str());
 }
+
+TEST_F(ProjectTest, LoadProjectWithTimelineClips) {
+    hibiki::ProjectState state;
+    state.sample_rate = 44100.0;
+    
+    // Load the timeline_midi.hbk project file
+    std::string project_path = hibiki::find_test_file("testdata/timeline_midi.hbk");
+    bool result = hibiki::LoadProject(state, project_path);
+    ASSERT_TRUE(result) << "Failed to load timeline_midi.hbk";
+    
+    // Verify BPM was loaded
+    EXPECT_GT(state.bpm, 0.0) << "BPM should be set";
+    
+    // Verify tracks were created
+    EXPECT_GT(state.tracks.size(), 0) << "Should have at least one track";
+    
+    // Check if there are timeline clips or plugins
+    bool has_content = false;
+    for (const auto& [idx, track] : state.tracks) {
+        if (!track->timeline_clips.empty()) {
+            has_content = true;
+            // Verify timeline clip has valid data
+            for (const auto& tc : track->timeline_clips) {
+                EXPECT_NE(tc->clip, nullptr) << "Timeline clip should have valid clip data";
+                EXPECT_GE(tc->duration_sec, 0.0) << "Duration should be non-negative";
+            }
+        }
+        if (!track->plugins.empty()) {
+            has_content = true;
+        }
+        if (!track->clips.empty()) {
+            has_content = true;
+        }
+    }
+    
+    EXPECT_TRUE(has_content) << "Project should contain at least some content (clips or plugins)";
+    
+    // Clean up
+    state.tracks.clear();
+}
+

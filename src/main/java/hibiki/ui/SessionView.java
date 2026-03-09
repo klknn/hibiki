@@ -28,6 +28,8 @@ import hibiki.ipc.TrackLevel;
 import hibiki.ipc.ClipWaveform;
 
 public class SessionView extends JPanel {
+    private static SessionView instance;
+
     private JButton[][] slotButtons = new JButton[5][5]; // 4 tracks + master, 5 slots
     private String[][] slotPaths = new String[5][5]; // paths to loaded clips
     private LevelMeter[] trackMeters = new LevelMeter[5]; // 1-4 for tracks
@@ -35,7 +37,17 @@ public class SessionView extends JPanel {
     private JLabel[] trackHeaders = new JLabel[5]; // Track header labels
     private int selectedTrack = 0; // Currently selected track (0-based, but we use 1-4 for tracks)
 
+    public static SessionView getInstance() {
+        return instance;
+    }
+
+    /** Select track by index (1-based for tracks 1-4) */
+    public void selectTrackByIdx(int trackIdx) {
+        selectTrack(trackIdx);
+    }
+
     public SessionView() {
+        instance = this;
         setLayout(new BorderLayout());
         setBackground(Theme.getInstance().BG_DARK);
 

@@ -116,6 +116,25 @@ public class MainView extends JPanel implements Theme.ThemeListener {
             }
         });
 
+        // Number keys 1-4 = Select track (like Ableton Live)
+        for (int i = 1; i <= 4; i++) {
+            final int trackNum = i;
+            inputMap.put(KeyStroke.getKeyStroke(String.valueOf(i)), "selectTrack" + i);
+            actionMap.put("selectTrack" + i, new AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    // Select track in both views (SessionView uses 1-based, TimelineView uses
+                    // 0-based)
+                    if (TimelineView.getInstance() != null) {
+                        TimelineView.getInstance().setSelectedTrack(trackNum - 1);
+                    }
+                    if (SessionView.getInstance() != null) {
+                        SessionView.getInstance().selectTrackByIdx(trackNum);
+                    }
+                }
+            });
+        }
+
         // Status bar or footer
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 2));
         footer.setBackground(Theme.getInstance().BG_DARKER);

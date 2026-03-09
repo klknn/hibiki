@@ -36,7 +36,7 @@ public class GuiMain {
 
         // Use SimpleLaf for a modern look
         try {
-            UIManager.setLookAndFeel(new SimpleLaf());
+            UIManager.setLookAndFeel(new FlatDarkLaf());
         } catch (Exception ex) {
             System.err.println("Failed to initialize LaF");
         }

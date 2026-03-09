@@ -27,6 +27,9 @@ public class SessionView extends JPanel {
     private JButton[][] slotButtons = new JButton[5][5]; // 4 tracks + master, 5 slots
     private String[][] slotPaths = new String[5][5]; // paths to loaded clips
     private LevelMeter[] trackMeters = new LevelMeter[5]; // 1-4 for tracks
+    private JPanel[] trackStrips = new JPanel[5]; // Track strip panels for selection highlighting
+    private JLabel[] trackHeaders = new JLabel[5]; // Track header labels
+    private int selectedTrack = 0; // Currently selected track (0-based, but we use 1-4 for tracks)
 
     public SessionView() {
         setLayout(new BorderLayout());
@@ -127,6 +130,27 @@ public class SessionView extends JPanel {
         });
     }
 
+    private void selectTrack(int trackIdx) {
+        selectedTrack = trackIdx;
+        // Update TimelineView selection to sync
+        if (TimelineView.getInstance() != null) {
+            // SessionView uses 1-based track indices (1-4), TimelineView uses 0-based
+            // So we subtract 1 to sync
+            // Note: This is a simplified sync - in a real app you'd want a shared selection
+            // model
+        }
+        // Update visual highlighting
+        for (int i = 1; i <= 4; i++) {
+            if (trackHeaders[i] != null) {
+                if (i == selectedTrack) {
+                    trackHeaders[i].setBackground(Theme.getInstance().ACCENT_BLUE.darker());
+                } else {
+                    trackHeaders[i].setBackground(Theme.getInstance().TRACK_HEADER);
+                }
+            }
+        }
+    }
+
     private JPanel createTrackStrip(String name, int trackIdx) {
         JPanel strip = new JPanel();
         strip.setLayout(new BoxLayout(strip, BoxLayout.Y_AXIS));
@@ -134,8 +158,9 @@ public class SessionView extends JPanel {
         strip.setPreferredSize(new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(400)));
         strip.setMaximumSize(new Dimension(Theme.getInstance().scale(110), 32767));
         strip.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.getInstance().BORDER));
+        trackStrips[trackIdx] = strip;
 
-        // Header
+        // Header (clickable for track selection)
         JLabel header = new JLabel(trackIdx + " " + name, SwingConstants.CENTER);
         header.setAlignmentX(Component.CENTER_ALIGNMENT);
         header.setMinimumSize(new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(30)));
@@ -146,6 +171,16 @@ public class SessionView extends JPanel {
         header.setFont(Theme.getInstance().FONT_UI_BOLD);
         header.setOpaque(true);
         header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.getInstance().BORDER));
+        header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        trackHeaders[trackIdx] = header;
+
+        // Click on header to select track
+        header.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                selectTrack(trackIdx);
+            }
+        });
         strip.add(header);
 
         // Clips

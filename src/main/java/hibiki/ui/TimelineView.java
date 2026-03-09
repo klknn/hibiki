@@ -284,14 +284,14 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             float secondsPerBeat = 60.0f / bpm;
             float secondsPerBar = secondsPerBeat * 4;
             for (int b = 0; b < 200; b++) {
-                int x = (int) (b * secondsPerBar * PIXELS_PER_SECOND);
+                int x = scaleLabelWidth + (int) (b * secondsPerBar * PIXELS_PER_SECOND);
                 if (x > contentPanel.getWidth()) break;
                 g2.setColor(new Color(255, 255, 255, b % 4 == 0 ? 40 : 15));
                 g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
             }
         } else {
             for (int s = 0; s < 600; s += 5) {
-                int x = (int) (s * PIXELS_PER_SECOND);
+                int x = scaleLabelWidth + (int) (s * PIXELS_PER_SECOND);
                 g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
             }
         }
@@ -300,7 +300,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         for (int i = 0; i < tracks.size(); i++) {
             int y = scaleTimeRuler + i * scaleTrackHeight + 5;
             for (ClipRect clip : tracks.get(i).clips) {
-                int x = (int) (clip.startTime * PIXELS_PER_SECOND);
+                int x = scaleLabelWidth + (int) (clip.startTime * PIXELS_PER_SECOND);
                 int w = (int) (clip.duration * PIXELS_PER_SECOND);
                 int h = scaleTrackHeight - 10;
 
@@ -365,12 +365,12 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
         // Draw time ruler
         g2.setColor(Theme.getInstance().BG_DARKER);
-        g2.fillRect(0, 0, contentPanel.getWidth(), scaleTimeRuler);
+        g2.fillRect(scaleLabelWidth, 0, contentPanel.getWidth() - scaleLabelWidth, scaleTimeRuler);
         g2.setColor(Theme.getInstance().TEXT_DIM);
 
         if (gridUnit == GridUnit.SECONDS) {
             for (int s = 0; s < 600; s += 5) {
-                int x = (int) (s * PIXELS_PER_SECOND);
+                int x = scaleLabelWidth + (int) (s * PIXELS_PER_SECOND);
                 g2.drawLine(x, scaleTimeRuler - 10, x, scaleTimeRuler);
                 g2.drawString(s + "s", x + 2, scaleTimeRuler - 12);
             }
@@ -379,7 +379,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             float secondsPerBar = secondsPerBeat * 4;
             for (int b = 0; b < 200; b++) {
                 float time = b * secondsPerBar;
-                int x = (int) (time * PIXELS_PER_SECOND);
+                int x = scaleLabelWidth + (int) (time * PIXELS_PER_SECOND);
                 if (x > contentPanel.getWidth()) break;
                 g2.drawLine(x, scaleTimeRuler - 15, x, scaleTimeRuler);
                 g2.drawString((b + 1) + ".1", x + 2, scaleTimeRuler - 15);
@@ -387,7 +387,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         }
 
         // Draw playhead
-        int px = (int) (playheadPos * PIXELS_PER_SECOND);
+        int px = scaleLabelWidth + (int) (playheadPos * PIXELS_PER_SECOND);
         g2.setColor(Color.RED);
         g2.setStroke(new BasicStroke(2.0f));
         g2.drawLine(px, 0, px, contentPanel.getHeight());

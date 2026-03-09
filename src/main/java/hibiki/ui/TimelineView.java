@@ -22,10 +22,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
  
     enum GridUnit { SECONDS, BARS }
     private GridUnit gridUnit = GridUnit.BARS;
-    private float bpm = 120.0f;
-    private boolean isPlaying = false;
+    private volatile float bpm = 120.0f;
+    private volatile boolean isPlaying = false;
 
-    float playheadPos = 0.0f;
+    volatile float playheadPos = 0.0f; // volatile for thread-safe updates from notification thread
     final List<TrackTimeline> tracks = new ArrayList<>();
     private int selectedTrack = 0; // Currently selected track for plugin/clip operations
     private static TimelineView instance; // Static reference for global access
@@ -66,7 +66,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         updateContentSize();
 
         repaintTimer = new Timer(33, e -> {
-            repaint();
+            contentPanel.repaint(); // Must repaint contentPanel, not TimelineView, for playhead
         });
         repaintTimer.start();
 
@@ -205,7 +205,12 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     public void handleNotification(Notification n) {
         if (n.responseType() == hibiki.ipc.Response.PlayheadInfo) {
             hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) n.response(new hibiki.ipc.PlayheadInfo());
-            playheadPos = info.positionSec();
+            float newPos = info.positionSec();
+            // Debug: verify we receive PlayheadInfo
+            if ((int) newPos % 2 == 0 && (int) newPos != (int) playheadPos) {
+                System.err.println("[NOTIFY DEBUG] Received PlayheadInfo: " + newPos);
+            }
+            playheadPos = newPos;
             bpm = info.bpm();
             isPlaying = info.isPlaying();
         } else if (n.responseType() == hibiki.ipc.Response.TimelineClipInfo) {
@@ -405,6 +410,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
         // Draw playhead
         int px = scaleLabelWidth + (int) (playheadPos * PIXELS_PER_SECOND);
+        // Debug: print playhead position occasionally
+        if ((int) (playheadPos) % 3 == 0) {
+            System.err.println("[DRAW DEBUG] px=" + px + " playheadPos=" + playheadPos);
+        }
         g2.setColor(Color.RED);
         g2.setStroke(new BasicStroke(2.0f));
         g2.drawLine(px, 0, px, contentPanel.getHeight());

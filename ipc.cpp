@@ -20,6 +20,8 @@ static std::condition_variable g_queue_cv;
 static std::queue<std::vector<uint8_t>> g_msg_queue;
 static bool g_sender_running = false;
 static std::thread g_sender_thread;
+static std::mutex g_stdout_mutex; // Protects all stdout writes
+static const uint32_t IPC_MAGIC = 0x48424B49; // "HBKI" - Hibiki IPC magic header
 
 static void senderLoop() {
     while (true) {
@@ -31,10 +33,16 @@ static void senderLoop() {
             msg = std::move(g_msg_queue.front());
             g_msg_queue.pop();
         }
-        uint32_t msg_size = static_cast<uint32_t>(msg.size());
-        std::cout.write(reinterpret_cast<const char*>(&msg_size), sizeof(msg_size));
-        std::cout.write(reinterpret_cast<const char*>(msg.data()), msg.size());
-        std::cout.flush();
+        // Protect stdout writes with mutex to prevent corruption
+        {
+            std::lock_guard<std::mutex> cout_lock(g_stdout_mutex);
+            uint32_t magic = IPC_MAGIC;
+            uint32_t msg_size = static_cast<uint32_t>(msg.size());
+            std::cout.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+            std::cout.write(reinterpret_cast<const char*>(&msg_size), sizeof(msg_size));
+            std::cout.write(reinterpret_cast<const char*>(msg.data()), msg.size());
+            std::cout.flush();
+        }
     }
 }
 

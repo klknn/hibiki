@@ -221,6 +221,11 @@ void playback_thread(ProjectState& state) {
         
         if (state.is_timeline_playing) {
             state.playhead_pos_sec += time_per_block;
+            // Debug: print playhead every ~1 second
+            static int debug_counter = 0;
+            if (++debug_counter % (int)(sample_rate / block_size) == 0) {
+                std::cerr << "[DEBUG] playhead_pos_sec = " << state.playhead_pos_sec << std::endl;
+            }
         }
         
         if (!any_playing) {
@@ -256,8 +261,14 @@ void playback_thread(ProjectState& state) {
 // Separate thread for sending GUI notifications (playhead, levels).
 // Runs at ~30Hz, completely independent of the audio thread.
 void notification_thread(ProjectState& state) {
+    int debug_counter = 0;
     while (!state.quit) {
         std::this_thread::sleep_for(std::chrono::milliseconds(33)); // ~30Hz
+
+        // Debug: verify notification thread is still running
+        if (++debug_counter % 30 == 0) { // ~1 second
+            std::cerr << "[NOTIF_THREAD DEBUG] Still running, pos=" << state.playhead_pos_sec << std::endl;
+        }
 
         hibiki::sendPlayheadInfo((float)state.playhead_pos_sec, (float)state.bpm, state.is_timeline_playing);
 

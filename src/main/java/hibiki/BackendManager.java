@@ -83,10 +83,47 @@ public class BackendManager {
         }
     }
 
+    private static final int IPC_MAGIC = 0x48424B49; // "HBKI" - must match C++ side
+
     private void readStdout() {
         try (DataInputStream in = new DataInputStream(backendProcess.getInputStream())) {
+            int msgCount = 0;
             while (true) {
+                // Read and verify magic header
+                int magic = Integer.reverseBytes(in.readInt());
+                if (magic != IPC_MAGIC) {
+                    System.err.println("[READSTDOUT ERROR] Invalid magic: 0x" + Integer.toHexString(magic) + " at msg#"
+                            + msgCount + ", resyncing...");
+                    // Resync: search for magic header byte by byte
+                    // We need to find the sequence that when read as little-endian equals IPC_MAGIC
+                    // IPC_MAGIC = 0x48424B49, as little-endian bytes: 49 4B 42 48
+                    int resyncCount = 0;
+                    int buf = Integer.reverseBytes(magic); // Convert back to raw bytes order
+                    while (resyncCount < 10000) {
+                        int b = in.readByte() & 0xFF;
+                        buf = (buf << 8) | b; // Slide window left, add new byte on right
+                        if (buf == 0x494B4248) { // Raw bytes for magic in big-endian order
+                            System.err.println("[READSTDOUT] Resynced after " + resyncCount + " bytes");
+                            break;
+                        }
+                        resyncCount++;
+                    }
+                    if (resyncCount >= 10000) {
+                        System.err.println("[READSTDOUT ERROR] Could not resync after 10000 bytes, skipping...");
+                        continue;
+                    }
+                }
+
                 int size = Integer.reverseBytes(in.readInt()); // Little endian
+                msgCount++;
+
+                // Sanity check: messages should never be larger than 1MB
+                if (size < 0 || size > 1024 * 1024) {
+                    System.err.println(
+                            "[READSTDOUT ERROR] Invalid size: " + size + " at msg#" + msgCount + ", skipping...");
+                    continue;
+                }
+
                 byte[] buf = new byte[size];
                 in.readFully(buf);
 
@@ -112,9 +149,26 @@ public class BackendManager {
     }
 
     private void handleNotification(Notification notification) {
+        // Debug: log PlayheadInfo reception
+        if (notification.responseType() == hibiki.ipc.Response.PlayheadInfo) {
+            hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) notification
+                    .response(new hibiki.ipc.PlayheadInfo());
+            float pos = info.positionSec();
+            if ((int) pos % 2 == 0) {
+                System.err.println("[BACKEND_MGR DEBUG] Dispatching PlayheadInfo: " + pos + " to " + listeners.size()
+                        + " listeners");
+            }
+        }
         synchronized (listeners) {
+            int idx = 0;
             for (Consumer<Notification> listener : listeners) {
-                listener.accept(notification);
+                try {
+                    listener.accept(notification);
+                } catch (Exception e) {
+                    System.err.println("[LISTENER ERROR] Listener " + idx + " threw: " + e.getMessage());
+                    e.printStackTrace();
+                }
+                idx++;
             }
         }
     }

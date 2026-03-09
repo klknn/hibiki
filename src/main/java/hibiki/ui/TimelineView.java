@@ -74,7 +74,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         };
         rowHeader.setBackground(Theme.getInstance().BG_DARK);
 
-        // Add mouse listener to rowHeader for track selection
+        // Add mouse listener to rowHeader for track selection and rename
         rowHeader.addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
@@ -86,6 +86,20 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                         setSelectedTrack(trackIdx);
                         rowHeader.repaint();
                         contentPanel.repaint();
+                    }
+                }
+            }
+
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
+                    int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+                    if (e.getY() >= scaleTimeRuler) {
+                        int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
+                        if (trackIdx >= 0 && trackIdx < tracks.size()) {
+                            renameTrack(trackIdx);
+                        }
                     }
                 }
             }
@@ -254,6 +268,19 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         }
     }
 
+    /** Show dialog to rename a track */
+    private void renameTrack(int trackIdx) {
+        if (trackIdx < 0 || trackIdx >= tracks.size())
+            return;
+        TrackTimeline track = tracks.get(trackIdx);
+        String currentName = track.customName != null ? track.customName : "Track " + trackIdx;
+        String newName = JOptionPane.showInputDialog(this, "Enter track name:", currentName);
+        if (newName != null) {
+            track.customName = newName.isEmpty() ? null : newName;
+            repaint();
+        }
+    }
+
     private void updatePlayhead(int x) {
         // Content panel starts at x=0, no label offset needed
         float timelineX = Math.max(0, x);
@@ -334,7 +361,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             // Draw track number
             g2.setColor(Theme.getInstance().TEXT_BRIGHT);
             g2.setFont(Theme.getInstance().FONT_UI_BOLD);
-            g2.drawString("Track " + i, 5, y + 16);
+            g2.drawString(tracks.get(i).getDisplayName(), 5, y + 16);
 
             // Draw plugin name if available
             TrackTimeline track = tracks.get(i);
@@ -511,9 +538,17 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         Map<Integer, ClipRect> clipMap = new HashMap<>();
         String pluginName = null;
         boolean isInstrument = false;
+        String customName = null; // User-defined track name
 
         TrackTimeline(int index) {
             this.index = index;
+        }
+
+        String getDisplayName() {
+            if (customName != null && !customName.isEmpty()) {
+                return customName;
+            }
+            return "Track " + index;
         }
 
         void addOrUpdateClip(TimelineClipInfo info) {

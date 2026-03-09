@@ -58,6 +58,36 @@ TEST_F(ProjectTest, SaveAndLoad) {
     std::remove(tmp_file.c_str());
 }
 
+TEST_F(ProjectTest, SaveAndLoadTrackName) {
+    hibiki::ProjectState state;
+    state.bpm = 120.0;
+    
+    auto track = hibiki::GetOrCreateTrack(state, 0);
+    track->name = "Drums";
+    
+    auto track1 = hibiki::GetOrCreateTrack(state, 1);
+    track1->name = "Bass";
+
+    std::string tmp_file = std::tmpnam(nullptr);
+
+    // Save
+    hibiki::SaveProject(state, tmp_file);
+
+    // Modify state before load
+    state.tracks.clear();
+
+    // Load
+    hibiki::LoadProject(state, tmp_file);
+
+    auto loaded_track0 = hibiki::GetOrCreateTrack(state, 0);
+    EXPECT_EQ(loaded_track0->name, "Drums");
+    
+    auto loaded_track1 = hibiki::GetOrCreateTrack(state, 1);
+    EXPECT_EQ(loaded_track1->name, "Bass");
+
+    std::remove(tmp_file.c_str());
+}
+
 TEST_F(ProjectTest, BounceProjectWithDexed) {
     hibiki::ProjectState state;
     state.bpm = 120.0;

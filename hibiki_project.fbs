@@ -28,6 +28,7 @@ table TimelineClip {
 
 table Track {
     index: int;
+    name: string;  // User-defined track name
     plugins: [Plugin];
     clips: [Clip];
     timeline_clips: [TimelineClip];

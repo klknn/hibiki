@@ -177,6 +177,31 @@ public class SessionView extends JPanel {
         }
     }
 
+    /** Show dialog to rename a track (syncs with TimelineView) */
+    private void renameTrack(int trackIdx) {
+        if (trackIdx < 0 || trackIdx >= 4)
+            return;
+        // Get current name from TimelineView if available
+        String currentName = "Track " + trackIdx;
+        if (TimelineView.getInstance() != null && trackIdx < TimelineView.getInstance().tracks.size()) {
+            TimelineView.TrackTimeline t = TimelineView.getInstance().tracks.get(trackIdx);
+            currentName = t.getDisplayName();
+        }
+        String newName = JOptionPane.showInputDialog(this, "Enter track name:", currentName);
+        if (newName != null) {
+            // Update TimelineView (which stores the names)
+            if (TimelineView.getInstance() != null && trackIdx < TimelineView.getInstance().tracks.size()) {
+                TimelineView.getInstance().tracks.get(trackIdx).customName = newName.isEmpty() ? null : newName;
+                TimelineView.getInstance().repaint();
+            }
+            // Update SessionView header label
+            if (trackHeaders[trackIdx] != null) {
+                String displayName = (newName == null || newName.isEmpty()) ? "Track " + trackIdx : newName;
+                trackHeaders[trackIdx].setText(trackIdx + " " + displayName);
+            }
+        }
+    }
+
     private JPanel createTrackStrip(String name, int trackIdx) {
         JPanel strip = new JPanel();
         strip.setLayout(new BoxLayout(strip, BoxLayout.Y_AXIS));
@@ -200,11 +225,19 @@ public class SessionView extends JPanel {
         header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         trackHeaders[trackIdx] = header;
 
-        // Click on header to select track
+        // Click on header to select track, double-click to rename
+        int finalTrackIdx = trackIdx; // Final for lambda
         header.addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                selectTrack(trackIdx);
+                selectTrack(finalTrackIdx);
+            }
+
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    renameTrack(finalTrackIdx);
+                }
             }
         });
         strip.add(header);

@@ -53,7 +53,15 @@ bool SaveProject(const ProjectState& state, const std::string& path) {
         auto plugins_vec = builder.CreateVector(plugin_offsets);
         auto clips_vec = builder.CreateVector(clip_offsets);
         auto timeline_clips_vec = builder.CreateVector(timeline_clip_offsets);
-        track_offsets.push_back(hibiki::project::CreateTrack(builder, idx, plugins_vec, clips_vec, timeline_clips_vec));
+        auto name_str = builder.CreateString(track->name);
+        
+        hibiki::project::TrackBuilder tb(builder);
+        tb.add_index(idx);
+        tb.add_name(name_str);
+        tb.add_plugins(plugins_vec);
+        tb.add_clips(clips_vec);
+        tb.add_timeline_clips(timeline_clips_vec);
+        track_offsets.push_back(tb.Finish());
     }
 
     auto tracks_vec = builder.CreateVector(track_offsets);
@@ -94,6 +102,11 @@ bool LoadProject(ProjectState& state, const std::string& path) {
     if (project_data->tracks()) {
         for (const auto* track_data : *project_data->tracks()) {
             auto track = GetOrCreateTrack(state, track_data->index());
+            
+            // Load track name
+            if (track_data->name()) {
+                track->name = track_data->name()->str();
+            }
 
             if (track_data->plugins()) {
                 for (const auto* plugin_data : *track_data->plugins()) {
@@ -164,7 +177,15 @@ std::vector<uint8_t> CaptureProjectState(const ProjectState& state) {
         auto plugins_vec = builder.CreateVector(plugin_offsets);
         auto clips_vec = builder.CreateVector(clip_offsets);
         auto timeline_clips_vec = builder.CreateVector(timeline_clip_offsets);
-        track_offsets.push_back(hibiki::project::CreateTrack(builder, idx, plugins_vec, clips_vec, timeline_clips_vec));
+        auto name_str = builder.CreateString(track->name);
+        
+        hibiki::project::TrackBuilder tb(builder);
+        tb.add_index(idx);
+        tb.add_name(name_str);
+        tb.add_plugins(plugins_vec);
+        tb.add_clips(clips_vec);
+        tb.add_timeline_clips(timeline_clips_vec);
+        track_offsets.push_back(tb.Finish());
     }
 
     auto tracks_vec = builder.CreateVector(track_offsets);

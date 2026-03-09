@@ -26,6 +26,7 @@ class Track {
 public:
     DummyMutex mutex;
     int index;
+    std::string name;  // User-defined track name
     std::vector<std::unique_ptr<Vst3Plugin>> plugins;
     std::map<int, std::unique_ptr<Clip>> clips;
     std::vector<std::unique_ptr<TimelineClip>> timeline_clips;

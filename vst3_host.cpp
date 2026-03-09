@@ -126,6 +126,17 @@ Vst3Plugin::~Vst3Plugin() {
         impl->processor->setProcessing(false);
     }
 
+    // Disconnect connection points before terminating
+    if (impl->component && impl->controller) {
+        Steinberg::IPtr<Steinberg::Vst::IConnectionPoint> cp1, cp2;
+        impl->component->queryInterface(Steinberg::Vst::IConnectionPoint::iid, (void**)&cp1);
+        impl->controller->queryInterface(Steinberg::Vst::IConnectionPoint::iid, (void**)&cp2);
+        if (cp1 && cp2) {
+            cp1->disconnect(cp2);
+            cp2->disconnect(cp1);
+        }
+    }
+
     if (impl->controller) {
         impl->controller->setComponentHandler(nullptr);
         impl->controller->terminate();
@@ -135,6 +146,14 @@ Vst3Plugin::~Vst3Plugin() {
         impl->component->setActive(false);
         impl->component->terminate();
     }
+
+    // Explicitly release interfaces in correct order before module is destroyed
+    impl->view = nullptr;
+    impl->processor = nullptr;
+    impl->controller = nullptr;
+    impl->component = nullptr;
+    impl->hostContext = nullptr;
+    impl->module = nullptr;
 }
 
 

@@ -237,11 +237,13 @@ cc_test(
 
 cc_test(
     name = "project_test",
+    size = "small",
     srcs = ["project_test.cpp"],
     data = ["//testdata"],
     deps = [
         ":project",
         ":test_utils",
+        ":audio_file",
         "@googletest//:gtest_main",
     ],
     linkstatic = True,

@@ -86,7 +86,9 @@ public class BrowserPane extends JPanel {
 
         populateTree();
 
-        tree.setDragEnabled(true);
+        if (!java.awt.GraphicsEnvironment.isHeadless()) {
+            tree.setDragEnabled(true);
+        }
         tree.setTransferHandler(new TransferHandler() {
             @Override
             public int getSourceActions(JComponent c) {

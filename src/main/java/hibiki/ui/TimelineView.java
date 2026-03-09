@@ -86,6 +86,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     private void setupDropTarget() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
         new java.awt.dnd.DropTarget(contentPanel, new java.awt.dnd.DropTargetAdapter() {
             @Override
             public void drop(java.awt.dnd.DropTargetDropEvent dtde) {

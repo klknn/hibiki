@@ -2,12 +2,21 @@
 #include "project.hpp"
 #include "test_utils.hpp"
 #include "audio_file.hpp"
+#include "ipc.hpp"
 #include <cstdio>
 #include <cmath>
 
-void Vst3Plugin::stopEditor() {}  // for test.
+void Vst3Plugin::stopEditor() {}  // Stub for test linking.
 
-TEST(ProjectTest, GetOrCreateTrack) {
+class ProjectTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        // Disable IPC to prevent blocking on stdout writes during tests
+        hibiki::g_ipc_enabled = false;
+    }
+};
+
+TEST_F(ProjectTest, GetOrCreateTrack) {
     hibiki::ProjectState state;
     auto track0 = hibiki::GetOrCreateTrack(state, 0);
     ASSERT_NE(track0, nullptr);
@@ -22,13 +31,13 @@ TEST(ProjectTest, GetOrCreateTrack) {
     EXPECT_EQ(track0, track0_again);
 }
 
-TEST(ProjectTest, SaveAndLoad) {
+TEST_F(ProjectTest, SaveAndLoad) {
     hibiki::ProjectState state;
     state.bpm = 120.0;
     
     auto track = hibiki::GetOrCreateTrack(state, 0);
     track->LoadClip(0, hibiki::find_test_file("testdata/loop140.wav"));
-    
+
     std::string tmp_file = std::tmpnam(nullptr);
 
     // Save
@@ -44,12 +53,12 @@ TEST(ProjectTest, SaveAndLoad) {
     EXPECT_DOUBLE_EQ(state.bpm, 120.0);
     auto loaded_track = hibiki::GetOrCreateTrack(state, 0);
     EXPECT_EQ(loaded_track->clips.count(0), 1);
-    // EXPECT_EQ(loaded_track->clips[0]->type, hibiki::Clip::Type::AUDIO); // Temporarily removing till TODO in load project is fixed
+    EXPECT_EQ(loaded_track->clips[0]->type, hibiki::Clip::Type::AUDIO);
 
     std::remove(tmp_file.c_str());
 }
 
-TEST(ProjectTest, BounceProjectWithDexed) {
+TEST_F(ProjectTest, BounceProjectWithDexed) {
     hibiki::ProjectState state;
     state.bpm = 120.0;
     state.sample_rate = 44100.0;
@@ -83,6 +92,8 @@ TEST(ProjectTest, BounceProjectWithDexed) {
     
     EXPECT_GT(max_amp, 0.0f) << "Expected non-zero signal rendered from Dexed";
     
+    // Explicitly clean up VST3 plugins before test exit to prevent hang
+    state.tracks.clear();
+    
     std::remove(tmp_wav.c_str());
 }
-

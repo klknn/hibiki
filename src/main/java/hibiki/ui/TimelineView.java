@@ -236,11 +236,15 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
     /** Set the selected track (for sync with SessionView) */
     public void setSelectedTrack(int trackIdx) {
-        if (trackIdx >= 0) {
+        if (trackIdx >= 0 && trackIdx != selectedTrack) {
             selectedTrack = trackIdx;
             // Ensure track exists
             while (tracks.size() <= selectedTrack) {
                 tracks.add(new TrackTimeline(tracks.size()));
+            }
+            // Sync with SessionView (0-based)
+            if (SessionView.getInstance() != null) {
+                SessionView.getInstance().selectTrackByIdx(trackIdx);
             }
             // Notify PluginPane about track selection change
             if (PluginPane.getInstance() != null) {
@@ -330,7 +334,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             // Draw track number
             g2.setColor(Theme.getInstance().TEXT_BRIGHT);
             g2.setFont(Theme.getInstance().FONT_UI_BOLD);
-            g2.drawString("Track " + (i + 1), 5, y + 16);
+            g2.drawString("Track " + i, 5, y + 16);
 
             // Draw plugin name if available
             TrackTimeline track = tracks.get(i);

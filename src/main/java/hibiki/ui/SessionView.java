@@ -152,6 +152,8 @@ public class SessionView extends JPanel {
     }
 
     private void selectTrack(int trackIdx) {
+        if (trackIdx == selectedTrack)
+            return; // Prevent infinite recursion
         selectedTrack = trackIdx;
         // Sync with TimelineView (both now use 0-based)
         if (TimelineView.getInstance() != null) {

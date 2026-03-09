@@ -2,6 +2,7 @@ package hibiki.ui;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.KeyEvent;
 import hibiki.BackendManager;
 import hibiki.ipc.Response;
 import com.google.flatbuffers.FlatBufferBuilder;
@@ -87,7 +88,7 @@ public class MainView extends JPanel implements Theme.ThemeListener {
         });
 
         // Space = Play/Stop toggle (like Ableton Live)
-        inputMap.put(KeyStroke.getKeyStroke("SPACE"), "playStop");
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), "playStop");
         actionMap.put("playStop", new AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
@@ -96,7 +97,7 @@ public class MainView extends JPanel implements Theme.ThemeListener {
         });
 
         // Return/Enter = Reset playhead to start (like Ableton Live)
-        inputMap.put(KeyStroke.getKeyStroke("ENTER"), "resetPlayhead");
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "resetPlayhead");
         actionMap.put("resetPlayhead", new AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
@@ -105,7 +106,7 @@ public class MainView extends JPanel implements Theme.ThemeListener {
         });
 
         // Tab = Toggle between Session and Timeline view (like Ableton Live)
-        inputMap.put(KeyStroke.getKeyStroke("TAB"), "toggleView");
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_TAB, 0), "toggleView");
         final boolean[] isTimelineView = { false };
         actionMap.put("toggleView", new AbstractAction() {
             @Override
@@ -117,9 +118,10 @@ public class MainView extends JPanel implements Theme.ThemeListener {
         });
 
         // Number keys 1-4 = Select track (like Ableton Live)
+        int[] vkNumbers = { KeyEvent.VK_1, KeyEvent.VK_2, KeyEvent.VK_3, KeyEvent.VK_4 };
         for (int i = 1; i <= 4; i++) {
             final int trackNum = i;
-            inputMap.put(KeyStroke.getKeyStroke(String.valueOf(i)), "selectTrack" + i);
+            inputMap.put(KeyStroke.getKeyStroke(vkNumbers[i - 1], 0), "selectTrack" + i);
             actionMap.put("selectTrack" + i, new AbstractAction() {
                 @Override
                 public void actionPerformed(java.awt.event.ActionEvent e) {

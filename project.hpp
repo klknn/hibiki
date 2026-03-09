@@ -9,7 +9,7 @@ namespace hibiki {
 
 struct ProjectState {
     std::map<int, std::unique_ptr<Track>> tracks;
-    double bpm = 120.0;
+    double bpm = 140.0;
     bool is_playing = false;
     double sample_rate = 44100.0;
     

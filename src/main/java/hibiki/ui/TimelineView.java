@@ -179,6 +179,18 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         return selectedTrack;
     }
 
+    /** Set the selected track (for sync with SessionView) */
+    public void setSelectedTrack(int trackIdx) {
+        if (trackIdx >= 0) {
+            selectedTrack = trackIdx;
+            // Ensure track exists
+            while (tracks.size() <= selectedTrack) {
+                tracks.add(new TrackTimeline(tracks.size()));
+            }
+            repaint();
+        }
+    }
+
     private void updatePlayhead(int x) {
         playheadPos = Math.max(0, x / PIXELS_PER_SECOND);
         BackendManager.getInstance().seek(playheadPos);

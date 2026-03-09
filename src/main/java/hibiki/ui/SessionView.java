@@ -136,9 +136,9 @@ public class SessionView extends JPanel {
 
     private void selectTrack(int trackIdx) {
         selectedTrack = trackIdx;
-        // Update TimelineView selection to sync (0-based vs 1-based)
+        // Sync with TimelineView (SessionView uses 1-based, TimelineView uses 0-based)
         if (TimelineView.getInstance() != null) {
-            // Could sync here in the future with a shared selection model
+            TimelineView.getInstance().setSelectedTrack(trackIdx - 1);
         }
         // Update visual highlighting - entire track panel, not just header
         for (int i = 1; i <= 4; i++) {

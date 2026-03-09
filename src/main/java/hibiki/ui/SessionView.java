@@ -3,6 +3,7 @@ package hibiki.ui;
 import javax.swing.*;
 import java.awt.*;
 import hibiki.BackendManager;
+import hibiki.SimpleLaf;
 import com.google.flatbuffers.FlatBufferBuilder;
 import hibiki.ipc.Request;
 import hibiki.ipc.Command;
@@ -289,11 +290,23 @@ public class SessionView extends JPanel {
         JPopupMenu menu = new JPopupMenu();
 
         JMenuItem loadItem = new JMenuItem("Load Clip...");
-        loadItem.addActionListener(e -> {
-            JFileChooser chooser = new JFileChooser("testdata");
-            if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                File file = chooser.getSelectedFile();
-                sendLoadClip(trackIdx, slotIdx, file.getAbsolutePath(), false);
+        loadItem.addActionListener(ev -> {
+            if (UIManager.getLookAndFeel() instanceof SimpleLaf) {
+                Frame frame = (Frame) SwingUtilities.getWindowAncestor(this);
+                FileDialog dialog = new FileDialog(frame, "Load Clip", FileDialog.LOAD);
+                dialog.setDirectory("testdata");
+                dialog.setVisible(true);
+                String dir = dialog.getDirectory();
+                String file = dialog.getFile();
+                if (dir != null && file != null) {
+                    sendLoadClip(trackIdx, slotIdx, dir + file, false);
+                }
+            } else {
+                JFileChooser chooser = new JFileChooser("testdata");
+                if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                    File file = chooser.getSelectedFile();
+                    sendLoadClip(trackIdx, slotIdx, file.getAbsolutePath(), false);
+                }
             }
         });
         menu.add(loadItem);

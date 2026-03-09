@@ -3,6 +3,7 @@ package hibiki.ui;
 import javax.swing.*;
 import java.awt.*;
 import hibiki.BackendManager;
+import hibiki.SimpleLaf;
 import com.google.flatbuffers.FlatBufferBuilder;
 import hibiki.ipc.Request;
 import hibiki.ipc.Command;
@@ -160,16 +161,38 @@ public class TopBar extends JPanel {
     }
 
     private void showSaveDialog() {
-        JFileChooser chooser = new JFileChooser();
-        if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-            sendSaveProject(chooser.getSelectedFile().getAbsolutePath());
+        if (UIManager.getLookAndFeel() instanceof SimpleLaf) {
+            Frame frame = (Frame) SwingUtilities.getWindowAncestor(this);
+            FileDialog dialog = new FileDialog(frame, "Save Project", FileDialog.SAVE);
+            dialog.setVisible(true);
+            String dir = dialog.getDirectory();
+            String file = dialog.getFile();
+            if (dir != null && file != null) {
+                sendSaveProject(dir + file);
+            }
+        } else {
+            JFileChooser chooser = new JFileChooser();
+            if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                sendSaveProject(chooser.getSelectedFile().getAbsolutePath());
+            }
         }
     }
 
     private void showLoadDialog() {
-        JFileChooser chooser = new JFileChooser();
-        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            sendLoadProject(chooser.getSelectedFile().getAbsolutePath());
+        if (UIManager.getLookAndFeel() instanceof SimpleLaf) {
+            Frame frame = (Frame) SwingUtilities.getWindowAncestor(this);
+            FileDialog dialog = new FileDialog(frame, "Load Project", FileDialog.LOAD);
+            dialog.setVisible(true);
+            String dir = dialog.getDirectory();
+            String file = dialog.getFile();
+            if (dir != null && file != null) {
+                sendLoadProject(dir + file);
+            }
+        } else {
+            JFileChooser chooser = new JFileChooser();
+            if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                sendLoadProject(chooser.getSelectedFile().getAbsolutePath());
+            }
         }
     }
 

@@ -9,16 +9,28 @@ import java.net.URL;
 
 public class GuiMain {
     public static void main(String[] args) {
+        // Linux HiDPI scaling - must be set before any AWT/Swing initialization
+        String os = System.getProperty("os.name").toLowerCase();
+        if (os.contains("linux")) {
+            // Enable GTK-based file dialogs which respect system scaling
+            System.setProperty("sun.java2d.uiScale.enabled", "true");
+            // Try to auto-detect scale from GDK_SCALE env var
+            String gdkScale = System.getenv("GDK_SCALE");
+            if (gdkScale != null && !gdkScale.isEmpty()) {
+                System.setProperty("sun.java2d.uiScale", gdkScale);
+            }
+        }
+
         // macOS specific settings
-        if (System.getProperty("os.name").toLowerCase().contains("mac")) {
+        if (os.contains("mac")) {
             System.setProperty("apple.laf.useScreenMenuBar", "true");
             System.setProperty("apple.awt.application.name", "Hibiki");
             System.setProperty("apple.awt.application.appearance", "system");
         }
 
-        // Use FlatLaf for a modern look
+        // Use SimpleLaf for a modern look
         try {
-            UIManager.setLookAndFeel(new SimpleLaf()); // FlatDarkLaf());
+            UIManager.setLookAndFeel(new SimpleLaf());
         } catch (Exception ex) {
             System.err.println("Failed to initialize LaF");
         }

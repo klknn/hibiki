@@ -20,6 +20,8 @@ public class TopBar extends JPanel {
     private JLabel positionLabel;
     private JLabel cpuLabel;
     private ViewToggleListener viewToggleListener;
+    private boolean isLooping = false;
+    private JButton loopBtn;
 
     public interface ViewToggleListener {
         void onViewToggle(boolean isTimeline);
@@ -73,10 +75,22 @@ public class TopBar extends JPanel {
         JButton stopBtn = createFlatButton("■", e -> sendStop());
         stopBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
 
+        JButton recordBtn = createFlatButton("●", e -> {
+            /* Record placeholder for future */});
+        recordBtn.setForeground(new Color(200, 50, 50)); // Red for record
+        recordBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
+        recordBtn.setToolTipText("Record (coming soon)");
+
+        loopBtn = createFlatButton("⟳", e -> toggleLoop());
+        loopBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
+        loopBtn.setToolTipText("Loop toggle");
+
         positionLabel = createDisplayLabel("1. 1. 1", Theme.getInstance().scale(80));
 
         centerPanel.add(playBtn);
         centerPanel.add(stopBtn);
+        centerPanel.add(recordBtn);
+        centerPanel.add(loopBtn);
         centerPanel.add(Box.createHorizontalStrut(Theme.getInstance().scale(10)));
         centerPanel.add(positionLabel);
         add(centerPanel, BorderLayout.CENTER);
@@ -158,6 +172,16 @@ public class TopBar extends JPanel {
 
     private void sendStop() {
         BackendManager.getInstance().stopPlayback();
+    }
+
+    private void toggleLoop() {
+        isLooping = !isLooping;
+        if (isLooping) {
+            loopBtn.setForeground(Theme.getInstance().ACCENT_ORANGE);
+        } else {
+            loopBtn.setForeground(Theme.getInstance().TEXT_NORMAL);
+        }
+        // TODO: Send loop state to backend when implemented
     }
 
     private void showSaveDialog() {

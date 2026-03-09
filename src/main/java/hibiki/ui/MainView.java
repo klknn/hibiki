@@ -95,6 +95,15 @@ public class MainView extends JPanel implements Theme.ThemeListener {
             }
         });
 
+        // Return/Enter = Reset playhead to start (like Ableton Live)
+        inputMap.put(KeyStroke.getKeyStroke("ENTER"), "resetPlayhead");
+        actionMap.put("resetPlayhead", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                BackendManager.getInstance().seek(0);
+            }
+        });
+
         // Status bar or footer
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 2));
         footer.setBackground(Theme.getInstance().BG_DARKER);

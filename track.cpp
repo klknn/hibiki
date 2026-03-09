@@ -27,6 +27,10 @@ int Track::LoadPlugin(const std::string& path, int plugin_index, double sample_r
     }
 
     if (target_idx != -1) {
+        // Stop playback to prevent audio thread from accessing plugin during replacement
+        playing_slot = -1;
+        // Stop processing on the old plugin before destroying it
+        // This allows the old plugin to clean up properly
         plugins[target_idx] = std::move(plugin);
     } else if (is_instrument) {
         // New instrument, insert at 0

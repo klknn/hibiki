@@ -205,12 +205,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     public void handleNotification(Notification n) {
         if (n.responseType() == hibiki.ipc.Response.PlayheadInfo) {
             hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) n.response(new hibiki.ipc.PlayheadInfo());
-            float newPos = info.positionSec();
-            // Debug: verify we receive PlayheadInfo
-            if ((int) newPos % 2 == 0 && (int) newPos != (int) playheadPos) {
-                System.err.println("[NOTIFY DEBUG] Received PlayheadInfo: " + newPos);
-            }
-            playheadPos = newPos;
+            playheadPos = info.positionSec();
             bpm = info.bpm();
             isPlaying = info.isPlaying();
         } else if (n.responseType() == hibiki.ipc.Response.TimelineClipInfo) {
@@ -410,10 +405,6 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
         // Draw playhead
         int px = scaleLabelWidth + (int) (playheadPos * PIXELS_PER_SECOND);
-        // Debug: print playhead position occasionally
-        if ((int) (playheadPos) % 3 == 0) {
-            System.err.println("[DRAW DEBUG] px=" + px + " playheadPos=" + playheadPos);
-        }
         g2.setColor(Color.RED);
         g2.setStroke(new BasicStroke(2.0f));
         g2.drawLine(px, 0, px, contentPanel.getHeight());

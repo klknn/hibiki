@@ -149,26 +149,14 @@ public class BackendManager {
     }
 
     private void handleNotification(Notification notification) {
-        // Debug: log PlayheadInfo reception
-        if (notification.responseType() == hibiki.ipc.Response.PlayheadInfo) {
-            hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) notification
-                    .response(new hibiki.ipc.PlayheadInfo());
-            float pos = info.positionSec();
-            if ((int) pos % 2 == 0) {
-                System.err.println("[BACKEND_MGR DEBUG] Dispatching PlayheadInfo: " + pos + " to " + listeners.size()
-                        + " listeners");
-            }
-        }
         synchronized (listeners) {
-            int idx = 0;
             for (Consumer<Notification> listener : listeners) {
                 try {
                     listener.accept(notification);
                 } catch (Exception e) {
-                    System.err.println("[LISTENER ERROR] Listener " + idx + " threw: " + e.getMessage());
+                    // Log listener errors but don't crash
                     e.printStackTrace();
                 }
-                idx++;
             }
         }
     }

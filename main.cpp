@@ -548,6 +548,8 @@ int main(int argc, char** argv) {
 #endif
 
     hibiki::ProjectState state;
+    state.bpm = 140.0;  // Explicitly set default BPM
+    state.sample_rate = 44100.0;  // Explicitly set default sample rate
     std::thread audio_thread(hibiki::playback_thread, std::ref(state));
     std::thread notif_thread(hibiki::notification_thread, std::ref(state));
 

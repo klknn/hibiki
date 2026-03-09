@@ -1,6 +1,7 @@
 #pragma once
 
 #include "track.hpp"
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -9,9 +10,9 @@ namespace hibiki {
 
 struct ProjectState {
     std::map<int, std::unique_ptr<Track>> tracks;
-    double bpm = 140.0;
+    double bpm = std::numeric_limits<double>::quiet_NaN();  // NaN to catch uninitialized BPM bugs
     bool is_playing = false;
-    double sample_rate = 44100.0;
+    double sample_rate = std::numeric_limits<double>::quiet_NaN();  // NaN to catch uninitialized sample_rate bugs
     
     double playhead_pos_sec = 0.0;
     bool is_timeline_playing = false;

@@ -160,7 +160,11 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec, doub
         : (float)(tc->duration_beats * 60.0 / bpm);
     timeline_clips.push_back(std::move(tc));
     int clip_idx = (int)timeline_clips.size() - 1;
-    hibiki::sendTimelineClipInfo(index, clip_idx, path, path, (float)start_time_sec, duration_for_gui, waveform);
+    // Use basename for display name
+    std::string basename = path;
+    size_t pos = path.find_last_of("/\\");
+    if (pos != std::string::npos) basename = path.substr(pos + 1);
+    hibiki::sendTimelineClipInfo(index, clip_idx, basename, path, (float)start_time_sec, duration_for_gui, waveform);
 }
 
 void Track::RemoveTimelineClip(int clip_index) {

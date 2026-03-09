@@ -191,3 +191,31 @@ TEST_F(ProjectTest, SaveAndLoadCorrectProjectStructure) {
     state.tracks.clear();
     std::remove(tmp_file.c_str());
 }
+
+// Test for bug: crash when deleting plugin then loading new plugin to empty track
+TEST_F(ProjectTest, DeletePluginThenLoadNew) {
+    hibiki::ProjectState state;
+    state.bpm = 120.0;
+    state.sample_rate = 44100.0;
+    
+    auto track = hibiki::GetOrCreateTrack(state, 0);
+    std::string dexed_path = hibiki::find_test_file("testdata/Dexed.vst3");
+    
+    // Step 1: Load a plugin
+    int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate);
+    ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
+    EXPECT_EQ(track->plugins.size(), 1);
+    
+    // Step 2: Delete the plugin  
+    bool removed = track->RemovePlugin(0);
+    EXPECT_TRUE(removed) << "Should successfully remove plugin";
+    EXPECT_EQ(track->plugins.size(), 0) << "Track should now be empty";
+    
+    // Step 3: Load a new plugin to the now-empty track (this was crashing)
+    int pidx2 = track->LoadPlugin(dexed_path, 0, state.sample_rate);
+    ASSERT_GE(pidx2, 0) << "Failed to load Dexed plugin to empty track";
+    EXPECT_EQ(track->plugins.size(), 1);
+    
+    // Clean up
+    state.tracks.clear();
+}

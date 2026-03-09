@@ -137,6 +137,8 @@ void Track::Stop() {
 bool Track::RemovePlugin(size_t pidx) {
     std::lock_guard<DummyMutex> lock(mutex);
     if (pidx >= plugins.size()) return false;
+    // Stop playback to prevent audio thread from accessing plugin during destruction
+    playing_slot = -1;
     plugins.erase(plugins.begin() + pidx);
     return true;
 }

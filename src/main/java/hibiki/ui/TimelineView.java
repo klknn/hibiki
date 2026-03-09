@@ -3,6 +3,8 @@ package hibiki.ui;
 import hibiki.BackendManager;
 import hibiki.ipc.Notification;
 import hibiki.ipc.TimelineClipInfo;
+import hibiki.ipc.ParamList;
+import hibiki.ipc.Response;
 
 import javax.swing.*;
 import java.awt.*;
@@ -15,6 +17,7 @@ import java.util.HashMap;
 public class TimelineView extends JPanel implements Theme.ThemeListener {
     private static final int TRACK_HEIGHT = 80;
     private static final int TIME_RULER_HEIGHT = 30;
+    private static final int TRACK_LABEL_WIDTH = 100;
     private static final float PIXELS_PER_SECOND = 50.0f;
  
     enum GridUnit { SECONDS, BARS }
@@ -24,11 +27,19 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
     float playheadPos = 0.0f;
     final List<TrackTimeline> tracks = new ArrayList<>();
+    private int selectedTrack = 0; // Currently selected track for plugin/clip operations
+    private static TimelineView instance; // Static reference for global access
     private final JScrollPane scrollPane;
     private final JPanel contentPanel;
     private final Timer repaintTimer;
 
+    /** Get the singleton TimelineView instance */
+    public static TimelineView getInstance() {
+        return instance;
+    }
+
     public TimelineView() {
+        instance = this; // Set the static reference
         Theme.getInstance().addListener(this);
         setLayout(new BorderLayout());
         setBackground(Theme.getInstance().BG_DARK);
@@ -138,8 +149,17 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         contentPanel.addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                if (e.getY() < Theme.getInstance().scale(TIME_RULER_HEIGHT)) {
+                int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
+                if (e.getY() < scaleTimeRuler) {
                     updatePlayhead(e.getX());
+                } else {
+                    // Track selection
+                    int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+                    int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
+                    if (trackIdx >= 0 && trackIdx < tracks.size()) {
+                        selectedTrack = trackIdx;
+                        repaint();
+                    }
                 }
             }
         });
@@ -154,31 +174,50 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         });
     }
 
+    /** Get the currently selected track index for plugin/clip operations */
+    public int getSelectedTrack() {
+        return selectedTrack;
+    }
+
     private void updatePlayhead(int x) {
         playheadPos = Math.max(0, x / PIXELS_PER_SECOND);
         BackendManager.getInstance().seek(playheadPos);
         repaint();
     }
 
-    void handleNotification(Notification n) {
-        if (n.responseType() == hibiki.ipc.Response.TimelineClipInfo) {
+    public void handleNotification(Notification n) {
+        if (n.responseType() == hibiki.ipc.Response.PlayheadInfo) {
+            hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) n.response(new hibiki.ipc.PlayheadInfo());
+            playheadPos = info.positionSec();
+            bpm = info.bpm();
+            isPlaying = info.isPlaying();
+        } else if (n.responseType() == hibiki.ipc.Response.TimelineClipInfo) {
             TimelineClipInfo info = (TimelineClipInfo) n.response(new TimelineClipInfo());
             int tidx = info.trackIndex();
-            if (tidx >= 0 && tidx < tracks.size()) {
-                tracks.get(tidx).addOrUpdateClip(info);
-                repaint();
+
+            while (tracks.size() <= tidx) {
+                tracks.add(new TrackTimeline(tracks.size()));
             }
-        } else if (n.responseType() == hibiki.ipc.Response.PlayheadInfo) {
-            hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) n.response(new hibiki.ipc.PlayheadInfo());
-            float pos = info.positionSec();
-            float newBpm = info.bpm();
-            boolean playing = info.isPlaying();
-            SwingUtilities.invokeLater(() -> {
-                this.playheadPos = pos;
-                this.bpm = newBpm;
-                this.isPlaying = playing;
-                repaint();
-            });
+            tracks.get(tidx).addOrUpdateClip(info);
+            updateContentSize();
+        } else if (n.responseType() == Response.ParamList) {
+            // Track plugin names to display in track labels
+            ParamList paramList = (ParamList) n.response(new ParamList());
+            int tidx = paramList.trackIndex();
+            while (tracks.size() <= tidx) {
+                tracks.add(new TrackTimeline(tracks.size()));
+            }
+            if (paramList.pluginName() != null && !paramList.pluginName().isEmpty()) {
+                tracks.get(tidx).pluginName = paramList.pluginName();
+                tracks.get(tidx).isInstrument = paramList.isInstrument();
+            }
+        } else if (n.responseType() == hibiki.ipc.Response.ClearProject) {
+            for (TrackTimeline t : tracks) {
+                t.clips.clear();
+                t.clipMap.clear();
+                t.pluginName = null;
+                t.isInstrument = false;
+            }
         }
     }
 
@@ -189,13 +228,53 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
         int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
 
+        int scaleLabelWidth = Theme.getInstance().scale(TRACK_LABEL_WIDTH);
+
         // Draw tracks background
         for (int i = 0; i < tracks.size(); i++) {
             int y = scaleTimeRuler + i * scaleTrackHeight;
-            g2.setColor(i % 2 == 0 ? Theme.getInstance().BG_DARK : Theme.getInstance().BG_DARKER);
+            // Highlight selected track
+            if (i == selectedTrack) {
+                g2.setColor(Theme.getInstance().ACCENT_BLUE.darker().darker());
+            } else {
+                g2.setColor(i % 2 == 0 ? Theme.getInstance().BG_DARK : Theme.getInstance().BG_DARKER);
+            }
             g2.fillRect(0, y, contentPanel.getWidth(), scaleTrackHeight);
             g2.setColor(Theme.getInstance().PANEL_BG_LIGHT.darker());
             g2.drawLine(0, y + scaleTrackHeight - 1, contentPanel.getWidth(), y + scaleTrackHeight - 1);
+
+            // Draw track label background (brighter for selected)
+            if (i == selectedTrack) {
+                g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
+            } else {
+                g2.setColor(Theme.getInstance().TRACK_HEADER);
+            }
+            g2.fillRect(0, y, scaleLabelWidth, scaleTrackHeight - 1);
+
+            // Draw track number
+            g2.setColor(Theme.getInstance().TEXT_BRIGHT);
+            g2.setFont(Theme.getInstance().FONT_UI_BOLD);
+            g2.drawString("Track " + (i + 1), 5, y + 16);
+
+            // Draw plugin name if available
+            TrackTimeline track = tracks.get(i);
+            if (track.pluginName != null) {
+                g2.setFont(Theme.getInstance().FONT_UI);
+                g2.setColor(track.isInstrument ? Theme.getInstance().ACCENT_ORANGE : Theme.getInstance().TEXT_DIM);
+                // Truncate long names
+                String pname = track.pluginName;
+                if (pname.length() > 12)
+                    pname = pname.substring(0, 11) + "…";
+                g2.drawString(pname, 5, y + 32);
+            } else {
+                g2.setFont(Theme.getInstance().FONT_UI);
+                g2.setColor(Theme.getInstance().TEXT_DIM);
+                g2.drawString("(no plugin)", 5, y + 32);
+            }
+
+            // Draw separator line
+            g2.setColor(Theme.getInstance().BORDER);
+            g2.drawLine(scaleLabelWidth, y, scaleLabelWidth, y + scaleTrackHeight - 1);
         }
 
         // Draw vertical grid lines through track area
@@ -328,6 +407,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         int index;
         List<ClipRect> clips = new ArrayList<>();
         Map<Integer, ClipRect> clipMap = new HashMap<>();
+        String pluginName = null;
+        boolean isInstrument = false;
 
         TrackTimeline(int index) {
             this.index = index;

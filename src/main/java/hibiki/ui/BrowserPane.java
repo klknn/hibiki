@@ -331,7 +331,9 @@ public class BrowserPane extends JPanel {
     private void sendLoadPlugin(String path, int pluginIndex) {
         FlatBufferBuilder builder = new FlatBufferBuilder(1024);
         int pathOffset = builder.createString(path);
-        int loadPluginOffset = LoadPlugin.createLoadPlugin(builder, 1, pathOffset, pluginIndex); // Default to track 1
+        // Use the selected track from TimelineView
+        int trackIndex = TimelineView.getInstance() != null ? TimelineView.getInstance().getSelectedTrack() : 0;
+        int loadPluginOffset = LoadPlugin.createLoadPlugin(builder, trackIndex, pathOffset, pluginIndex);
         int requestOffset = Request.createRequest(builder, Command.LoadPlugin, loadPluginOffset);
         builder.finish(requestOffset);
         BackendManager.getInstance().sendRequest(builder);

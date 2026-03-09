@@ -157,16 +157,23 @@ void playback_thread(ProjectState& state) {
                         
                         if (tc->clip->type == Clip::Type::MIDI) {
                              std::vector<MidiNoteEvent> blockEvents;
-                             for (const auto& me : tc->clip->midi_events) {
-                                 if (me.seconds >= clip_local_time && me.seconds < clip_local_time + time_per_block) {
-                                     MidiNoteEvent e;
-                                     e.sampleOffset = std::max(0, (int)((me.seconds - clip_local_time) * sample_rate));
-                                     if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
-                                     e.channel = me.channel;
-                                     e.pitch = me.note;
-                                     e.isNoteOn = hibiki::isNoteOn(me);
-                                     e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
-                                     blockEvents.push_back(e);
+                             // Use binary search to find starting index for events in this time window
+                             double window_start = clip_local_time;
+                             double window_end = clip_local_time + time_per_block;
+                             for (size_t me_idx = 0; me_idx < tc->clip->midi_events.size(); ++me_idx) {
+                                 const auto& me = tc->clip->midi_events[me_idx];
+                                 if (me.seconds >= window_end) break; // Events are sorted by time
+                                 if (me.seconds >= window_start) {
+                                     if (hibiki::isNoteOn(me) || hibiki::isNoteOff(me)) {
+                                         MidiNoteEvent e;
+                                         e.sampleOffset = std::max(0, (int)((me.seconds - window_start) * sample_rate));
+                                         if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
+                                         e.channel = me.channel;
+                                         e.pitch = me.note;
+                                         e.isNoteOn = hibiki::isNoteOn(me);
+                                         e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+                                         blockEvents.push_back(e);
+                                     }
                                  }
                              }
                              if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {

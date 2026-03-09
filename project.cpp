@@ -320,9 +320,9 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
                     if (tc->clip->type == Clip::Type::MIDI) {
                          std::vector<MidiNoteEvent> blockEvents;
                          for (const auto& me : tc->clip->midi_events) {
-                             if (me.seconds >= clip_local_time && me.seconds < clip_local_time + time_per_block) {
+                             if (me.beats >= clip_local_time && me.beats < clip_local_time + time_per_block) {
                                  MidiNoteEvent e;
-                                 e.sampleOffset = std::max(0, (int)((me.seconds - clip_local_time) * sample_rate));
+                                 e.sampleOffset = std::max(0, (int)((me.beats - clip_local_time) * sample_rate));
                                  if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
                                  e.channel = me.channel;
                                  e.pitch = me.note;

@@ -100,13 +100,15 @@ void playback_thread(ProjectState& state) {
                     if (clip->type == Clip::Type::MIDI) {
                         std::vector<MidiNoteEvent> blockEvents;
                         int search_idx = track->current_midi_idx;
+                        double beats_per_sec = state.bpm / 60.0;  // Convert beats to seconds
                         while (search_idx < (int)clip->midi_events.size()) {
                             auto& me = clip->midi_events[search_idx];
-                            if (me.seconds >= track->current_time_sec + time_per_block) break;
-                            if (me.seconds >= track->current_time_sec) {
+                            double event_time_sec = me.beats / beats_per_sec;  // me.beats is in beats
+                            if (event_time_sec >= track->current_time_sec + time_per_block) break;
+                            if (event_time_sec >= track->current_time_sec) {
                                 if (hibiki::isNoteOn(me) || hibiki::isNoteOff(me)) {
                                     MidiNoteEvent e;
-                                    e.sampleOffset = std::max(0, (int)((me.seconds - track->current_time_sec) * sample_rate));
+                                    e.sampleOffset = std::max(0, (int)((event_time_sec - track->current_time_sec) * sample_rate));
                                     if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
                                     e.channel = me.channel;
                                     e.pitch = me.note;
@@ -136,9 +138,13 @@ void playback_thread(ProjectState& state) {
                     }
 
                     track->current_time_sec += time_per_block;
-                    if (track->current_time_sec >= clip->duration_sec) {
+                    // For MIDI clips, duration_sec is in beats, convert to seconds
+                    double clip_duration_sec = (clip->type == Clip::Type::MIDI) 
+                        ? clip->duration_sec * 60.0 / state.bpm
+                        : clip->duration_sec;
+                    if (track->current_time_sec >= clip_duration_sec) {
                         if (clip->is_loop) {
-                            track->current_time_sec = fmod(track->current_time_sec, clip->duration_sec);
+                            track->current_time_sec = fmod(track->current_time_sec, clip_duration_sec);
                             track->current_midi_idx = 0;
                         } else {
                             track->playing_slot = -1;
@@ -157,16 +163,18 @@ void playback_thread(ProjectState& state) {
                         
                         if (tc->clip->type == Clip::Type::MIDI) {
                              std::vector<MidiNoteEvent> blockEvents;
-                             // Use binary search to find starting index for events in this time window
-                             double window_start = clip_local_time;
-                             double window_end = clip_local_time + time_per_block;
+                             double beats_per_sec = state.bpm / 60.0;  // Convert beats to seconds
+                             // Convert clip_local_time to beats for comparison
+                             double window_start_beats = clip_local_time * beats_per_sec;
+                             double window_end_beats = (clip_local_time + time_per_block) * beats_per_sec;
                              for (size_t me_idx = 0; me_idx < tc->clip->midi_events.size(); ++me_idx) {
                                  const auto& me = tc->clip->midi_events[me_idx];
-                                 if (me.seconds >= window_end) break; // Events are sorted by time
-                                 if (me.seconds >= window_start) {
+                                 if (me.beats >= window_end_beats) break; // Events are sorted by time (in beats)
+                                 if (me.beats >= window_start_beats) {
                                      if (hibiki::isNoteOn(me) || hibiki::isNoteOff(me)) {
                                          MidiNoteEvent e;
-                                         e.sampleOffset = std::max(0, (int)((me.seconds - window_start) * sample_rate));
+                                         double event_local_sec = me.beats / beats_per_sec - clip_local_time;
+                                         e.sampleOffset = std::max(0, (int)(event_local_sec * sample_rate));
                                          if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
                                          e.channel = me.channel;
                                          e.pitch = me.note;

@@ -7,7 +7,7 @@
 namespace hibiki {
 
 struct MidiEvent {
-    double seconds;
+    double beats;  // Time in quarter notes (beats), not seconds
     uint8_t type;
     uint8_t channel;
     uint8_t note;

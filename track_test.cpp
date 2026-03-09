@@ -50,8 +50,8 @@ TEST(TrackTest, TimelineMidiPlaybackCrash) {
             
             if (tc->clip->type == hibiki::Clip::Type::MIDI) {
                 for (const auto& me : tc->clip->midi_events) {
-                    if (me.seconds >= clip_local_time && me.seconds < clip_local_time + time_per_block) {
-                        int sampleOffset = std::max(0, (int)((me.seconds - clip_local_time) * sample_rate));
+                    if (me.beats >= clip_local_time && me.beats < clip_local_time + time_per_block) {
+                        int sampleOffset = std::max(0, (int)((me.beats - clip_local_time) * sample_rate));
                         if (sampleOffset >= block_size) sampleOffset = block_size - 1;
                         EXPECT_GE(sampleOffset, 0);
                         EXPECT_LT(sampleOffset, block_size);

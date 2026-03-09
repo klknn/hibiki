@@ -21,14 +21,14 @@ TEST(MidiTest, ParseTestMid) {
 
     // Check first event
     const auto& first = events.front();
-    EXPECT_DOUBLE_EQ(first.seconds, 0.0);
+    EXPECT_DOUBLE_EQ(first.beats, 0.0);  // .beats is actually beats (quarter notes)
     EXPECT_EQ(first.type, 0x91); // Note on
 
-    // Check last event
+    // Check last event (time is in beats, not seconds)
     const auto& last = events.back();
-    EXPECT_NEAR(last.seconds, 154.286, 0.001);
+    EXPECT_NEAR(last.beats, 234.0, 0.01);  // 234 beats
 
-    std::cout << "test.mid: Found " << events.size() << " events. First type=" << (int)first.type << " Last time=" << last.seconds << " - PASSED" << std::endl;
+    std::cout << "test.mid: Found " << events.size() << " events. First type=" << (int)first.type << " Last beat=" << last.beats << " - PASSED" << std::endl;
 }
 
 TEST(MidiTest, ParseRickrollMid) {
@@ -40,8 +40,9 @@ TEST(MidiTest, ParseRickrollMid) {
     const auto& first = events.front();
     EXPECT_EQ(first.type, 0x93);
 
+    // Last event time is in beats (quarter notes), not seconds
     const auto& last = events.back();
-    EXPECT_NEAR(last.seconds, 222.545, 0.001);
+    EXPECT_NEAR(last.beats, 408.0, 0.01);  // 408 beats
 
-    std::cout << "rickroll.mid: Found " << events.size() << " events. First type=" << (int)first.type << " Last time=" << last.seconds << " - PASSED" << std::endl;
+    std::cout << "rickroll.mid: Found " << events.size() << " events. First type=" << (int)first.type << " Last beat=" << last.beats << " - PASSED" << std::endl;
 }

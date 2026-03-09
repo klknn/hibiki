@@ -52,9 +52,11 @@ std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
         clip.midi_events = std::move(events);
         clip.type = Clip::Type::MIDI;
         if (!clip.midi_events.empty()) {
-            clip.duration_sec = clip.midi_events.back().seconds + 0.1; // Small buffer
+            // For MIDI clips, duration_sec actually stores beats (quarter notes)
+            // This will be converted to seconds using project BPM during playback
+            clip.duration_sec = clip.midi_events.back().beats + 0.1; // +0.1 beats buffer
         } else {
-            clip.duration_sec = 4.0; // Default duration of 4 seconds if no events
+            clip.duration_sec = 4.0; // Default duration of 4 beats if no events
         }
 
         // Encode midi events into waveform_summary: [start_sec, pitch, duration_sec]
@@ -66,11 +68,11 @@ std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
                 for (size_t j = i + 1; j < clip.midi_events.size(); ++j) {
                     auto& off_ev = clip.midi_events[j];
                     if (off_ev.note == ev.note && off_ev.channel == ev.channel && hibiki::isNoteOff(off_ev)) {
-                        duration = off_ev.seconds - ev.seconds;
+                        duration = off_ev.beats - ev.beats;
                         break;
                     }
                 }
-                clip.waveform_summary.push_back((float)ev.seconds);
+                clip.waveform_summary.push_back((float)ev.beats);
                 clip.waveform_summary.push_back((float)ev.note);
                 clip.waveform_summary.push_back((float)duration);
             }

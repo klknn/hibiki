@@ -49,7 +49,6 @@ std::vector<MidiEvent> parseMidi(const std::string& path) {
 
     if (headerSize > 6) file.seekg(headerSize - 6, std::ios::cur);
 
-    uint32_t tempoMicros = 500000;
     std::vector<MidiEvent> allEvents;
 
     for (int i = 0; i < numTracks; ++i) {
@@ -86,7 +85,7 @@ std::vector<MidiEvent> parseMidi(const std::string& path) {
                 uint8_t data2 = (uint8_t)file.get();
                 if (type == 0x80 || type == 0x90) {
                     MidiEvent ev;
-                    ev.seconds = (double)currentTicks * tempoMicros / (1000000.0 * ticksPerQuarter);
+                    ev.beats = (double)currentTicks / (double)ticksPerQuarter;  // Store in beats (quarter notes)
                     ev.type = status;
                     ev.channel = (uint8_t)(status & 0x0F);
                     ev.note = data1;
@@ -99,7 +98,8 @@ std::vector<MidiEvent> parseMidi(const std::string& path) {
                 uint8_t metaType = (uint8_t)file.get();
                 uint32_t len = readVLQ(file);
                 if (metaType == 0x51 && len == 3) {
-                    tempoMicros = (file.get() << 16) | (file.get() << 8) | file.get();
+                    // Ignore tempo meta events - we use project BPM instead
+                    file.seekg(3, std::ios::cur);
                 } else {
                     file.seekg(len, std::ios::cur);
                 }
@@ -111,7 +111,7 @@ std::vector<MidiEvent> parseMidi(const std::string& path) {
     }
 
     std::sort(allEvents.begin(), allEvents.end(), [](const MidiEvent& a, const MidiEvent& b) {
-        return a.seconds < b.seconds;
+        return a.beats < b.beats;
     });
     return allEvents;
 }

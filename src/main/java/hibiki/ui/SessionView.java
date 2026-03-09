@@ -32,10 +32,10 @@ public class SessionView extends JPanel {
 
     private JButton[][] slotButtons = new JButton[5][5]; // 4 tracks + master, 5 slots
     private String[][] slotPaths = new String[5][5]; // paths to loaded clips
-    private LevelMeter[] trackMeters = new LevelMeter[5]; // 1-4 for tracks
-    private JPanel[] trackStrips = new JPanel[5]; // Track strip panels for selection highlighting
-    private JLabel[] trackHeaders = new JLabel[5]; // Track header labels
-    private int selectedTrack = 0; // Currently selected track (0-based, but we use 1-4 for tracks)
+    private LevelMeter[] trackMeters = new LevelMeter[4]; // 0-3 for tracks
+    private JPanel[] trackStrips = new JPanel[4]; // Track strip panels for selection highlighting
+    private JLabel[] trackHeaders = new JLabel[4]; // Track header labels
+    private int selectedTrack = 0; // Currently selected track (0-based, 0-3)
 
     public static SessionView getInstance() {
         return instance;
@@ -44,6 +44,11 @@ public class SessionView extends JPanel {
     /** Select track by index (1-based for tracks 1-4) */
     public void selectTrackByIdx(int trackIdx) {
         selectTrack(trackIdx);
+    }
+
+    /** Get currently selected track index */
+    public int getSelectedTrack() {
+        return selectedTrack;
     }
 
     public SessionView() {
@@ -66,7 +71,7 @@ public class SessionView extends JPanel {
         trackPanel.setLayout(new BoxLayout(trackPanel, BoxLayout.X_AXIS));
         trackPanel.setBackground(Theme.getInstance().BG_DARK);
 
-        for (int i = 1; i <= 4; i++) {
+        for (int i = 0; i < 4; i++) {
             trackPanel.add(createTrackStrip("Track " + i, i));
         }
 
@@ -119,7 +124,7 @@ public class SessionView extends JPanel {
 
     private void updateSlotLabel(int trackIdx, int slotIdx, String name) {
         SwingUtilities.invokeLater(() -> {
-            if (trackIdx >= 1 && trackIdx <= 4 && slotIdx >= 0 && slotIdx < 5) {
+            if (trackIdx >= 0 && trackIdx < 4 && slotIdx >= 0 && slotIdx < 5) {
                 JButton btn = slotButtons[trackIdx][slotIdx];
                 if (btn != null) {
                     if (name.isEmpty()) {
@@ -138,7 +143,7 @@ public class SessionView extends JPanel {
 
     private void updateLevel(int trackIdx, float peakL, float peakR) {
         SwingUtilities.invokeLater(() -> {
-            if (trackIdx >= 1 && trackIdx <= 4) {
+            if (trackIdx >= 0 && trackIdx < 4) {
                 if (trackMeters[trackIdx] != null) {
                     trackMeters[trackIdx].setLevels(peakL, peakR);
                 }
@@ -148,12 +153,12 @@ public class SessionView extends JPanel {
 
     private void selectTrack(int trackIdx) {
         selectedTrack = trackIdx;
-        // Sync with TimelineView (SessionView uses 1-based, TimelineView uses 0-based)
+        // Sync with TimelineView (both now use 0-based)
         if (TimelineView.getInstance() != null) {
-            TimelineView.getInstance().setSelectedTrack(trackIdx - 1);
+            TimelineView.getInstance().setSelectedTrack(trackIdx);
         }
         // Update visual highlighting - entire track panel, not just header
-        for (int i = 1; i <= 4; i++) {
+        for (int i = 0; i < 4; i++) {
             if (trackStrips[i] != null) {
                 if (i == selectedTrack) {
                     trackStrips[i].setBackground(Theme.getInstance().ACCENT_BLUE.darker().darker());

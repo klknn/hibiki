@@ -331,8 +331,9 @@ public class BrowserPane extends JPanel {
     private void sendLoadPlugin(String path, int pluginIndex) {
         FlatBufferBuilder builder = new FlatBufferBuilder(1024);
         int pathOffset = builder.createString(path);
-        // Use the selected track from TimelineView (0-based)
-        int trackIndex = TimelineView.getInstance() != null ? TimelineView.getInstance().getSelectedTrack() : 0;
+        // Use the selected track from SessionView (for session clips) or TimelineView
+        // (for timeline)
+        int trackIndex = SessionView.getInstance() != null ? SessionView.getInstance().getSelectedTrack() : 0;
         int loadPluginOffset = LoadPlugin.createLoadPlugin(builder, trackIndex, pathOffset, pluginIndex);
         int requestOffset = Request.createRequest(builder, Command.LoadPlugin, loadPluginOffset);
         builder.finish(requestOffset);
@@ -342,7 +343,9 @@ public class BrowserPane extends JPanel {
     private void sendLoadClip(String path, boolean isLoop) {
         FlatBufferBuilder builder = new FlatBufferBuilder(1024);
         int pathOffset = builder.createString(path);
-        int loadClipOffset = LoadClip.createLoadClip(builder, 1, 0, pathOffset, isLoop); // Default to track 1, slot 0
+        // Use the selected track from SessionView (0-based)
+        int trackIndex = SessionView.getInstance() != null ? SessionView.getInstance().getSelectedTrack() : 0;
+        int loadClipOffset = LoadClip.createLoadClip(builder, trackIndex, 0, pathOffset, isLoop);
         int requestOffset = Request.createRequest(builder, Command.LoadClip, loadClipOffset);
         builder.finish(requestOffset);
         BackendManager.getInstance().sendRequest(builder);

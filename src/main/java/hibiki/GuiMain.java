@@ -18,6 +18,12 @@ public class GuiMain {
             String gdkScale = System.getenv("GDK_SCALE");
             if (gdkScale != null && !gdkScale.isEmpty()) {
                 System.setProperty("sun.java2d.uiScale", gdkScale);
+            } else {
+                // Fallback: query GNOME scaling via gsettings
+                String scale = getGnomeScaleFactor();
+                if (scale != null && !scale.isEmpty()) {
+                    System.setProperty("sun.java2d.uiScale", scale);
+                }
             }
         }
 
@@ -72,5 +78,35 @@ public class GuiMain {
             frame.setLocationRelativeTo(null);
             frame.setVisible(true);
         });
+    }
+
+    /**
+     * Query GNOME desktop scaling factor via gsettings.
+     * Returns the scale factor as a string (e.g. "2"), or null if not available.
+     */
+    private static String getGnomeScaleFactor() {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("gsettings", "get",
+                    "org.gnome.desktop.interface", "scaling-factor");
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream()));
+            String line = reader.readLine();
+            process.waitFor();
+
+            if (line != null && line.startsWith("uint32 ")) {
+                // Output format is "uint32 2", extract the number
+                String value = line.substring(7).trim();
+                int scale = Integer.parseInt(value);
+                if (scale > 0) {
+                    return String.valueOf(scale);
+                }
+            }
+        } catch (Exception e) {
+            // gsettings not available or failed - ignore silently
+        }
+        return null;
     }
 }

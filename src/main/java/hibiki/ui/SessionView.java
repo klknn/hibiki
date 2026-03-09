@@ -34,7 +34,7 @@ public class SessionView extends JPanel {
     private String[][] slotPaths = new String[5][5]; // paths to loaded clips
     private LevelMeter[] trackMeters = new LevelMeter[4]; // 0-3 for tracks
     private JPanel[] trackStrips = new JPanel[4]; // Track strip panels for selection highlighting
-    private JLabel[] trackHeaders = new JLabel[4]; // Track header labels
+    JLabel[] trackHeaders = new JLabel[4]; // Track header labels (package-visible for TimelineView sync)
     private int selectedTrack = 0; // Currently selected track (0-based, 0-3)
 
     public static SessionView getInstance() {

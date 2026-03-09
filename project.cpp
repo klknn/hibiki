@@ -103,9 +103,10 @@ bool LoadProject(ProjectState& state, const std::string& path) {
         for (const auto* track_data : *project_data->tracks()) {
             auto track = GetOrCreateTrack(state, track_data->index());
             
-            // Load track name
+            // Load track name and notify GUI
             if (track_data->name()) {
                 track->name = track_data->name()->str();
+                sendTrackInfo(track_data->index(), track->name);
             }
 
             if (track_data->plugins()) {

@@ -330,6 +330,25 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 t.clipMap.clear();
                 t.pluginName = null;
                 t.isInstrument = false;
+                t.customName = null; // Clear track names on project clear
+            }
+        } else if (n.responseType() == hibiki.ipc.Response.TrackInfo) {
+            // Receive track name from project load
+            hibiki.ipc.TrackInfo info = (hibiki.ipc.TrackInfo) n.response(new hibiki.ipc.TrackInfo());
+            int tidx = info.trackIndex();
+            while (tracks.size() <= tidx) {
+                tracks.add(new TrackTimeline(tracks.size()));
+            }
+            String name = info.name();
+            tracks.get(tidx).customName = (name == null || name.isEmpty()) ? null : name;
+            repaint();
+            // Sync with SessionView
+            if (SessionView.getInstance() != null && SessionView.getInstance().trackHeaders.length > tidx) {
+                JLabel header = SessionView.getInstance().trackHeaders[tidx];
+                if (header != null) {
+                    String displayName = tracks.get(tidx).getDisplayName();
+                    header.setText(tidx + " " + displayName);
+                }
             }
         }
     }

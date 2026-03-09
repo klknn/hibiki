@@ -358,6 +358,8 @@ flatbuffer_library_public(
         "hibiki/ipc/PlayheadInfoT.java",
         "hibiki/ipc/BounceFinished.java",
         "hibiki/ipc/BounceFinishedT.java",
+        "hibiki/ipc/TrackInfo.java",
+        "hibiki/ipc/TrackInfoT.java",
     ],
     language_flag = "--java --gen-object-api",
 )

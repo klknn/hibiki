@@ -159,4 +159,13 @@ void sendBounceFinished(const std::string& path, bool success) {
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
 }
 
+void sendTrackInfo(int track_idx, const std::string& name) {
+    flatbuffers::FlatBufferBuilder builder(512);
+    auto name_off = builder.CreateString(name.c_str());
+    auto ti_off = hibiki::ipc::CreateTrackInfo(builder, track_idx, name_off);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_TrackInfo, ti_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
 } // namespace hibiki

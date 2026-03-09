@@ -20,5 +20,6 @@ void sendPluginList(const std::string& path, const std::vector<PluginDescription
 void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name, const std::string& path, float start_time, float duration, const std::vector<float>& waveform);
 void sendPlayheadInfo(float position_sec, float bpm, bool is_playing);
 void sendBounceFinished(const std::string& path, bool success);
+void sendTrackInfo(int track_idx, const std::string& name);
  
 } // namespace hibiki

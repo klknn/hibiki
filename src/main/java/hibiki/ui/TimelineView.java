@@ -174,9 +174,11 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         });
     }
 
-    /** Get the currently selected track index for plugin/clip operations */
+    /**
+     * Get the currently selected track index for plugin/clip operations (1-based)
+     */
     public int getSelectedTrack() {
-        return selectedTrack;
+        return selectedTrack + 1; // Return 1-based to match SessionView
     }
 
     /** Set the selected track (for sync with SessionView) */
@@ -192,7 +194,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     private void updatePlayhead(int x) {
-        playheadPos = Math.max(0, x / PIXELS_PER_SECOND);
+        // Subtract track label width to get position relative to timeline area
+        int scaleLabelWidth = Theme.getInstance().scale(TRACK_LABEL_WIDTH);
+        float timelineX = Math.max(0, x - scaleLabelWidth);
+        playheadPos = timelineX / PIXELS_PER_SECOND;
         BackendManager.getInstance().seek(playheadPos);
         repaint();
     }

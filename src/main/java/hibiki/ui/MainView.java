@@ -104,6 +104,18 @@ public class MainView extends JPanel implements Theme.ThemeListener {
             }
         });
 
+        // Tab = Toggle between Session and Timeline view (like Ableton Live)
+        inputMap.put(KeyStroke.getKeyStroke("TAB"), "toggleView");
+        final boolean[] isTimelineView = { false };
+        actionMap.put("toggleView", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                isTimelineView[0] = !isTimelineView[0];
+                CardLayout cl = (CardLayout) centerContainer.getLayout();
+                cl.show(centerContainer, isTimelineView[0] ? "TIMELINE" : "SESSION");
+            }
+        });
+
         // Status bar or footer
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 2));
         footer.setBackground(Theme.getInstance().BG_DARKER);

@@ -143,20 +143,24 @@ bool Track::RemovePlugin(size_t pidx) {
     return true;
 }
 
-void Track::AddTimelineClip(const std::string& path, double start_time_sec) {
+void Track::AddTimelineClip(const std::string& path, double start_time_sec, double bpm) {
     std::lock_guard<DummyMutex> lock(mutex);
     auto clip = hibiki::LoadClip(path);
     if (!clip) return;
 
     auto tc = std::make_unique<TimelineClip>();
-    tc->duration_sec = clip->duration_sec;
+    tc->duration_sec = clip->duration_sec;    // In seconds for audio clips, 0 for MIDI
+    tc->duration_beats = clip->duration_beats; // In beats for MIDI clips, 0 for audio
     std::vector<float> waveform = clip->waveform_summary; // copy before move
     tc->clip = std::move(clip);
     tc->start_time_sec = start_time_sec;
-    float duration = (float)tc->duration_sec;
+    // For GUI: use duration_sec if set, otherwise convert duration_beats using BPM
+    float duration_for_gui = (tc->duration_sec > 0)
+        ? (float)tc->duration_sec
+        : (float)(tc->duration_beats * 60.0 / bpm);
     timeline_clips.push_back(std::move(tc));
     int clip_idx = (int)timeline_clips.size() - 1;
-    hibiki::sendTimelineClipInfo(index, clip_idx, path, path, (float)start_time_sec, duration, waveform);
+    hibiki::sendTimelineClipInfo(index, clip_idx, path, path, (float)start_time_sec, duration_for_gui, waveform);
 }
 
 void Track::RemoveTimelineClip(int clip_index) {

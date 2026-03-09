@@ -115,7 +115,8 @@ bool LoadProject(ProjectState& state, const std::string& path) {
                     auto tc = std::make_unique<TimelineClip>();
                     tc->clip = hibiki::LoadClip(tc_data->path()->str());
                     tc->start_time_sec = tc_data->start_time();
-                    tc->duration_sec = tc_data->duration();
+                    tc->duration_sec = tc->clip ? tc->clip->duration_sec : tc_data->duration();
+                    tc->duration_beats = tc->clip ? tc->clip->duration_beats : 0.0;
                     track->timeline_clips.push_back(std::move(tc));
                 }
             }
@@ -206,7 +207,8 @@ bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data) {
                     auto tc = std::make_unique<TimelineClip>();
                     tc->clip = hibiki::LoadClip(tc_data->path()->str());
                     tc->start_time_sec = tc_data->start_time();
-                    tc->duration_sec = tc_data->duration();
+                    tc->duration_sec = tc->clip ? tc->clip->duration_sec : tc_data->duration();
+                    tc->duration_beats = tc->clip ? tc->clip->duration_beats : 0.0;
                     track->timeline_clips.push_back(std::move(tc));
                 }
             }
@@ -247,7 +249,11 @@ void SyncProjectToGui(const ProjectState& state) {
             if (last_slash != std::string::npos) {
                 cname = cname.substr(last_slash + 1);
             }
-            hibiki::sendTimelineClipInfo(tidx, tc_idx, cname, tc->clip->path, tc->start_time_sec, tc->duration_sec, tc->clip->waveform_summary);
+            // For MIDI clips, convert duration_beats to seconds using project BPM
+            float duration_for_gui = (tc->duration_beats > 0)
+                ? (float)(tc->duration_beats * 60.0 / state.bpm)
+                : (float)tc->duration_sec;
+            hibiki::sendTimelineClipInfo(tidx, tc_idx, cname, tc->clip->path, tc->start_time_sec, duration_for_gui, tc->clip->waveform_summary);
         }
     }
 }
@@ -256,7 +262,11 @@ double GetProjectDuration(const ProjectState& state) {
     double max_duration = 0.0;
     for (const auto& [idx, track] : state.tracks) {
         for (const auto& tc : track->timeline_clips) {
-            double end_time = tc->start_time_sec + tc->duration_sec;
+            // For MIDI clips, convert duration_beats to seconds using project BPM
+            double clip_duration_sec = (tc->duration_beats > 0)
+                ? tc->duration_beats * 60.0 / state.bpm
+                : tc->duration_sec;
+            double end_time = tc->start_time_sec + clip_duration_sec;
             if (end_time > max_duration) {
                 max_duration = end_time;
             }
@@ -312,17 +322,26 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
             std::fill(bufferR, bufferR + block_size, 0.0f);
             
             for (const auto& tc : track->timeline_clips) {
+                // Get clip duration - use duration_beats for MIDI clips, duration_sec for audio
+                double clip_duration = (tc->duration_beats > 0)
+                    ? tc->duration_beats * 60.0 / state.bpm
+                    : tc->duration_sec;
                 if (state.playhead_pos_sec + time_per_block > tc->start_time_sec &&
-                    state.playhead_pos_sec < tc->start_time_sec + tc->duration_sec) {
+                    state.playhead_pos_sec < tc->start_time_sec + clip_duration) {
                     
                     double clip_local_time = state.playhead_pos_sec - tc->start_time_sec;
                     
                     if (tc->clip->type == Clip::Type::MIDI) {
                          std::vector<MidiNoteEvent> blockEvents;
+                         double beats_per_sec = state.bpm / 60.0;  // Convert beats to seconds
+                         // Convert clip_local_time to beats for comparison
+                         double window_start_beats = clip_local_time * beats_per_sec;
+                         double window_end_beats = (clip_local_time + time_per_block) * beats_per_sec;
                          for (const auto& me : tc->clip->midi_events) {
-                             if (me.beats >= clip_local_time && me.beats < clip_local_time + time_per_block) {
+                             if (me.beats >= window_start_beats && me.beats < window_end_beats) {
                                  MidiNoteEvent e;
-                                 e.sampleOffset = std::max(0, (int)((me.beats - clip_local_time) * sample_rate));
+                                 double event_local_sec = me.beats / beats_per_sec - clip_local_time;
+                                 e.sampleOffset = std::max(0, (int)(event_local_sec * sample_rate));
                                  if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
                                  e.channel = me.channel;
                                  e.pitch = me.note;

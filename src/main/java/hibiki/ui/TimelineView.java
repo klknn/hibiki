@@ -411,12 +411,12 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                     if (clip.waveform != null && clip.waveform.length > 0) {
                         g2.setColor(new Color(255, 255, 255, 200));
                         for (int nIdx = 0; nIdx + 2 < clip.waveform.length; nIdx += 3) {
-                            float startSec = clip.waveform[nIdx];
+                            float startRatio = clip.waveform[nIdx]; // Now 0-1 ratio
                             float pitch = clip.waveform[nIdx+1];
-                            float durationSec = clip.waveform[nIdx+2];
+                            float durationRatio = clip.waveform[nIdx + 2]; // Now 0-1 ratio
 
-                            int nx = x + (int)((startSec / clip.duration) * w);
-                            int nw = (int)((durationSec / clip.duration) * w);
+                            int nx = x + (int) (startRatio * w);
+                            int nw = (int) (durationRatio * w);
                             if (nw < 2) nw = 2; // Minimum visible width
                             
                             int minPitch = 21; // A0

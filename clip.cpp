@@ -51,15 +51,17 @@ std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
         // Do not return nullptr even if empty, to allow dropping empty/invalid MIDI clips
         clip.midi_events = std::move(events);
         clip.type = Clip::Type::MIDI;
+        // For MIDI clips, set duration_beats (in quarter notes)
+        // duration_sec remains 0 - GUI can check which is non-zero
         if (!clip.midi_events.empty()) {
-            // For MIDI clips, duration_sec actually stores beats (quarter notes)
-            // This will be converted to seconds using project BPM during playback
-            clip.duration_sec = clip.midi_events.back().beats + 0.1; // +0.1 beats buffer
+            clip.duration_beats = clip.midi_events.back().beats + 0.1; // +0.1 beats buffer
         } else {
-            clip.duration_sec = 4.0; // Default duration of 4 beats if no events
+            clip.duration_beats = 4.0; // Default duration of 4 beats if no events
         }
 
-        // Encode midi events into waveform_summary: [start_sec, pitch, duration_sec]
+        // Encode midi events into waveform_summary: [start_ratio, pitch, duration_ratio]
+        // Values are normalized 0-1 relative to clip duration in beats
+        double total_beats = clip.duration_beats > 0 ? clip.duration_beats : 1.0;
         for (size_t i = 0; i < clip.midi_events.size(); ++i) {
             auto& ev = clip.midi_events[i];
             if (hibiki::isNoteOn(ev)) {
@@ -72,9 +74,10 @@ std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
                         break;
                     }
                 }
-                clip.waveform_summary.push_back((float)ev.beats);
+                // Store as ratios (0-1) so GUI doesn't need BPM conversion
+                clip.waveform_summary.push_back((float)(ev.beats / total_beats));
                 clip.waveform_summary.push_back((float)ev.note);
-                clip.waveform_summary.push_back((float)duration);
+                clip.waveform_summary.push_back((float)(duration / total_beats));
             }
         }
     }

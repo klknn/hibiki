@@ -33,7 +33,7 @@ TEST(TrackTest, TimelineMidiPlaybackCrash) {
     hibiki::Track track(0);
     auto midi_path = hibiki::find_test_file("testdata/test.mid");
     
-    track.AddTimelineClip(midi_path, 0.0);
+    track.AddTimelineClip(midi_path, 0.0, 120.0);
     EXPECT_EQ(track.timeline_clips.size(), 1);
 
     // Simulate main audio loop logic for one block
@@ -49,9 +49,14 @@ TEST(TrackTest, TimelineMidiPlaybackCrash) {
             double clip_local_time = playhead_pos_sec - tc->start_time_sec;
             
             if (tc->clip->type == hibiki::Clip::Type::MIDI) {
+                double bpm = 120.0;
+                double beats_per_sec = bpm / 60.0;
+                double window_start_beats = clip_local_time * beats_per_sec;
+                double window_end_beats = (clip_local_time + time_per_block) * beats_per_sec;
                 for (const auto& me : tc->clip->midi_events) {
-                    if (me.beats >= clip_local_time && me.beats < clip_local_time + time_per_block) {
-                        int sampleOffset = std::max(0, (int)((me.beats - clip_local_time) * sample_rate));
+                    if (me.beats >= window_start_beats && me.beats < window_end_beats) {
+                        double event_local_sec = me.beats / beats_per_sec - clip_local_time;
+                        int sampleOffset = std::max(0, (int)(event_local_sec * sample_rate));
                         if (sampleOffset >= block_size) sampleOffset = block_size - 1;
                         EXPECT_GE(sampleOffset, 0);
                         EXPECT_LT(sampleOffset, block_size);

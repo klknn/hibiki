@@ -138,13 +138,13 @@ void playback_thread(ProjectState& state) {
                     }
 
                     track->current_time_sec += time_per_block;
-                    // For MIDI clips, duration_sec is in beats, convert to seconds
-                    double clip_duration_sec = (clip->type == Clip::Type::MIDI) 
-                        ? clip->duration_sec * 60.0 / state.bpm
+                    // Get clip duration in seconds - for MIDI clips, convert duration_beats using project BPM
+                    double actual_clip_duration = (clip->type == Clip::Type::MIDI)
+                        ? clip->duration_beats * 60.0 / state.bpm
                         : clip->duration_sec;
-                    if (track->current_time_sec >= clip_duration_sec) {
+                    if (track->current_time_sec >= actual_clip_duration) {
                         if (clip->is_loop) {
-                            track->current_time_sec = fmod(track->current_time_sec, clip_duration_sec);
+                            track->current_time_sec = fmod(track->current_time_sec, actual_clip_duration);
                             track->current_midi_idx = 0;
                         } else {
                             track->playing_slot = -1;
@@ -154,8 +154,12 @@ void playback_thread(ProjectState& state) {
 
                 // 2. Process Timeline Clips
                 for (const auto& tc : track->timeline_clips) {
+                    // Get clip duration - use duration_beats for MIDI clips, duration_sec for audio
+                    double clip_duration = (tc->duration_beats > 0)
+                        ? tc->duration_beats * 60.0 / state.bpm
+                        : tc->duration_sec;
                     if (state.playhead_pos_sec + time_per_block > tc->start_time_sec &&
-                        state.playhead_pos_sec < tc->start_time_sec + tc->duration_sec) {
+                        state.playhead_pos_sec < tc->start_time_sec + clip_duration) {
                         
                         track_playing = true;
                         any_playing = true;
@@ -473,7 +477,7 @@ void run_ipc_loop(ProjectState& state) {
             double start = cmd->start_time();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
-            hibiki::GetOrCreateTrack(state, tidx)->AddTimelineClip(path, start);
+            hibiki::GetOrCreateTrack(state, tidx)->AddTimelineClip(path, start, state.bpm);
             hibiki::sendAck("ADD_TIMELINE_CLIP", true);
         } else if (command_type == hibiki::ipc::Command_RemoveTimelineClip) {
             auto cmd = request->command_as_RemoveTimelineClip();

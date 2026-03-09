@@ -14,7 +14,8 @@ struct Clip {
     std::vector<float> audio_data;
     int num_channels = 0;
     double sample_rate = 0.0;
-    double duration_sec = 0.0;
+    double duration_sec = 0.0;    // Duration in seconds (for AUDIO clips)
+    double duration_beats = 0.0;  // Duration in beats/quarter notes (for MIDI clips)
     std::vector<float> waveform_summary;
     std::string path;
     bool is_loop = false;

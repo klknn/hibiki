@@ -69,7 +69,7 @@ TEST_F(ProjectTest, BounceProjectWithDexed) {
     ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
     
     std::string mid_path = hibiki::find_test_file("testdata/test.mid");
-    track->AddTimelineClip(mid_path, 0.0);
+    track->AddTimelineClip(mid_path, 0.0, state.bpm);
     ASSERT_EQ(track->timeline_clips.size(), 1);
     
     std::string tmp_wav = "test_bounce_output.wav";
@@ -162,7 +162,7 @@ TEST_F(ProjectTest, SaveAndLoadCorrectProjectStructure) {
     ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
     
     std::string mid_path = hibiki::find_test_file("testdata/test.mid");
-    track->AddTimelineClip(mid_path, 0.0);
+    track->AddTimelineClip(mid_path, 0.0, state.bpm);
     ASSERT_EQ(track->timeline_clips.size(), 1);
     
     // Save the project

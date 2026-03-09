@@ -17,5 +17,5 @@ TEST(ClipTest, LoadMidiClip) {
     EXPECT_EQ(clip->type, hibiki::Clip::Type::MIDI);
     EXPECT_FALSE(clip->is_loop);
     EXPECT_GT(clip->midi_events.size(), 0);
-    EXPECT_GT(clip->duration_sec, 0.0);
+    EXPECT_GT(clip->duration_beats, 0.0);  // MIDI clips use duration_beats, not duration_sec
 }

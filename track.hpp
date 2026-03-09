@@ -18,7 +18,8 @@ struct DummyMutex {
 struct TimelineClip {
     std::unique_ptr<Clip> clip;
     double start_time_sec = 0.0;
-    double duration_sec = 0.0;
+    double duration_sec = 0.0;    // Duration in seconds (for audio clips)
+    double duration_beats = 0.0;  // Duration in beats (for MIDI clips)
 };
 
 class Track {
@@ -43,7 +44,7 @@ public:
     void Stop();
     bool RemovePlugin(size_t pidx);
 
-    void AddTimelineClip(const std::string& path, double start_time_sec);
+    void AddTimelineClip(const std::string& path, double start_time_sec, double bpm);
     void RemoveTimelineClip(int clip_index);
 };
 

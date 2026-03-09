@@ -18,6 +18,7 @@ public class BackendManager {
     private DataOutputStream out;
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final List<Consumer<Notification>> listeners = new ArrayList<>();
+    private boolean isPlaying = false; // Track playback state for toggle
 
     private BackendManager() {
     }
@@ -142,6 +143,7 @@ public class BackendManager {
         int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.Play, playOff);
         builder.finish(reqOff);
         sendRequest(builder);
+        isPlaying = true;
     }
 
     public void stopPlayback() {
@@ -151,6 +153,16 @@ public class BackendManager {
         int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.Stop, stopOff);
         builder.finish(reqOff);
         sendRequest(builder);
+        isPlaying = false;
+    }
+
+    /** Toggle play/stop state - triggered by Space key */
+    public void togglePlay() {
+        if (isPlaying) {
+            stopPlayback();
+        } else {
+            startPlayback();
+        }
     }
 
     public void seek(float position) {

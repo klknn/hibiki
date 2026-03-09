@@ -86,6 +86,15 @@ public class MainView extends JPanel implements Theme.ThemeListener {
             }
         });
 
+        // Space = Play/Stop toggle (like Ableton Live)
+        inputMap.put(KeyStroke.getKeyStroke("SPACE"), "playStop");
+        actionMap.put("playStop", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                BackendManager.getInstance().togglePlay();
+            }
+        });
+
         // Status bar or footer
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 2));
         footer.setBackground(Theme.getInstance().BG_DARKER);

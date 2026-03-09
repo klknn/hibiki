@@ -175,10 +175,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     /**
-     * Get the currently selected track index for plugin/clip operations (1-based)
+     * Get the currently selected track index for plugin/clip operations (0-based)
      */
     public int getSelectedTrack() {
-        return selectedTrack + 1; // Return 1-based to match SessionView
+        return selectedTrack; // 0-based to match internal track array and backend notifications
     }
 
     /** Set the selected track (for sync with SessionView) */

@@ -16,6 +16,10 @@ import hibiki.ipc.DeleteClip;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
+import java.awt.dnd.*;
+import java.util.List;
 
 import hibiki.ipc.Response;
 import hibiki.ipc.ClipInfo;
@@ -132,20 +136,23 @@ public class SessionView extends JPanel {
 
     private void selectTrack(int trackIdx) {
         selectedTrack = trackIdx;
-        // Update TimelineView selection to sync
+        // Update TimelineView selection to sync (0-based vs 1-based)
         if (TimelineView.getInstance() != null) {
-            // SessionView uses 1-based track indices (1-4), TimelineView uses 0-based
-            // So we subtract 1 to sync
-            // Note: This is a simplified sync - in a real app you'd want a shared selection
-            // model
+            // Could sync here in the future with a shared selection model
         }
-        // Update visual highlighting
+        // Update visual highlighting - entire track panel, not just header
         for (int i = 1; i <= 4; i++) {
-            if (trackHeaders[i] != null) {
+            if (trackStrips[i] != null) {
                 if (i == selectedTrack) {
-                    trackHeaders[i].setBackground(Theme.getInstance().ACCENT_BLUE.darker());
+                    trackStrips[i].setBackground(Theme.getInstance().ACCENT_BLUE.darker().darker());
+                    if (trackHeaders[i] != null) {
+                        trackHeaders[i].setBackground(Theme.getInstance().ACCENT_BLUE.darker());
+                    }
                 } else {
-                    trackHeaders[i].setBackground(Theme.getInstance().TRACK_HEADER);
+                    trackStrips[i].setBackground(Theme.getInstance().PANEL_BG);
+                    if (trackHeaders[i] != null) {
+                        trackHeaders[i].setBackground(Theme.getInstance().TRACK_HEADER);
+                    }
                 }
             }
         }
@@ -206,6 +213,47 @@ public class SessionView extends JPanel {
                     }
                 }
             });
+
+            // Setup drop target for drag-drop clips (skip in headless mode for tests)
+            if (!java.awt.GraphicsEnvironment.isHeadless()) {
+                new DropTarget(clipBtn, new DropTargetAdapter() {
+                    @Override
+                    public void drop(DropTargetDropEvent dtde) {
+                        try {
+                            dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                            Transferable t = dtde.getTransferable();
+                            if (t.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                                @SuppressWarnings("unchecked")
+                                List<File> files = (List<File>) t.getTransferData(DataFlavor.javaFileListFlavor);
+                                if (!files.isEmpty()) {
+                                    File file = files.get(0);
+                                    String path = file.getAbsolutePath();
+                                    String lower = path.toLowerCase();
+                                    if (lower.endsWith(".mid") || lower.endsWith(".midi") ||
+                                            lower.endsWith(".wav") || lower.endsWith(".mp3") ||
+                                            lower.endsWith(".ogg") || lower.endsWith(".flac")) {
+                                        // Load clip to this slot
+                                        sendLoadClip(trackIdx, slotIdx, path, false);
+                                    }
+                                }
+                            }
+                            dtde.dropComplete(true);
+                        } catch (Exception ex) {
+                            dtde.dropComplete(false);
+                        }
+                    }
+
+                    @Override
+                    public void dragEnter(DropTargetDragEvent dtde) {
+                        clipBtn.setBackground(Theme.getInstance().ACCENT_BLUE);
+                    }
+
+                    @Override
+                    public void dragExit(DropTargetEvent dte) {
+                        clipBtn.setBackground(Theme.getInstance().PANEL_BG_LIGHT);
+                    }
+                });
+            }
 
             slotButtons[trackIdx][slotIdx] = clipBtn;
             strip.add(Box.createVerticalStrut(Theme.getInstance().scale(2)));

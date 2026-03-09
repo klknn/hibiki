@@ -226,4 +226,40 @@ public class Theme {
     public float scale(float val) {
       return val * scaling;
     }
+
+    /**
+     * Creates a styled flat button with consistent look and feel.
+     * Includes hover effects and themed colors.
+     * Reserved for future use - currently buttons use LAF defaults.
+     */
+    public javax.swing.JButton createFlatButton(String text, java.awt.event.ActionListener listener) {
+      javax.swing.JButton btn = new javax.swing.JButton(text);
+      btn.setFont(FONT_UI);
+      btn.setBackground(PANEL_BG);
+      btn.setForeground(TEXT_NORMAL);
+      btn.setFocusPainted(false);
+      btn.setBorder(javax.swing.BorderFactory.createLineBorder(BORDER));
+      btn.setMargin(new java.awt.Insets(scale(2), scale(8), scale(2), scale(8)));
+      if (listener != null) {
+        btn.addActionListener(listener);
+      }
+
+      btn.addMouseListener(new java.awt.event.MouseAdapter() {
+        public void mouseEntered(java.awt.event.MouseEvent e) {
+          btn.setBackground(PANEL_BG_LIGHT);
+        }
+
+        public void mouseExited(java.awt.event.MouseEvent e) {
+          btn.setBackground(PANEL_BG);
+        }
+      });
+
+      return btn;
+    }
+
+    public javax.swing.JButton createButton(String text, java.awt.event.ActionListener listener) {
+      javax.swing.JButton btn = new javax.swing.JButton(text);
+      btn.addActionListener(listener);
+      return btn;
+    }
 }

@@ -74,6 +74,23 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         };
         rowHeader.setBackground(Theme.getInstance().BG_DARK);
 
+        // Add mouse listener to rowHeader for track selection
+        rowHeader.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
+                int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+                if (e.getY() >= scaleTimeRuler) {
+                    int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
+                    if (trackIdx >= 0 && trackIdx < tracks.size()) {
+                        selectedTrack = trackIdx;
+                        rowHeader.repaint();
+                        contentPanel.repaint();
+                    }
+                }
+            }
+        });
+
         scrollPane = new JScrollPane(contentPanel);
         scrollPane.setBorder(null);
         scrollPane.setRowHeaderView(rowHeader);

@@ -48,15 +48,15 @@ public class TopBar extends JPanel {
         leftPanel.add(bpmField);
         leftPanel.add(timeSigLabel);
 
-        leftPanel.add(createFlatButton("Save", e -> showSaveDialog()));
-        leftPanel.add(createFlatButton("Load", e -> showLoadDialog()));
+        leftPanel.add(Theme.getInstance().createButton("Save", e -> showSaveDialog()));
+        leftPanel.add(Theme.getInstance().createButton("Load", e -> showLoadDialog()));
 
         // View Toggles
         leftPanel.add(Box.createHorizontalStrut(Theme.getInstance().scale(20)));
-        JButton sessionBtn = createFlatButton("Session", e -> {
+        JButton sessionBtn = Theme.getInstance().createButton("Session", e -> {
             if (viewToggleListener != null) viewToggleListener.onViewToggle(false);
         });
-        JButton timelineBtn = createFlatButton("Timeline", e -> {
+        JButton timelineBtn = Theme.getInstance().createButton("Timeline", e -> {
             if (viewToggleListener != null) viewToggleListener.onViewToggle(true);
         });
         leftPanel.add(sessionBtn);
@@ -68,20 +68,20 @@ public class TopBar extends JPanel {
         JPanel centerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 10));
         centerPanel.setOpaque(false);
 
-        JButton playBtn = createFlatButton("▶", e -> sendPlay());
+        JButton playBtn = Theme.getInstance().createButton("▶", e -> sendPlay());
         playBtn.setForeground(Theme.getInstance().ACCENT_GREEN);
         playBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
 
-        JButton stopBtn = createFlatButton("■", e -> sendStop());
+        JButton stopBtn = Theme.getInstance().createButton("■", e -> sendStop());
         stopBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
 
-        JButton recordBtn = createFlatButton("●", e -> {
+        JButton recordBtn = Theme.getInstance().createButton("●", e -> {
             /* Record placeholder for future */});
         recordBtn.setForeground(new Color(200, 50, 50)); // Red for record
         recordBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
         recordBtn.setToolTipText("Record (coming soon)");
 
-        loopBtn = createFlatButton("⟳", e -> toggleLoop());
+        loopBtn = Theme.getInstance().createButton("⟳", e -> toggleLoop());
         loopBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
         loopBtn.setToolTipText("Loop toggle");
 
@@ -105,7 +105,7 @@ public class TopBar extends JPanel {
 
         cpuLabel = createDisplayLabel("CPU: 0%", Theme.getInstance().scale(70));
 
-        JButton settingsBtn = createFlatButton("⚙", e -> showSettings());
+        JButton settingsBtn = Theme.getInstance().createButton("⚙", e -> showSettings());
         settingsBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
 
         rightPanel.add(rateLabel);
@@ -142,29 +142,6 @@ public class TopBar extends JPanel {
         return field;
     }
 
-    private JButton createFlatButton(String text, java.awt.event.ActionListener listener) {
-        JButton btn = new JButton(text);
-        btn.setFont(Theme.getInstance().FONT_UI);
-        btn.setBackground(Theme.getInstance().PANEL_BG);
-        btn.setForeground(Theme.getInstance().TEXT_NORMAL);
-        btn.setFocusPainted(false);
-        btn.setBorder(BorderFactory.createLineBorder(Theme.getInstance().BORDER));
-        btn.setMargin(new Insets(Theme.getInstance().scale(2), Theme.getInstance().scale(8),
-                Theme.getInstance().scale(2), Theme.getInstance().scale(8)));
-        btn.addActionListener(listener);
-
-        btn.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseEntered(java.awt.event.MouseEvent e) {
-                btn.setBackground(Theme.getInstance().PANEL_BG_LIGHT);
-            }
-
-            public void mouseExited(java.awt.event.MouseEvent e) {
-                btn.setBackground(Theme.getInstance().PANEL_BG);
-            }
-        });
-
-        return btn;
-    }
 
     private void sendPlay() {
         BackendManager.getInstance().startPlayback();

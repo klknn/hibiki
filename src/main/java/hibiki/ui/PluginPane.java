@@ -153,12 +153,10 @@ public class PluginPane extends JPanel {
             btnPanel.setOpaque(false);
 
             JButton editBtn = new JButton("Edit");
-            editBtn.setMargin(new Insets(0, 5, 0, 5));
             editBtn.addActionListener(e -> sendShowGui());
             btnPanel.add(editBtn);
 
             JButton delBtn = new JButton("❌");
-            delBtn.setMargin(new Insets(0, 2, 0, 2));
             delBtn.addActionListener(e -> sendRemovePlugin());
             btnPanel.add(delBtn);
 

@@ -83,7 +83,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 if (e.getY() >= scaleTimeRuler) {
                     int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
                     if (trackIdx >= 0 && trackIdx < tracks.size()) {
-                        selectedTrack = trackIdx;
+                        setSelectedTrack(trackIdx);
                         rowHeader.repaint();
                         contentPanel.repaint();
                     }
@@ -211,8 +211,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                     int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
                     int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
                     if (trackIdx >= 0 && trackIdx < tracks.size()) {
-                        selectedTrack = trackIdx;
-                        repaint();
+                        setSelectedTrack(trackIdx);
                     }
                 }
             }
@@ -242,6 +241,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             // Ensure track exists
             while (tracks.size() <= selectedTrack) {
                 tracks.add(new TrackTimeline(tracks.size()));
+            }
+            // Notify PluginPane about track selection change
+            if (PluginPane.getInstance() != null) {
+                PluginPane.getInstance().setSelectedTrack(trackIdx);
             }
             repaint();
         }

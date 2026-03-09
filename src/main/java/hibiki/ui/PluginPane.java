@@ -12,12 +12,19 @@ import hibiki.BackendManager;
 import com.google.flatbuffers.FlatBufferBuilder;
 
 public class PluginPane extends JPanel {
+    private static PluginPane instance;
     private final JPanel deviceChainContent;
-    private final Map<Integer, DevicePanel> devicePanels = new TreeMap<>();
+    // Per-track cache: trackIndex -> (pluginIndex -> DevicePanel)
+    private final Map<Integer, Map<Integer, DevicePanel>> trackDevicePanels = new TreeMap<>();
     private final WaveformPanel waveformPanel = new WaveformPanel();
-    private int currentTrackIndex = -1;
+    private int selectedTrack = 0; // Currently selected track to display
+
+    public static PluginPane getInstance() {
+        return instance;
+    }
 
     public PluginPane() {
+        instance = this;
         setLayout(new BorderLayout());
         setBackground(Theme.getInstance().BG_DARK);
         setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.getInstance().BORDER));
@@ -52,7 +59,7 @@ public class PluginPane extends JPanel {
 
     private void clearPanels() {
         SwingUtilities.invokeLater(() -> {
-            devicePanels.clear();
+            trackDevicePanels.clear();
             deviceChainContent.removeAll();
             rebuildDeviceChain();
         });
@@ -60,32 +67,51 @@ public class PluginPane extends JPanel {
 
     public void updateParams(ParamList paramList) {
         SwingUtilities.invokeLater(() -> {
-            if (currentTrackIndex != paramList.trackIndex()) {
-                currentTrackIndex = paramList.trackIndex();
-                devicePanels.clear();
-                deviceChainContent.removeAll();
-            }
-
+            int trackIdx = paramList.trackIndex();
             int pIdx = paramList.pluginIndex();
+
+            // Get or create the device panel map for this track
+            Map<Integer, DevicePanel> devicePanels = trackDevicePanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
+
             if (paramList.pluginName().isEmpty()) {
                 devicePanels.remove(pIdx);
-                rebuildDeviceChain();
+                if (trackIdx == selectedTrack) {
+                    rebuildDeviceChain();
+                }
                 return;
             }
 
             DevicePanel panel = devicePanels.get(pIdx);
             if (panel == null || !panel.pluginName.equals(paramList.pluginName())) {
-                panel = new DevicePanel(currentTrackIndex, pIdx, paramList.pluginName(), paramList.isInstrument());
+                panel = new DevicePanel(trackIdx, pIdx, paramList.pluginName(), paramList.isInstrument());
                 devicePanels.put(pIdx, panel);
             }
             panel.setParams(paramList);
-            rebuildDeviceChain();
+
+            // Only rebuild UI if this is the selected track
+            if (trackIdx == selectedTrack) {
+                rebuildDeviceChain();
+            }
         });
+    }
+
+    /**
+     * Set the selected track for filtering devices.
+     * Shows devices from the selected track (cached).
+     */
+    public void setSelectedTrack(int trackIdx) {
+        if (this.selectedTrack != trackIdx) {
+            this.selectedTrack = trackIdx;
+            rebuildDeviceChain();
+        }
     }
 
     private void rebuildDeviceChain() {
         deviceChainContent.removeAll();
 
+        // Get device panels for the selected track
+        Map<Integer, DevicePanel> devicePanels = trackDevicePanels.getOrDefault(selectedTrack,
+                java.util.Collections.emptyMap());
         List<DevicePanel> panels = new ArrayList<>(devicePanels.values());
 
         // Find instrument
@@ -266,7 +292,10 @@ public class PluginPane extends JPanel {
             BackendManager.getInstance().sendRequest(builder);
 
             // Immediate local feedback
-            devicePanels.remove(pluginIndex);
+            Map<Integer, DevicePanel> panels = trackDevicePanels.get(trackIndex);
+            if (panels != null) {
+                panels.remove(pluginIndex);
+            }
             rebuildDeviceChain();
         }
     }

@@ -32,6 +32,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     private final JScrollPane scrollPane;
     private final JPanel contentPanel;
     private final Timer repaintTimer;
+    private boolean autoScroll = true; // Auto-scroll to follow playhead during playback
+    private int playheadScreenOffset = -1; // Screen X position to keep playhead at during auto-scroll
 
     /** Get the singleton TimelineView instance */
     public static TimelineView getInstance() {
@@ -54,8 +56,27 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         contentPanel.setLayout(null);
         contentPanel.setBackground(Theme.getInstance().BG_DARK);
 
+        // Create fixed row header for track labels
+        JPanel rowHeader = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                drawTrackLabels(g);
+            }
+
+            @Override
+            public Dimension getPreferredSize() {
+                int scaleLabelWidth = Theme.getInstance().scale(TRACK_LABEL_WIDTH);
+                int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
+                int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+                return new Dimension(scaleLabelWidth, scaleTimeRuler + tracks.size() * scaleTrackHeight);
+            }
+        };
+        rowHeader.setBackground(Theme.getInstance().BG_DARK);
+
         scrollPane = new JScrollPane(contentPanel);
         scrollPane.setBorder(null);
+        scrollPane.setRowHeaderView(rowHeader);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         add(scrollPane, BorderLayout.CENTER);
 
@@ -66,7 +87,17 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         updateContentSize();
 
         repaintTimer = new Timer(33, e -> {
-            contentPanel.repaint(); // Must repaint contentPanel, not TimelineView, for playhead
+            // Auto-scroll to follow playhead during playback
+            if (isPlaying && autoScroll) {
+                // No label offset - content panel starts at x=0
+                int playheadX = (int) (playheadPos * PIXELS_PER_SECOND);
+
+                // Keep playhead at the same screen position where playback started
+                int targetScrollX = playheadX - playheadScreenOffset;
+                targetScrollX = Math.max(0, targetScrollX);
+                scrollPane.getHorizontalScrollBar().setValue(targetScrollX);
+            }
+            contentPanel.repaint();
         });
         repaintTimer.start();
 
@@ -93,6 +124,12 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         controls.add(label);
         controls.add(unitCombo);
         
+        JCheckBox autoScrollCheck = new JCheckBox("Auto-scroll", autoScroll);
+        autoScrollCheck.setForeground(Theme.getInstance().TEXT_DIM);
+        autoScrollCheck.setOpaque(false);
+        autoScrollCheck.addActionListener(e -> autoScroll = autoScrollCheck.isSelected());
+        controls.add(autoScrollCheck);
+
         add(controls, BorderLayout.NORTH);
     }
 
@@ -194,9 +231,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     private void updatePlayhead(int x) {
-        // Subtract track label width to get position relative to timeline area
-        int scaleLabelWidth = Theme.getInstance().scale(TRACK_LABEL_WIDTH);
-        float timelineX = Math.max(0, x - scaleLabelWidth);
+        // Content panel starts at x=0, no label offset needed
+        float timelineX = Math.max(0, x);
         playheadPos = timelineX / PIXELS_PER_SECOND;
         BackendManager.getInstance().seek(playheadPos);
         repaint();
@@ -207,7 +243,16 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) n.response(new hibiki.ipc.PlayheadInfo());
             playheadPos = info.positionSec();
             bpm = info.bpm();
+            boolean wasPlaying = isPlaying;
             isPlaying = info.isPlaying();
+
+            // Capture playhead screen position when playback starts
+            if (isPlaying && !wasPlaying && autoScroll) {
+                // No label offset - content panel starts at x=0
+                int playheadX = (int) (playheadPos * PIXELS_PER_SECOND);
+                int scrollX = scrollPane.getHorizontalScrollBar().getValue();
+                playheadScreenOffset = playheadX - scrollX;
+            }
         } else if (n.responseType() == hibiki.ipc.Response.TimelineClipInfo) {
             TimelineClipInfo info = (TimelineClipInfo) n.response(new TimelineClipInfo());
             int tidx = info.trackIndex();
@@ -238,29 +283,23 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         }
     }
 
-    private void drawTimeline(Graphics g) {
+    private void drawTrackLabels(Graphics g) {
         Graphics2D g2 = (Graphics2D) g;
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
         int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
         int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
-
         int scaleLabelWidth = Theme.getInstance().scale(TRACK_LABEL_WIDTH);
 
-        // Draw tracks background
+        // Draw time ruler corner
+        g2.setColor(Theme.getInstance().BG_DARKER);
+        g2.fillRect(0, 0, scaleLabelWidth, scaleTimeRuler);
+
+        // Draw track labels
         for (int i = 0; i < tracks.size(); i++) {
             int y = scaleTimeRuler + i * scaleTrackHeight;
-            // Highlight selected track
-            if (i == selectedTrack) {
-                g2.setColor(Theme.getInstance().ACCENT_BLUE.darker().darker());
-            } else {
-                g2.setColor(i % 2 == 0 ? Theme.getInstance().BG_DARK : Theme.getInstance().BG_DARKER);
-            }
-            g2.fillRect(0, y, contentPanel.getWidth(), scaleTrackHeight);
-            g2.setColor(Theme.getInstance().PANEL_BG_LIGHT.darker());
-            g2.drawLine(0, y + scaleTrackHeight - 1, contentPanel.getWidth(), y + scaleTrackHeight - 1);
 
-            // Draw track label background (brighter for selected)
+            // Draw label background
             if (i == selectedTrack) {
                 g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
             } else {
@@ -278,7 +317,6 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             if (track.pluginName != null) {
                 g2.setFont(Theme.getInstance().FONT_UI);
                 g2.setColor(track.isInstrument ? Theme.getInstance().ACCENT_ORANGE : Theme.getInstance().TEXT_DIM);
-                // Truncate long names
                 String pname = track.pluginName;
                 if (pname.length() > 12)
                     pname = pname.substring(0, 11) + "…";
@@ -291,7 +329,30 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
             // Draw separator line
             g2.setColor(Theme.getInstance().BORDER);
-            g2.drawLine(scaleLabelWidth, y, scaleLabelWidth, y + scaleTrackHeight - 1);
+            g2.drawLine(0, y + scaleTrackHeight - 1, scaleLabelWidth, y + scaleTrackHeight - 1);
+        }
+    }
+
+    private void drawTimeline(Graphics g) {
+        Graphics2D g2 = (Graphics2D) g;
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
+        int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+        int scaleLabelWidth = 0; // Labels are in the row header now, content starts at x=0
+
+        // Draw tracks background (no labels - they're in the row header)
+        for (int i = 0; i < tracks.size(); i++) {
+            int y = scaleTimeRuler + i * scaleTrackHeight;
+            // Highlight selected track
+            if (i == selectedTrack) {
+                g2.setColor(Theme.getInstance().ACCENT_BLUE.darker().darker());
+            } else {
+                g2.setColor(i % 2 == 0 ? Theme.getInstance().BG_DARK : Theme.getInstance().BG_DARKER);
+            }
+            g2.fillRect(0, y, contentPanel.getWidth(), scaleTrackHeight);
+            g2.setColor(Theme.getInstance().PANEL_BG_LIGHT.darker());
+            g2.drawLine(0, y + scaleTrackHeight - 1, contentPanel.getWidth(), y + scaleTrackHeight - 1);
         }
 
         // Draw vertical grid lines through track area

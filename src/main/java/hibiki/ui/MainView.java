@@ -53,6 +53,11 @@ public class MainView extends JPanel implements Theme.ThemeListener {
 
         add(mainSplit, BorderLayout.CENTER);
 
+        // Disable focus traversal keys so Tab and Space can be used as shortcuts
+        setFocusTraversalKeysEnabled(false);
+        setFocusable(true);
+        requestFocusInWindow();
+
         // Global shortcuts for Undo/Redo
         InputMap inputMap = getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
         ActionMap actionMap = getActionMap();

@@ -9,6 +9,7 @@ import hibiki.ipc.Response;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -226,6 +227,14 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                     int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
                     if (trackIdx >= 0 && trackIdx < tracks.size()) {
                         setSelectedTrack(trackIdx);
+
+                        // Right-click: show clip context menu if clicked on a clip
+                        if (SwingUtilities.isRightMouseButton(e)) {
+                            ClipRect clip = findClipAtPosition(trackIdx, e.getX());
+                            if (clip != null) {
+                                showClipContextMenu(trackIdx, clip, e.getX(), e.getY());
+                            }
+                        }
                     }
                 }
             }
@@ -279,6 +288,62 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             track.customName = newName.isEmpty() ? null : newName;
             repaint();
         }
+    }
+
+    /** Find clip at the given x position in the specified track */
+    private ClipRect findClipAtPosition(int trackIdx, int x) {
+        if (trackIdx < 0 || trackIdx >= tracks.size())
+            return null;
+        TrackTimeline track = tracks.get(trackIdx);
+        float clickTime = x / PIXELS_PER_SECOND;
+        for (ClipRect clip : track.clips) {
+            if (clickTime >= clip.startTime && clickTime <= clip.startTime + clip.duration) {
+                return clip;
+            }
+        }
+        return null;
+    }
+
+    /** Show context menu for a timeline clip */
+    private void showClipContextMenu(int trackIdx, ClipRect clip, int x, int y) {
+        JPopupMenu menu = new JPopupMenu();
+
+        // Edit Clip (MIDI only)
+        JMenuItem editItem = new JMenuItem("Edit Clip...");
+        editItem.addActionListener(e -> {
+            if (clip.path != null && clip.path.endsWith(".mid")) {
+                File file = new File(clip.path);
+                JFrame ownerFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
+                PianoRoll pr = new PianoRoll(ownerFrame, file, trackIdx, -1); // -1 for timeline clip
+                pr.setVisible(true);
+            } else {
+                JOptionPane.showMessageDialog(this, "Can only edit MIDI (.mid) clips.", "Error",
+                        JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        menu.add(editItem);
+
+        // Delete Clip
+        menu.addSeparator();
+        JMenuItem deleteItem = new JMenuItem("Delete Clip");
+        deleteItem.addActionListener(e -> {
+            // Find clip index and remove from GUI
+            // Note: Backend delete not implemented yet, just removes from display
+            TrackTimeline track = tracks.get(trackIdx);
+            int clipIdx = track.clips.indexOf(clip);
+            if (clipIdx >= 0) {
+                track.clips.remove(clipIdx);
+                track.clipMap.clear();
+                for (int i = 0; i < track.clips.size(); i++) {
+                    track.clipMap.put(i, track.clips.get(i));
+                }
+                updateContentSize();
+                repaint();
+            }
+        });
+        menu.add(deleteItem);
+
+        menu.show(contentPanel, x, y);
     }
 
     private void updatePlayhead(int x) {

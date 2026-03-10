@@ -12,10 +12,13 @@ import javax.sound.midi.*;
 import hibiki.BackendManager;
 
 public class PianoRoll extends JDialog {
-    private static final int KEY_HEIGHT = 12;
-    private static final int TICK_WIDTH = 2; // Pixels per tick (adjustable)
     private static final int NUM_KEYS = 128;
     
+    // Zoom settings (adjustable)
+    private int keyHeight = 12; // Default, adjustable via vertical zoom
+    private float tickScale = 1.0f; // Multiplier for base tick width
+    private float baseTickWidth = 1.0f; // Calculated to fit entire clip at scale=1.0
+
     private final File midiFile;
     private final int trackIdx;
     private final int slotIdx;
@@ -24,7 +27,9 @@ public class PianoRoll extends JDialog {
     private List<Note> notes = new ArrayList<>();
     
     private JPanel gridPanel;
-    private JScrollPane scrollPane;
+    private JPanel keysPanel;
+    private JScrollPane gridScroll;
+    private JScrollPane keysScroll;
     
     // Interaction state
     private Note draggingNote = null;
@@ -32,6 +37,10 @@ public class PianoRoll extends JDialog {
     private int dragOffsetX = 0;
     private int dragOffsetY = 0;
     
+    // Zoom sliders
+    private JSlider hZoomSlider;
+    private JSlider vZoomSlider;
+
     private static class Note {
         int pitch;
         long startTick;
@@ -61,6 +70,10 @@ public class PianoRoll extends JDialog {
         setLocationRelativeTo(owner);
     }
     
+    private float getTickWidth() {
+        return baseTickWidth * tickScale;
+    }
+
     private void loadMidi() {
         notes.clear();
         try {
@@ -179,7 +192,7 @@ public class PianoRoll extends JDialog {
             }
             c = c.getParent();
         }
-        return null; // Should not happen in normal usage if passed MainView's frame
+        return null;
     }
     
     private SessionView findSessionView(Container c) {
@@ -190,13 +203,48 @@ public class PianoRoll extends JDialog {
                 if (sv != null) return sv;
             }
         }
-        return null; // Should not happen if correctly integrated
+        return null;
     }
 
     private void initUI() {
         setLayout(new BorderLayout());
         getContentPane().setBackground(Theme.getInstance().BG_DARKER);
         
+        // Calculate note range for auto-fit
+        int minPitch = 127, maxPitch = 0;
+        long minTick = Long.MAX_VALUE, maxTick = 0;
+        for (Note n : notes) {
+            minPitch = Math.min(minPitch, n.pitch);
+            maxPitch = Math.max(maxPitch, n.pitch);
+            minTick = Math.min(minTick, n.startTick);
+            maxTick = Math.max(maxTick, n.startTick + n.durationTicks);
+        }
+        if (notes.isEmpty()) {
+            minPitch = 48;
+            maxPitch = 72; // Default C3-C5 range
+            minTick = 0;
+            maxTick = sequence.getResolution() * 4 * 4;
+        }
+
+        // Calculate baseTickWidth so that scale=1.0 fits entire clip
+        int viewWidth = Theme.getInstance().scale(700);
+        long totalTicks = maxTick - minTick;
+        if (totalTicks > 0) {
+            baseTickWidth = (float) viewWidth / totalTicks;
+        } else {
+            baseTickWidth = 2.0f;
+        }
+        tickScale = 1.0f; // Start at 100% (fits entire clip)
+
+        // Calculate vertical zoom to fit entire note range with margin
+        int viewHeight = Theme.getInstance().scale(400);
+        int noteRange = maxPitch - minPitch + 1;
+        int keysToShow = noteRange + 6; // Add margin above and below
+        keyHeight = Math.max(2, viewHeight / keysToShow);
+
+        final int centerPitch = (minPitch + maxPitch) / 2;
+        final long centerTick = (minTick + maxTick) / 2;
+
         // Toolbar
         JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
         toolbar.setBackground(Theme.getInstance().PANEL_BG);
@@ -210,16 +258,16 @@ public class PianoRoll extends JDialog {
         add(toolbar, BorderLayout.NORTH);
         
         // Piano Keys (Left)
-        JPanel keysPanel = new JPanel() {
+        keysPanel = new JPanel() {
             @Override
             public Dimension getPreferredSize() {
-                return new Dimension(Theme.getInstance().scale(60), NUM_KEYS * Theme.getInstance().scale(KEY_HEIGHT));
+                return new Dimension(Theme.getInstance().scale(60), NUM_KEYS * getScaledKeyHeight());
             }
             
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                int kh = Theme.getInstance().scale(KEY_HEIGHT);
+                int kh = getScaledKeyHeight();
                 for (int i = 0; i < NUM_KEYS; i++) {
                     int pitch = NUM_KEYS - 1 - i;
                     int y = i * kh;
@@ -233,7 +281,7 @@ public class PianoRoll extends JDialog {
                     
                     if (!isBlack && (pitch % 12 == 0)) { // C notes
                         g.setColor(Color.BLACK);
-                        g.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(9)));
+                        g.setFont(new Font("SansSerif", Font.PLAIN, Math.min(kh - 2, Theme.getInstance().scale(9))));
                         g.drawString("C" + (pitch / 12 - 1), 2, y + kh - 2);
                     }
                 }
@@ -244,20 +292,21 @@ public class PianoRoll extends JDialog {
         gridPanel = new JPanel() {
             @Override
             public Dimension getPreferredSize() {
-                long maxTick = 0;
+                long maxT = 0;
                 for (Note n : notes) {
-                    if (n.startTick + n.durationTicks > maxTick) {
-                        maxTick = n.startTick + n.durationTicks;
+                    if (n.startTick + n.durationTicks > maxT) {
+                        maxT = n.startTick + n.durationTicks;
                     }
                 }
-                maxTick = Math.max(maxTick, sequence.getResolution() * 4 * 4); // At least 4 bars
-                return new Dimension((int)(maxTick * TICK_WIDTH) + 200, NUM_KEYS * Theme.getInstance().scale(KEY_HEIGHT));
+                maxT = Math.max(maxT, sequence.getResolution() * 4 * 4); // At least 4 bars
+                return new Dimension((int) (maxT * getTickWidth()) + 200, NUM_KEYS * getScaledKeyHeight());
             }
             
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                int kh = Theme.getInstance().scale(KEY_HEIGHT);
+                int kh = getScaledKeyHeight();
+                float tw = getTickWidth();
                 
                 // Draw horizontal grid lines
                 for (int i = 0; i < NUM_KEYS; i++) {
@@ -272,15 +321,18 @@ public class PianoRoll extends JDialog {
                 // Draw vertical grid lines (beat markers)
                 int res = sequence.getResolution();
                 g.setColor(new Color(80, 80, 80));
-                for (int x = 0; x < getWidth(); x += res * TICK_WIDTH) {
-                    g.drawLine(x, 0, x, getHeight());
+                float beatWidth = res * tw;
+                if (beatWidth >= 2) { // Only draw if visible
+                    for (float x = 0; x < getWidth(); x += beatWidth) {
+                        g.drawLine((int) x, 0, (int) x, getHeight());
+                    }
                 }
                 
                 // Draw notes
                 for (Note n : notes) {
-                    int x = (int)(n.startTick * TICK_WIDTH);
+                    int x = (int) (n.startTick * tw);
                     int y = (NUM_KEYS - 1 - n.pitch) * kh;
-                    int w = (int)(n.durationTicks * TICK_WIDTH);
+                    int w = Math.max(1, (int) (n.durationTicks * tw));
                     
                     // Draw filled rect
                     g.setColor(Theme.getInstance().ACCENT_BLUE);
@@ -296,11 +348,11 @@ public class PianoRoll extends JDialog {
         setupMouseListeners();
         
         // Sync scrolling
-        JScrollPane gridScroll = new JScrollPane(gridPanel);
-        gridScroll.getVerticalScrollBar().setUnitIncrement(Theme.getInstance().scale(KEY_HEIGHT));
+        gridScroll = new JScrollPane(gridPanel);
+        gridScroll.getVerticalScrollBar().setUnitIncrement(getScaledKeyHeight());
         gridScroll.getHorizontalScrollBar().setUnitIncrement(Theme.getInstance().scale(20));
         
-        JScrollPane keysScroll = new JScrollPane(keysPanel);
+        keysScroll = new JScrollPane(keysPanel);
         keysScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
         keysScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         
@@ -312,22 +364,69 @@ public class PianoRoll extends JDialog {
         split.setDividerLocation(Theme.getInstance().scale(60));
         split.setDividerSize(0);
         
-        add(split, BorderLayout.CENTER);
-        
-        // Scroll to middle C roughly
+        // Main content panel with zoom sliders at bottom right
+        JPanel mainContent = new JPanel(new BorderLayout());
+        mainContent.add(split, BorderLayout.CENTER);
+
+        // Zoom slider panel (bottom right corner)
+        JPanel zoomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 2));
+        zoomPanel.setBackground(Theme.getInstance().PANEL_BG);
+        zoomPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.getInstance().BORDER));
+
+        // Horizontal zoom slider: 100 = 100% = fits entire clip, 500 = 500% = zoomed in
+        // 5x
+        JLabel hLabel = new JLabel("H:");
+        hLabel.setForeground(Theme.getInstance().TEXT_DIM);
+        zoomPanel.add(hLabel);
+        hZoomSlider = new JSlider(100, 500, 100);
+        hZoomSlider.setPreferredSize(new Dimension(80, 20));
+        hZoomSlider.addChangeListener(e -> {
+            tickScale = hZoomSlider.getValue() / 100.0f;
+            gridPanel.revalidate();
+            gridPanel.repaint();
+        });
+        zoomPanel.add(hZoomSlider);
+
+        // Vertical zoom slider
+        JLabel vLabel = new JLabel("V:");
+        vLabel.setForeground(Theme.getInstance().TEXT_DIM);
+        zoomPanel.add(vLabel);
+        vZoomSlider = new JSlider(2, 30, Math.min(30, Math.max(2, keyHeight)));
+        vZoomSlider.setPreferredSize(new Dimension(80, 20));
+        vZoomSlider.addChangeListener(e -> {
+            keyHeight = vZoomSlider.getValue();
+            keysPanel.revalidate();
+            keysPanel.repaint();
+            gridPanel.revalidate();
+            gridPanel.repaint();
+        });
+        zoomPanel.add(vZoomSlider);
+
+        mainContent.add(zoomPanel, BorderLayout.SOUTH);
+        add(mainContent, BorderLayout.CENTER);
+
+        // Scroll to center on note content
         SwingUtilities.invokeLater(() -> {
-            int middleY = (NUM_KEYS - 1 - 60) * Theme.getInstance().scale(KEY_HEIGHT);
-            gridScroll.getVerticalScrollBar().setValue(Math.max(0, middleY - getHeight()/2));
+            int centerY = (NUM_KEYS - 1 - centerPitch) * getScaledKeyHeight();
+            int centerX = (int) (centerTick * getTickWidth());
+            gridScroll.getVerticalScrollBar().setValue(Math.max(0, centerY - gridScroll.getViewport().getHeight() / 2));
+            gridScroll.getHorizontalScrollBar()
+                    .setValue(Math.max(0, centerX - gridScroll.getViewport().getWidth() / 2));
         });
     }
     
+    private int getScaledKeyHeight() {
+        return Theme.getInstance().scale(keyHeight);
+    }
+
     private void setupMouseListeners() {
         MouseAdapter ma = new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                int kh = Theme.getInstance().scale(KEY_HEIGHT);
+                int kh = getScaledKeyHeight();
+                float tw = getTickWidth();
                 int pitch = NUM_KEYS - 1 - (e.getY() / kh);
-                long tick = e.getX() / TICK_WIDTH;
+                long tick = (long) (e.getX() / tw);
                 
                 if (pitch < 0 || pitch >= NUM_KEYS) return;
                 
@@ -341,13 +440,13 @@ public class PianoRoll extends JDialog {
                     }
                 } else if (SwingUtilities.isLeftMouseButton(e)) {
                     if (clickedNote != null) {
-                        int noteEndX = (int)((clickedNote.startTick + clickedNote.durationTicks) * TICK_WIDTH);
+                        int noteEndX = (int) ((clickedNote.startTick + clickedNote.durationTicks) * tw);
                         // If clicking near right edge -> resize
                         if (Math.abs(e.getX() - noteEndX) <= 8) {
                             resizingNote = clickedNote;
                         } else {
                             draggingNote = clickedNote;
-                            dragOffsetX = (int)(e.getX() - clickedNote.startTick * TICK_WIDTH);
+                            dragOffsetX = (int) (e.getX() - clickedNote.startTick * tw);
                             dragOffsetY = pitch - clickedNote.pitch; // Usually 0
                         }
                     } else {
@@ -372,12 +471,13 @@ public class PianoRoll extends JDialog {
             
             @Override
             public void mouseDragged(MouseEvent e) {
+                float tw = getTickWidth();
                 if (draggingNote != null) {
-                    int kh = Theme.getInstance().scale(KEY_HEIGHT);
+                    int kh = getScaledKeyHeight();
                     int pitch = NUM_KEYS - 1 - (e.getY() / kh);
                     pitch = Math.max(0, Math.min(NUM_KEYS - 1, pitch));
                     
-                    long tick = (e.getX() - dragOffsetX) / TICK_WIDTH;
+                    long tick = (long) ((e.getX() - dragOffsetX) / tw);
                     // Snap to 16th notes
                     long snapTick = Math.round((double)tick / (sequence.getResolution() / 4)) * (sequence.getResolution() / 4);
                     
@@ -385,7 +485,7 @@ public class PianoRoll extends JDialog {
                     draggingNote.startTick = Math.max(0, snapTick);
                     gridPanel.repaint();
                 } else if (resizingNote != null) {
-                    long newEndTick = e.getX() / TICK_WIDTH;
+                    long newEndTick = (long) (e.getX() / tw);
                     long snapEndTick = Math.round((double)newEndTick / (sequence.getResolution() / 4)) * (sequence.getResolution() / 4);
                     
                     long durTick = snapEndTick - resizingNote.startTick;
@@ -400,9 +500,10 @@ public class PianoRoll extends JDialog {
     }
     
     private Note getNoteAt(int x, int y) {
-        int kh = Theme.getInstance().scale(KEY_HEIGHT);
+        int kh = getScaledKeyHeight();
+        float tw = getTickWidth();
         int pitch = NUM_KEYS - 1 - (y / kh);
-        long tick = x / TICK_WIDTH;
+        long tick = (long) (x / tw);
         
         for (int i = notes.size() - 1; i >= 0; i--) {
             Note n = notes.get(i);

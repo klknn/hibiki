@@ -18,7 +18,7 @@ import java.util.function.Consumer;
 
 public class PianoRoll extends JDialog {
     private static final int NUM_KEYS = 128;
-    
+
     // Zoom settings (adjustable)
     private int keyHeight = 12; // Default, adjustable via vertical zoom
     private float tickScale = 1.0f; // Multiplier for base tick width
@@ -31,18 +31,19 @@ public class PianoRoll extends JDialog {
     private Sequence sequence;
     private Track midiTrack;
     private List<Note> notes = new ArrayList<>();
-    
+
     private JPanel gridPanel;
     private JPanel keysPanel;
+    private JPanel velocityPanel;
     private JScrollPane gridScroll;
     private JScrollPane keysScroll;
-    
+
     // Interaction state
     private Note draggingNote = null;
     private Note resizingNote = null;
     private int dragOffsetX = 0;
     private int dragOffsetY = 0;
-    
+
     // Ghost/copy state for drag
     private int dragOriginalPitch = -1;
     private long dragOriginalTick = 0;
@@ -52,6 +53,9 @@ public class PianoRoll extends JDialog {
     private JSlider hZoomSlider;
     private JSlider vZoomSlider;
 
+    // Velocity editing state
+    private boolean editingVelocity = false;
+
     private static class Note {
         int pitch;
         long startTick;
@@ -59,7 +63,7 @@ public class PianoRoll extends JDialog {
         int velocity;
         MidiEvent onEvent;
         MidiEvent offEvent;
-        
+
         Note(int pitch, long startTick, long durationTicks, int velocity) {
             this.pitch = pitch;
             this.startTick = startTick;
@@ -74,11 +78,11 @@ public class PianoRoll extends JDialog {
         this.trackIdx = trackIdx;
         this.slotIdx = slotIdx;
         this.clipIdx = clipIdx;
-        
+
         // First load from file as fallback / initial state
         loadMidi();
         initUI();
-        
+
         // Register listener for backend MIDI data
         notificationListener = this::handleNotification;
         BackendManager.getInstance().addNotificationListener(notificationListener);
@@ -90,7 +94,7 @@ public class PianoRoll extends JDialog {
         setSize(Theme.getInstance().scale(800), Theme.getInstance().scale(600));
         setLocationRelativeTo(owner);
     }
-    
+
     // Convenience constructor for session clips (slotIdx >= 0, clipIdx = -1)
     public PianoRoll(Frame owner, File midiFile, int trackIdx, int slotIdx) {
         this(owner, midiFile, trackIdx, slotIdx, -1);
@@ -162,7 +166,8 @@ public class PianoRoll extends JDialog {
                             break;
                         }
                     }
-                    if (midiTrack == null) midiTrack = sequence.getTracks()[0];
+                    if (midiTrack == null)
+                        midiTrack = sequence.getTracks()[0];
                 } else {
                     sequence = new Sequence(Sequence.PPQ, 96);
                     midiTrack = sequence.createTrack();
@@ -171,44 +176,47 @@ public class PianoRoll extends JDialog {
                 sequence = new Sequence(Sequence.PPQ, 96);
                 midiTrack = sequence.createTrack();
             }
-            
+
             parseTrack(midiTrack);
-            
+
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Failed to load MIDI: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Failed to load MIDI: " + e.getMessage(), "Error",
+                    JOptionPane.ERROR_MESSAGE);
             // Create empty fallback
             try {
                 sequence = new Sequence(Sequence.PPQ, 96);
                 midiTrack = sequence.createTrack();
-            } catch (Exception ex) {}
+            } catch (Exception ex) {
+            }
         }
     }
-    
+
     private boolean hasNotes(Track t) {
         for (int i = 0; i < t.size(); i++) {
             MidiMessage msg = t.get(i).getMessage();
             if (msg instanceof ShortMessage) {
                 ShortMessage sm = (ShortMessage) msg;
-                if (sm.getCommand() == ShortMessage.NOTE_ON) return true;
+                if (sm.getCommand() == ShortMessage.NOTE_ON)
+                    return true;
             }
         }
         return false;
     }
-    
+
     private void parseTrack(Track track) {
         Note[] pendingNotes = new Note[128]; // Max 128 keys
-        
+
         for (int i = 0; i < track.size(); i++) {
             MidiEvent event = track.get(i);
             MidiMessage msg = event.getMessage();
-            
+
             if (msg instanceof ShortMessage) {
                 ShortMessage sm = (ShortMessage) msg;
                 int cmd = sm.getCommand();
                 int pitch = sm.getData1();
                 int vel = sm.getData2();
-                
+
                 if (cmd == ShortMessage.NOTE_ON && vel > 0) {
                     if (pendingNotes[pitch] == null) {
                         Note n = new Note(pitch, event.getTick(), 0, vel);
@@ -227,7 +235,7 @@ public class PianoRoll extends JDialog {
             }
         }
     }
-    
+
     private void saveMidi() {
         // Sync to backend via IPC (immediate in-memory update)
         syncToBackend();
@@ -254,25 +262,27 @@ public class PianoRoll extends JDialog {
         BackendManager.getInstance().updateClipMidi(trackIdx, slotIdx, clipIdx, resolution, ticks, pitches, durations,
                 velocities);
     }
-    
+
     private SessionView getParentSessionView() {
         Component c = getOwner();
         while (c != null) {
             if (c instanceof JFrame) {
-                JFrame f = (JFrame)c;
+                JFrame f = (JFrame) c;
                 return findSessionView(f.getContentPane());
             }
             c = c.getParent();
         }
         return null;
     }
-    
+
     private SessionView findSessionView(Container c) {
-        if (c instanceof SessionView) return (SessionView)c;
+        if (c instanceof SessionView)
+            return (SessionView) c;
         for (Component child : c.getComponents()) {
             if (child instanceof Container) {
-                SessionView sv = findSessionView((Container)child);
-                if (sv != null) return sv;
+                SessionView sv = findSessionView((Container) child);
+                if (sv != null)
+                    return sv;
             }
         }
         return null;
@@ -281,7 +291,7 @@ public class PianoRoll extends JDialog {
     private void initUI() {
         setLayout(new BorderLayout());
         getContentPane().setBackground(Theme.getInstance().BG_DARKER);
-        
+
         // Calculate note range for auto-fit
         int minPitch = 127, maxPitch = 0;
         long minTick = Long.MAX_VALUE, maxTick = 0;
@@ -321,21 +331,21 @@ public class PianoRoll extends JDialog {
         JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
         toolbar.setBackground(Theme.getInstance().PANEL_BG);
         toolbar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.getInstance().BORDER));
-        
+
         // Note: Edits sync automatically via IPC - no save button needed
         JLabel autoSyncLabel = new JLabel("Auto-sync enabled");
         autoSyncLabel.setForeground(Theme.getInstance().TEXT_DIM);
         toolbar.add(autoSyncLabel);
-        
+
         add(toolbar, BorderLayout.NORTH);
-        
+
         // Piano Keys (Left)
         keysPanel = new JPanel() {
             @Override
             public Dimension getPreferredSize() {
                 return new Dimension(Theme.getInstance().scale(60), NUM_KEYS * getScaledKeyHeight());
             }
-            
+
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
@@ -343,14 +353,14 @@ public class PianoRoll extends JDialog {
                 for (int i = 0; i < NUM_KEYS; i++) {
                     int pitch = NUM_KEYS - 1 - i;
                     int y = i * kh;
-                    
+
                     boolean isBlack = isBlackKey(pitch);
                     g.setColor(isBlack ? Color.BLACK : Color.WHITE);
                     g.fillRect(0, y, getWidth(), kh);
-                    
+
                     g.setColor(Color.GRAY);
                     g.drawRect(0, y, getWidth(), kh);
-                    
+
                     if (!isBlack && (pitch % 12 == 0)) { // C notes
                         g.setColor(Color.BLACK);
                         g.setFont(new Font("SansSerif", Font.PLAIN, Math.min(kh - 2, Theme.getInstance().scale(9))));
@@ -359,7 +369,7 @@ public class PianoRoll extends JDialog {
                 }
             }
         };
-        
+
         // Grid (Right)
         gridPanel = new JPanel() {
             @Override
@@ -373,13 +383,13 @@ public class PianoRoll extends JDialog {
                 maxT = Math.max(maxT, sequence.getResolution() * 4 * 4); // At least 4 bars
                 return new Dimension((int) (maxT * getTickWidth()) + 200, NUM_KEYS * getScaledKeyHeight());
             }
-            
+
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
                 int kh = getScaledKeyHeight();
                 float tw = getTickWidth();
-                
+
                 // Draw horizontal grid lines
                 for (int i = 0; i < NUM_KEYS; i++) {
                     int y = i * kh;
@@ -389,7 +399,7 @@ public class PianoRoll extends JDialog {
                     g.setColor(new Color(60, 60, 60));
                     g.drawLine(0, y, getWidth(), y);
                 }
-                
+
                 // Draw vertical grid lines (beat markers)
                 int res = sequence.getResolution();
                 g.setColor(new Color(80, 80, 80));
@@ -399,7 +409,7 @@ public class PianoRoll extends JDialog {
                         g.drawLine((int) x, 0, (int) x, getHeight());
                     }
                 }
-                
+
                 // Draw ghost shadow of dragged note at original position
                 if (isDraggingNote && draggingNote != null && dragOriginalPitch >= 0) {
                     int ghostX = (int) (dragOriginalTick * tw);
@@ -427,40 +437,162 @@ public class PianoRoll extends JDialog {
                     int x = (int) (n.startTick * tw);
                     int y = (NUM_KEYS - 1 - n.pitch) * kh;
                     int w = Math.max(1, (int) (n.durationTicks * tw));
-                    
+
                     // Draw filled rect
                     g.setColor(Theme.getInstance().ACCENT_BLUE);
                     g.fillRect(x, y + 1, w, kh - 2);
-                    
+
                     // Draw border
                     g.setColor(Theme.getInstance().ACCENT_BLUE.brighter());
                     g.drawRect(x, y + 1, w, kh - 2);
                 }
             }
         };
-        
+
         setupMouseListeners();
-        
+
         // Sync scrolling
         gridScroll = new JScrollPane(gridPanel);
         gridScroll.getVerticalScrollBar().setUnitIncrement(getScaledKeyHeight());
         gridScroll.getHorizontalScrollBar().setUnitIncrement(Theme.getInstance().scale(20));
-        
+
         keysScroll = new JScrollPane(keysPanel);
         keysScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
         keysScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        
+
         gridScroll.getVerticalScrollBar().getModel().addChangeListener(e -> {
             keysScroll.getVerticalScrollBar().setValue(gridScroll.getVerticalScrollBar().getValue());
         });
-        
+
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, keysScroll, gridScroll);
         split.setDividerLocation(Theme.getInstance().scale(60));
         split.setDividerSize(0);
-        
+
+        // Velocity panel height
+        final int VELOCITY_HEIGHT = Theme.getInstance().scale(80);
+
+        // Velocity Panel - shows velocity bars at the bottom
+        velocityPanel = new JPanel() {
+            @Override
+            public Dimension getPreferredSize() {
+                return new Dimension(gridPanel.getPreferredSize().width, VELOCITY_HEIGHT);
+            }
+
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                float tw = getTickWidth();
+                int panelHeight = getHeight() - 4; // Leave margin at top and bottom
+
+                // Background
+                g2.setColor(Theme.getInstance().BG_DARKER);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+
+                // Draw grid lines for velocity levels
+                g2.setColor(new Color(60, 60, 60));
+                for (int v = 0; v <= 127; v += 32) {
+                    int y = getHeight() - 2 - (int) (v / 127.0 * panelHeight);
+                    g2.drawLine(0, y, getWidth(), y);
+                }
+
+                // Draw velocity label on left
+                g2.setColor(Theme.getInstance().TEXT_DIM);
+                g2.setFont(new Font("SansSerif", Font.PLAIN, 9));
+                g2.drawString("VEL", 2, 12);
+
+                // Draw bars for each note
+                for (Note n : notes) {
+                    int x = (int) (n.startTick * tw);
+                    int fullWidth = Math.max(4, (int) (n.durationTicks * tw));
+                    int barHeight = (int) (n.velocity / 127.0 * panelHeight);
+                    int y = getHeight() - 2 - barHeight;
+
+                    // Color based on velocity (red for high, blue for low)
+                    float hue = 0.6f - (n.velocity / 127.0f) * 0.6f; // Blue to red
+                    Color barColor = Color.getHSBColor(hue, 0.8f, 0.9f);
+
+                    // Draw ghost/shadow showing full note duration (semi-transparent)
+                    g2.setColor(new Color(barColor.getRed(), barColor.getGreen(), barColor.getBlue(), 30));
+                    g2.fillRect(x, y, fullWidth, barHeight);
+
+                    // Draw thin editable bar at start (4px wide) - solid
+                    int thinBarWidth = 4;
+                    g2.setColor(barColor);
+                    g2.fillRect(x, y, thinBarWidth, barHeight);
+
+                    // Highlight thin bar border
+                    g2.setColor(new Color(255, 255, 255, 80));
+                    g2.drawRect(x, y, thinBarWidth, barHeight);
+                }
+            }
+        };
+        velocityPanel.setBackground(Theme.getInstance().BG_DARKER);
+        velocityPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.getInstance().BORDER));
+
+        // Add mouse handlers for velocity editing
+        MouseAdapter velocityMouse = new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                editingVelocity = true;
+                updateVelocityAt(e.getX(), e.getY());
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (editingVelocity) {
+                    editingVelocity = false;
+                    syncToBackend();
+                }
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                if (editingVelocity) {
+                    updateVelocityAt(e.getX(), e.getY());
+                }
+            }
+        };
+        velocityPanel.addMouseListener(velocityMouse);
+        velocityPanel.addMouseMotionListener(velocityMouse);
+
+        // Create scroll pane for velocity panel (synced with grid)
+        JScrollPane velocityScroll = new JScrollPane(velocityPanel,
+                JScrollPane.VERTICAL_SCROLLBAR_NEVER, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        velocityScroll.setPreferredSize(new Dimension(100, VELOCITY_HEIGHT));
+        velocityScroll.setBorder(null);
+
+        // Sync velocity panel scroll with grid scroll
+        gridScroll.getHorizontalScrollBar().addAdjustmentListener(e -> {
+            velocityScroll.getHorizontalScrollBar().setValue(e.getValue());
+            velocityPanel.repaint();
+        });
+
+        // Spacer panel for velocity row (aligns with keys column)
+        JPanel velocityLabelPanel = new JPanel();
+        velocityLabelPanel.setPreferredSize(new Dimension(Theme.getInstance().scale(60), VELOCITY_HEIGHT));
+        velocityLabelPanel.setBackground(Theme.getInstance().PANEL_BG);
+        velocityLabelPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.getInstance().BORDER));
+
+        // Row for velocity area
+        JPanel velocityRow = new JPanel(new BorderLayout());
+        velocityRow.add(velocityLabelPanel, BorderLayout.WEST);
+        velocityRow.add(velocityScroll, BorderLayout.CENTER);
+
+        // Upper panel with piano roll
+        JPanel upperPanel = new JPanel(new BorderLayout());
+        upperPanel.add(split, BorderLayout.CENTER);
+
+        // Combine piano roll and velocity panel
+        JPanel pianoAndVelocity = new JPanel(new BorderLayout());
+        pianoAndVelocity.add(upperPanel, BorderLayout.CENTER);
+        pianoAndVelocity.add(velocityRow, BorderLayout.SOUTH);
+
         // Main content panel with zoom sliders at bottom right
         JPanel mainContent = new JPanel(new BorderLayout());
-        mainContent.add(split, BorderLayout.CENTER);
+        mainContent.add(pianoAndVelocity, BorderLayout.CENTER);
 
         // Zoom slider panel (bottom right corner)
         JPanel zoomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 2));
@@ -478,6 +610,8 @@ public class PianoRoll extends JDialog {
             tickScale = hZoomSlider.getValue() / 100.0f;
             gridPanel.revalidate();
             gridPanel.repaint();
+            velocityPanel.revalidate();
+            velocityPanel.repaint();
         });
         zoomPanel.add(hZoomSlider);
 
@@ -508,7 +642,34 @@ public class PianoRoll extends JDialog {
                     .setValue(Math.max(0, centerX - gridScroll.getViewport().getWidth() / 2));
         });
     }
-    
+
+    /**
+     * Update velocity of notes at the given X position based on Y position
+     * Y is inverted: top = 127, bottom = 0
+     */
+    private void updateVelocityAt(int x, int y) {
+        float tw = getTickWidth();
+        int panelHeight = velocityPanel.getHeight() - 4;
+
+        // Calculate target velocity from Y (inverted: top = 127)
+        int newVelocity = 127 - (int) ((y - 2) * 127.0 / panelHeight);
+        newVelocity = Math.max(1, Math.min(127, newVelocity)); // Clamp to 1-127
+
+        // Find notes whose thin bar (4px at start) is at this X position
+        int thinBarWidth = 6; // Slightly larger hit area for usability
+        for (Note n : notes) {
+            int noteX = (int) (n.startTick * tw);
+
+            // Only match if clicking on the thin bar at the start of the note
+            if (x >= noteX && x < noteX + thinBarWidth) {
+                n.velocity = newVelocity;
+            }
+        }
+
+        velocityPanel.repaint();
+        gridPanel.repaint(); // Force grid repaint too for any highlighting
+    }
+
     private int getScaledKeyHeight() {
         return Theme.getInstance().scale(keyHeight);
     }
@@ -521,11 +682,12 @@ public class PianoRoll extends JDialog {
                 float tw = getTickWidth();
                 int pitch = NUM_KEYS - 1 - (e.getY() / kh);
                 long tick = (long) (e.getX() / tw);
-                
-                if (pitch < 0 || pitch >= NUM_KEYS) return;
-                
+
+                if (pitch < 0 || pitch >= NUM_KEYS)
+                    return;
+
                 Note clickedNote = getNoteAt(e.getX(), e.getY());
-                
+
                 if (SwingUtilities.isRightMouseButton(e)) {
                     if (clickedNote != null) {
                         notes.remove(clickedNote);
@@ -561,7 +723,7 @@ public class PianoRoll extends JDialog {
                     }
                 }
             }
-            
+
             @Override
             public void mouseReleased(MouseEvent e) {
                 boolean changed = false;
@@ -590,7 +752,7 @@ public class PianoRoll extends JDialog {
                     syncToBackend();
                 }
             }
-            
+
             @Override
             public void mouseDragged(MouseEvent e) {
                 float tw = getTickWidth();
@@ -598,7 +760,7 @@ public class PianoRoll extends JDialog {
                     int kh = getScaledKeyHeight();
                     int pitch = NUM_KEYS - 1 - (e.getY() / kh);
                     pitch = Math.max(0, Math.min(NUM_KEYS - 1, pitch));
-                    
+
                     long tick = (long) ((e.getX() - dragOffsetX) / tw);
                     long snapTick;
                     if (e.isShiftDown()) {
@@ -616,7 +778,7 @@ public class PianoRoll extends JDialog {
                             isDraggingNote = true;
                         }
                     }
-                    
+
                     draggingNote.pitch = pitch;
                     draggingNote.startTick = Math.max(0, snapTick);
                     gridPanel.repaint();
@@ -629,24 +791,24 @@ public class PianoRoll extends JDialog {
                         snapEndTick = Math.round((double) newEndTick / (sequence.getResolution() / 4))
                                 * (sequence.getResolution() / 4);
                     }
-                    
+
                     long durTick = snapEndTick - resizingNote.startTick;
                     resizingNote.durationTicks = Math.max(sequence.getResolution() / 8, durTick);
                     gridPanel.repaint();
                 }
             }
         };
-        
+
         gridPanel.addMouseListener(ma);
         gridPanel.addMouseMotionListener(ma);
     }
-    
+
     private Note getNoteAt(int x, int y) {
         int kh = getScaledKeyHeight();
         float tw = getTickWidth();
         int pitch = NUM_KEYS - 1 - (y / kh);
         long tick = (long) (x / tw);
-        
+
         for (int i = notes.size() - 1; i >= 0; i--) {
             Note n = notes.get(i);
             if (n.pitch == pitch && tick >= n.startTick && tick <= n.startTick + n.durationTicks) {

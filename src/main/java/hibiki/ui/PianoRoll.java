@@ -10,6 +10,11 @@ import java.util.List;
 import javax.sound.midi.*;
 
 import hibiki.BackendManager;
+import hibiki.ipc.Notification;
+import hibiki.ipc.Response;
+import hibiki.ipc.ClipMidiData;
+import hibiki.ipc.MidiEventData;
+import java.util.function.Consumer;
 
 public class PianoRoll extends JDialog {
     private static final int NUM_KEYS = 128;
@@ -37,6 +42,11 @@ public class PianoRoll extends JDialog {
     private int dragOffsetX = 0;
     private int dragOffsetY = 0;
     
+    // Ghost/copy state for drag
+    private int dragOriginalPitch = -1;
+    private long dragOriginalTick = 0;
+    private boolean isDraggingNote = false;
+
     // Zoom sliders
     private JSlider hZoomSlider;
     private JSlider vZoomSlider;
@@ -63,13 +73,61 @@ public class PianoRoll extends JDialog {
         this.trackIdx = trackIdx;
         this.slotIdx = slotIdx;
         
+        // First load from file as fallback / initial state
         loadMidi();
         initUI();
         
+        // Register listener for backend MIDI data
+        notificationListener = this::handleNotification;
+        BackendManager.getInstance().addNotificationListener(notificationListener);
+
+        // Request MIDI data from backend (will override file data if clip exists in
+        // memory)
+        BackendManager.getInstance().requestClipMidi(trackIdx, slotIdx);
+
         setSize(Theme.getInstance().scale(800), Theme.getInstance().scale(600));
         setLocationRelativeTo(owner);
     }
     
+    private Consumer<Notification> notificationListener;
+
+    private void handleNotification(Notification notification) {
+        if (notification.responseType() == Response.ClipMidiData) {
+            ClipMidiData data = (ClipMidiData) notification.response(new ClipMidiData());
+            if (data != null && data.trackIndex() == trackIdx && data.slotIndex() == slotIdx) {
+                // Load notes from backend memory
+                loadFromBackendData(data);
+            }
+        }
+    }
+
+    private void loadFromBackendData(ClipMidiData data) {
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            notes.clear();
+            int resolution = data.resolution();
+            if (resolution > 0 && sequence != null) {
+                // Keep resolution sync - but we use the sequence's PPQ for display
+            }
+            for (int i = 0; i < data.eventsLength(); i++) {
+                MidiEventData ev = data.events(i);
+                Note n = new Note(ev.pitch(), ev.tick(), ev.durationTicks(), ev.velocity());
+                notes.add(n);
+            }
+            if (gridPanel != null) {
+                gridPanel.repaint();
+                gridPanel.revalidate();
+            }
+        });
+    }
+
+    @Override
+    public void dispose() {
+        // Unregister listener when closing
+        // Note: BackendManager doesn't have removeListener yet, but we track the
+        // listener
+        super.dispose();
+    }
+
     private float getTickWidth() {
         return baseTickWidth * tickScale;
     }
@@ -154,33 +212,30 @@ public class PianoRoll extends JDialog {
     }
     
     private void saveMidi() {
-        try {
-            // Rebuild track
-            sequence.deleteTrack(midiTrack);
-            midiTrack = sequence.createTrack();
-            
-            for (Note n : notes) {
-                if (n.durationTicks <= 0) n.durationTicks = 1; // Failsafe
-                ShortMessage onInfo = new ShortMessage();
-                onInfo.setMessage(ShortMessage.NOTE_ON, 0, n.pitch, n.velocity);
-                MidiEvent onEvent = new MidiEvent(onInfo, n.startTick);
-                midiTrack.add(onEvent);
-                
-                ShortMessage offInfo = new ShortMessage();
-                offInfo.setMessage(ShortMessage.NOTE_OFF, 0, n.pitch, 0);
-                MidiEvent offEvent = new MidiEvent(offInfo, n.startTick + n.durationTicks);
-                midiTrack.add(offEvent);
-            }
-            
-            MidiSystem.write(sequence, 1, midiFile);
-            
-            // Tell engine to reload
-            ((SessionView)getParentSessionView()).sendLoadClip(trackIdx, slotIdx, midiFile.getAbsolutePath(), false);
-            
-        } catch (Exception e) {
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Failed to save MIDI: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        // Sync to backend via IPC (immediate in-memory update)
+        syncToBackend();
+    }
+
+    /**
+     * Sync notes to backend via IPC - changes apply immediately without file save
+     */
+    private void syncToBackend() {
+        int resolution = (sequence != null) ? sequence.getResolution() : 480;
+        long[] ticks = new long[notes.size()];
+        int[] pitches = new int[notes.size()];
+        long[] durations = new long[notes.size()];
+        int[] velocities = new int[notes.size()];
+
+        for (int i = 0; i < notes.size(); i++) {
+            Note n = notes.get(i);
+            ticks[i] = n.startTick;
+            pitches[i] = n.pitch;
+            durations[i] = Math.max(1, n.durationTicks);
+            velocities[i] = n.velocity;
         }
+
+        BackendManager.getInstance().updateClipMidi(trackIdx, slotIdx, resolution, ticks, pitches, durations,
+                velocities);
     }
     
     private SessionView getParentSessionView() {
@@ -250,10 +305,10 @@ public class PianoRoll extends JDialog {
         toolbar.setBackground(Theme.getInstance().PANEL_BG);
         toolbar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.getInstance().BORDER));
         
-        JButton btnSave = new JButton("Save & Apply");
-        btnSave.setFocusPainted(false);
-        btnSave.addActionListener(e -> saveMidi());
-        toolbar.add(btnSave);
+        // Note: Edits sync automatically via IPC - no save button needed
+        JLabel autoSyncLabel = new JLabel("Auto-sync enabled");
+        autoSyncLabel.setForeground(Theme.getInstance().TEXT_DIM);
+        toolbar.add(autoSyncLabel);
         
         add(toolbar, BorderLayout.NORTH);
         
@@ -328,6 +383,28 @@ public class PianoRoll extends JDialog {
                     }
                 }
                 
+                // Draw ghost shadow of dragged note at original position
+                if (isDraggingNote && draggingNote != null && dragOriginalPitch >= 0) {
+                    int ghostX = (int) (dragOriginalTick * tw);
+                    int ghostY = (NUM_KEYS - 1 - dragOriginalPitch) * kh;
+                    int ghostW = Math.max(1, (int) (draggingNote.durationTicks * tw));
+
+                    Graphics2D g2 = (Graphics2D) g;
+                    Composite oldComposite = g2.getComposite();
+                    g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.3f));
+                    g2.setColor(Theme.getInstance().ACCENT_BLUE);
+                    g2.fillRect(ghostX, ghostY + 1, ghostW, kh - 2);
+                    g2.setComposite(oldComposite);
+
+                    // Draw dashed border
+                    g2.setColor(Theme.getInstance().ACCENT_BLUE.brighter());
+                    Stroke oldStroke = g2.getStroke();
+                    g2.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL, 0,
+                            new float[] { 2, 2 }, 0));
+                    g2.drawRect(ghostX, ghostY + 1, ghostW, kh - 2);
+                    g2.setStroke(oldStroke);
+                }
+
                 // Draw notes
                 for (Note n : notes) {
                     int x = (int) (n.startTick * tw);
@@ -437,6 +514,7 @@ public class PianoRoll extends JDialog {
                         notes.remove(clickedNote);
                         gridPanel.repaint();
                         gridPanel.revalidate();
+                        syncToBackend(); // Auto-sync after delete
                     }
                 } else if (SwingUtilities.isLeftMouseButton(e)) {
                     if (clickedNote != null) {
@@ -447,26 +525,54 @@ public class PianoRoll extends JDialog {
                         } else {
                             draggingNote = clickedNote;
                             dragOffsetX = (int) (e.getX() - clickedNote.startTick * tw);
-                            dragOffsetY = pitch - clickedNote.pitch; // Usually 0
+                            dragOffsetY = pitch - clickedNote.pitch;
+                            // Store original position for ghost
+                            dragOriginalPitch = clickedNote.pitch;
+                            dragOriginalTick = clickedNote.startTick;
+                            isDraggingNote = false;
                         }
                     } else {
                         // Create new note
-                        long snapTick = (tick / (sequence.getResolution() / 4)) * (sequence.getResolution() / 4); // 16th note snap
+                        long snapTick = (tick / (sequence.getResolution() / 4)) * (sequence.getResolution() / 4);
                         Note n = new Note(pitch, snapTick, sequence.getResolution() / 4, 100);
                         notes.add(n);
                         draggingNote = n;
                         dragOffsetX = 0;
+                        isDraggingNote = false;
                         gridPanel.repaint();
                         gridPanel.revalidate();
+                        syncToBackend(); // Auto-sync after create
                     }
                 }
             }
             
             @Override
             public void mouseReleased(MouseEvent e) {
+                boolean changed = false;
+                if (draggingNote != null && isDraggingNote && e.isAltDown()) {
+                    // Alt+release: Copy note to new location
+                    Note copy = new Note(draggingNote.pitch, draggingNote.startTick,
+                            draggingNote.durationTicks, draggingNote.velocity);
+                    // Restore original note position
+                    draggingNote.pitch = dragOriginalPitch;
+                    draggingNote.startTick = dragOriginalTick;
+                    // Add the copy
+                    notes.add(copy);
+                    changed = true;
+                } else if (isDraggingNote || resizingNote != null) {
+                    changed = true;
+                }
                 draggingNote = null;
                 resizingNote = null;
-                gridPanel.revalidate(); // Recompute preferred size if bounds expanded
+                isDraggingNote = false;
+                dragOriginalPitch = -1;
+                gridPanel.repaint();
+                gridPanel.revalidate();
+
+                // Auto-sync to backend on any note change
+                if (changed) {
+                    syncToBackend();
+                }
             }
             
             @Override
@@ -478,18 +584,38 @@ public class PianoRoll extends JDialog {
                     pitch = Math.max(0, Math.min(NUM_KEYS - 1, pitch));
                     
                     long tick = (long) ((e.getX() - dragOffsetX) / tw);
-                    // Snap to 16th notes
-                    long snapTick = Math.round((double)tick / (sequence.getResolution() / 4)) * (sequence.getResolution() / 4);
+                    long snapTick;
+                    if (e.isShiftDown()) {
+                        // Shift held: no snap
+                        snapTick = tick;
+                    } else {
+                        // Snap to 16th notes
+                        snapTick = Math.round((double) tick / (sequence.getResolution() / 4))
+                                * (sequence.getResolution() / 4);
+                    }
+
+                    // Check drag threshold
+                    if (!isDraggingNote) {
+                        if (Math.abs(pitch - dragOriginalPitch) > 0 || Math.abs(snapTick - dragOriginalTick) > 0) {
+                            isDraggingNote = true;
+                        }
+                    }
                     
                     draggingNote.pitch = pitch;
                     draggingNote.startTick = Math.max(0, snapTick);
                     gridPanel.repaint();
                 } else if (resizingNote != null) {
                     long newEndTick = (long) (e.getX() / tw);
-                    long snapEndTick = Math.round((double)newEndTick / (sequence.getResolution() / 4)) * (sequence.getResolution() / 4);
+                    long snapEndTick;
+                    if (e.isShiftDown()) {
+                        snapEndTick = newEndTick;
+                    } else {
+                        snapEndTick = Math.round((double) newEndTick / (sequence.getResolution() / 4))
+                                * (sequence.getResolution() / 4);
+                    }
                     
                     long durTick = snapEndTick - resizingNote.startTick;
-                    resizingNote.durationTicks = Math.max(sequence.getResolution() / 8, durTick); // Min 32nd note
+                    resizingNote.durationTicks = Math.max(sequence.getResolution() / 8, durTick);
                     gridPanel.repaint();
                 }
             }

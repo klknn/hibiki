@@ -21,5 +21,14 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name, 
 void sendPlayheadInfo(float position_sec, float bpm, bool is_playing);
 void sendBounceFinished(const std::string& path, bool success);
 void sendTrackInfo(int track_idx, const std::string& name);
+
+// MIDI event for ClipMidiData response
+struct MidiNote {
+    long tick;
+    int pitch;
+    long duration_ticks;
+    int velocity;
+};
+void sendClipMidiData(int track_idx, int slot_idx, int resolution, const std::vector<MidiNote>& notes);
  
 } // namespace hibiki

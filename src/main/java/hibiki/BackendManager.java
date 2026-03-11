@@ -232,6 +232,32 @@ public class BackendManager {
         sendRequest(builder);
     }
 
+    /** Request MIDI data for a clip (for Piano Roll editing) */
+    public void requestClipMidi(int trackIdx, int slotIdx) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(256);
+        int cmdOff = hibiki.ipc.GetClipMidi.createGetClipMidi(builder, trackIdx, slotIdx);
+        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.GetClipMidi, cmdOff);
+        builder.finish(reqOff);
+        sendRequest(builder);
+    }
+
+    /** Update clip's MIDI data (from Piano Roll edits) */
+    public void updateClipMidi(int trackIdx, int slotIdx, int resolution, long[] ticks, int[] pitches,
+            long[] durationTicks, int[] velocities) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(1024);
+
+        // Create the events vector
+        int[] eventOffsets = new int[ticks.length];
+        for (int i = 0; i < ticks.length; i++) {
+            eventOffsets[i] = hibiki.ipc.UpdateMidiEvent.createUpdateMidiEvent(builder, ticks[i], pitches[i],
+                    durationTicks[i], velocities[i]);
+        }
+        int eventsOff = hibiki.ipc.UpdateClipMidi.createEventsVector(builder, eventOffsets);
+        int cmdOff = hibiki.ipc.UpdateClipMidi.createUpdateClipMidi(builder, trackIdx, slotIdx, resolution, eventsOff);
+        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.UpdateClipMidi, cmdOff);
+        builder.finish(reqOff);
+        sendRequest(builder);
+    }
 
     private String findBinary(String binaryName) {
         // Try simple relative

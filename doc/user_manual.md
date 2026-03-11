@@ -69,6 +69,16 @@ The Timeline View shows a linear arrangement of clips on tracks (like traditiona
 - **Click** on a track to select it
 - Press **Tab** to switch between Session and Timeline views
 
+### Clip Manipulation
+
+| Action | Description |
+|--------|-------------|
+| **Drag clip** | Move clip to new time/track (snaps to bars) |
+| **Shift + Drag** | Move clip without snapping (free positioning) |
+| **Alt + Drag** | Copy clip to new location (snaps to bars) |
+| **Alt + Shift + Drag** | Copy clip without snapping |
+| **Right-click clip** | Context menu (Edit, Delete) |
+
 ---
 
 ## Loading Plugins

@@ -318,6 +318,12 @@ flatbuffer_library_public(
         "hibiki/ipc/SeekT.java",
         "hibiki/ipc/BounceProject.java",
         "hibiki/ipc/BounceProjectT.java",
+        "hibiki/ipc/GetClipMidi.java",
+        "hibiki/ipc/GetClipMidiT.java",
+        "hibiki/ipc/UpdateMidiEvent.java",
+        "hibiki/ipc/UpdateMidiEventT.java",
+        "hibiki/ipc/UpdateClipMidi.java",
+        "hibiki/ipc/UpdateClipMidiT.java",
     ],
     language_flag = "--java --gen-object-api",
 )
@@ -360,6 +366,10 @@ flatbuffer_library_public(
         "hibiki/ipc/BounceFinishedT.java",
         "hibiki/ipc/TrackInfo.java",
         "hibiki/ipc/TrackInfoT.java",
+        "hibiki/ipc/MidiEventData.java",
+        "hibiki/ipc/MidiEventDataT.java",
+        "hibiki/ipc/ClipMidiData.java",
+        "hibiki/ipc/ClipMidiDataT.java",
     ],
     language_flag = "--java --gen-object-api",
 )

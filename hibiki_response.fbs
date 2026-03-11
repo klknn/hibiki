@@ -85,6 +85,22 @@ table BounceFinished {
     success: bool;
 }
 
+// MIDI note event for Piano Roll editing
+table MidiEventData {
+    tick: long;
+    pitch: int;
+    duration_ticks: long;
+    velocity: int;
+}
+
+// Response containing clip's MIDI data for editing
+table ClipMidiData {
+    track_index: int;
+    slot_index: int;
+    resolution: int;  // Ticks per quarter note
+    events: [MidiEventData];
+}
+
 union Response {
     ParamList,
     Log,
@@ -97,7 +113,8 @@ union Response {
     TimelineClipInfo,
     PlayheadInfo,
     BounceFinished,
-    TrackInfo
+    TrackInfo,
+    ClipMidiData
 }
 
 table Notification {

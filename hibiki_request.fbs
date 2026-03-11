@@ -103,7 +103,31 @@ union Command {
     AddTimelineClip,
     RemoveTimelineClip,
     Seek,
-    BounceProject
+    BounceProject,
+    GetClipMidi,
+    UpdateClipMidi
+}
+
+// Request MIDI data for a clip (for Piano Roll editing)
+table GetClipMidi {
+    track_index: int;
+    slot_index: int;
+}
+
+// MIDI event for update
+table UpdateMidiEvent {
+    tick: long;
+    pitch: int;
+    duration_ticks: long;
+    velocity: int;
+}
+
+// Update clip's MIDI data (from Piano Roll edits)
+table UpdateClipMidi {
+    track_index: int;
+    slot_index: int;
+    resolution: int;
+    events: [UpdateMidiEvent];
 }
 
 table AddTimelineClip {

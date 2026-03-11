@@ -36,6 +36,15 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     private boolean autoScroll = true; // Auto-scroll to follow playhead during playback
     private int playheadScreenOffset = -1; // Screen X position to keep playhead at during auto-scroll
 
+    // Clip drag-and-drop state
+    private ClipRect draggingClip = null;
+    private int dragSourceTrack = -1;
+    private int dragStartX = 0;
+    private int dragStartY = 0;
+    private int dragCurrentY = 0; // Current Y position for rendering during cross-track drag
+    private float dragOriginalStartTime = 0;
+    private boolean isDragging = false;
+
     /** Get the singleton TimelineView instance */
     public static TimelineView getInstance() {
         return instance;
@@ -234,20 +243,129 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                             if (clip != null) {
                                 showClipContextMenu(trackIdx, clip, e.getX(), e.getY());
                             }
+                        } else if (SwingUtilities.isLeftMouseButton(e)) {
+                            // Left-click: start dragging if on a clip
+                            ClipRect clip = findClipAtPosition(trackIdx, e.getX());
+                            if (clip != null) {
+                                draggingClip = clip;
+                                dragSourceTrack = trackIdx;
+                                dragStartX = e.getX();
+                                dragStartY = e.getY();
+                                dragOriginalStartTime = clip.startTime;
+                                isDragging = false; // Will become true after threshold
+                            }
                         }
                     }
                 }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (draggingClip != null && isDragging) {
+                    int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
+                    int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+                    int targetTrackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
+                    targetTrackIdx = Math.max(0, Math.min(tracks.size() - 1, targetTrackIdx));
+
+                    float newStartTime = Math.max(0, e.getX() / PIXELS_PER_SECOND);
+                    // Snap to bar unless shift is held
+                    if (!e.isShiftDown()) {
+                        newStartTime = snapToBar(newStartTime);
+                    }
+
+                    boolean isCopy = e.isAltDown();
+
+                    if (isCopy) {
+                        // Alt+drag: Copy clip to new location
+                        ClipRect newClip = new ClipRect();
+                        newClip.name = draggingClip.name;
+                        newClip.path = draggingClip.path;
+                        newClip.startTime = newStartTime;
+                        newClip.duration = draggingClip.duration;
+                        newClip.waveform = draggingClip.waveform;
+
+                        // Add to target track
+                        TrackTimeline targetTrack = tracks.get(targetTrackIdx);
+                        targetTrack.clips.add(newClip);
+                        targetTrack.clipMap.put(targetTrack.clips.size() - 1, newClip);
+
+                        // Restore original clip position
+                        draggingClip.startTime = dragOriginalStartTime;
+                    } else {
+                        // Normal drag: Move clip to new location
+                        if (targetTrackIdx != dragSourceTrack) {
+                            // Moving to different track
+                            TrackTimeline sourceTrack = tracks.get(dragSourceTrack);
+                            TrackTimeline targetTrack = tracks.get(targetTrackIdx);
+
+                            // Remove from source
+                            int clipIdx = sourceTrack.clips.indexOf(draggingClip);
+                            if (clipIdx >= 0) {
+                                sourceTrack.clips.remove(clipIdx);
+                                sourceTrack.clipMap.clear();
+                                for (int i = 0; i < sourceTrack.clips.size(); i++) {
+                                    sourceTrack.clipMap.put(i, sourceTrack.clips.get(i));
+                                }
+                            }
+
+                            // Add to target
+                            draggingClip.startTime = newStartTime;
+                            targetTrack.clips.add(draggingClip);
+                            targetTrack.clipMap.put(targetTrack.clips.size() - 1, draggingClip);
+                        } else {
+                            // Same track, just update time
+                            draggingClip.startTime = newStartTime;
+                        }
+                    }
+
+                    updateContentSize();
+                    repaint();
+                }
+
+                // Reset drag state
+                draggingClip = null;
+                dragSourceTrack = -1;
+                isDragging = false;
             }
         });
 
         contentPanel.addMouseMotionListener(new MouseMotionAdapter() {
             @Override
             public void mouseDragged(MouseEvent e) {
-                if (e.getY() < Theme.getInstance().scale(TIME_RULER_HEIGHT)) {
+                int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
+                if (e.getY() < scaleTimeRuler && draggingClip == null) {
                     updatePlayhead(e.getX());
+                } else if (draggingClip != null) {
+                    // Check drag threshold (5 pixels)
+                    if (!isDragging) {
+                        int dx = e.getX() - dragStartX;
+                        int dy = e.getY() - dragStartY;
+                        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                            isDragging = true;
+                        }
+                    }
+
+                    if (isDragging) {
+                        // Update clip position visually during drag
+                        float newStartTime = Math.max(0, e.getX() / PIXELS_PER_SECOND);
+                        // Snap to bar unless shift is held
+                        if (!e.isShiftDown()) {
+                            newStartTime = snapToBar(newStartTime);
+                        }
+                        draggingClip.startTime = newStartTime;
+                        dragCurrentY = e.getY(); // Track Y for cross-track rendering
+                        repaint();
+                    }
                 }
             }
         });
+    }
+
+    /** Snap time to nearest bar boundary based on current BPM */
+    private float snapToBar(float time) {
+        float secondsPerBeat = 60.0f / bpm;
+        float secondsPerBar = secondsPerBeat * 4; // 4/4 time signature
+        return Math.round(time / secondsPerBar) * secondsPerBar;
     }
 
     /**
@@ -509,10 +627,38 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             }
         }
 
+        // Draw ghost shadow of dragged clip at original position
+        if (isDragging && draggingClip != null && dragSourceTrack >= 0) {
+            int ghostY = scaleTimeRuler + dragSourceTrack * scaleTrackHeight + 5;
+            int ghostX = scaleLabelWidth + (int) (dragOriginalStartTime * PIXELS_PER_SECOND);
+            int ghostW = (int) (draggingClip.duration * PIXELS_PER_SECOND);
+            int ghostH = scaleTrackHeight - 10;
+
+            // Draw semi-transparent ghost outline
+            Graphics2D g2d = (Graphics2D) g2;
+            Composite oldComposite = g2d.getComposite();
+            g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.3f));
+            g2d.setColor(Theme.getInstance().ACCENT_BLUE.darker());
+            g2d.fillRoundRect(ghostX, ghostY, ghostW, ghostH, 8, 8);
+            g2d.setComposite(oldComposite);
+
+            // Draw dashed border
+            g2d.setColor(Theme.getInstance().ACCENT_BLUE);
+            Stroke oldStroke = g2d.getStroke();
+            g2d.setStroke(
+                    new BasicStroke(1.5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL, 0, new float[] { 4, 4 }, 0));
+            g2d.drawRoundRect(ghostX, ghostY, ghostW, ghostH, 8, 8);
+            g2d.setStroke(oldStroke);
+        }
+
         // Draw clips
         for (int i = 0; i < tracks.size(); i++) {
             int y = scaleTimeRuler + i * scaleTrackHeight + 5;
             for (ClipRect clip : tracks.get(i).clips) {
+                // Skip dragging clip - will be drawn separately at cursor position
+                if (isDragging && clip == draggingClip) {
+                    continue;
+                }
                 int x = scaleLabelWidth + (int) (clip.startTime * PIXELS_PER_SECOND);
                 int w = (int) (clip.duration * PIXELS_PER_SECOND);
                 int h = scaleTrackHeight - 10;
@@ -574,6 +720,27 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
                 g2.drawString(clip.name, x + 5, y + 15);
             }
+        }
+
+        // Draw dragging clip at cursor position (for cross-track visualization)
+        if (isDragging && draggingClip != null) {
+            int targetTrackIdx = (dragCurrentY - scaleTimeRuler) / scaleTrackHeight;
+            targetTrackIdx = Math.max(0, Math.min(tracks.size() - 1, targetTrackIdx));
+            int y = scaleTimeRuler + targetTrackIdx * scaleTrackHeight + 5;
+            int x = scaleLabelWidth + (int) (draggingClip.startTime * PIXELS_PER_SECOND);
+            int w = (int) (draggingClip.duration * PIXELS_PER_SECOND);
+            int h = scaleTrackHeight - 10;
+
+            // Draw filled clip at drag position with slight transparency
+            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.8f));
+            g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
+            g2.fillRoundRect(x, y, w, h, 8, 8);
+            g2.setColor(Theme.getInstance().ACCENT_BLUE.brighter());
+            g2.drawRoundRect(x, y, w, h, 8, 8);
+            g2.setColor(Color.WHITE);
+            g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
+            g2.drawString(draggingClip.name, x + 5, y + 15);
+            g2.setComposite(AlphaComposite.SrcOver);
         }
 
         // Draw time ruler

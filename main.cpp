@@ -522,6 +522,90 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendAck("REDO", false);
             }
+        } else if (command_type == hibiki::ipc::Command_GetClipMidi) {
+            auto cmd = request->command_as_GetClipMidi();
+            int tidx = cmd->track_index();
+            int sidx = cmd->slot_index();
+            std::cerr << "[GetClipMidi] track=" << tidx << " slot=" << sidx << std::endl;
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            if (state.tracks.count(tidx) && state.tracks[tidx]->clips.count(sidx) && state.tracks[tidx]->clips[sidx]) {
+                auto& clip = state.tracks[tidx]->clips[sidx];
+                if (clip->type == Clip::Type::MIDI) {
+                    int ppq = 480; // Standard MIDI resolution
+                    std::vector<MidiNote> notes;
+                    // Convert internal midi_events to MidiNote format
+                    // Group NOTE_ON/OFF pairs into notes
+                    std::map<int, std::pair<long, int>> active_notes; // note -> (tick, velocity)
+                    for (const auto& ev : clip->midi_events) {
+                        long tick = (long)(ev.beats * ppq);
+                        if (isNoteOn(ev)) {
+                            active_notes[ev.note] = {tick, ev.velocity};
+                        } else if (isNoteOff(ev)) {
+                            if (active_notes.count(ev.note)) {
+                                auto [start_tick, vel] = active_notes[ev.note];
+                                notes.push_back({start_tick, ev.note, tick - start_tick, vel});
+                                active_notes.erase(ev.note);
+                            }
+                        }
+                    }
+                    std::cerr << "[GetClipMidi] Sending " << notes.size() << " notes" << std::endl;
+                    hibiki::sendClipMidiData(tidx, sidx, ppq, notes);
+                    hibiki::sendAck("GET_CLIP_MIDI", true);
+                } else {
+                    std::cerr << "[GetClipMidi] Not a MIDI clip" << std::endl;
+                    hibiki::sendAck("GET_CLIP_MIDI", false);
+                }
+            } else {
+                std::cerr << "[GetClipMidi] Clip not found" << std::endl;
+                hibiki::sendAck("GET_CLIP_MIDI", false);
+            }
+        } else if (command_type == hibiki::ipc::Command_UpdateClipMidi) {
+            auto cmd = request->command_as_UpdateClipMidi();
+            int tidx = cmd->track_index();
+            int sidx = cmd->slot_index();
+            int ppq = cmd->resolution();
+            int numEvents = cmd->events() ? cmd->events()->size() : 0;
+            std::cerr << "[UpdateClipMidi] track=" << tidx << " slot=" << sidx << " ppq=" << ppq << " events=" << numEvents << std::endl;
+            if (ppq <= 0) ppq = 480;
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
+            if (state.tracks.count(tidx) && state.tracks[tidx]->clips.count(sidx) && state.tracks[tidx]->clips[sidx]) {
+                auto& clip = state.tracks[tidx]->clips[sidx];
+                if (clip->type == Clip::Type::MIDI) {
+                    // Rebuild midi_events from the notes
+                    clip->midi_events.clear();
+                    if (cmd->events()) {
+                        for (auto ev : *cmd->events()) {
+                            double startBeats = (double)ev->tick() / ppq;
+                            double endBeats = (double)(ev->tick() + ev->duration_ticks()) / ppq;
+                            // Add NOTE_ON (status 0x90)
+                            MidiEvent noteOn;
+                            noteOn.beats = startBeats;
+                            noteOn.type = 0x90;
+                            noteOn.channel = 0;
+                            noteOn.note = (uint8_t)ev->pitch();
+                            noteOn.velocity = (uint8_t)ev->velocity();
+                            clip->midi_events.push_back(noteOn);
+                            // Add NOTE_OFF (status 0x80)
+                            MidiEvent noteOff;
+                            noteOff.beats = endBeats;
+                            noteOff.type = 0x80;
+                            noteOff.channel = 0;
+                            noteOff.note = (uint8_t)ev->pitch();
+                            noteOff.velocity = 0;
+                            clip->midi_events.push_back(noteOff);
+                        }
+                    }
+                    // Sort events by beats
+                    std::sort(clip->midi_events.begin(), clip->midi_events.end(), 
+                              [](const MidiEvent& a, const MidiEvent& b) { return a.beats < b.beats; });
+                    hibiki::sendAck("UPDATE_CLIP_MIDI", true);
+                } else {
+                    hibiki::sendAck("UPDATE_CLIP_MIDI", false);
+                }
+            } else {
+                hibiki::sendAck("UPDATE_CLIP_MIDI", false);
+            }
         } else if (command_type == hibiki::ipc::Command_Quit) {
             state.quit = true;
             break;

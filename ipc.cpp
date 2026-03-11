@@ -168,4 +168,17 @@ void sendTrackInfo(int track_idx, const std::string& name) {
     sendNotification(builder.GetBufferPointer(), builder.GetSize());
 }
 
+void sendClipMidiData(int track_idx, int slot_idx, int resolution, const std::vector<MidiNote>& notes) {
+    flatbuffers::FlatBufferBuilder builder(1024 + notes.size() * 32);
+    std::vector<flatbuffers::Offset<hibiki::ipc::MidiEventData>> event_offsets;
+    for (const auto& n : notes) {
+        event_offsets.push_back(hibiki::ipc::CreateMidiEventData(builder, n.tick, n.pitch, n.duration_ticks, n.velocity));
+    }
+    auto events_vec = builder.CreateVector(event_offsets);
+    auto midi_off = hibiki::ipc::CreateClipMidiData(builder, track_idx, slot_idx, resolution, events_vec);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ClipMidiData, midi_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
+}
+
 } // namespace hibiki

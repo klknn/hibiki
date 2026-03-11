@@ -432,7 +432,17 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             if (clip.path != null && clip.path.endsWith(".mid")) {
                 File file = new File(clip.path);
                 JFrame ownerFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
-                PianoRoll pr = new PianoRoll(ownerFrame, file, trackIdx, -1); // -1 for timeline clip
+                // Find clip index in track's timeline clips
+                TrackTimeline trackTimeline = tracks.get(trackIdx);
+                int clipIndex = -1;
+                for (int i = 0; i < trackTimeline.clips.size(); i++) {
+                    if (trackTimeline.clips.get(i) == clip) {
+                        clipIndex = i;
+                        break;
+                    }
+                }
+                // Use 5-arg constructor: slotIdx=-1 for timeline clips, clipIdx=actual index
+                PianoRoll pr = new PianoRoll(ownerFrame, file, trackIdx, -1, clipIndex);
                 pr.setVisible(true);
             } else {
                 JOptionPane.showMessageDialog(this, "Can only edit MIDI (.mid) clips.", "Error",

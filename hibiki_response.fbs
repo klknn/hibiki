@@ -94,9 +94,11 @@ table MidiEventData {
 }
 
 // Response containing clip's MIDI data for editing
+// slot_index >= 0 for session clips, clip_index >= 0 for timeline clips
 table ClipMidiData {
     track_index: int;
-    slot_index: int;
+    slot_index: int = -1;   // Session clip slot
+    clip_index: int = -1;   // Timeline clip index
     resolution: int;  // Ticks per quarter note
     events: [MidiEventData];
 }

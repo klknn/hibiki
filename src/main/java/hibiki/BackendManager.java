@@ -232,17 +232,23 @@ public class BackendManager {
         sendRequest(builder);
     }
 
-    /** Request MIDI data for a clip (for Piano Roll editing) */
-    public void requestClipMidi(int trackIdx, int slotIdx) {
+    /**
+     * Request MIDI data for a clip (for Piano Roll editing)
+     * Use slotIdx >= 0 for session clips, clipIdx >= 0 for timeline clips
+     */
+    public void requestClipMidi(int trackIdx, int slotIdx, int clipIdx) {
         FlatBufferBuilder builder = new FlatBufferBuilder(256);
-        int cmdOff = hibiki.ipc.GetClipMidi.createGetClipMidi(builder, trackIdx, slotIdx);
+        int cmdOff = hibiki.ipc.GetClipMidi.createGetClipMidi(builder, trackIdx, slotIdx, clipIdx);
         int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.GetClipMidi, cmdOff);
         builder.finish(reqOff);
         sendRequest(builder);
     }
 
-    /** Update clip's MIDI data (from Piano Roll edits) */
-    public void updateClipMidi(int trackIdx, int slotIdx, int resolution, long[] ticks, int[] pitches,
+    /**
+     * Update clip's MIDI data (from Piano Roll edits)
+     * Use slotIdx >= 0 for session clips, clipIdx >= 0 for timeline clips
+     */
+    public void updateClipMidi(int trackIdx, int slotIdx, int clipIdx, int resolution, long[] ticks, int[] pitches,
             long[] durationTicks, int[] velocities) {
         FlatBufferBuilder builder = new FlatBufferBuilder(1024);
 
@@ -253,7 +259,8 @@ public class BackendManager {
                     durationTicks[i], velocities[i]);
         }
         int eventsOff = hibiki.ipc.UpdateClipMidi.createEventsVector(builder, eventOffsets);
-        int cmdOff = hibiki.ipc.UpdateClipMidi.createUpdateClipMidi(builder, trackIdx, slotIdx, resolution, eventsOff);
+        int cmdOff = hibiki.ipc.UpdateClipMidi.createUpdateClipMidi(builder, trackIdx, slotIdx, clipIdx, resolution,
+                eventsOff);
         int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.UpdateClipMidi, cmdOff);
         builder.finish(reqOff);
         sendRequest(builder);

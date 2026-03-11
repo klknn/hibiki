@@ -29,6 +29,7 @@ struct MidiNote {
     long duration_ticks;
     int velocity;
 };
-void sendClipMidiData(int track_idx, int slot_idx, int resolution, const std::vector<MidiNote>& notes);
+// Send clip MIDI data to GUI. Use slot_idx >= 0 for session clips, clip_idx >= 0 for timeline clips
+void sendClipMidiData(int track_idx, int slot_idx, int clip_idx, int resolution, const std::vector<MidiNote>& notes);
  
 } // namespace hibiki

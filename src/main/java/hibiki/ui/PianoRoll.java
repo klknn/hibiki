@@ -26,7 +26,8 @@ public class PianoRoll extends JDialog {
 
     private final File midiFile;
     private final int trackIdx;
-    private final int slotIdx;
+    private final int slotIdx; // Session clip slot (-1 for timeline clips)
+    private final int clipIdx; // Timeline clip index (-1 for session clips)
     private Sequence sequence;
     private Track midiTrack;
     private List<Note> notes = new ArrayList<>();
@@ -67,11 +68,12 @@ public class PianoRoll extends JDialog {
         }
     }
 
-    public PianoRoll(Frame owner, File midiFile, int trackIdx, int slotIdx) {
+    public PianoRoll(Frame owner, File midiFile, int trackIdx, int slotIdx, int clipIdx) {
         super(owner, "Piano Roll - " + midiFile.getName(), false);
         this.midiFile = midiFile;
         this.trackIdx = trackIdx;
         this.slotIdx = slotIdx;
+        this.clipIdx = clipIdx;
         
         // First load from file as fallback / initial state
         loadMidi();
@@ -83,20 +85,35 @@ public class PianoRoll extends JDialog {
 
         // Request MIDI data from backend (will override file data if clip exists in
         // memory)
-        BackendManager.getInstance().requestClipMidi(trackIdx, slotIdx);
+        BackendManager.getInstance().requestClipMidi(trackIdx, slotIdx, clipIdx);
 
         setSize(Theme.getInstance().scale(800), Theme.getInstance().scale(600));
         setLocationRelativeTo(owner);
     }
     
+    // Convenience constructor for session clips (slotIdx >= 0, clipIdx = -1)
+    public PianoRoll(Frame owner, File midiFile, int trackIdx, int slotIdx) {
+        this(owner, midiFile, trackIdx, slotIdx, -1);
+    }
+
     private Consumer<Notification> notificationListener;
 
     private void handleNotification(Notification notification) {
         if (notification.responseType() == Response.ClipMidiData) {
             ClipMidiData data = (ClipMidiData) notification.response(new ClipMidiData());
-            if (data != null && data.trackIndex() == trackIdx && data.slotIndex() == slotIdx) {
-                // Load notes from backend memory
-                loadFromBackendData(data);
+            // Match either by slotIdx (session clip) or clipIdx (timeline clip)
+            System.out.println("[PianoRoll] Got ClipMidiData: track=" + data.trackIndex() +
+                    " slot=" + data.slotIndex() + " clip=" + data.clipIndex() +
+                    " events=" + data.eventsLength());
+            System.out.println("[PianoRoll] My trackIdx=" + trackIdx + " slotIdx=" + slotIdx + " clipIdx=" + clipIdx);
+            if (data != null && data.trackIndex() == trackIdx) {
+                boolean matches = (slotIdx >= 0 && data.slotIndex() == slotIdx) ||
+                        (clipIdx >= 0 && data.clipIndex() == clipIdx);
+                System.out.println("[PianoRoll] matches=" + matches);
+                if (matches) {
+                    // Load notes from backend memory
+                    loadFromBackendData(data);
+                }
             }
         }
     }
@@ -234,7 +251,7 @@ public class PianoRoll extends JDialog {
             velocities[i] = n.velocity;
         }
 
-        BackendManager.getInstance().updateClipMidi(trackIdx, slotIdx, resolution, ticks, pitches, durations,
+        BackendManager.getInstance().updateClipMidi(trackIdx, slotIdx, clipIdx, resolution, ticks, pitches, durations,
                 velocities);
     }
     
@@ -532,16 +549,15 @@ public class PianoRoll extends JDialog {
                             isDraggingNote = false;
                         }
                     } else {
-                        // Create new note
+                        // Create new note and let user drag to adjust length
                         long snapTick = (tick / (sequence.getResolution() / 4)) * (sequence.getResolution() / 4);
-                        Note n = new Note(pitch, snapTick, sequence.getResolution() / 4, 100);
+                        int minDuration = sequence.getResolution() / 8; // 8th note minimum
+                        Note n = new Note(pitch, snapTick, minDuration, 100);
                         notes.add(n);
-                        draggingNote = n;
-                        dragOffsetX = 0;
-                        isDraggingNote = false;
+                        resizingNote = n; // Set to resizing mode so user can drag to adjust length
                         gridPanel.repaint();
                         gridPanel.revalidate();
-                        syncToBackend(); // Auto-sync after create
+                        // Don't sync yet - wait until mouseReleased
                     }
                 }
             }

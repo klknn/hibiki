@@ -109,9 +109,11 @@ union Command {
 }
 
 // Request MIDI data for a clip (for Piano Roll editing)
+// Use slot_index >= 0 for session clips, clip_index >= 0 for timeline clips
 table GetClipMidi {
     track_index: int;
-    slot_index: int;
+    slot_index: int = -1;   // Session clip slot (-1 = use clip_index instead)
+    clip_index: int = -1;   // Timeline clip index (-1 = use slot_index instead)
 }
 
 // MIDI event for update
@@ -123,9 +125,11 @@ table UpdateMidiEvent {
 }
 
 // Update clip's MIDI data (from Piano Roll edits)
+// Use slot_index >= 0 for session clips, clip_index >= 0 for timeline clips
 table UpdateClipMidi {
     track_index: int;
-    slot_index: int;
+    slot_index: int = -1;   // Session clip slot (-1 = use clip_index instead)
+    clip_index: int = -1;   // Timeline clip index (-1 = use slot_index instead)
     resolution: int;
     events: [UpdateMidiEvent];
 }

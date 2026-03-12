@@ -16,10 +16,23 @@ import java.util.Map;
 import java.util.HashMap;
 
 public class TimelineView extends JPanel implements Theme.ThemeListener {
-    private static final int TRACK_HEIGHT = 80;
+    private static final int BASE_TRACK_HEIGHT = 80;
     private static final int TIME_RULER_HEIGHT = 30;
     private static final int TRACK_LABEL_WIDTH = 100;
-    private static final float PIXELS_PER_SECOND = 50.0f;
+    private static final float BASE_PIXELS_PER_SECOND = 50.0f;
+
+    // Zoom scales (adjustable via sliders)
+    private float hZoomScale = 1.0f; // Horizontal zoom multiplier
+    private float vZoomScale = 1.0f; // Vertical zoom multiplier
+
+    // Convenience getters for zoom-scaled values
+    private int getTrackHeight() {
+        return (int) (BASE_TRACK_HEIGHT * vZoomScale);
+    }
+
+    private float getPixelsPerSecond() {
+        return BASE_PIXELS_PER_SECOND * hZoomScale;
+    }
 
     // Grid mode for rendering - matches PianoRoll
     enum GridMode {
@@ -58,6 +71,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     private static TimelineView instance; // Static reference for global access
     private final JScrollPane scrollPane;
     private final JPanel contentPanel;
+    private JPanel rowHeader; // Track labels panel (needs update on vZoom)
     private final Timer repaintTimer;
     private boolean autoScroll = true; // Auto-scroll to follow playhead during playback
     private int playheadScreenOffset = -1; // Screen X position to keep playhead at during auto-scroll
@@ -93,7 +107,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         contentPanel.setBackground(Theme.getInstance().BG_DARK);
 
         // Create fixed row header for track labels
-        JPanel rowHeader = new JPanel() {
+        rowHeader = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
@@ -104,7 +118,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             public Dimension getPreferredSize() {
                 int scaleLabelWidth = Theme.getInstance().scale(TRACK_LABEL_WIDTH);
                 int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+                int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
                 return new Dimension(scaleLabelWidth, scaleTimeRuler + tracks.size() * scaleTrackHeight);
             }
         };
@@ -115,7 +129,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             @Override
             public void mousePressed(MouseEvent e) {
                 int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+                int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
                 if (e.getY() >= scaleTimeRuler) {
                     int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
                     if (trackIdx >= 0 && trackIdx < tracks.size()) {
@@ -130,7 +144,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) {
                     int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                    int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+                    int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
                     if (e.getY() >= scaleTimeRuler) {
                         int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
                         if (trackIdx >= 0 && trackIdx < tracks.size()) {
@@ -157,7 +171,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             // Auto-scroll to follow playhead during playback
             if (isPlaying && autoScroll) {
                 // No label offset - content panel starts at x=0
-                int playheadX = (int) (playheadPos * PIXELS_PER_SECOND);
+                int playheadX = (int) (playheadPos * getPixelsPerSecond());
 
                 // Keep playhead at the same screen position where playback started
                 int targetScrollX = playheadX - playheadScreenOffset;
@@ -176,28 +190,63 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     private void setupControls() {
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        controls.setOpaque(false);
-        
+        // Control panel at bottom right, matching PianoRoll layout
+        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 2));
+        controlPanel.setBackground(Theme.getInstance().PANEL_BG);
+        controlPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.getInstance().BORDER));
+
+        // Grid mode selector
+        JLabel gridLabel = new JLabel("Grid:");
+        gridLabel.setForeground(Theme.getInstance().TEXT_DIM);
+        controlPanel.add(gridLabel);
         JComboBox<GridMode> gridCombo = new JComboBox<>(GridMode.values());
         gridCombo.setSelectedItem(gridMode);
+        gridCombo.setPreferredSize(new Dimension(70, 20));
         gridCombo.addActionListener(e -> {
             gridMode = (GridMode) gridCombo.getSelectedItem();
             repaint();
         });
-        
-        JLabel label = new JLabel("Grid:");
-        label.setForeground(Theme.getInstance().TEXT_DIM);
-        controls.add(label);
-        controls.add(gridCombo);
-        
+        controlPanel.add(gridCombo);
+
+        // Horizontal zoom slider
+        JLabel hLabel = new JLabel("H:");
+        hLabel.setForeground(Theme.getInstance().TEXT_DIM);
+        controlPanel.add(hLabel);
+        JSlider hZoomSlider = new JSlider(5, 400, 100); // 5% to 400%
+        hZoomSlider.setPreferredSize(new Dimension(80, 20));
+        hZoomSlider.addChangeListener(e -> {
+            hZoomScale = hZoomSlider.getValue() / 100.0f;
+            updateContentSize();
+            contentPanel.repaint();
+        });
+        controlPanel.add(hZoomSlider);
+
+        // Vertical zoom slider
+        JLabel vLabel = new JLabel("V:");
+        vLabel.setForeground(Theme.getInstance().TEXT_DIM);
+        controlPanel.add(vLabel);
+        JSlider vZoomSlider = new JSlider(5, 200, 100); // 5% to 200%
+        vZoomSlider.setPreferredSize(new Dimension(80, 20));
+        vZoomSlider.addChangeListener(e -> {
+            vZoomScale = vZoomSlider.getValue() / 100.0f;
+            updateContentSize();
+            // Also update track label header heights
+            if (rowHeader != null) {
+                rowHeader.revalidate();
+                rowHeader.repaint();
+            }
+            contentPanel.repaint();
+        });
+        controlPanel.add(vZoomSlider);
+
+        // Auto-scroll checkbox
         JCheckBox autoScrollCheck = new JCheckBox("Auto-scroll", autoScroll);
         autoScrollCheck.setForeground(Theme.getInstance().TEXT_DIM);
         autoScrollCheck.setOpaque(false);
         autoScrollCheck.addActionListener(e -> autoScroll = autoScrollCheck.isSelected());
-        controls.add(autoScrollCheck);
+        controlPanel.add(autoScrollCheck);
 
-        add(controls, BorderLayout.NORTH);
+        add(controlPanel, BorderLayout.SOUTH);
     }
 
     private void setupDropTarget() {
@@ -218,8 +267,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                             String path = parts[1];
                             
                             Point p = dtde.getLocation();
-                            int trackIndex = (p.y - Theme.getInstance().scale(TIME_RULER_HEIGHT)) / Theme.getInstance().scale(TRACK_HEIGHT);
-                            double timeSec = p.x / PIXELS_PER_SECOND;
+                            int trackIndex = (p.y - Theme.getInstance().scale(TIME_RULER_HEIGHT))
+                                    / Theme.getInstance().scale(getTrackHeight());
+                            double timeSec = p.x / getPixelsPerSecond();
 
                             // Snap to nearest grid boundary
                             float secondsPerBeat = 60.0f / bpm;
@@ -244,8 +294,20 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     private void updateContentSize() {
-        int width = (int) (PIXELS_PER_SECOND * 600); // 10 minutes
-        int height = tracks.size() * Theme.getInstance().scale(TRACK_HEIGHT) + Theme.getInstance().scale(TIME_RULER_HEIGHT);
+        // Calculate content duration from longest track content
+        float maxEndTime = 60.0f; // Minimum 60 seconds default
+        for (TrackTimeline track : tracks) {
+            for (ClipRect clip : track.clips) {
+                float endTime = clip.startTime + clip.duration;
+                if (endTime > maxEndTime) {
+                    maxEndTime = endTime;
+                }
+            }
+        }
+        // Add some padding (20% more)
+        int width = (int) (getPixelsPerSecond() * maxEndTime * 1.2f);
+        int height = tracks.size() * Theme.getInstance().scale(getTrackHeight())
+                + Theme.getInstance().scale(TIME_RULER_HEIGHT);
         contentPanel.setPreferredSize(new Dimension(width, height));
         contentPanel.revalidate();
     }
@@ -259,7 +321,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                     updatePlayhead(e.getX());
                 } else {
                     // Track selection
-                    int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+                    int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
                     int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
                     if (trackIdx >= 0 && trackIdx < tracks.size()) {
                         setSelectedTrack(trackIdx);
@@ -290,11 +352,11 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             public void mouseReleased(MouseEvent e) {
                 if (draggingClip != null && isDragging) {
                     int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                    int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+                    int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
                     int targetTrackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
                     targetTrackIdx = Math.max(0, Math.min(tracks.size() - 1, targetTrackIdx));
 
-                    float newStartTime = Math.max(0, e.getX() / PIXELS_PER_SECOND);
+                    float newStartTime = Math.max(0, e.getX() / getPixelsPerSecond());
                     // Snap to bar unless shift is held
                     if (!e.isShiftDown()) {
                         newStartTime = snapToBar(newStartTime);
@@ -374,7 +436,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
                     if (isDragging) {
                         // Update clip position visually during drag
-                        float newStartTime = Math.max(0, e.getX() / PIXELS_PER_SECOND);
+                        float newStartTime = Math.max(0, e.getX() / getPixelsPerSecond());
                         // Snap to bar unless shift is held
                         if (!e.isShiftDown()) {
                             newStartTime = snapToBar(newStartTime);
@@ -440,7 +502,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         if (trackIdx < 0 || trackIdx >= tracks.size())
             return null;
         TrackTimeline track = tracks.get(trackIdx);
-        float clickTime = x / PIXELS_PER_SECOND;
+        float clickTime = x / getPixelsPerSecond();
         for (ClipRect clip : track.clips) {
             if (clickTime >= clip.startTime && clickTime <= clip.startTime + clip.duration) {
                 return clip;
@@ -504,7 +566,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     private void updatePlayhead(int x) {
         // Content panel starts at x=0, no label offset needed
         float timelineX = Math.max(0, x);
-        playheadPos = timelineX / PIXELS_PER_SECOND;
+        playheadPos = timelineX / getPixelsPerSecond();
         BackendManager.getInstance().seek(playheadPos);
         repaint();
     }
@@ -520,7 +582,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             // Capture playhead screen position when playback starts
             if (isPlaying && !wasPlaying && autoScroll) {
                 // No label offset - content panel starts at x=0
-                int playheadX = (int) (playheadPos * PIXELS_PER_SECOND);
+                int playheadX = (int) (playheadPos * getPixelsPerSecond());
                 int scrollX = scrollPane.getHorizontalScrollBar().getValue();
                 playheadScreenOffset = playheadX - scrollX;
             }
@@ -578,7 +640,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
         int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-        int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+        int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
         int scaleLabelWidth = Theme.getInstance().scale(TRACK_LABEL_WIDTH);
 
         // Draw time ruler corner
@@ -628,7 +690,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
         int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-        int scaleTrackHeight = Theme.getInstance().scale(TRACK_HEIGHT);
+        int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
         int scaleLabelWidth = 0; // Labels are in the row header now, content starts at x=0
 
         // Draw tracks background (no labels - they're in the row header)
@@ -652,32 +714,32 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
         // Draw subdivision grid lines
         if (gridSeconds > 0) {
-            float gridWidth = gridSeconds * PIXELS_PER_SECOND;
+            float gridWidth = gridSeconds * getPixelsPerSecond();
             if (gridWidth >= 2) {
                 g2.setColor(new Color(255, 255, 255, 15));
-                for (float t = 0; t * PIXELS_PER_SECOND < contentPanel.getWidth(); t += gridSeconds) {
-                    int x = scaleLabelWidth + (int) (t * PIXELS_PER_SECOND);
+                for (float t = 0; t * getPixelsPerSecond() < contentPanel.getWidth(); t += gridSeconds) {
+                    int x = scaleLabelWidth + (int) (t * getPixelsPerSecond());
                     g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
                 }
             }
         }
 
         // Draw beat lines (quarter notes)
-        float beatWidth = secondsPerBeat * PIXELS_PER_SECOND;
+        float beatWidth = secondsPerBeat * getPixelsPerSecond();
         if (beatWidth >= 4 && gridSeconds < secondsPerBeat) {
             g2.setColor(new Color(255, 255, 255, 25));
-            for (float t = 0; t * PIXELS_PER_SECOND < contentPanel.getWidth(); t += secondsPerBeat) {
-                int x = scaleLabelWidth + (int) (t * PIXELS_PER_SECOND);
+            for (float t = 0; t * getPixelsPerSecond() < contentPanel.getWidth(); t += secondsPerBeat) {
+                int x = scaleLabelWidth + (int) (t * getPixelsPerSecond());
                 g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
             }
         }
 
         // Draw bar lines - brightest
-        float barWidth = secondsPerBar * PIXELS_PER_SECOND;
+        float barWidth = secondsPerBar * getPixelsPerSecond();
         if (barWidth >= 4) {
             g2.setColor(new Color(255, 255, 255, 40));
-            for (float t = 0; t * PIXELS_PER_SECOND < contentPanel.getWidth(); t += secondsPerBar) {
-                int x = scaleLabelWidth + (int) (t * PIXELS_PER_SECOND);
+            for (float t = 0; t * getPixelsPerSecond() < contentPanel.getWidth(); t += secondsPerBar) {
+                int x = scaleLabelWidth + (int) (t * getPixelsPerSecond());
                 g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
             }
         }
@@ -685,8 +747,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         // Draw ghost shadow of dragged clip at original position
         if (isDragging && draggingClip != null && dragSourceTrack >= 0) {
             int ghostY = scaleTimeRuler + dragSourceTrack * scaleTrackHeight + 5;
-            int ghostX = scaleLabelWidth + (int) (dragOriginalStartTime * PIXELS_PER_SECOND);
-            int ghostW = (int) (draggingClip.duration * PIXELS_PER_SECOND);
+            int ghostX = scaleLabelWidth + (int) (dragOriginalStartTime * getPixelsPerSecond());
+            int ghostW = (int) (draggingClip.duration * getPixelsPerSecond());
             int ghostH = scaleTrackHeight - 10;
 
             // Draw semi-transparent ghost outline
@@ -714,8 +776,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 if (isDragging && clip == draggingClip) {
                     continue;
                 }
-                int x = scaleLabelWidth + (int) (clip.startTime * PIXELS_PER_SECOND);
-                int w = (int) (clip.duration * PIXELS_PER_SECOND);
+                int x = scaleLabelWidth + (int) (clip.startTime * getPixelsPerSecond());
+                int w = (int) (clip.duration * getPixelsPerSecond());
                 int h = scaleTrackHeight - 10;
 
                 g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
@@ -782,8 +844,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             int targetTrackIdx = (dragCurrentY - scaleTimeRuler) / scaleTrackHeight;
             targetTrackIdx = Math.max(0, Math.min(tracks.size() - 1, targetTrackIdx));
             int y = scaleTimeRuler + targetTrackIdx * scaleTrackHeight + 5;
-            int x = scaleLabelWidth + (int) (draggingClip.startTime * PIXELS_PER_SECOND);
-            int w = (int) (draggingClip.duration * PIXELS_PER_SECOND);
+            int x = scaleLabelWidth + (int) (draggingClip.startTime * getPixelsPerSecond());
+            int w = (int) (draggingClip.duration * getPixelsPerSecond());
             int h = scaleTrackHeight - 10;
 
             // Draw filled clip at drag position with slight transparency
@@ -806,7 +868,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         if (gridMode == GridMode.SECONDS) {
             // Show absolute seconds
             for (int s = 0; s < 600; s += 5) {
-                int x = scaleLabelWidth + (int) (s * PIXELS_PER_SECOND);
+                int x = scaleLabelWidth + (int) (s * getPixelsPerSecond());
                 if (x > contentPanel.getWidth())
                     break;
                 g2.drawLine(x, scaleTimeRuler - 10, x, scaleTimeRuler);
@@ -817,7 +879,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             float rulerSecondsPerBeat = 60.0f / bpm;
             float rulerSecondsPerBar = rulerSecondsPerBeat * 4;
             for (int bar = 0; bar < 200; bar++) {
-                int x = scaleLabelWidth + (int) (bar * rulerSecondsPerBar * PIXELS_PER_SECOND);
+                int x = scaleLabelWidth + (int) (bar * rulerSecondsPerBar * getPixelsPerSecond());
                 if (x > contentPanel.getWidth()) break;
                 g2.drawLine(x, scaleTimeRuler - 10, x, scaleTimeRuler);
                 g2.drawString(String.valueOf(bar + 1), x + 3, scaleTimeRuler - 12);
@@ -825,7 +887,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         }
 
         // Draw playhead
-        int px = scaleLabelWidth + (int) (playheadPos * PIXELS_PER_SECOND);
+        int px = scaleLabelWidth + (int) (playheadPos * getPixelsPerSecond());
         g2.setColor(Color.RED);
         g2.setStroke(new BasicStroke(2.0f));
         g2.drawLine(px, 0, px, contentPanel.getHeight());
@@ -942,7 +1004,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         };
 
         for (float div : divisions) {
-            if (div * PIXELS_PER_SECOND >= minPixels) {
+            if (div * getPixelsPerSecond() >= minPixels) {
                 return div;
             }
         }

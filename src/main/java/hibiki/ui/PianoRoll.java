@@ -56,6 +56,13 @@ public class PianoRoll extends JDialog {
     // Velocity editing state
     private boolean editingVelocity = false;
 
+    // Playhead state
+    private volatile float playheadPos = 0.0f; // in seconds
+    private volatile float bpm = 120.0f;
+    private volatile boolean isPlaying = false;
+    private float clipStartTime = 0.0f; // Start time of clip on timeline (seconds)
+    private javax.swing.Timer repaintTimer;
+
     private static class Note {
         int pitch;
         long startTick;
@@ -119,6 +126,12 @@ public class PianoRoll extends JDialog {
                     loadFromBackendData(data);
                 }
             }
+        } else if (notification.responseType() == Response.PlayheadInfo) {
+            hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) notification
+                    .response(new hibiki.ipc.PlayheadInfo());
+            playheadPos = info.positionSec();
+            bpm = info.bpm();
+            isPlaying = info.isPlaying();
         }
     }
 
@@ -446,6 +459,22 @@ public class PianoRoll extends JDialog {
                     g.setColor(Theme.getInstance().ACCENT_BLUE.brighter());
                     g.drawRect(x, y + 1, w, kh - 2);
                 }
+
+                // Draw playhead
+                // Convert playhead position (seconds relative to clip start) to ticks
+                float relativePos = playheadPos - clipStartTime;
+                if (relativePos >= 0) {
+                    int seqRes = sequence.getResolution();
+                    // Convert seconds to beats, then to ticks
+                    float beatsPerSecond = bpm / 60.0f;
+                    long playheadTick = (long) (relativePos * beatsPerSecond * seqRes);
+                    int px = (int) (playheadTick * tw);
+
+                    Graphics2D g2 = (Graphics2D) g;
+                    g2.setColor(Color.RED);
+                    g2.setStroke(new BasicStroke(2.0f));
+                    g2.drawLine(px, 0, px, getHeight());
+                }
             }
         };
 
@@ -641,6 +670,24 @@ public class PianoRoll extends JDialog {
             gridScroll.getHorizontalScrollBar()
                     .setValue(Math.max(0, centerX - gridScroll.getViewport().getWidth() / 2));
         });
+
+        // Repaint timer for playhead animation (30 fps)
+        repaintTimer = new javax.swing.Timer(33, e -> {
+            gridPanel.repaint();
+            velocityPanel.repaint();
+        });
+        repaintTimer.start();
+
+        // Stop timer and remove listener when dialog closes
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                if (repaintTimer != null) {
+                    repaintTimer.stop();
+                }
+                BackendManager.getInstance().removeNotificationListener(notificationListener);
+            }
+        });
     }
 
     /**
@@ -682,6 +729,13 @@ public class PianoRoll extends JDialog {
                 float tw = getTickWidth();
                 int pitch = NUM_KEYS - 1 - (e.getY() / kh);
                 long tick = (long) (e.getX() / tw);
+
+                // Middle-click or Ctrl+click: Seek playhead to this position
+                if (SwingUtilities.isMiddleMouseButton(e) ||
+                        (SwingUtilities.isLeftMouseButton(e) && e.isControlDown())) {
+                    seekToTick(tick);
+                    return;
+                }
 
                 if (pitch < 0 || pitch >= NUM_KEYS)
                     return;
@@ -816,6 +870,22 @@ public class PianoRoll extends JDialog {
             }
         }
         return null;
+    }
+
+    /**
+     * Seek the playhead to the given tick position within the clip
+     * Converts tick to absolute time (seconds) accounting for clip's start on
+     * timeline
+     */
+    private void seekToTick(long tick) {
+        int seqRes = sequence.getResolution();
+        // Convert ticks to seconds relative to clip start
+        float beatsPerSecond = bpm / 60.0f;
+        float ticksPerSecond = beatsPerSecond * seqRes;
+        float relativeSeconds = tick / ticksPerSecond;
+        // Add clip start time to get absolute position on timeline
+        float absoluteSeconds = clipStartTime + relativeSeconds;
+        BackendManager.getInstance().seek(absoluteSeconds);
     }
 
     private boolean isBlackKey(int pitch) {

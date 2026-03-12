@@ -83,6 +83,12 @@ public class BackendManager {
         }
     }
 
+    public void removeNotificationListener(Consumer<Notification> listener) {
+        synchronized (listeners) {
+            listeners.remove(listener);
+        }
+    }
+
     private static final int IPC_MAGIC = 0x48424B49; // "HBKI" - must match C++ side
 
     private void readStdout() {

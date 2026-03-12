@@ -85,6 +85,12 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     private float dragOriginalStartTime = 0;
     private boolean isDragging = false;
 
+    // Clip creation state (like Piano Roll note creation)
+    private boolean creatingClip = false;
+    private int creatingTrackIdx = -1;
+    private float creatingStartTime = 0;
+    private ClipRect creatingClipRect = null;
+
     /** Get the singleton TimelineView instance */
     public static TimelineView getInstance() {
         return instance;
@@ -326,14 +332,18 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                     if (trackIdx >= 0 && trackIdx < tracks.size()) {
                         setSelectedTrack(trackIdx);
 
-                        // Right-click: show clip context menu if clicked on a clip
+                        // Right-click: show clip context menu if clicked on a clip, or empty area menu
                         if (SwingUtilities.isRightMouseButton(e)) {
                             ClipRect clip = findClipAtPosition(trackIdx, e.getX());
                             if (clip != null) {
                                 showClipContextMenu(trackIdx, clip, e.getX(), e.getY());
+                            } else {
+                                // Show empty area context menu with "Create New Clip"
+                                float clickTime = e.getX() / getPixelsPerSecond();
+                                showEmptyAreaContextMenu(trackIdx, clickTime, e.getX(), e.getY());
                             }
                         } else if (SwingUtilities.isLeftMouseButton(e)) {
-                            // Left-click: start dragging if on a clip
+                            // Left-click: start dragging if on a clip, or start creating a new clip
                             ClipRect clip = findClipAtPosition(trackIdx, e.getX());
                             if (clip != null) {
                                 draggingClip = clip;
@@ -342,6 +352,21 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                                 dragStartY = e.getY();
                                 dragOriginalStartTime = clip.startTime;
                                 isDragging = false; // Will become true after threshold
+                            } else {
+                                // Start creating a new clip in empty area
+                                creatingClip = true;
+                                creatingTrackIdx = trackIdx;
+                                float startTime = e.getX() / getPixelsPerSecond();
+                                // Snap to grid unless shift is held
+                                if (!e.isShiftDown()) {
+                                    startTime = snapToBar(startTime);
+                                }
+                                creatingStartTime = startTime;
+                                // Create temporary clip rectangle for visual feedback
+                                creatingClipRect = new ClipRect();
+                                creatingClipRect.name = "New Clip";
+                                creatingClipRect.startTime = startTime;
+                                creatingClipRect.duration = 0;
                             }
                         }
                     }
@@ -415,6 +440,32 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 draggingClip = null;
                 dragSourceTrack = -1;
                 isDragging = false;
+
+                // Handle clip creation completion
+                if (creatingClip && creatingClipRect != null) {
+                    float endTime = Math.max(0, e.getX() / getPixelsPerSecond());
+                    if (!e.isShiftDown()) {
+                        endTime = snapToBar(endTime);
+                    }
+                    float duration = endTime - creatingStartTime;
+
+                    // Only create if duration is positive and meaningful
+                    if (duration > 0.1f) {
+                        creatingClipRect.duration = duration;
+
+                        // Add the new clip to the track
+                        TrackTimeline track = tracks.get(creatingTrackIdx);
+                        track.clips.add(creatingClipRect);
+                        track.clipMap.put(track.clips.size() - 1, creatingClipRect);
+                        updateContentSize();
+                    }
+                    repaint();
+                }
+
+                // Reset creation state
+                creatingClip = false;
+                creatingTrackIdx = -1;
+                creatingClipRect = null;
             }
         });
 
@@ -422,8 +473,16 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             @Override
             public void mouseDragged(MouseEvent e) {
                 int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                if (e.getY() < scaleTimeRuler && draggingClip == null) {
+                if (e.getY() < scaleTimeRuler && draggingClip == null && !creatingClip) {
                     updatePlayhead(e.getX());
+                } else if (creatingClip && creatingClipRect != null) {
+                    // Update clip duration during creation
+                    float endTime = Math.max(0, e.getX() / getPixelsPerSecond());
+                    if (!e.isShiftDown()) {
+                        endTime = snapToBar(endTime);
+                    }
+                    creatingClipRect.duration = Math.max(0, endTime - creatingStartTime);
+                    repaint();
                 } else if (draggingClip != null) {
                     // Check drag threshold (5 pixels)
                     if (!isDragging) {
@@ -559,6 +618,34 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             }
         });
         menu.add(deleteItem);
+
+        menu.show(contentPanel, x, y);
+    }
+
+    /** Show context menu for empty track area */
+    private void showEmptyAreaContextMenu(int trackIdx, float clickTime, int x, int y) {
+        JPopupMenu menu = new JPopupMenu();
+
+        // Create New Clip
+        JMenuItem createItem = new JMenuItem("Create New Clip");
+        createItem.addActionListener(e -> {
+            // Create a new clip at the clicked position
+            float snapTime = snapToBar(clickTime);
+            float secondsPerBar = (60.0f / bpm) * 4; // 1 bar duration
+
+            ClipRect newClip = new ClipRect();
+            newClip.name = "New Clip";
+            newClip.startTime = snapTime;
+            newClip.duration = secondsPerBar; // Default to 1 bar
+
+            TrackTimeline track = tracks.get(trackIdx);
+            track.clips.add(newClip);
+            track.clipMap.put(track.clips.size() - 1, newClip);
+
+            updateContentSize();
+            repaint();
+        });
+        menu.add(createItem);
 
         menu.show(contentPanel, x, y);
     }
@@ -857,6 +944,25 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             g2.setColor(Color.WHITE);
             g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
             g2.drawString(draggingClip.name, x + 5, y + 15);
+            g2.setComposite(AlphaComposite.SrcOver);
+        }
+
+        // Draw clip being created (visual feedback during drag creation)
+        if (creatingClip && creatingClipRect != null && creatingClipRect.duration > 0) {
+            int y = scaleTimeRuler + creatingTrackIdx * scaleTrackHeight + 5;
+            int x = scaleLabelWidth + (int) (creatingClipRect.startTime * getPixelsPerSecond());
+            int w = (int) (creatingClipRect.duration * getPixelsPerSecond());
+            int h = scaleTrackHeight - 10;
+
+            // Draw with green tint to indicate new clip creation
+            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.6f));
+            g2.setColor(new Color(100, 200, 100)); // Green tint for creation
+            g2.fillRoundRect(x, y, w, h, 8, 8);
+            g2.setColor(new Color(150, 255, 150));
+            g2.drawRoundRect(x, y, w, h, 8, 8);
+            g2.setColor(Color.WHITE);
+            g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
+            g2.drawString("New Clip", x + 5, y + 15);
             g2.setComposite(AlphaComposite.SrcOver);
         }
 

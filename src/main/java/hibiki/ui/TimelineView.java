@@ -20,9 +20,35 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     private static final int TIME_RULER_HEIGHT = 30;
     private static final int TRACK_LABEL_WIDTH = 100;
     private static final float PIXELS_PER_SECOND = 50.0f;
- 
-    enum GridUnit { SECONDS, BARS }
-    private GridUnit gridUnit = GridUnit.BARS;
+
+    // Grid mode for rendering - matches PianoRoll
+    enum GridMode {
+        AUTO("Auto"), // Adaptive based on zoom level
+        SECONDS("Seconds"), // Absolute time in seconds
+        BAR("1/1"), // Whole bar
+        HALF("1/2"), // Half bar
+        QUARTER("1/4"), // Quarter note (beat)
+        EIGHTH("1/8"), // Eighth note
+        SIXTEENTH("1/16"), // Sixteenth note
+        THIRTY_SECOND("1/32"), // Thirty-second note
+        TRIPLET_QUARTER("1/3"), // Triplet quarter
+        TRIPLET_EIGHTH("1/6"), // Triplet eighth
+        TRIPLET_16TH("1/12"), // Triplet sixteenth
+        TRIPLET_32ND("1/24"); // Triplet thirty-second
+
+        private final String label;
+
+        GridMode(String label) {
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    private GridMode gridMode = GridMode.AUTO;
     private volatile float bpm = 120.0f;
     private volatile boolean isPlaying = false;
 
@@ -153,17 +179,17 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT));
         controls.setOpaque(false);
         
-        JComboBox<GridUnit> unitCombo = new JComboBox<>(GridUnit.values());
-        unitCombo.setSelectedItem(gridUnit);
-        unitCombo.addActionListener(e -> {
-            gridUnit = (GridUnit) unitCombo.getSelectedItem();
+        JComboBox<GridMode> gridCombo = new JComboBox<>(GridMode.values());
+        gridCombo.setSelectedItem(gridMode);
+        gridCombo.addActionListener(e -> {
+            gridMode = (GridMode) gridCombo.getSelectedItem();
             repaint();
         });
         
         JLabel label = new JLabel("Grid:");
         label.setForeground(Theme.getInstance().TEXT_DIM);
         controls.add(label);
-        controls.add(unitCombo);
+        controls.add(gridCombo);
         
         JCheckBox autoScrollCheck = new JCheckBox("Auto-scroll", autoScroll);
         autoScrollCheck.setForeground(Theme.getInstance().TEXT_DIM);
@@ -195,10 +221,11 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                             int trackIndex = (p.y - Theme.getInstance().scale(TIME_RULER_HEIGHT)) / Theme.getInstance().scale(TRACK_HEIGHT);
                             double timeSec = p.x / PIXELS_PER_SECOND;
 
-                            // Snap to nearest bar boundary
-                            if (gridUnit == GridUnit.BARS) {
-                                float secondsPerBar = (60.0f / bpm) * 4.0f;
-                                timeSec = Math.round(timeSec / secondsPerBar) * secondsPerBar;
+                            // Snap to nearest grid boundary
+                            float secondsPerBeat = 60.0f / bpm;
+                            float snapSeconds = getGridSnapSeconds(gridMode, secondsPerBeat);
+                            if (snapSeconds > 0) {
+                                timeSec = Math.round(timeSec / snapSeconds) * snapSeconds;
                             }
 
                             if (trackIndex >= 0 && trackIndex < tracks.size()) {
@@ -617,22 +644,40 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             g2.setColor(Theme.getInstance().PANEL_BG_LIGHT.darker());
             g2.drawLine(0, y + scaleTrackHeight - 1, contentPanel.getWidth(), y + scaleTrackHeight - 1);
         }
-
         // Draw vertical grid lines through track area
         int trackAreaBottom = scaleTimeRuler + tracks.size() * scaleTrackHeight;
-        g2.setColor(new Color(255, 255, 255, 20));
-        if (gridUnit == GridUnit.BARS) {
-            float secondsPerBeat = 60.0f / bpm;
-            float secondsPerBar = secondsPerBeat * 4;
-            for (int b = 0; b < 200; b++) {
-                int x = scaleLabelWidth + (int) (b * secondsPerBar * PIXELS_PER_SECOND);
-                if (x > contentPanel.getWidth()) break;
-                g2.setColor(new Color(255, 255, 255, b % 4 == 0 ? 40 : 15));
+        float secondsPerBeat = 60.0f / bpm;
+        float secondsPerBar = secondsPerBeat * 4;
+        float gridSeconds = getGridSnapSeconds(gridMode, secondsPerBeat);
+
+        // Draw subdivision grid lines
+        if (gridSeconds > 0) {
+            float gridWidth = gridSeconds * PIXELS_PER_SECOND;
+            if (gridWidth >= 2) {
+                g2.setColor(new Color(255, 255, 255, 15));
+                for (float t = 0; t * PIXELS_PER_SECOND < contentPanel.getWidth(); t += gridSeconds) {
+                    int x = scaleLabelWidth + (int) (t * PIXELS_PER_SECOND);
+                    g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
+                }
+            }
+        }
+
+        // Draw beat lines (quarter notes)
+        float beatWidth = secondsPerBeat * PIXELS_PER_SECOND;
+        if (beatWidth >= 4 && gridSeconds < secondsPerBeat) {
+            g2.setColor(new Color(255, 255, 255, 25));
+            for (float t = 0; t * PIXELS_PER_SECOND < contentPanel.getWidth(); t += secondsPerBeat) {
+                int x = scaleLabelWidth + (int) (t * PIXELS_PER_SECOND);
                 g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
             }
-        } else {
-            for (int s = 0; s < 600; s += 5) {
-                int x = scaleLabelWidth + (int) (s * PIXELS_PER_SECOND);
+        }
+
+        // Draw bar lines - brightest
+        float barWidth = secondsPerBar * PIXELS_PER_SECOND;
+        if (barWidth >= 4) {
+            g2.setColor(new Color(255, 255, 255, 40));
+            for (float t = 0; t * PIXELS_PER_SECOND < contentPanel.getWidth(); t += secondsPerBar) {
+                int x = scaleLabelWidth + (int) (t * PIXELS_PER_SECOND);
                 g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
             }
         }
@@ -757,22 +802,25 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         g2.setColor(Theme.getInstance().BG_DARKER);
         g2.fillRect(scaleLabelWidth, 0, contentPanel.getWidth() - scaleLabelWidth, scaleTimeRuler);
         g2.setColor(Theme.getInstance().TEXT_DIM);
-
-        if (gridUnit == GridUnit.SECONDS) {
+        // Time ruler header - show seconds or bars based on mode
+        if (gridMode == GridMode.SECONDS) {
+            // Show absolute seconds
             for (int s = 0; s < 600; s += 5) {
                 int x = scaleLabelWidth + (int) (s * PIXELS_PER_SECOND);
+                if (x > contentPanel.getWidth())
+                    break;
                 g2.drawLine(x, scaleTimeRuler - 10, x, scaleTimeRuler);
                 g2.drawString(s + "s", x + 2, scaleTimeRuler - 12);
             }
         } else {
-            float secondsPerBeat = 60.0f / bpm;
-            float secondsPerBar = secondsPerBeat * 4;
-            for (int b = 0; b < 200; b++) {
-                float time = b * secondsPerBar;
-                int x = scaleLabelWidth + (int) (time * PIXELS_PER_SECOND);
+            // Show bar numbers
+            float rulerSecondsPerBeat = 60.0f / bpm;
+            float rulerSecondsPerBar = rulerSecondsPerBeat * 4;
+            for (int bar = 0; bar < 200; bar++) {
+                int x = scaleLabelWidth + (int) (bar * rulerSecondsPerBar * PIXELS_PER_SECOND);
                 if (x > contentPanel.getWidth()) break;
-                g2.drawLine(x, scaleTimeRuler - 15, x, scaleTimeRuler);
-                g2.drawString((b + 1) + ".1", x + 2, scaleTimeRuler - 15);
+                g2.drawLine(x, scaleTimeRuler - 10, x, scaleTimeRuler);
+                g2.drawString(String.valueOf(bar + 1), x + 3, scaleTimeRuler - 12);
             }
         }
 
@@ -841,5 +889,63 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         float startTime;
         float duration;
         float[] waveform;
+    }
+
+    /**
+     * Get the snap interval in seconds for the given grid mode.
+     * For AUTO mode, adapts based on pixel threshold.
+     */
+    private float getGridSnapSeconds(GridMode mode, float secondsPerBeat) {
+        float secondsPerBar = secondsPerBeat * 4;
+
+        // Handle SECONDS mode separately - 1 second grid interval
+        if (mode == GridMode.SECONDS) {
+            return 1.0f;
+        }
+
+        if (mode != GridMode.AUTO) {
+            switch (mode) {
+                case BAR:
+                    return secondsPerBar;
+                case HALF:
+                    return secondsPerBar / 2;
+                case QUARTER:
+                    return secondsPerBeat;
+                case EIGHTH:
+                    return secondsPerBeat / 2;
+                case SIXTEENTH:
+                    return secondsPerBeat / 4;
+                case THIRTY_SECOND:
+                    return secondsPerBeat / 8;
+                case TRIPLET_QUARTER:
+                    return secondsPerBar / 3;
+                case TRIPLET_EIGHTH:
+                    return secondsPerBar / 6;
+                case TRIPLET_16TH:
+                    return secondsPerBar / 12;
+                case TRIPLET_32ND:
+                    return secondsPerBar / 24;
+                default:
+                    return secondsPerBeat;
+            }
+        }
+
+        // AUTO mode: find finest grid that maintains minimum pixel spacing
+        int minPixels = 15;
+        float[] divisions = {
+                secondsPerBeat / 8, // 1/32
+                secondsPerBeat / 4, // 1/16
+                secondsPerBeat / 2, // 1/8
+                secondsPerBeat, // 1/4 (beat)
+                secondsPerBar / 2, // 1/2
+                secondsPerBar // 1/1 (bar)
+        };
+
+        for (float div : divisions) {
+            if (div * PIXELS_PER_SECOND >= minPixels) {
+                return div;
+            }
+        }
+        return secondsPerBar;
     }
 }

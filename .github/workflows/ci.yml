@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, experimental]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: Linux (x64)
+          - os: macos-latest
+            name: macOS (x64)
+          - os: windows-latest
+            name: Windows (x64)
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install platform-specific dependencies
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libx11-dev libxcursor-dev
+
+      # Cache Bazel build artifacts
+      - name: Cache Bazel
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
+
+      - name: Cache Bazel (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/Users/runneradmin/_bazel_runneradmin
+          key: bazel-windows-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          restore-keys: |
+            bazel-windows-
+
+      # Build
+      - name: Build engine (hbk-play)
+        run: bazel build -c opt //:hbk-play
+
+      - name: Build GUI
+        run: bazel build -c opt //:hibiki-gui-java
+
+      # Test
+      - name: Run C++ tests
+        run: bazel test -c opt //:history_test //:midi_test //:audio_file_test //:clip_test //:track_test //:project_test --test_output=errors
+
+      - name: Run Java tests
+        run: bazel test -c opt //:theme_test //:component_initialization_test //:timeline_view_test --test_output=errors

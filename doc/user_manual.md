@@ -7,6 +7,7 @@ A lightweight Digital Audio Workstation with VST3 plugin support.
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Session View](#session-view)
 - [Timeline View](#timeline-view)
+- [Piano Roll Editor](#piano-roll-editor)
 - [Loading Plugins](#loading-plugins)
 - [Playing MIDI](#playing-midi)
 - [Recording Audio](#recording-audio)
@@ -38,21 +39,22 @@ bazel build -c opt //:hibiki-gui-java
 | **Tab** | Toggle Session ↔ Timeline view |
 | **1-4** | Select Track 1-4 |
 | **Ctrl+Z** | Undo |
-| **Ctrl+Shift+Z** | Redo |
+| **Ctrl+Shift+Z** / **Ctrl+Y** | Redo |
 
 ---
 
 ## Session View
 
-The Session View is inspired by Ableton Live's session mode. It shows 4 tracks with 5 clip slots each.
+The Session View is inspired by Ableton Live's session mode. It shows tracks with clip slots and per-track level meters.
 
 ### Track Layout
-- **Track Headers**: Click to select a track
+- **Track Headers**: Click to select a track. **Double-click** to rename.
 - **Clip Slots**: Click to play loaded clips, right-click for context menu
 - **Scene Launch**: Click to trigger all clips in a row
+- **Level Meters**: Real-time stereo peak meters beside each track
 
 ### Loading Clips
-1. **Drag & Drop**: Drag audio (.wav) or MIDI (.mid) files from your file manager onto a slot
+1. **Drag & Drop**: Drag audio (.wav) or MIDI (.mid) files from your file manager or the Browser panel onto a slot
 2. **Context Menu**: Right-click a slot → "Load Clip..." to browse for files
 
 ### Playing Clips
@@ -63,21 +65,85 @@ The Session View is inspired by Ableton Live's session mode. It shows 4 tracks w
 
 ## Timeline View
 
-The Timeline View shows a linear arrangement of clips on tracks (like traditional DAW timeline).
+The Timeline View shows a linear arrangement of clips on tracks (like a traditional DAW timeline).
 
 ### Navigation
-- **Click** on a track to select it
+- **Click** on a track label to select it
+- **Double-click** a track label to rename it
 - Press **Tab** to switch between Session and Timeline views
+- **Click** on the time ruler to seek the playhead
+
+### Creating Clips
+
+| Method | Description |
+|--------|-------------|
+| **Click + drag** in empty area | Draw a new clip (snaps to grid) |
+| **Shift + click + drag** | Draw a new clip without snapping |
+| **Right-click** empty area → "Create New Clip" | Create a 1-bar clip at the clicked position |
+| **Drag & Drop** from Browser | Drop audio/MIDI files onto the timeline |
 
 ### Clip Manipulation
 
 | Action | Description |
 |--------|-------------|
-| **Drag clip** | Move clip to new time/track (snaps to bars) |
-| **Shift + Drag** | Move clip without snapping (free positioning) |
-| **Alt + Drag** | Copy clip to new location (snaps to bars) |
+| **Drag clip** | Move clip to new time/track (snaps to grid) |
+| **Shift + Drag** | Move clip without snap (free positioning) |
+| **Alt + Drag** | Copy clip to new location (snaps to grid) |
 | **Alt + Shift + Drag** | Copy clip without snapping |
-| **Right-click clip** | Context menu (Edit, Delete) |
+| **Right-click clip** → "Edit Clip..." | Open MIDI clip in Piano Roll |
+| **Right-click clip** → "Delete Clip" | Remove clip from timeline |
+
+### Zoom and Grid Controls
+
+The control bar at the bottom provides:
+
+- **Grid**: Dropdown to select grid resolution — Auto, 1/1, 1/2, 1/4, 1/8, 1/16, 1/32, and triplet subdivisions (1/3, 1/6, 1/12, 1/24)
+- **H** slider: Horizontal zoom (5%–400%)
+- **V** slider: Vertical zoom / track height (5%–200%)
+- **Auto-scroll**: Checkbox to follow the playhead during playback
+
+---
+
+## Piano Roll Editor
+
+Open the Piano Roll by right-clicking a MIDI clip → "Edit Clip...". The editor provides a grid-based interface for editing MIDI notes.
+
+### Layout
+- **Piano keys** on the left side (scrolls vertically with the grid)
+- **Note grid** in the center showing notes as colored rectangles
+- **Time ruler** at the top showing bar/beat numbers
+- **Velocity lane** at the bottom displaying velocity bars per note
+
+### Playhead
+- A red vertical line indicates the current playback position
+- **Click** or **drag** on the time ruler to seek to a position
+- **Middle-click** or **Ctrl+click** on the note grid to seek playhead
+
+### Note Editing
+
+| Action | Description |
+|--------|-------------|
+| **Left-click** empty area | Create a new note (drag to set duration) |
+| **Right-click** a note | Delete the note |
+| **Drag** a note | Move the note (pitch + time) |
+| **Alt + Drag** a note | Copy the note to a new position |
+| **Drag** the right edge of a note | Resize the note duration |
+
+A ghost silhouette shows the original position while dragging.
+
+### Velocity Editing
+- The **velocity lane** at the bottom shows a colored bar for each note
+- **Click** or **drag** on a velocity bar to adjust (top = 127, bottom = 1)
+- Bar color encodes velocity: blue (soft) → red (loud)
+
+### Zoom Controls
+- **Grid**: Dropdown to select snap/grid resolution (Auto, 1/4, 1/8, etc.)
+- **H** slider: Horizontal zoom (100%–max)
+- **V** slider: Vertical zoom / key height (2–30 px)
+- On open, the editor auto-fits zoom to show all notes
+
+### Auto-sync
+Edits are synced to the backend in real-time via IPC — no manual save step required.
 
 ---
 
@@ -110,10 +176,6 @@ The Timeline View shows a linear arrangement of clips on tracks (like traditiona
 ### Important
 - **MIDI clips require an instrument plugin on the same track** to produce sound
 - Audio clips play directly without needing a plugin
-
-### Piano Roll Editor
-- Right-click a MIDI clip → "Edit Clip..." to open the Piano Roll
-- Edit MIDI notes directly in the piano roll interface
 
 ---
 
@@ -157,12 +219,12 @@ Use the `hbk-play` CLI tool for offline rendering:
 ### Saving Projects
 1. Click the **Save** button in the top bar
 2. Enter a filename (`.hbk` extension is added automatically)
-3. Projects save: tracks, plugins, clips, BPM, and plugin parameters
+3. Projects save: tracks, plugins, clips, BPM, track names, and plugin parameters
 
 ### Loading Projects
 1. Click the **Load** button in the top bar
 2. Browse to a `.hbk` file
-3. The project state is restored
+3. The project state is restored (including track names and clip positions)
 
 ### Project File Format
 - `.hbk` files use FlatBuffers binary serialization

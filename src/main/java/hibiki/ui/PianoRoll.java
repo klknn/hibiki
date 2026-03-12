@@ -485,6 +485,102 @@ public class PianoRoll extends JDialog {
         gridScroll.getVerticalScrollBar().setUnitIncrement(getScaledKeyHeight());
         gridScroll.getHorizontalScrollBar().setUnitIncrement(Theme.getInstance().scale(20));
 
+        // Time ruler panel (column header) - shows bars/beats and allows seeking
+        final int TIME_RULER_HEIGHT = Theme.getInstance().scale(24);
+        JPanel timeRulerPanel = new JPanel() {
+            @Override
+            public Dimension getPreferredSize() {
+                return new Dimension(gridPanel.getPreferredSize().width, TIME_RULER_HEIGHT);
+            }
+
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                // Background
+                g2.setColor(Theme.getInstance().BG_DARKER);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+
+                float tw = getTickWidth();
+                int res = sequence.getResolution();
+                float ticksPerBar = res * 4; // 4/4 time
+
+                // Draw bar markers
+                g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.PLAIN, Theme.getInstance().scale(10.0f)));
+
+                for (int bar = 0; bar * ticksPerBar * tw < getWidth() + 200; bar++) {
+                    int x = (int) (bar * ticksPerBar * tw);
+
+                    // Bar line
+                    g2.setColor(new Color(255, 255, 255, 60));
+                    g2.drawLine(x, 0, x, getHeight());
+
+                    // Bar number
+                    g2.setColor(Theme.getInstance().TEXT_BRIGHT);
+                    g2.drawString(String.valueOf(bar + 1), x + 3, 14);
+
+                    // Beat markers within bar
+                    for (int beat = 1; beat < 4; beat++) {
+                        int bx = (int) ((bar * ticksPerBar + beat * res) * tw);
+                        g2.setColor(new Color(255, 255, 255, 30));
+                        g2.drawLine(bx, getHeight() - 6, bx, getHeight());
+                    }
+                }
+
+                // Draw playhead position indicator
+                float relativePos = playheadPos - clipStartTime;
+                if (relativePos >= 0) {
+                    float beatsPerSecond = bpm / 60.0f;
+                    long playheadTick = (long) (relativePos * beatsPerSecond * res);
+                    int px = (int) (playheadTick * tw);
+
+                    g2.setColor(Color.RED);
+                    g2.setStroke(new BasicStroke(2.0f));
+                    g2.drawLine(px, 0, px, getHeight());
+                    // Draw small triangle indicator at top
+                    int[] xPoints = { px - 4, px + 4, px };
+                    int[] yPoints = { 0, 0, 6 };
+                    g2.fillPolygon(xPoints, yPoints, 3);
+                }
+
+                // Bottom border
+                g2.setColor(Theme.getInstance().BORDER);
+                g2.drawLine(0, getHeight() - 1, getWidth(), getHeight() - 1);
+            }
+        };
+        timeRulerPanel.setBackground(Theme.getInstance().BG_DARKER);
+
+        // Time ruler mouse handling for seeking
+        MouseAdapter timeRulerMouse = new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    seekFromRuler(e.getX());
+                }
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    seekFromRuler(e.getX());
+                }
+            }
+
+            private void seekFromRuler(int x) {
+                float tw = getTickWidth();
+                long tick = (long) (x / tw);
+                seekToTick(tick);
+                timeRulerPanel.repaint();
+            }
+        };
+        timeRulerPanel.addMouseListener(timeRulerMouse);
+        timeRulerPanel.addMouseMotionListener(timeRulerMouse);
+
+        // Set time ruler as column header
+        gridScroll.setColumnHeaderView(timeRulerPanel);
+
         keysScroll = new JScrollPane(keysPanel);
         keysScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
         keysScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
@@ -493,7 +589,17 @@ public class PianoRoll extends JDialog {
             keysScroll.getVerticalScrollBar().setValue(gridScroll.getVerticalScrollBar().getValue());
         });
 
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, keysScroll, gridScroll);
+        // Corner panel for keys column header (empty spacer)
+        JPanel cornerPanel = new JPanel();
+        cornerPanel.setPreferredSize(new Dimension(Theme.getInstance().scale(60), TIME_RULER_HEIGHT));
+        cornerPanel.setBackground(Theme.getInstance().BG_DARKER);
+
+        // Wrap keysScroll with a panel that has corner spacer at top
+        JPanel keysWithCorner = new JPanel(new BorderLayout());
+        keysWithCorner.add(cornerPanel, BorderLayout.NORTH);
+        keysWithCorner.add(keysScroll, BorderLayout.CENTER);
+
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, keysWithCorner, gridScroll);
         split.setDividerLocation(Theme.getInstance().scale(60));
         split.setDividerSize(0);
 

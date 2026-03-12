@@ -56,6 +56,34 @@ public class PianoRoll extends JDialog {
     // Velocity editing state
     private boolean editingVelocity = false;
 
+    // Grid mode for rendering and snapping
+    private enum GridMode {
+        AUTO("Auto"), // Adaptive based on zoom level
+        BAR("1/1"), // Whole bar
+        HALF("1/2"), // Half bar
+        QUARTER("1/4"), // Quarter note (beat)
+        EIGHTH("1/8"), // Eighth note
+        SIXTEENTH("1/16"), // Sixteenth note
+        THIRTY_SECOND("1/32"), // Thirty-second note
+        TRIPLET_QUARTER("1/3"), // Triplet quarter
+        TRIPLET_EIGHTH("1/6"), // Triplet eighth
+        TRIPLET_16TH("1/12"), // Triplet sixteenth
+        TRIPLET_32ND("1/24"); // Triplet thirty-second
+
+        private final String label;
+
+        GridMode(String label) {
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    private GridMode gridMode = GridMode.AUTO;
+
     // Playhead state
     private volatile float playheadPos = 0.0f; // in seconds
     private volatile float bpm = 120.0f;
@@ -413,14 +441,43 @@ public class PianoRoll extends JDialog {
                     g.drawLine(0, y, getWidth(), y);
                 }
 
-                // Draw vertical grid lines (beat markers)
+                // Draw vertical grid lines with hierarchy
                 int res = sequence.getResolution();
-                g.setColor(new Color(80, 80, 80));
-                float beatWidth = res * tw;
-                if (beatWidth >= 2) { // Only draw if visible
-                    for (float x = 0; x < getWidth(); x += beatWidth) {
-                        g.drawLine((int) x, 0, (int) x, getHeight());
+                int ticksPerBar = res * 4;
+                int gridTicks = getGridTickInterval();
+                float gridWidth = gridTicks * tw;
+
+                Graphics2D g2 = (Graphics2D) g; // Used for all 2D drawing below
+
+                // Draw grid subdivision lines (finest level)
+                if (gridWidth >= 2) {
+                    g2.setColor(new Color(60, 60, 60));
+                    for (long tick = 0; tick * tw < getWidth(); tick += gridTicks) {
+                        int x = (int) (tick * tw);
+                        g2.drawLine(x, 0, x, getHeight());
                     }
+                }
+
+                // Draw beat lines (quarter notes) - medium brightness
+                float beatWidth = res * tw;
+                if (beatWidth >= 4 && gridTicks < res) {
+                    g2.setColor(new Color(90, 90, 90));
+                    for (long tick = 0; tick * tw < getWidth(); tick += res) {
+                        int x = (int) (tick * tw);
+                        g2.drawLine(x, 0, x, getHeight());
+                    }
+                }
+
+                // Draw bar lines - brightest, thicker
+                float barWidth = ticksPerBar * tw;
+                if (barWidth >= 4) {
+                    g2.setColor(new Color(120, 120, 120));
+                    g2.setStroke(new BasicStroke(1.5f));
+                    for (long tick = 0; tick * tw < getWidth(); tick += ticksPerBar) {
+                        int x = (int) (tick * tw);
+                        g2.drawLine(x, 0, x, getHeight());
+                    }
+                    g2.setStroke(new BasicStroke(1.0f));
                 }
 
                 // Draw ghost shadow of dragged note at original position
@@ -429,7 +486,7 @@ public class PianoRoll extends JDialog {
                     int ghostY = (NUM_KEYS - 1 - dragOriginalPitch) * kh;
                     int ghostW = Math.max(1, (int) (draggingNote.durationTicks * tw));
 
-                    Graphics2D g2 = (Graphics2D) g;
+                    // Reuse g2 from above
                     Composite oldComposite = g2.getComposite();
                     g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.3f));
                     g2.setColor(Theme.getInstance().ACCENT_BLUE);
@@ -470,7 +527,7 @@ public class PianoRoll extends JDialog {
                     long playheadTick = (long) (relativePos * beatsPerSecond * seqRes);
                     int px = (int) (playheadTick * tw);
 
-                    Graphics2D g2 = (Graphics2D) g;
+                    // Reuse g2 from above
                     g2.setColor(Color.RED);
                     g2.setStroke(new BasicStroke(2.0f));
                     g2.drawLine(px, 0, px, getHeight());
@@ -734,12 +791,31 @@ public class PianoRoll extends JDialog {
         zoomPanel.setBackground(Theme.getInstance().PANEL_BG);
         zoomPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.getInstance().BORDER));
 
-        // Horizontal zoom slider: 100 = 100% = fits entire clip, 500 = 500% = zoomed in
-        // 5x
+        // Grid mode selector
+        JLabel gridLabel = new JLabel("Grid:");
+        gridLabel.setForeground(Theme.getInstance().TEXT_DIM);
+        zoomPanel.add(gridLabel);
+        JComboBox<GridMode> gridCombo = new JComboBox<>(GridMode.values());
+        gridCombo.setSelectedItem(gridMode);
+        gridCombo.setPreferredSize(new Dimension(60, 20));
+        gridCombo.addActionListener(e -> {
+            gridMode = (GridMode) gridCombo.getSelectedItem();
+            gridPanel.repaint();
+            velocityPanel.repaint();
+        });
+        zoomPanel.add(gridCombo);
+
+        // Calculate max zoom that limits view to ~1 bar
+        int ticksPerBar = sequence.getResolution() * 4;
+        int zoomViewWidth = Theme.getInstance().scale(700);
+        // Max scale = when 1 bar fills the view
+        int maxZoomPercent = Math.max(500, (int) (zoomViewWidth / (ticksPerBar * baseTickWidth) * 100));
+
+        // Horizontal zoom slider
         JLabel hLabel = new JLabel("H:");
         hLabel.setForeground(Theme.getInstance().TEXT_DIM);
         zoomPanel.add(hLabel);
-        hZoomSlider = new JSlider(100, 500, 100);
+        hZoomSlider = new JSlider(100, maxZoomPercent, 100);
         hZoomSlider.setPreferredSize(new Dimension(80, 20));
         hZoomSlider.addChangeListener(e -> {
             tickScale = hZoomSlider.getValue() / 100.0f;
@@ -872,8 +948,9 @@ public class PianoRoll extends JDialog {
                         }
                     } else {
                         // Create new note and let user drag to adjust length
-                        long snapTick = (tick / (sequence.getResolution() / 4)) * (sequence.getResolution() / 4);
-                        int minDuration = sequence.getResolution() / 8; // 8th note minimum
+                        int snapInterval = getSnapTickInterval();
+                        long snapTick = (tick / snapInterval) * snapInterval;
+                        int minDuration = Math.max(snapInterval, sequence.getResolution() / 8); // At least grid or 1/8
                         Note n = new Note(pitch, snapTick, minDuration, 100);
                         notes.add(n);
                         resizingNote = n; // Set to resizing mode so user can drag to adjust length
@@ -927,9 +1004,9 @@ public class PianoRoll extends JDialog {
                         // Shift held: no snap
                         snapTick = tick;
                     } else {
-                        // Snap to 16th notes
-                        snapTick = Math.round((double) tick / (sequence.getResolution() / 4))
-                                * (sequence.getResolution() / 4);
+                        // Snap to current grid
+                        int snapInterval = getSnapTickInterval();
+                        snapTick = Math.round((double) tick / snapInterval) * snapInterval;
                     }
 
                     // Check drag threshold
@@ -997,5 +1074,71 @@ public class PianoRoll extends JDialog {
     private boolean isBlackKey(int pitch) {
         int note = pitch % 12;
         return note == 1 || note == 3 || note == 6 || note == 8 || note == 10;
+    }
+
+    /**
+     * Get the tick interval for grid lines based on current mode and zoom.
+     * For AUTO mode, adapts based on pixel threshold.
+     * Returns tick interval for main grid lines.
+     */
+    private int getGridTickInterval() {
+        int res = sequence.getResolution(); // ticks per beat
+        int ticksPerBar = res * 4; // 4/4 time
+
+        if (gridMode != GridMode.AUTO) {
+            // Fixed modes - return exact division
+            switch (gridMode) {
+                case BAR:
+                    return ticksPerBar;
+                case HALF:
+                    return ticksPerBar / 2;
+                case QUARTER:
+                    return res;
+                case EIGHTH:
+                    return res / 2;
+                case SIXTEENTH:
+                    return res / 4;
+                case THIRTY_SECOND:
+                    return res / 8;
+                case TRIPLET_QUARTER:
+                    return ticksPerBar / 3;
+                case TRIPLET_EIGHTH:
+                    return ticksPerBar / 6;
+                case TRIPLET_16TH:
+                    return ticksPerBar / 12;
+                case TRIPLET_32ND:
+                    return ticksPerBar / 24;
+                default:
+                    return res;
+            }
+        }
+
+        // AUTO mode: find finest grid that maintains minimum pixel spacing
+        float tw = getTickWidth();
+        int minPixels = 15; // Minimum pixels between grid lines
+
+        // Try divisions from finest to coarsest, return first that fits
+        int[] divisions = {
+                res / 8, // 1/32
+                res / 4, // 1/16
+                res / 2, // 1/8
+                res, // 1/4 (beat)
+                ticksPerBar / 2, // 1/2
+                ticksPerBar // 1/1 (bar)
+        };
+
+        for (int div : divisions) {
+            if (div * tw >= minPixels) {
+                return div;
+            }
+        }
+        return ticksPerBar; // Fallback to bars
+    }
+
+    /**
+     * Get snap interval for note creation/editing based on grid mode.
+     */
+    private int getSnapTickInterval() {
+        return getGridTickInterval();
     }
 }

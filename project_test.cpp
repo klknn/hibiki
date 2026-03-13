@@ -16,6 +16,18 @@ protected:
     }
 };
 
+std::string GetDexedPath() {
+    std::string path = "testdata/Dexed.vst3";
+#ifdef _WIN32
+    std::string win_path = "testdata/Dexed.vst3/Contents/x86_64-win/Dexed.vst3";
+    std::string resolved = hibiki::find_test_file(win_path);
+    if (resolved != win_path) {
+        return resolved;
+    }
+#endif
+    return hibiki::find_test_file(path);
+}
+
 TEST_F(ProjectTest, GetOrCreateTrack) {
     hibiki::ProjectState state;
     auto track0 = hibiki::GetOrCreateTrack(state, 0);
@@ -94,7 +106,7 @@ TEST_F(ProjectTest, BounceProjectWithDexed) {
     state.sample_rate = 44100.0;
     
     auto track = hibiki::GetOrCreateTrack(state, 0);
-    std::string dexed_path = hibiki::find_test_file("testdata/Dexed.vst3");
+    std::string dexed_path = GetDexedPath();
     int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate);
     ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
     
@@ -135,7 +147,7 @@ TEST_F(ProjectTest, LoadProjectWithTimelineClips) {
 
     // Build a project with a plugin and a timeline clip
     auto track = hibiki::GetOrCreateTrack(state, 0);
-    std::string dexed_path = hibiki::find_test_file("testdata/Dexed.vst3");
+    std::string dexed_path = GetDexedPath();
     int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate);
     ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
 
@@ -185,7 +197,7 @@ TEST_F(ProjectTest, SaveAndLoadCorrectProjectStructure) {
     
     // Create a track with BOTH plugin AND timeline clip (correct structure)
     auto track = hibiki::GetOrCreateTrack(state, 1);
-    std::string dexed_path = hibiki::find_test_file("testdata/Dexed.vst3");
+    std::string dexed_path = GetDexedPath();
     int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate);
     ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
     
@@ -227,7 +239,7 @@ TEST_F(ProjectTest, DeletePluginThenLoadNew) {
     state.sample_rate = 44100.0;
     
     auto track = hibiki::GetOrCreateTrack(state, 0);
-    std::string dexed_path = hibiki::find_test_file("testdata/Dexed.vst3");
+    std::string dexed_path = GetDexedPath();
     
     // Step 1: Load a plugin
     int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate);

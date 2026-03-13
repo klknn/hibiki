@@ -423,27 +423,34 @@ bool Vst3Plugin::isInstrument() const {
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
+#elif defined(_WIN32)
+#include <windows.h>
 #endif
 
 std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(const std::string& path) {
     std::vector<PluginDescription> plugins;
     
     char executable_path[1024];
-    uint32_t size = sizeof(executable_path);
 #if defined(__APPLE__)
+    uint32_t size = sizeof(executable_path);
     if (_NSGetExecutablePath(executable_path, &size) != 0) {
         return listPlugins(path); // Fallback to same-process if we can't find ourselves
+    }
+#elif defined(_WIN32)
+    if (GetModuleFileNameA(NULL, executable_path, sizeof(executable_path)) == 0) {
+        return listPlugins(path);
     }
 #else
     // Fallback for other platforms
     return listPlugins(path);
 #endif
 
-    std::string tmp_file = "vst3_plugins_temp_output.txt";
+    char tmp_buf[L_tmpnam];
+    std::string tmp_file = std::tmpnam(tmp_buf);
 #ifdef _WIN32
-    std::string cmd = std::string("\"\"") + executable_path + "\" --list \"" + path + "\" > " + tmp_file + " 2> NUL\"";
+    std::string cmd = std::string("\"\"") + executable_path + "\" --list \"" + path + "\" > \"" + tmp_file + "\" 2> NUL\"";
 #else
-    std::string cmd = std::string("\"") + executable_path + "\" --list \"" + path + "\" > " + tmp_file + " 2>/dev/null";
+    std::string cmd = std::string("\"") + executable_path + "\" --list \"" + path + "\" > \"" + tmp_file + "\" 2>/dev/null";
 #endif
     std::system(cmd.c_str());
 

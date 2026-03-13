@@ -54,15 +54,9 @@ jobs:
             bazel-windows-
 
       # Build
-      - name: Build engine (hbk-play)
-        run: bazel build -c opt //:hbk-play
-
-      - name: Build GUI
-        run: bazel build -c opt //:hibiki-gui-java
+      - name: Build
+        run: bazel build -c opt --enable_platform_specific_config //:hibiki-gui-java
 
       # Test
-      - name: Run C++ tests
-        run: bazel test -c opt //:history_test //:midi_test //:audio_file_test //:clip_test //:track_test //:project_test --test_output=errors
-
-      - name: Run Java tests
-        run: bazel test -c opt //:theme_test //:component_initialization_test //:timeline_view_test --test_output=errors
+      - name: Run tests
+        run: bazel test -c opt --enable_platform_specific_config //:all --test_output=all

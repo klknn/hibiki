@@ -130,54 +130,52 @@ TEST_F(ProjectTest, BounceProjectWithDexed) {
 
 TEST_F(ProjectTest, LoadProjectWithTimelineClips) {
     hibiki::ProjectState state;
+    state.bpm = 140.0;
     state.sample_rate = 44100.0;
-    
-    // Load the timeline_midi.hbk project file
-    std::string project_path = hibiki::find_test_file("testdata/timeline_midi.hbk");
-    bool result = hibiki::LoadProject(state, project_path);
-    ASSERT_TRUE(result) << "Failed to load timeline_midi.hbk";
-    
+
+    // Build a project with a plugin and a timeline clip
+    auto track = hibiki::GetOrCreateTrack(state, 0);
+    std::string dexed_path = hibiki::find_test_file("testdata/Dexed.vst3");
+    int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate);
+    ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
+
+    std::string mid_path = hibiki::find_test_file("testdata/test.mid");
+    track->AddTimelineClip(mid_path, 2.0, state.bpm);
+    ASSERT_EQ(track->timeline_clips.size(), 1);
+
+    // Save the project
+    std::string tmp_file = std::tmpnam(nullptr);
+    ASSERT_TRUE(hibiki::SaveProject(state, tmp_file));
+
+    // Clear state and reload
+    state.tracks.clear();
+    bool result = hibiki::LoadProject(state, tmp_file);
+    ASSERT_TRUE(result) << "Failed to load saved project";
+
     // Verify BPM was loaded
-    EXPECT_GT(state.bpm, 0.0) << "BPM should be set";
-    std::cerr << "Loaded BPM: " << state.bpm << std::endl;
-    
+    EXPECT_FLOAT_EQ(state.bpm, 140.0f) << "BPM should be 140";
+
     // Verify tracks were created
-    EXPECT_GT(state.tracks.size(), 0) << "Should have at least one track";
-    std::cerr << "Number of tracks: " << state.tracks.size() << std::endl;
-    
-    // Check each track
-    for (const auto& [idx, track] : state.tracks) {
-        std::cerr << "Track " << idx << ":" << std::endl;
-        std::cerr << "  Plugins: " << track->plugins.size() << std::endl;
-        std::cerr << "  Session Clips: " << track->clips.size() << std::endl;
-        std::cerr << "  Timeline Clips: " << track->timeline_clips.size() << std::endl;
-        
-        for (size_t p = 0; p < track->plugins.size(); ++p) {
-            std::cerr << "    Plugin " << p << ": " << track->plugins[p]->getName() 
-                      << " (isInstrument=" << track->plugins[p]->isInstrument() << ")" << std::endl;
-        }
-        
-        for (size_t tc_idx = 0; tc_idx < track->timeline_clips.size(); ++tc_idx) {
-            const auto& tc = track->timeline_clips[tc_idx];
-            std::cerr << "    Timeline clip " << tc_idx << ": " << tc->clip->path 
-                      << " (type=" << (tc->clip->type == hibiki::Clip::Type::MIDI ? "MIDI" : "AUDIO")
-                      << ", start=" << tc->start_time_sec
-                      << ", duration=" << tc->duration_sec << ")" << std::endl;
-        }
-        
-        // Verify MIDI timeline clips need a plugin on the same track
-        if (!track->timeline_clips.empty() && track->plugins.empty()) {
-            for (const auto& tc : track->timeline_clips) {
-                if (tc->clip->type == hibiki::Clip::Type::MIDI) {
-                    std::cerr << "  WARNING: MIDI timeline clip without plugin on track " << idx << std::endl;
-                }
-            }
-        }
+    EXPECT_EQ(state.tracks.size(), 1) << "Should have one track";
+
+    // Check the track contents
+    auto loaded_track = state.tracks.at(0).get();
+    EXPECT_EQ(loaded_track->plugins.size(), 1) << "Should have 1 plugin";
+    EXPECT_EQ(loaded_track->timeline_clips.size(), 1) << "Should have 1 timeline clip";
+
+    if (!loaded_track->timeline_clips.empty()) {
+        const auto& tc = loaded_track->timeline_clips[0];
+        ASSERT_NE(tc->clip, nullptr) << "Timeline clip should be loaded";
+        EXPECT_EQ(tc->clip->type, hibiki::Clip::Type::MIDI);
+        EXPECT_FLOAT_EQ(tc->start_time_sec, 2.0f);
+        EXPECT_GT(tc->duration_beats, 0.0) << "MIDI clip should have duration in beats";
     }
-    
+
     // Clean up
     state.tracks.clear();
+    std::remove(tmp_file.c_str());
 }
+
 
 // Test that a correctly structured project (plugin + MIDI on same track) plays back correctly
 TEST_F(ProjectTest, SaveAndLoadCorrectProjectStructure) {

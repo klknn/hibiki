@@ -24,7 +24,7 @@ TEST(AudioFileTest, SaveAndLoadWav) {
     
     std::vector<float> data(num_samples * channels);
     for (size_t i = 0; i < data.size(); ++i) {
-        data[i] = std::sin(2.0 * M_PI * 440.0 * i / sample_rate) * 0.8f; // sine wave
+        data[i] = std::sin(2.0 * 3.14159265358979323846 * 440.0 * i / sample_rate) * 0.8f; // sine wave
     }
     
     std::string tmp_file = "test_save.wav";

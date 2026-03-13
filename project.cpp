@@ -46,6 +46,7 @@ bool SaveProject(const ProjectState& state, const std::string& path) {
 
         std::vector<flatbuffers::Offset<hibiki::project::TimelineClip>> timeline_clip_offsets;
         for (const auto& tc : track->timeline_clips) {
+            if (!tc->clip) continue;
             auto path_str = builder.CreateString(tc->clip->path);
             timeline_clip_offsets.push_back(hibiki::project::CreateTimelineClip(builder, path_str, tc->start_time_sec, tc->duration_sec));
         }
@@ -111,6 +112,7 @@ bool LoadProject(ProjectState& state, const std::string& path) {
 
             if (track_data->plugins()) {
                 for (const auto* plugin_data : *track_data->plugins()) {
+                    if (!plugin_data->path()) continue;
                     int pidx = track->LoadPlugin(plugin_data->path()->str(), plugin_data->index(), state.sample_rate);
                     if (pidx >= 0 && plugin_data->parameters()) {
                         for(const auto* param_data : *plugin_data->parameters()) {
@@ -121,11 +123,13 @@ bool LoadProject(ProjectState& state, const std::string& path) {
             }
             if (track_data->clips()) {
                 for (const auto* clip_data : *track_data->clips()) {
+                    if (!clip_data->path()) continue;
                     track->LoadClip(clip_data->slot_index(), clip_data->path()->str(), clip_data->is_loop());
                 }
             }
             if (track_data->timeline_clips()) {
                 for (const auto* tc_data : *track_data->timeline_clips()) {
+                    if (!tc_data->path()) continue;
                     auto tc = std::make_unique<TimelineClip>();
                     tc->clip = hibiki::LoadClip(tc_data->path()->str());
                     tc->start_time_sec = tc_data->start_time();
@@ -171,6 +175,7 @@ std::vector<uint8_t> CaptureProjectState(const ProjectState& state) {
 
         std::vector<flatbuffers::Offset<hibiki::project::TimelineClip>> timeline_clip_offsets;
         for (const auto& tc : track->timeline_clips) {
+            if (!tc->clip) continue;
             auto path_str = builder.CreateString(tc->clip->path);
             timeline_clip_offsets.push_back(hibiki::project::CreateTimelineClip(builder, path_str, tc->start_time_sec, tc->duration_sec));
         }
@@ -211,6 +216,7 @@ bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data) {
             auto track = GetOrCreateTrack(state, track_data->index());
             if (track_data->plugins()) {
                 for (const auto* plugin_data : *track_data->plugins()) {
+                    if (!plugin_data->path()) continue;
                     int pidx = track->LoadPlugin(plugin_data->path()->str(), plugin_data->index(), state.sample_rate);
                     if (pidx >= 0 && plugin_data->parameters()) {
                         for(const auto* param_data : *plugin_data->parameters()) {
@@ -221,11 +227,13 @@ bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data) {
             }
             if (track_data->clips()) {
                 for (const auto* clip_data : *track_data->clips()) {
+                    if (!clip_data->path()) continue;
                     track->LoadClip(clip_data->slot_index(), clip_data->path()->str(), clip_data->is_loop());
                 }
             }
             if (track_data->timeline_clips()) {
                 for (const auto* tc_data : *track_data->timeline_clips()) {
+                    if (!tc_data->path()) continue;
                     auto tc = std::make_unique<TimelineClip>();
                     tc->clip = hibiki::LoadClip(tc_data->path()->str());
                     tc->start_time_sec = tc_data->start_time();
@@ -266,6 +274,7 @@ void SyncProjectToGui(const ProjectState& state) {
         // Sync Timeline Clips
         for (int tc_idx = 0; tc_idx < (int)track->timeline_clips.size(); ++tc_idx) {
             const auto& tc = track->timeline_clips[tc_idx];
+            if (!tc->clip) continue;
             std::string cname = tc->clip->path;
             size_t last_slash = cname.find_last_of("/\\");
             if (last_slash != std::string::npos) {

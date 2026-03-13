@@ -589,8 +589,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                         break;
                     }
                 }
-                // Use 5-arg constructor: slotIdx=-1 for timeline clips, clipIdx=actual index
-                PianoRoll pr = new PianoRoll(ownerFrame, file, trackIdx, -1, clipIndex);
+                // Use 6-arg constructor: slotIdx=-1 for timeline clips, clipIdx=actual index, clipStartTime=clip.startTime
+                PianoRoll pr = new PianoRoll(ownerFrame, file, trackIdx, -1, clipIndex, clip.startTime);
                 pr.setVisible(true);
             } else {
                 JOptionPane.showMessageDialog(this, "Can only edit MIDI (.mid) clips.", "Error",

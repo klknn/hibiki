@@ -84,11 +84,13 @@ public class PianoRoll extends JDialog {
 
     private GridMode gridMode = GridMode.AUTO;
 
-    // Playhead state
+    // Playhead and Auto-scroll state
     private volatile float playheadPos = 0.0f; // in seconds
     private volatile float bpm = 120.0f;
     private volatile boolean isPlaying = false;
     private float clipStartTime = 0.0f; // Start time of clip on timeline (seconds)
+    private boolean autoScroll = true; // Auto-scroll to follow playhead during playback
+    private int playheadScreenOffset = -1; // Screen X position to keep playhead at during auto-scroll
     private javax.swing.Timer repaintTimer;
 
     private static class Note {
@@ -107,12 +109,13 @@ public class PianoRoll extends JDialog {
         }
     }
 
-    public PianoRoll(Frame owner, File midiFile, int trackIdx, int slotIdx, int clipIdx) {
+    public PianoRoll(Frame owner, File midiFile, int trackIdx, int slotIdx, int clipIdx, float clipStartTime) {
         super(owner, "Piano Roll - " + midiFile.getName(), false);
         this.midiFile = midiFile;
         this.trackIdx = trackIdx;
         this.slotIdx = slotIdx;
         this.clipIdx = clipIdx;
+        this.clipStartTime = clipStartTime;
 
         // First load from file as fallback / initial state
         loadMidi();
@@ -132,7 +135,7 @@ public class PianoRoll extends JDialog {
 
     // Convenience constructor for session clips (slotIdx >= 0, clipIdx = -1)
     public PianoRoll(Frame owner, File midiFile, int trackIdx, int slotIdx) {
-        this(owner, midiFile, trackIdx, slotIdx, -1);
+        this(owner, midiFile, trackIdx, slotIdx, -1, 0.0f);
     }
 
     private Consumer<Notification> notificationListener;
@@ -159,7 +162,20 @@ public class PianoRoll extends JDialog {
                     .response(new hibiki.ipc.PlayheadInfo());
             playheadPos = info.positionSec();
             bpm = info.bpm();
+            boolean wasPlaying = isPlaying;
             isPlaying = info.isPlaying();
+
+            // Capture playhead screen position when playback starts
+            if (isPlaying && !wasPlaying && autoScroll) {
+                float relativePos = playheadPos - clipStartTime;
+                if (relativePos >= 0 && sequence != null) {
+                    float beatsPerSecond = bpm / 60.0f;
+                    long playheadTick = (long) (relativePos * beatsPerSecond * sequence.getResolution());
+                    int playheadX = (int) (playheadTick * getTickWidth());
+                    int scrollX = gridScroll.getHorizontalScrollBar().getValue();
+                    playheadScreenOffset = playheadX - scrollX;
+                }
+            }
         }
     }
 
@@ -841,6 +857,13 @@ public class PianoRoll extends JDialog {
         });
         zoomPanel.add(vZoomSlider);
 
+        // Auto-scroll checkbox
+        JCheckBox autoScrollCheck = new JCheckBox("Auto-scroll", autoScroll);
+        autoScrollCheck.setForeground(Theme.getInstance().TEXT_DIM);
+        autoScrollCheck.setOpaque(false);
+        autoScrollCheck.addActionListener(e -> autoScroll = autoScrollCheck.isSelected());
+        zoomPanel.add(autoScrollCheck);
+
         mainContent.add(zoomPanel, BorderLayout.SOUTH);
         add(mainContent, BorderLayout.CENTER);
 
@@ -855,6 +878,18 @@ public class PianoRoll extends JDialog {
 
         // Repaint timer for playhead animation (30 fps)
         repaintTimer = new javax.swing.Timer(33, e -> {
+            if (isPlaying && autoScroll && sequence != null) {
+                float relativePos = playheadPos - clipStartTime;
+                if (relativePos >= 0) {
+                    float beatsPerSecond = bpm / 60.0f;
+                    long playheadTick = (long) (relativePos * beatsPerSecond * sequence.getResolution());
+                    int playheadX = (int) (playheadTick * getTickWidth());
+
+                    int targetScrollX = playheadX - playheadScreenOffset;
+                    targetScrollX = Math.max(0, targetScrollX);
+                    gridScroll.getHorizontalScrollBar().setValue(targetScrollX);
+                }
+            }
             gridPanel.repaint();
             velocityPanel.repaint();
         });

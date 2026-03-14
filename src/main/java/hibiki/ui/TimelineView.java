@@ -34,47 +34,22 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         return BASE_PIXELS_PER_SECOND * hZoomScale;
     }
 
-    // Grid mode for rendering - matches PianoRoll
-    enum GridMode {
-        AUTO("Auto"), // Adaptive based on zoom level
-        SECONDS("Seconds"), // Absolute time in seconds
-        BAR("1/1"), // Whole bar
-        HALF("1/2"), // Half bar
-        QUARTER("1/4"), // Quarter note (beat)
-        EIGHTH("1/8"), // Eighth note
-        SIXTEENTH("1/16"), // Sixteenth note
-        THIRTY_SECOND("1/32"), // Thirty-second note
-        TRIPLET_QUARTER("1/3"), // Triplet quarter
-        TRIPLET_EIGHTH("1/6"), // Triplet eighth
-        TRIPLET_16TH("1/12"), // Triplet sixteenth
-        TRIPLET_32ND("1/24"); // Triplet thirty-second
-
-        private final String label;
-
-        GridMode(String label) {
-            this.label = label;
-        }
-
-        @Override
-        public String toString() {
-            return label;
-        }
-    }
+    // GridMode is shared - see GridMode.java
 
     private GridMode gridMode = GridMode.AUTO;
     volatile float bpm = 120.0f;
-    private volatile boolean isPlaying = false;
+    volatile boolean isPlaying = false;
 
     volatile float playheadPos = 0.0f; // volatile for thread-safe updates from notification thread
     final List<TrackTimeline> tracks = new ArrayList<>();
     private int selectedTrack = 0; // Currently selected track for plugin/clip operations
     private static TimelineView instance; // Static reference for global access
-    private final JScrollPane scrollPane;
+    final JScrollPane scrollPane;
     final JPanel contentPanel;
     private JPanel rowHeader; // Track labels panel (needs update on vZoom)
     private final Timer repaintTimer;
-    private boolean autoScroll = true; // Auto-scroll to follow playhead during playback
-    private int playheadScreenOffset = -1; // Screen X position to keep playhead at during auto-scroll
+    boolean autoScroll = true; // Auto-scroll to follow playhead during playback
+    int playheadScreenOffset = -1; // Screen X position to keep playhead at during auto-scroll
 
     // Renderer delegate
     private final TimelineRenderer renderer = new TimelineRenderer(this);
@@ -102,6 +77,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
     // Mouse handler delegate
     private final TimelineMouseHandler mouseHandler = new TimelineMouseHandler(this);
+    private final TimelineNotificationHandler notificationHandler = new TimelineNotificationHandler(this);
 
     /** Get the singleton TimelineView instance */
     public static TimelineView getInstance() {
@@ -208,62 +184,29 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     private void setupControls() {
-        // Control panel at bottom right, matching PianoRoll layout
-        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 2));
-        controlPanel.setBackground(Theme.getInstance().PANEL_BG);
-        controlPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.getInstance().BORDER));
-
-        // Grid mode selector
-        JLabel gridLabel = new JLabel("Grid:");
-        gridLabel.setForeground(Theme.getInstance().TEXT_DIM);
-        controlPanel.add(gridLabel);
-        JComboBox<GridMode> gridCombo = new JComboBox<>(GridMode.values());
-        gridCombo.setSelectedItem(gridMode);
-        gridCombo.setPreferredSize(new Dimension(70, 20));
-        gridCombo.addActionListener(e -> {
-            gridMode = (GridMode) gridCombo.getSelectedItem();
-            repaint();
-        });
-        controlPanel.add(gridCombo);
-
-        // Horizontal zoom slider
-        JLabel hLabel = new JLabel("H:");
-        hLabel.setForeground(Theme.getInstance().TEXT_DIM);
-        controlPanel.add(hLabel);
-        JSlider hZoomSlider = new JSlider(5, 400, 100); // 5% to 400%
-        hZoomSlider.setPreferredSize(new Dimension(80, 20));
-        hZoomSlider.addChangeListener(e -> {
-            hZoomScale = hZoomSlider.getValue() / 100.0f;
-            updateContentSize();
-            contentPanel.repaint();
-        });
-        controlPanel.add(hZoomSlider);
-
-        // Vertical zoom slider
-        JLabel vLabel = new JLabel("V:");
-        vLabel.setForeground(Theme.getInstance().TEXT_DIM);
-        controlPanel.add(vLabel);
-        JSlider vZoomSlider = new JSlider(5, 200, 100); // 5% to 200%
-        vZoomSlider.setPreferredSize(new Dimension(80, 20));
-        vZoomSlider.addChangeListener(e -> {
-            vZoomScale = vZoomSlider.getValue() / 100.0f;
-            updateContentSize();
-            // Also update track label header heights
-            if (rowHeader != null) {
-                rowHeader.revalidate();
-                rowHeader.repaint();
-            }
-            contentPanel.repaint();
-        });
-        controlPanel.add(vZoomSlider);
-
-        // Auto-scroll checkbox
-        JCheckBox autoScrollCheck = new JCheckBox("Auto-scroll", autoScroll);
-        autoScrollCheck.setForeground(Theme.getInstance().TEXT_DIM);
-        autoScrollCheck.setOpaque(false);
-        autoScrollCheck.addActionListener(e -> autoScroll = autoScrollCheck.isSelected());
-        controlPanel.add(autoScrollCheck);
-
+        ZoomControlPanel controlPanel = new ZoomControlPanel(
+                GridMode.values(), gridMode,
+                mode -> {
+                    gridMode = mode;
+                    repaint();
+                },
+                scale -> {
+                    hZoomScale = scale;
+                    updateContentSize();
+                    contentPanel.repaint();
+                },
+                5, 400, 100,
+                val -> {
+                    vZoomScale = val / 100.0f;
+                    updateContentSize();
+                    if (rowHeader != null) {
+                        rowHeader.revalidate();
+                        rowHeader.repaint();
+                    }
+                    contentPanel.repaint();
+                },
+                5, 200, 100,
+                auto -> autoScroll = auto, autoScroll);
         add(controlPanel, BorderLayout.SOUTH);
     }
 
@@ -484,67 +427,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     public void handleNotification(Notification n) {
-        if (n.responseType() == hibiki.ipc.Response.PlayheadInfo) {
-            hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) n.response(new hibiki.ipc.PlayheadInfo());
-            playheadPos = info.positionSec();
-            bpm = info.bpm();
-            boolean wasPlaying = isPlaying;
-            isPlaying = info.isPlaying();
-
-            // Capture playhead screen position when playback starts
-            if (isPlaying && !wasPlaying && autoScroll) {
-                // No label offset - content panel starts at x=0
-                int playheadX = (int) (playheadPos * getPixelsPerSecond());
-                int scrollX = scrollPane.getHorizontalScrollBar().getValue();
-                playheadScreenOffset = playheadX - scrollX;
-            }
-        } else if (n.responseType() == hibiki.ipc.Response.TimelineClipInfo) {
-            TimelineClipInfo info = (TimelineClipInfo) n.response(new TimelineClipInfo());
-            int tidx = info.trackIndex();
-
-            while (tracks.size() <= tidx) {
-                tracks.add(new TrackTimeline(tracks.size()));
-            }
-            tracks.get(tidx).addOrUpdateClip(info);
-            updateContentSize();
-        } else if (n.responseType() == Response.ParamList) {
-            // Track plugin names to display in track labels
-            ParamList paramList = (ParamList) n.response(new ParamList());
-            int tidx = paramList.trackIndex();
-            while (tracks.size() <= tidx) {
-                tracks.add(new TrackTimeline(tracks.size()));
-            }
-            if (paramList.pluginName() != null && !paramList.pluginName().isEmpty()) {
-                tracks.get(tidx).pluginName = paramList.pluginName();
-                tracks.get(tidx).isInstrument = paramList.isInstrument();
-            }
-        } else if (n.responseType() == hibiki.ipc.Response.ClearProject) {
-            for (TrackTimeline t : tracks) {
-                t.clips.clear();
-                t.clipMap.clear();
-                t.pluginName = null;
-                t.isInstrument = false;
-                t.customName = null; // Clear track names on project clear
-            }
-        } else if (n.responseType() == hibiki.ipc.Response.TrackInfo) {
-            // Receive track name from project load
-            hibiki.ipc.TrackInfo info = (hibiki.ipc.TrackInfo) n.response(new hibiki.ipc.TrackInfo());
-            int tidx = info.trackIndex();
-            while (tracks.size() <= tidx) {
-                tracks.add(new TrackTimeline(tracks.size()));
-            }
-            String name = info.name();
-            tracks.get(tidx).customName = (name == null || name.isEmpty()) ? null : name;
-            repaint();
-            // Sync with SessionView
-            if (SessionView.getInstance() != null && SessionView.getInstance().trackHeaders.length > tidx) {
-                JLabel header = SessionView.getInstance().trackHeaders[tidx];
-                if (header != null) {
-                    String displayName = tracks.get(tidx).getDisplayName();
-                    header.setText(tidx + " " + displayName);
-                }
-            }
-        }
+        notificationHandler.handleNotification(n);
     }
 
     private void drawTrackLabels(Graphics g) {

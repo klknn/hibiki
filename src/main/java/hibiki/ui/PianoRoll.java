@@ -56,31 +56,7 @@ public class PianoRoll extends JDialog {
     // Velocity editing state
     boolean editingVelocity = false;
 
-    // Grid mode for rendering and snapping
-    private enum GridMode {
-        AUTO("Auto"), // Adaptive based on zoom level
-        BAR("1/1"), // Whole bar
-        HALF("1/2"), // Half bar
-        QUARTER("1/4"), // Quarter note (beat)
-        EIGHTH("1/8"), // Eighth note
-        SIXTEENTH("1/16"), // Sixteenth note
-        THIRTY_SECOND("1/32"), // Thirty-second note
-        TRIPLET_QUARTER("1/3"), // Triplet quarter
-        TRIPLET_EIGHTH("1/6"), // Triplet eighth
-        TRIPLET_16TH("1/12"), // Triplet sixteenth
-        TRIPLET_32ND("1/24"); // Triplet thirty-second
-
-        private final String label;
-
-        GridMode(String label) {
-            this.label = label;
-        }
-
-        @Override
-        public String toString() {
-            return label;
-        }
-    }
+    // GridMode is shared - see GridMode.java
 
     private GridMode gridMode = GridMode.AUTO;
 
@@ -96,20 +72,12 @@ public class PianoRoll extends JDialog {
     // Renderer delegate
     private final PianoRollRenderer renderer = new PianoRollRenderer(this);
     private final PianoRollMouseHandler mouseHandler = new PianoRollMouseHandler(this);
+    private final MidiDataModel midiModel = new MidiDataModel();
 
-    static class Note {
-        int pitch;
-        long startTick;
-        long durationTicks;
-        int velocity;
-        MidiEvent onEvent;
-        MidiEvent offEvent;
-
+    /** Alias for MidiDataModel.Note */
+    static class Note extends MidiDataModel.Note {
         Note(int pitch, long startTick, long durationTicks, int velocity) {
-            this.pitch = pitch;
-            this.startTick = startTick;
-            this.durationTicks = durationTicks;
-            this.velocity = velocity;
+            super(pitch, startTick, durationTicks, velocity);
         }
     }
 
@@ -222,85 +190,24 @@ public class PianoRoll extends JDialog {
     }
 
     private void loadMidi() {
+        midiModel.loadMidi(midiFile);
+        sequence = midiModel.sequence;
+        midiTrack = midiModel.midiTrack;
         notes.clear();
-        try {
-            if (midiFile.exists()) {
-                sequence = MidiSystem.getSequence(midiFile);
-                if (sequence.getTracks().length > 0) {
-                    // Find first track with notes
-                    for (Track t : sequence.getTracks()) {
-                        if (hasNotes(t)) {
-                            midiTrack = t;
-                            break;
-                        }
-                    }
-                    if (midiTrack == null)
-                        midiTrack = sequence.getTracks()[0];
-                } else {
-                    sequence = new Sequence(Sequence.PPQ, 96);
-                    midiTrack = sequence.createTrack();
-                }
-            } else {
-                sequence = new Sequence(Sequence.PPQ, 96);
-                midiTrack = sequence.createTrack();
-            }
-
-            parseTrack(midiTrack);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Failed to load MIDI: " + e.getMessage(), "Error",
-                    JOptionPane.ERROR_MESSAGE);
-            // Create empty fallback
-            try {
-                sequence = new Sequence(Sequence.PPQ, 96);
-                midiTrack = sequence.createTrack();
-            } catch (Exception ex) {
-            }
+        for (MidiDataModel.Note mn : midiModel.notes) {
+            notes.add(new Note(mn.pitch, mn.startTick, mn.durationTicks, mn.velocity));
         }
     }
 
     private boolean hasNotes(Track t) {
-        for (int i = 0; i < t.size(); i++) {
-            MidiMessage msg = t.get(i).getMessage();
-            if (msg instanceof ShortMessage) {
-                ShortMessage sm = (ShortMessage) msg;
-                if (sm.getCommand() == ShortMessage.NOTE_ON)
-                    return true;
-            }
-        }
-        return false;
+        return midiModel.hasNotes(t);
     }
 
     private void parseTrack(Track track) {
-        Note[] pendingNotes = new Note[128]; // Max 128 keys
-
-        for (int i = 0; i < track.size(); i++) {
-            MidiEvent event = track.get(i);
-            MidiMessage msg = event.getMessage();
-
-            if (msg instanceof ShortMessage) {
-                ShortMessage sm = (ShortMessage) msg;
-                int cmd = sm.getCommand();
-                int pitch = sm.getData1();
-                int vel = sm.getData2();
-
-                if (cmd == ShortMessage.NOTE_ON && vel > 0) {
-                    if (pendingNotes[pitch] == null) {
-                        Note n = new Note(pitch, event.getTick(), 0, vel);
-                        n.onEvent = event;
-                        pendingNotes[pitch] = n;
-                    }
-                } else if (cmd == ShortMessage.NOTE_OFF || (cmd == ShortMessage.NOTE_ON && vel == 0)) {
-                    if (pendingNotes[pitch] != null) {
-                        Note n = pendingNotes[pitch];
-                        n.durationTicks = event.getTick() - n.startTick;
-                        n.offEvent = event;
-                        notes.add(n);
-                        pendingNotes[pitch] = null;
-                    }
-                }
-            }
+        midiModel.parseTrack(track);
+        notes.clear();
+        for (MidiDataModel.Note mn : midiModel.notes) {
+            notes.add(new Note(mn.pitch, mn.startTick, mn.durationTicks, mn.velocity));
         }
     }
 
@@ -309,26 +216,12 @@ public class PianoRoll extends JDialog {
         syncToBackend();
     }
 
-    /**
-     * Sync notes to backend via IPC - changes apply immediately without file save
-     */
+    /** Sync notes to backend via IPC - changes apply immediately without file save */
     void syncToBackend() {
-        int resolution = (sequence != null) ? sequence.getResolution() : 480;
-        long[] ticks = new long[notes.size()];
-        int[] pitches = new int[notes.size()];
-        long[] durations = new long[notes.size()];
-        int[] velocities = new int[notes.size()];
-
-        for (int i = 0; i < notes.size(); i++) {
-            Note n = notes.get(i);
-            ticks[i] = n.startTick;
-            pitches[i] = n.pitch;
-            durations[i] = Math.max(1, n.durationTicks);
-            velocities[i] = n.velocity;
-        }
-
-        BackendManager.getInstance().updateClipMidi(trackIdx, slotIdx, clipIdx, resolution, ticks, pitches, durations,
-                velocities);
+        midiModel.notes.clear();
+        midiModel.notes.addAll(notes);
+        midiModel.sequence = sequence;
+        midiModel.syncToBackend(trackIdx, slotIdx, clipIdx);
     }
 
     private SessionView getParentSessionView() {
@@ -600,67 +493,27 @@ public class PianoRoll extends JDialog {
         JPanel mainContent = new JPanel(new BorderLayout());
         mainContent.add(pianoAndVelocity, BorderLayout.CENTER);
 
-        // Zoom slider panel (bottom right corner)
-        JPanel zoomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 2));
-        zoomPanel.setBackground(Theme.getInstance().PANEL_BG);
-        zoomPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.getInstance().BORDER));
-
-        // Grid mode selector
-        JLabel gridLabel = new JLabel("Grid:");
-        gridLabel.setForeground(Theme.getInstance().TEXT_DIM);
-        zoomPanel.add(gridLabel);
-        JComboBox<GridMode> gridCombo = new JComboBox<>(GridMode.values());
-        gridCombo.setSelectedItem(gridMode);
-        gridCombo.setPreferredSize(new Dimension(60, 20));
-        gridCombo.addActionListener(e -> {
-            gridMode = (GridMode) gridCombo.getSelectedItem();
-            gridPanel.repaint();
-            velocityPanel.repaint();
-        });
-        zoomPanel.add(gridCombo);
-
-        // Calculate max zoom that limits view to ~1 bar
+        // Zoom controls using shared ZoomControlPanel
         int ticksPerBar = sequence.getResolution() * 4;
         int zoomViewWidth = Theme.getInstance().scale(700);
-        // Max scale = when 1 bar fills the view
         int maxZoomPercent = Math.max(500, (int) (zoomViewWidth / (ticksPerBar * baseTickWidth) * 100));
 
-        // Horizontal zoom slider
-        JLabel hLabel = new JLabel("H:");
-        hLabel.setForeground(Theme.getInstance().TEXT_DIM);
-        zoomPanel.add(hLabel);
-        hZoomSlider = new JSlider(100, maxZoomPercent, 100);
-        hZoomSlider.setPreferredSize(new Dimension(80, 20));
-        hZoomSlider.addChangeListener(e -> {
-            tickScale = hZoomSlider.getValue() / 100.0f;
-            gridPanel.revalidate();
-            gridPanel.repaint();
-            velocityPanel.revalidate();
-            velocityPanel.repaint();
-        });
-        zoomPanel.add(hZoomSlider);
-
-        // Vertical zoom slider
-        JLabel vLabel = new JLabel("V:");
-        vLabel.setForeground(Theme.getInstance().TEXT_DIM);
-        zoomPanel.add(vLabel);
-        vZoomSlider = new JSlider(2, 30, Math.min(30, Math.max(2, keyHeight)));
-        vZoomSlider.setPreferredSize(new Dimension(80, 20));
-        vZoomSlider.addChangeListener(e -> {
-            keyHeight = vZoomSlider.getValue();
-            keysPanel.revalidate();
-            keysPanel.repaint();
-            gridPanel.revalidate();
-            gridPanel.repaint();
-        });
-        zoomPanel.add(vZoomSlider);
-
-        // Auto-scroll checkbox
-        JCheckBox autoScrollCheck = new JCheckBox("Auto-scroll", autoScroll);
-        autoScrollCheck.setForeground(Theme.getInstance().TEXT_DIM);
-        autoScrollCheck.setOpaque(false);
-        autoScrollCheck.addActionListener(e -> autoScroll = autoScrollCheck.isSelected());
-        zoomPanel.add(autoScrollCheck);
+        ZoomControlPanel zoomPanel = new ZoomControlPanel(
+                GridMode.values(), gridMode,
+                mode -> { gridMode = mode; gridPanel.repaint(); velocityPanel.repaint(); },
+                scale -> {
+                    tickScale = scale;
+                    gridPanel.revalidate(); gridPanel.repaint();
+                    velocityPanel.revalidate(); velocityPanel.repaint();
+                },
+                100, maxZoomPercent, 100,
+                val -> {
+                    keyHeight = val.intValue();
+                    keysPanel.revalidate(); keysPanel.repaint();
+                    gridPanel.revalidate(); gridPanel.repaint();
+                },
+                2, 30, Math.min(30, Math.max(2, keyHeight)),
+                auto -> autoScroll = auto, autoScroll);
 
         mainContent.add(zoomPanel, BorderLayout.SOUTH);
         add(mainContent, BorderLayout.CENTER);

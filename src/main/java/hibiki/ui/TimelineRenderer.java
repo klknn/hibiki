@@ -60,7 +60,7 @@ class TimelineRenderer {
     }
 
     void drawTimeline(Graphics g, JPanel contentPanel, List<TimelineView.TrackTimeline> tracks,
-                      int selectedTrack, float bpm, TimelineView.GridMode gridMode,
+                      int selectedTrack, float bpm, GridMode gridMode,
                       float playheadPos, boolean isDragging, TimelineView.ClipRect draggingClip,
                       int dragSourceTrack, float dragOriginalStartTime, int dragCurrentY,
                       boolean creatingClip, int creatingTrackIdx, TimelineView.ClipRect creatingClipRect,
@@ -279,12 +279,12 @@ class TimelineRenderer {
     }
 
     private void drawTimeRuler(Graphics2D g2, JPanel contentPanel, int scaleTimeRuler,
-                               int scaleLabelWidth, float pps, float bpm, TimelineView.GridMode gridMode) {
+                               int scaleLabelWidth, float pps, float bpm, GridMode gridMode) {
         g2.setColor(Theme.getInstance().BG_DARKER);
         g2.fillRect(scaleLabelWidth, 0, contentPanel.getWidth() - scaleLabelWidth, scaleTimeRuler);
         g2.setColor(Theme.getInstance().TEXT_DIM);
 
-        if (gridMode == TimelineView.GridMode.SECONDS) {
+        if (gridMode == GridMode.SECONDS) {
             for (int s = 0; s < 600; s += 5) {
                 int x = scaleLabelWidth + (int) (s * pps);
                 if (x > contentPanel.getWidth()) break;

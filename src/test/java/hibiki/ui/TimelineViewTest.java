@@ -222,13 +222,13 @@ public class TimelineViewTest {
     @Test
     public void testGridModeEnum() {
         // Verify all grid modes are accessible and have labels
-        for (TimelineView.GridMode mode : TimelineView.GridMode.values()) {
+        for (GridMode mode : GridMode.values()) {
             assertNotNull(mode.toString());
             assertFalse(mode.toString().isEmpty());
         }
-        assertEquals("Auto", TimelineView.GridMode.AUTO.toString());
-        assertEquals("1/4", TimelineView.GridMode.QUARTER.toString());
-        assertEquals("1/16", TimelineView.GridMode.SIXTEENTH.toString());
+        assertEquals("Auto", GridMode.AUTO.toString());
+        assertEquals("1/4", GridMode.QUARTER.toString());
+        assertEquals("1/16", GridMode.SIXTEENTH.toString());
     }
 
     @Test
@@ -237,7 +237,7 @@ public class TimelineViewTest {
         view.bpm = 120.0f;
         float secondsPerBeat = 60.0f / 120.0f; // 0.5
         // BAR mode = 4 beats = 2.0s
-        float snap = view.getGridSnapSeconds(TimelineView.GridMode.BAR, secondsPerBeat);
+        float snap = view.getGridSnapSeconds(GridMode.BAR, secondsPerBeat);
         assertEquals(2.0f, snap, 0.001f);
     }
 
@@ -247,7 +247,7 @@ public class TimelineViewTest {
         view.bpm = 120.0f;
         float secondsPerBeat = 60.0f / 120.0f; // 0.5
         // QUARTER mode = 1 beat = 0.5s
-        float snap = view.getGridSnapSeconds(TimelineView.GridMode.QUARTER, secondsPerBeat);
+        float snap = view.getGridSnapSeconds(GridMode.QUARTER, secondsPerBeat);
         assertEquals(0.5f, snap, 0.001f);
     }
 
@@ -257,7 +257,7 @@ public class TimelineViewTest {
         view.bpm = 120.0f;
         float secondsPerBeat = 60.0f / 120.0f; // 0.5
         // EIGHTH mode = 0.5 beat = 0.25s
-        float snap = view.getGridSnapSeconds(TimelineView.GridMode.EIGHTH, secondsPerBeat);
+        float snap = view.getGridSnapSeconds(GridMode.EIGHTH, secondsPerBeat);
         assertEquals(0.25f, snap, 0.001f);
     }
 
@@ -265,7 +265,7 @@ public class TimelineViewTest {
     public void testGetGridSnapSeconds_secondsMode() {
         TimelineView view = new TimelineView();
         float secondsPerBeat = 0.5f;
-        float snap = view.getGridSnapSeconds(TimelineView.GridMode.SECONDS, secondsPerBeat);
+        float snap = view.getGridSnapSeconds(GridMode.SECONDS, secondsPerBeat);
         assertEquals(1.0f, snap, 0.001f);
     }
 

@@ -221,10 +221,11 @@ public class BackendManager {
         sendRequest(builder);
     }
 
-    public void addTimelineClip(int trackIndex, String path, float startTime) {
+    public void addTimelineClip(int trackIndex, String path, float startTime, float durationBeats) {
         FlatBufferBuilder builder = new FlatBufferBuilder(512);
         int pathOff = builder.createString(path);
-        int addOff = hibiki.ipc.AddTimelineClip.createAddTimelineClip(builder, trackIndex, pathOff, startTime);
+        int addOff = hibiki.ipc.AddTimelineClip.createAddTimelineClip(builder, trackIndex, pathOff, startTime,
+                durationBeats);
         int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.AddTimelineClip, addOff);
         builder.finish(reqOff);
         sendRequest(builder);

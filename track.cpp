@@ -143,7 +143,7 @@ bool Track::RemovePlugin(size_t pidx) {
     return true;
 }
 
-void Track::AddTimelineClip(const std::string& path, double start_time_sec, double bpm) {
+void Track::AddTimelineClip(const std::string& path, double start_time_sec, double bpm, double duration_beats) {
     std::lock_guard<DummyMutex> lock(mutex);
     std::unique_ptr<Clip> clip;
     if (path.empty()) {
@@ -151,7 +151,7 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec, doub
         clip = std::make_unique<Clip>();
         clip->type = Clip::Type::MIDI;
         clip->path = "";
-        clip->duration_beats = 4.0; // Default to 1 bar (4 beats)
+        clip->duration_beats = (duration_beats > 0) ? duration_beats : 4.0;
         clip->duration_sec = 0.0;
     } else {
         clip = hibiki::LoadClip(path);

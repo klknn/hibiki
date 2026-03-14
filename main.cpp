@@ -475,9 +475,10 @@ void run_ipc_loop(ProjectState& state) {
             int tidx = cmd->track_index();
             std::string path = cmd->path() ? cmd->path()->str() : "";
             double start = cmd->start_time();
+            double dur_beats = cmd->duration_beats();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
-            hibiki::GetOrCreateTrack(state, tidx)->AddTimelineClip(path, start, state.bpm);
+            hibiki::GetOrCreateTrack(state, tidx)->AddTimelineClip(path, start, state.bpm, dur_beats);
             hibiki::sendAck("ADD_TIMELINE_CLIP", true);
         } else if (command_type == hibiki::ipc::Command_RemoveTimelineClip) {
             auto cmd = request->command_as_RemoveTimelineClip();
@@ -623,9 +624,10 @@ void run_ipc_loop(ProjectState& state) {
                     auto& track = state.tracks[tidx];
                     if (cidx < (int)track->timeline_clips.size() && track->timeline_clips[cidx]) {
                         auto& tc = track->timeline_clips[cidx];
-                        // Update duration_beats based on new midi_events
+                        // Only extend duration, never shrink (preserves clip length for looping)
                         if (!clip->midi_events.empty()) {
-                            clip->duration_beats = clip->midi_events.back().beats + 0.1;
+                            double note_end = clip->midi_events.back().beats + 0.1;
+                            clip->duration_beats = std::max(clip->duration_beats, note_end);
                         }
                         // Sync to TimelineClip so playback engine uses updated duration
                         tc->duration_beats = clip->duration_beats;

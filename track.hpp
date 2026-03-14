@@ -45,7 +45,7 @@ public:
     void Stop();
     bool RemovePlugin(size_t pidx);
 
-    void AddTimelineClip(const std::string& path, double start_time_sec, double bpm);
+    void AddTimelineClip(const std::string& path, double start_time_sec, double bpm, double duration_beats = 0);
     void RemoveTimelineClip(int clip_index);
 };
 

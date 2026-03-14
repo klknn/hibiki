@@ -138,6 +138,7 @@ table AddTimelineClip {
     track_index: int;
     path: string;
     start_time: float;
+    duration_beats: float = 0;  // 0 = auto-detect from file, >0 = use this duration
 }
 
 table RemoveTimelineClip {

@@ -285,7 +285,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                             }
 
                             if (trackIndex >= 0 && trackIndex < tracks.size()) {
-                                BackendManager.getInstance().addTimelineClip(trackIndex, path, (float)timeSec);
+                                BackendManager.getInstance().addTimelineClip(trackIndex, path, (float) timeSec, 0);
                             }
                         }
                     } else {
@@ -451,8 +451,11 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
                     // Only create if duration is positive and meaningful
                     if (duration > 0.1f) {
+                        // Convert dragged duration (seconds) to beats
+                        float durationBeats = duration * (bpm / 60.0f);
                         // Send to backend - it will create the clip and notify us via TimelineClipInfo
-                        BackendManager.getInstance().addTimelineClip(creatingTrackIdx, "", creatingStartTime);
+                        BackendManager.getInstance().addTimelineClip(creatingTrackIdx, "", creatingStartTime,
+                                durationBeats);
                     }
                     repaint();
                 }
@@ -631,7 +634,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             float snapTime = snapToBar(clickTime);
 
             // Send to backend - it will create the clip and notify us via TimelineClipInfo
-            BackendManager.getInstance().addTimelineClip(trackIdx, "", snapTime);
+            BackendManager.getInstance().addTimelineClip(trackIdx, "", snapTime, 0);
         });
         menu.add(createItem);
 

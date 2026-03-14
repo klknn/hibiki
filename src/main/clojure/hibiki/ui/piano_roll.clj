@@ -16,6 +16,8 @@
                        ClipMidiData MidiEventData
                        Response Notification PlayheadInfo]))
 
+(set! *warn-on-reflection* true)
+
 ;; ---------------------------------------------------------------------------
 ;; Note record and MIDI model helpers
 ;; ---------------------------------------------------------------------------
@@ -239,7 +241,7 @@
                          (let [phi ^PlayheadInfo (.response notification (PlayheadInfo.))]
                            (reset! bpm-a (.bpm phi))
                            (when (.isPlaying phi)
-                             (let [sec (- (.positionSeconds phi) clip-start-time)
+                             (let [sec (- (.positionSec phi) clip-start-time)
                                    tps (/ resolution (/ 60.0 (.bpm phi)))]
                                (reset! playhead (long (* sec tps)))
                                (SwingUtilities/invokeLater #(.repaint grid-panel)))))

@@ -11,6 +11,8 @@
            [hibiki.ipc Request Command ShowPluginGui RemovePlugin SetParamValue
                        ParamList ParamInfo Response Notification]))
 
+(set! *warn-on-reflection* true)
+
 ;; ---------------------------------------------------------------------------
 ;; State
 ;; ---------------------------------------------------------------------------
@@ -24,8 +26,9 @@
 ;; IPC
 ;; ---------------------------------------------------------------------------
 
-(defn- send-show-gui [backend track-idx plugin-idx]
-  (let [b (FlatBufferBuilder. 64)
+(defn- send-show-gui
+  [^hibiki.BackendManager backend ^long track-idx ^long plugin-idx]
+  (let [^FlatBufferBuilder b (FlatBufferBuilder. 64)
         cmd (do (ShowPluginGui/startShowPluginGui b)
                 (ShowPluginGui/addTrackIndex b track-idx)
                 (ShowPluginGui/addPluginIndex b plugin-idx)
@@ -34,8 +37,9 @@
     (.finish b req)
     (.sendRequest backend b)))
 
-(defn- send-remove-plugin [backend track-idx plugin-idx]
-  (let [b (FlatBufferBuilder. 64)
+(defn- send-remove-plugin
+  [^hibiki.BackendManager backend ^long track-idx ^long plugin-idx]
+  (let [^FlatBufferBuilder b (FlatBufferBuilder. 64)
         cmd (do (RemovePlugin/startRemovePlugin b)
                 (RemovePlugin/addTrackIndex b track-idx)
                 (RemovePlugin/addPluginIndex b plugin-idx)
@@ -44,8 +48,9 @@
     (.finish b req)
     (.sendRequest backend b)))
 
-(defn- send-param-change [backend track-idx plugin-idx param-id value]
-  (let [b (FlatBufferBuilder. 64)
+(defn- send-param-change
+  [^hibiki.BackendManager backend track-idx plugin-idx param-id value]
+  (let [^FlatBufferBuilder b (FlatBufferBuilder. 64)
         cmd (do (SetParamValue/startSetParamValue b)
                 (SetParamValue/addTrackIndex b track-idx)
                 (SetParamValue/addPluginIndex b plugin-idx)
@@ -91,9 +96,8 @@
                      (.setBackground p (t/color :bg-dark))
                      p)
         scroll (doto (JScrollPane. param-list)
-                 (.setBorder nil)
-                 (.getVerticalScrollBar)
-                 (.setUnitIncrement 10))
+                 (.setBorder nil))
+        _      (.setUnitIncrement (.getVerticalScrollBar scroll) 10)
         show-btn (doto (JButton. "GUI")
                    (.setFont (t/font :font-ui))
                    (.setFocusPainted false)

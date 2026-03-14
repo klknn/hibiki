@@ -16,13 +16,16 @@
                        Response Notification PlayheadInfo
                        TimelineClipInfo ClipWaveform]))
 
+(set! *warn-on-reflection* true)
+
 ;; ---------------------------------------------------------------------------
 ;; Track data
 ;; ---------------------------------------------------------------------------
 
-(defrecord TrackClip [clip-index path start-time duration-beats name waveform-data])
+(defrecord TrackClip [^int clip-index ^String path ^double start-time
+                      ^double duration-beats ^String name waveform-data])
 
-(defrecord TrackTimeline [track-idx custom-name clips])
+(defrecord TrackTimeline [^int track-idx ^String custom-name clips])
 
 ;; ---------------------------------------------------------------------------
 ;; State
@@ -40,9 +43,13 @@
          :selected-track  0
          :instance        nil}))
 
-(defn get-instance [] (:instance @tl-state))
+(defn get-instance
+  "Return the Timeline JPanel, or nil."
+  ^JPanel [] (:instance @tl-state))
 
-(defn set-selected-track [idx]
+(defn set-selected-track
+  "Set the selected track index (0-based)."
+  [^long idx]
   (swap! tl-state assoc :selected-track idx))
 
 (defn- pixels-per-second []
@@ -232,7 +239,7 @@
             Response/PlayheadInfo
             (let [phi ^PlayheadInfo (.response notification (PlayheadInfo.))]
               (swap! tl-state assoc
-                     :playhead-sec (.positionSeconds phi)
+                     :playhead-sec (.positionSec phi)
                      :bpm (.bpm phi)
                      :is-playing (.isPlaying phi))
               (SwingUtilities/invokeLater #(.repaint grid-panel)))

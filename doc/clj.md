@@ -4,11 +4,93 @@ This document tracks the migration of the Hibiki DAW GUI from Java to Clojure.
 
 ## Motivation
 
-The Java GUI grew to ~2500 lines across multiple files. Clojure offers:
-- **Conciseness**: Equivalent UI code in ~40% fewer lines
-- **Interactive development**: REPL-driven workflow for rapid UI iteration
+The Java GUI grew to ~4900 lines across 22 files. Clojure offers:
+- **Conciseness**: Equivalent UI code in ~60% fewer lines (4927 → 1978)
+- **Interactive development**: REPL-driven workflow for rapid UI iteration (see below)
 - **Functional state management**: Atoms and immutable data instead of mutable fields
-- **Hot reloading**: Potential for live code reloading during development
+- **Hot reloading**: Live code reloading during development without restarting the app
+
+## REPL-Driven UI Development
+
+Unlike Java where every change requires recompile → restart → reproduce state, Clojure lets
+you modify a **running** GUI interactively. This is incredibly powerful for UI work — you can
+tweak colors, resize panels, and test event handlers instantly without losing application state.
+
+### Setup: Socket REPL via Deploy JAR
+
+Since we use Bazel (not Leiningen), we launch a Socket REPL using the built deploy JAR:
+
+```bash
+# Step 1: Build the deploy JAR (contains all dependencies)
+bazel build -c opt //:hibiki-gui-clj_deploy.jar
+
+# Step 2: Launch with a Socket REPL server on port 5555
+#   -Dclojure.server.repl starts a built-in Socket REPL (no nREPL needed)
+#   The src/main/clojure path is added so file edits are picked up live
+java -Dclojure.server.repl="{:port 5555 :accept clojure.core.server/repl}" \
+     -cp "src/main/clojure:bazel-bin/hibiki-gui-clj_deploy.jar" \
+     hibiki.ClojureMain
+
+# Step 3: In another terminal, connect to the REPL
+rlwrap nc localhost 5555
+```
+
+> **Tip**: Adding `src/main/clojure` to the classpath **before** the deploy JAR ensures that
+> when you edit a `.clj` file and reload it, the REPL picks up your local changes instead
+> of the stale version baked into the JAR.
+
+### Live UI Examples
+
+Once connected to the running GUI via the Socket REPL, you can do things like:
+
+```clojure
+;; 1. Change the theme live — instant visual feedback
+(require '[hibiki.ui.theme :as t])
+(t/update-theme! :preset :solarized-dark)   ; switches the entire GUI theme
+(t/update-theme! :preset :ableton-dark)      ; switch back
+
+;; 2. Inspect current state without restarting
+(require '[hibiki.ui.session :as s])
+(s/get-selected-track)         ;=> 0
+@#'s/session-state             ; dump full state atom
+
+;; 3. Modify a widget on the fly
+(import '[javax.swing SwingUtilities])
+(SwingUtilities/invokeLater
+  #(let [panel (s/get-instance)]
+     (.setBackground panel (java.awt.Color. 100 0 0))  ; turn the panel red
+     (.repaint panel)))
+
+;; 4. Reload a namespace after editing the source file
+;;    (edit src/main/clojure/hibiki/ui/widgets.clj, then:)
+(require '[hibiki.ui.widgets :as w] :reload)
+;; The running app now uses your updated code!
+
+;; 5. Test an IPC call interactively
+(require '[hibiki.ui.plugin :as p])
+;; Trigger plugin GUI show without clicking through the UI
+```
+
+### Workflow Tips
+
+| Tip | Details |
+|-----|---------|
+| **`:reload` vs `:reload-all`** | `:reload` reloads one namespace. `:reload-all` reloads it and all its dependencies. Use `:reload` for UI tweaks, `:reload-all` when you changed a dependency like `theme.clj`. |
+| **`defonce` for state** | `defonce` prevents atoms from being reset on reload — your running state survives. Use `def` only for things you want reset. |
+| **`SwingUtilities/invokeLater`** | Always wrap UI mutations in `invokeLater` from the REPL — Swing is single-threaded and will deadlock or corrupt state if you modify components from the REPL thread directly. |
+| **`proxy` hot-reload caveat** | `proxy` classes are generated once. If you change a `proxy` body and `:reload`, the already-instantiated proxy won't update. You need to re-create the component (or restart the app). `reify` has the same limitation. |
+| **Quick rebuild after Java changes** | If you change Java code (e.g., `BackendManager.java`), you must rebuild the deploy JAR and restart. Clojure REPL reloading only works for `.clj` files. |
+
+### When to Use REPL vs Rebuild
+
+| Scenario | Use REPL | Use Rebuild |
+|----------|----------|-------------|
+| Adjusting colors, fonts, spacing | ✅ | |
+| Testing notification handlers | ✅ | |
+| Inspecting atom/state contents | ✅ | |
+| Changing a `proxy`/`reify` body | | ✅ (need new instance) |
+| Modifying Java backend classes | | ✅ (need new JAR) |
+| Adding new `:import` classes | | ✅ (need namespace reload) |
 
 ## Architecture
 
@@ -31,7 +113,7 @@ This approach avoids AOT compilation and leverages Clojure's dynamic loading.
 | `hibiki.ui.timeline` | ~265 | `TimelineView.java`, `TimelineRenderer.java`, etc. | Timeline arrangement view |
 | `hibiki.ui.piano-roll` | ~280 | `PianoRoll.java`, `PianoRollRenderer.java`, etc. | MIDI piano roll editor |
 | `hibiki.ui.plugin` | ~190 | `PluginPane.java` | Plugin device chain pane |
-| `hibiki.ui.browser` | ~170 | `BrowserPane.java` | File/plugin browser |
+| `hibiki.ui.browser` | ~230 | `BrowserPane.java` | File/plugin browser |
 
 ### Build System
 
@@ -49,33 +131,36 @@ so the Clojure runtime can locate them on the classpath.
 
 ### Line Count Comparison
 
-| Component | Java Lines | Clojure Lines | Reduction |
-|-----------|-----------|---------------|-----------|
-| Theme + Widgets | 380 | 340 | 11% |
-| Session View | 560 | 400 | 29% |
-| Timeline View | 700 | 265 | 62% |
-| Piano Roll | 750 | 280 | 63% |
-| Plugin Pane | 290 | 190 | 34% |
-| Browser | 250 | 170 | 32% |
-| Main/Core | 80 | 100 | (25% increase) |
-| **Total** | **3010** | **1745** | **42%** |
+| Component | Java Files | Java Lines | Clj Lines | Reduction |
+|-----------|-----------|-----------|---------------|-----------|
+| Theme + Widgets | `Theme.java`, `GridMode.java`, `LevelMeter.java`, `ZoomControlPanel.java` | 523 | 401 | 23% |
+| Session View | `SessionView.java`, `SessionViewIpc.java` | 571 | 414 | 28% |
+| Timeline View | `TimelineView.java`, `TimelineRenderer.java`, `TimelineMouseHandler.java`, `TimelineNotificationHandler.java` | 1190 | 271 | 77% |
+| Piano Roll | `PianoRoll.java`, `PianoRollRenderer.java`, `PianoRollMouseHandler.java`, `MidiDataModel.java` | 1047 | 281 | 73% |
+| Plugin Pane | `PluginPane.java` | 339 | 192 | 43% |
+| Browser | `BrowserPane.java` | 378 | 231 | 39% |
+| Main/Core | `GuiMain.java`, `MainView.java`, `TopBar.java`, `SettingsDialog.java`, `WaveformPanel.java` | 762 | 188 | 75% |
+| **Total** | **22 files** | **4927** | **1978** | **60%** |
 
 ### Key Patterns
 
-**Self-referencing `doto` caveat**: Clojure's `doto` macro evaluates all forms in a body,
-but the binding is not yet available during the `doto` body evaluation. For patterns like
-`BoxLayout(panel, BoxLayout.Y_AXIS)` where the component itself is needed, use a `let` binding
-followed by explicit method calls:
+**Self-referencing `doto` caveat**: `doto` always threads the **original** object, not
+intermediate return values. Two pitfalls:
 
 ```clojure
-;; WRONG — panel not yet bound during doto body
+;; PITFALL 1: Self-reference — panel not yet bound during doto body
 (doto (JPanel.)
-  (.setLayout (BoxLayout. panel BoxLayout/Y_AXIS)))
+  (.setLayout (BoxLayout. panel BoxLayout/Y_AXIS)))  ; ❌ panel undefined
+;; Fix: bind first
+(let [p (JPanel.)] (.setLayout p (BoxLayout. p BoxLayout/Y_AXIS)) p)
 
-;; CORRECT — bind first, then configure
-(let [p (JPanel.)]
-  (.setLayout p (BoxLayout. p BoxLayout/Y_AXIS))
-  p)
+;; PITFALL 2: Method chaining — doto ignores intermediate return values
+(doto (JScrollPane. param-list)
+  (.getVerticalScrollBar)        ; returns JScrollBar, but doto ignores it
+  (.setUnitIncrement 10))        ; ❌ called on JScrollPane, not JScrollBar!
+;; Fix: break out of doto for intermediate return values
+(let [scroll (doto (JScrollPane. param-list) (.setBorder nil))]
+  (.setUnitIncrement (.getVerticalScrollBar scroll) 10))
 ```
 
 **IPC class names**: FlatBuffer-generated classes exactly mirror the schema names:
@@ -83,16 +168,65 @@ followed by explicit method calls:
 - `GetClipMidi` (not `RequestClipMidi`)
 - `ListPlugins` (exists in request schema)
 
+## Type Safety
+
+Clojure is dynamically typed — Java interop calls go through **reflection** at runtime unless
+you provide type hints (`^Type`). Without hints, calling a wrong method (like `.setUnitIncrement`
+on `JScrollPane`) only fails when executed, not at compile time.
+
+### `*warn-on-reflection*`
+
+All namespaces have `(set! *warn-on-reflection* true)` after the `ns` form. This makes the
+compiler emit **compile-time warnings** for any method call it can't resolve statically:
+
+```
+Reflection warning, plugin.clj:99:9 - call to method setUnitIncrement
+  on javax.swing.JScrollPane can't be resolved (no such method).
+```
+
+This is Clojure's closest equivalent to Java's compile-time type checking for interop calls.
+
+### Type Hint Rules
+
+| Rule | Example | Notes |
+|------|---------|-------|
+| Hint locals in `let` | `(let [^JPanel p ...]` | Resolves method calls on `p` |
+| Hint fn params | `[^BackendManager backend]` | Direct dispatch, no reflection |
+| Hint fn return | `^JPanel [backend]` | Caller knows the return type |
+| `reify` params — **NO** hints | `(accept [_ notif] ...)` | Use `let` cast inside body |
+| Only `^long`/`^double` primitives | `[^long idx]` | `^int`, `^boolean`, `^float` are **not** supported |
+| Max 4 primitive args | — | Functions with 5+ primitive-hinted args fail |
+| Arrays need `^objects`/`^ints` etc. | `^objects arr` | For `aget`/`aset` without reflection |
+
+### `reify` Interface Method Gotcha
+
+When implementing a generic interface like `Consumer<Notification>`, the erased method
+signature is `accept(Object)`. Adding `^Notification` on the parameter causes
+"Can't find matching method" at compile time:
+
+```clojure
+;; ❌ WRONG — erased generic takes Object
+(reify Consumer (accept [_ ^Notification n] ...))
+
+;; ✅ CORRECT — unhinted param, cast inside body
+(reify Consumer
+  (accept [_ notif]
+    (let [^Notification notif notif]
+      (.responseType notif)  ;; now resolved statically
+      ...)))
+```
+
 ## Testing
 
 ### Clojure Test Files
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| `theme_test.clj` | 17 | Colors, fonts, scaling, presets, listeners, grid helpers |
-| `piano_roll_test.clj` | 11 | Note records, MIDI parsing, file loading |
+| `theme_test.clj` | 3 | Colors, fonts, scaling, presets, grid helpers |
+| `piano_roll_test.clj` | 12 | Note records, MIDI parsing, file loading |
 | `session_test.clj` | 3 | Track selection, default state |
 | `timeline_test.clj` | 8 | Track data records, state, pixel math |
+| `browser_test.clj` | 8 | FileItem records, toString, extension sets |
 
 ### Running Tests
 
@@ -125,8 +259,416 @@ bazel run -c opt --enable_platform_specific_config :hibiki-gui-clj
 bazel run -c opt --enable_platform_specific_config :hibiki-gui-java
 ```
 
+## When Clojure Excels (with real examples)
+
+### 1. Data-driven configuration — Theme (265 → 123 lines, 54% reduction)
+
+Java requires mutable fields, a `switch` statement per preset, and explicit getters:
+
+```java
+// Theme.java — 17 public Color fields + switch per preset + 6 presets
+public Color BG_DARKER, BG_DARK, BG_MEDIUM, PANEL_BG, ...;
+private void applyPreset(Preset preset) {
+    switch (preset) {
+        case ABLETON_DARK:
+            BG_DARKER = new Color(25, 25, 25);
+            BG_DARK = new Color(34, 34, 34);
+            // ... 15 more fields × 6 presets = 90+ lines of assignments
+            break;
+        case ABLETON_LIGHT: ...
+    }
+}
+```
+
+Clojure replaces the entire class with a map literal — each preset is just a `{:keyword (Color.)}` map, and lookup is `(get (theme) :bg-dark)`:
+
+```clojure
+;; theme.clj — presets are plain data, zero boilerplate
+(def presets
+  {:ableton-dark
+   {:bg-darker  (Color. 25 25 25)
+    :bg-dark    (Color. 34 34 34)
+    ;; ... all 17 keys, same for each preset
+    }})
+
+(defn color [k] (get (theme) k))   ; that's the entire getter
+```
+
+**Why it wins**: Data-as-code eliminates the `switch`/`enum`/field boilerplate entirely.  Adding a new theme preset is +17 lines of data, not +17 assignments in a switch case.
+
+### 2. Custom painting with closeable state — LevelMeter (41 → 25 lines, 39% reduction)
+
+Java needs a subclass with mutable fields:
+
+```java
+// LevelMeter.java — class with mutable state
+class LevelMeter extends JPanel {
+    private float levelL = 0, levelR = 0;
+
+    void setLevels(float l, float r) {
+        this.levelL = l; this.levelR = r; repaint();
+    }
+
+    @Override protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        int h = getHeight(), w = getWidth();
+        g.setColor(Theme.getInstance().ACCENT_GREEN);
+        int hL = (int)(levelL * h);
+        g.fillRect(1, h - hL, w/2 - 2, hL);
+        // ... 20 more lines of drawing
+    }
+}
+```
+
+Clojure uses `proxy` + `atom` — no class needed, the state is a closed-over atom:
+
+```clojure
+;; widgets.clj — proxy closes over an atom, returns panel + updater fn
+(defn make-level-meter []
+  (let [levels (atom [0.0 0.0])
+        panel  (proxy [JPanel] []
+                 (paintComponent [^Graphics g]
+                   (proxy-super paintComponent g)
+                   (let [[l r] @levels, w (.getWidth this), h (.getHeight this)]
+                     (.setColor g (t/color :accent-green))
+                     (.fillRect g 0 (- h (int (* h l))) (/ w 2) (int (* h l)))
+                     ;; ... rest of drawing
+                     )))]
+    {:panel panel
+     :set-levels! (fn [l r] (reset! levels [l r]) (.repaint panel))}))
+```
+
+**Why it wins**: No class definition needed. The `atom` replaces mutable fields and the
+returned map replaces public setter methods. Caller gets `(:set-levels! meter)`.
+
+### 3. State management — Session View (mutable arrays → atom)
+
+Java uses parallel mutable arrays and tracks selection state imperatively:
+
+```java
+// SessionView.java — 6 mutable fields, explicit singleton
+private JButton[][] slotButtons = new JButton[5][5];
+String[][] slotPaths = new String[5][5];
+private LevelMeter[] trackMeters = new LevelMeter[4];
+private JPanel[] trackStrips = new JPanel[4];
+JLabel[] trackHeaders = new JLabel[4];
+private int selectedTrack = 0;
+private static SessionView instance;
+```
+
+Clojure uses a single atom with a map — all state is in one place, thread-safe by default:
+
+```clojure
+;; session.clj — one atom holds everything
+(defonce ^:private session-state
+  (atom {:slot-buttons    {}    ;; {[track slot] -> JButton}
+         :slot-paths      {}    ;; {[track slot] -> path}
+         :track-meters    {}    ;; {track-idx -> {:panel :set-levels!}}
+         :track-strips    {}
+         :track-headers   {}
+         :selected-track  0
+         :instance        nil}))
+
+(defn get-selected-track ^long [] (:selected-track @session-state))
+```
+
+**Why it wins**: No parallel arrays, no null initialization, no getter boilerplate.
+State shape is self-documenting through map keys.
+
+### 4. Notification handlers — lambda vs reify (comparable, slight Clojure advantage)
+
+Java lambda:
+```java
+BackendManager.getInstance().addNotificationListener(notification -> {
+    if (notification.responseType() == Response.ClipInfo) {
+        ClipInfo info = (ClipInfo) notification.response(new ClipInfo());
+        updateSlotLabel(info.trackIndex(), info.slotIndex(), info.name());
+    }
+});
+```
+
+Clojure reify:
+```clojure
+(.addNotificationListener backend
+  (reify java.util.function.Consumer
+    (accept [_ notif]
+      (let [^Notification notif notif]
+        (when (= (.responseType notif) Response/ClipInfo)
+          (let [^ClipInfo info (.response notif (ClipInfo.))]
+            (update-slot-label (.trackIndex info) (.slotIndex info) (.name info))))))))
+```
+
+**Roughly equal**: Lambda syntax is slightly more concise in Java, but Clojure's destructuring
+and `when`/`case` patterns make complex notification handlers shorter.
+
+## Where Java and Clojure Are Similar
+
+### IPC helpers — FlatBuffer boilerplate (comparable)
+
+Both need the same FlatBuffer builder ceremony — Clojure doesn't save much here:
+
+```java
+// PluginPane.java — 7 lines
+private void sendShowGui() {
+    FlatBufferBuilder builder = new FlatBufferBuilder(128);
+    int cmd = ShowPluginGui.createShowPluginGui(builder, trackIndex, pluginIndex);
+    int req = Request.createRequest(builder, Command.ShowPluginGui, cmd);
+    builder.finish(req);
+    BackendManager.getInstance().sendRequest(builder);
+}
+```
+
+```clojure
+;; plugin.clj — 10 lines (type hints add verbosity)
+(defn- send-show-gui
+  [^BackendManager backend ^long track-idx ^long plugin-idx]
+  (let [^FlatBufferBuilder b (FlatBufferBuilder. 64)
+        cmd (do (ShowPluginGui/startShowPluginGui b)
+                (ShowPluginGui/addTrackIndex b track-idx)
+                (ShowPluginGui/addPluginIndex b plugin-idx)
+                (ShowPluginGui/endShowPluginGui b))
+        req (Request/createRequest b Command/ShowPluginGui cmd)]
+    (.finish b req)
+    (.sendRequest backend b)))
+```
+
+**Similar**: FlatBuffer code is inherently imperative. Type hints make Clojure slightly
+more verbose than Java for this pattern.
+
+## Java Design Patterns → Clojure
+
+This section maps common Java design patterns to their Clojure equivalents using real
+examples from this codebase.
+
+### 1. Singleton → `defonce` atom
+
+Java's Singleton pattern requires `private` constructor, `static` instance, and `synchronized`:
+
+```java
+// BackendManager.java — classic double-checked locking Singleton
+public class BackendManager {
+    private static BackendManager instance;
+    private BackendManager() {}                       // private ctor
+    public static synchronized BackendManager getInstance() {
+        if (instance == null) instance = new BackendManager();
+        return instance;
+    }
+}
+// Usage: BackendManager.getInstance().sendRequest(...)
+```
+
+Clojure replaces this with `defonce` — the value is created once per JVM, survives
+namespace reloads, and is thread-safe by default:
+
+```clojure
+;; session.clj — defonce = singleton, atom = thread-safe mutable state
+(defonce ^:private session-state
+  (atom {:selected-track 0, :instance nil}))
+
+(defn get-instance ^JPanel [] (:instance @session-state))
+;; Usage: (session/get-instance)
+```
+
+**Pattern eliminated**: No `private` constructor, no `synchronized`, no `null` check.
+`defonce` guarantees single initialization; the `atom` provides thread-safe access.
+
+### 2. Observer / Listener → atom watches or function lists
+
+Java's Observer pattern requires an interface, a list, and synchronized add/remove:
+
+```java
+// Theme.java — custom listener interface + explicit list management
+public interface ThemeListener { void onThemeChanged(); }
+private final List<ThemeListener> listeners = new ArrayList<>();
+public void addListener(ThemeListener l) { listeners.add(l); }
+public void update(...) {
+    applyPreset(preset);
+    for (ThemeListener l : listeners) l.onThemeChanged();
+}
+
+// SessionView.java — Consumer<Notification> with synchronized list
+public void addNotificationListener(Consumer<Notification> listener) {
+    synchronized (listeners) { listeners.add(listener); }
+}
+```
+
+Clojure stores listeners as plain functions in the atom — no interface needed:
+
+```clojure
+;; theme.clj — listeners are just functions stored in the atom
+(defonce ^:private state
+  (atom {:preset :ableton-dark, :listeners []}))
+
+(defn add-listener! [f]
+  (swap! state update :listeners conj f))   ;; f is any (fn [] ...)
+
+(defn update-theme! [& {:keys [preset]}]
+  (swap! state assoc :preset preset)
+  (doseq [f (:listeners @state)] (f)))      ;; call each fn
+```
+
+**Pattern simplified**: No interface definition. Listeners are first-class functions — any
+`(fn [] ...)` works. `add-watch` on atoms is another option for reactive state changes.
+
+### 3. Strategy / Enum with behavior → `case` expressions or maps
+
+Java uses enums with methods to encapsulate varying behavior:
+
+```java
+// GridMode.java — 151 lines: enum + switch + toString override
+enum GridMode {
+    AUTO("Auto"), BAR("1/1"), HALF("1/2"), QUARTER("1/4"),
+    EIGHTH("1/8"), SIXTEENTH("1/16"), ...;
+    private final String label;
+    GridMode(String label) { this.label = label; }
+    @Override public String toString() { return label; }
+
+    int getTickInterval(int resolution) {
+        int bar = resolution * 4;
+        switch (this) {
+            case BAR:      return bar;
+            case HALF:     return bar / 2;
+            case QUARTER:  return resolution;
+            case EIGHTH:   return resolution / 2;
+            // ...12 more cases
+        }
+    }
+}
+```
+
+Clojure uses a vector of keywords + a `case` expression — no class needed:
+
+```clojure
+;; theme.clj — 30 lines total for the same functionality
+(def grid-modes
+  [:auto :seconds :bar :half :quarter :eighth :sixteenth :thirty-second
+   :triplet-quarter :triplet-eighth :triplet-16th :triplet-32nd])
+
+(defn tick-interval [mode resolution]
+  (let [bar (* resolution 4)]
+    (case mode
+      :bar      bar
+      :half     (/ bar 2)
+      :quarter  resolution
+      :eighth   (/ resolution 2)
+      ;; ...same logic, 1/5th the code
+      resolution)))
+```
+
+**Pattern eliminated**: No class, no constructor, no `toString`, no field storage.
+Keywords are their own representation. `case` replaces `switch` with less ceremony.
+
+### 4. Builder → `let` + `do` (threading)
+
+Java's Builder pattern is used for constructing FlatBuffer messages:
+
+```java
+// Java — Builder pattern with method chaining
+FlatBufferBuilder builder = new FlatBufferBuilder(128);
+int cmd = ShowPluginGui.createShowPluginGui(builder, trackIndex, pluginIndex);
+int req = Request.createRequest(builder, Command.ShowPluginGui, cmd);
+builder.finish(req);
+```
+
+Clojure uses `let` bindings + `do` — structurally similar but no separate Builder class:
+
+```clojure
+;; Clojure — let bindings replace method chaining
+(let [^FlatBufferBuilder b (FlatBufferBuilder. 64)
+      cmd (do (ShowPluginGui/startShowPluginGui b)
+              (ShowPluginGui/addTrackIndex b track-idx)
+              (ShowPluginGui/addPluginIndex b plugin-idx)
+              (ShowPluginGui/endShowPluginGui b))
+      req (Request/createRequest b Command/ShowPluginGui cmd)]
+  (.finish b req)
+  (.sendRequest backend b))
+```
+
+**Similar verbosity**: Builder is an inherently imperative pattern, so Clojure doesn't
+simplify it much. `let` does make the data flow explicit (each binding depends on the previous).
+
+### 5. Template Method → `proxy` with closures
+
+Java uses inheritance and `@Override` for the Template Method pattern:
+
+```java
+// LevelMeter.java — subclass overrides paintComponent
+class LevelMeter extends JPanel {
+    private float levelL, levelR;            // mutable fields
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);             // template hook
+        // ...custom drawing using this.levelL, this.levelR
+    }
+}
+```
+
+Clojure uses `proxy` which closes over external state instead of using `this` fields:
+
+```clojure
+;; widgets.clj — proxy closes over atom, no inheritance
+(let [levels (atom [0.0 0.0])
+      panel  (proxy [JPanel] []
+               (paintComponent [^Graphics g]
+                 (proxy-super paintComponent g)    ;; template hook
+                 (let [[l r] @levels]
+                   ;; ...custom drawing using closed-over atom
+                   )))]
+  {:panel panel :set-levels! (fn [l r] (reset! levels [l r]))})
+```
+
+**Pattern simplified**: Closures over atoms replace subclass fields. No need to define a
+separate class — the proxy is anonymous and its state is captured from the enclosing scope.
+
+### 6. Value Object → `defrecord`
+
+Java uses inner classes with mutable fields for data objects:
+
+```java
+// MidiDataModel.java — mutable inner class with 6 fields
+static class Note {
+    int pitch;
+    long startTick, durationTicks;
+    int velocity;
+    MidiEvent onEvent, offEvent;
+    Note(int pitch, long startTick, long durationTicks, int velocity) {
+        this.pitch = pitch;
+        this.startTick = startTick;
+        this.durationTicks = durationTicks;
+        this.velocity = velocity;
+    }
+}
+```
+
+Clojure uses `defrecord` for named tuples with automatic `equals`, `hashCode`, and keyword access:
+
+```clojure
+;; piano_roll.clj — one line, immutable, with :keyword access
+(defrecord Note [pitch start-tick duration-ticks velocity])
+;; Usage:
+(->Note 60 0 480 100)           ;; positional constructor
+(:pitch note)                    ;; keyword access
+(assoc note :velocity 80)       ;; "update" returns new Note
+```
+
+**Pattern simplified**: `defrecord` gives you a constructor, field access, equality, hashing,
+and immutability in one line. In Java you'd add `equals`/`hashCode`/`toString` manually
+(or use `record` in Java 16+).
+
+### Summary Table
+
+| Java Pattern | Java Mechanism | Clojure Equivalent | Reduction |
+|-------------|---------------|-------------------|-----------|
+| **Singleton** | `private` ctor + `static getInstance()` | `defonce` + atom | ~80% |
+| **Observer** | Interface + `List<Listener>` + `synchronized` | Functions in atom + `doseq` | ~70% |
+| **Strategy/Enum** | `enum` + `switch` + fields + ctor | Keywords + `case` | ~80% |
+| **Builder** | Builder class + method chaining | `let` + `do` | ~0% (similar) |
+| **Template Method** | Subclass + `@Override` | `proxy` + closures | ~50% |
+| **Value Object** | Inner class + fields + ctor | `defrecord` (1 line) | ~90% |
+
 ## Known Issues
 
 - Java GUI and Clojure GUI use the same backend; both builds coexist
 - Clojure test startup is slower (~3s) due to runtime initialization
 - Some IDE lint errors for `ClojureMain.java` imports (expected — Clojure jar not in IDE classpath)
+- ~40 reflection warnings remain in UI rendering code; fix incrementally by adding type hints

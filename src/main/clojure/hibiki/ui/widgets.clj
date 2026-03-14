@@ -9,6 +9,8 @@
            [java.awt.event ActionListener]
            [javax.swing.event ChangeListener]))
 
+(set! *warn-on-reflection* true)
+
 ;; ---------------------------------------------------------------------------
 ;; LevelMeter — stereo VU meter
 ;; ---------------------------------------------------------------------------

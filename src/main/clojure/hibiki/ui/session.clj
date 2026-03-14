@@ -17,12 +17,15 @@
                        SetClipLoop PlayScene DeleteClip
                        Response ClipInfo TrackLevels TrackLevel]))
 
+(set! *warn-on-reflection* true)
+
 ;; ---------------------------------------------------------------------------
 ;; IPC helpers
 ;; ---------------------------------------------------------------------------
 
-(defn- send-load-clip [backend track-idx slot-idx path loop?]
-  (let [builder (FlatBufferBuilder. 256)
+(defn- send-load-clip
+  [^hibiki.BackendManager backend track-idx slot-idx ^String path loop?]
+  (let [^FlatBufferBuilder builder (FlatBufferBuilder. 256)
         path-off (.createString builder path)
         cmd-off  (do (LoadClip/startLoadClip builder)
                      (LoadClip/addTrackIndex builder track-idx)
@@ -34,8 +37,9 @@
     (.finish builder req-off)
     (.sendRequest backend builder)))
 
-(defn- send-play-clip [backend track-idx slot-idx]
-  (let [builder (FlatBufferBuilder. 64)
+(defn- send-play-clip
+  [^hibiki.BackendManager backend ^long track-idx ^long slot-idx]
+  (let [^FlatBufferBuilder builder (FlatBufferBuilder. 64)
         cmd (do (PlayClip/startPlayClip builder)
                 (PlayClip/addTrackIndex builder track-idx)
                 (PlayClip/addSlotIndex builder slot-idx)
@@ -96,8 +100,13 @@
          :selected-track 0
          :instance nil}))
 
-(defn get-instance [] (:instance @session-state))
-(defn get-selected-track [] (:selected-track @session-state))
+(defn get-instance
+  "Return the SessionView JPanel, or nil."
+  ^JPanel [] (:instance @session-state))
+
+(defn get-selected-track
+  "Return the 0-based index of the currently selected track."
+  ^long [] (:selected-track @session-state))
 
 ;; ---------------------------------------------------------------------------
 ;; Session View panel
@@ -139,7 +148,9 @@
     (.add menu delete-item)
     (.show menu btn x y)))
 
-(defn select-track! [track-idx]
+(defn select-track!
+  "Select the given track index (0-based). Updates header highlights."
+  [^long track-idx]
   (let [prev (:selected-track @session-state)]
     (when (not= prev track-idx)
       (swap! session-state assoc :selected-track track-idx)

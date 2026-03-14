@@ -18,7 +18,8 @@ public class ClojureTestRunner {
             "hibiki.ui.theme-test",
             "hibiki.ui.piano-roll-test",
             "hibiki.ui.session-test",
-            "hibiki.ui.timeline-test"
+                "hibiki.ui.timeline-test",
+                "hibiki.ui.browser-test"
         };
 
         for (String ns : namespaces) {

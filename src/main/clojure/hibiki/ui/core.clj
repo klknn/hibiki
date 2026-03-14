@@ -17,6 +17,8 @@
            [hibiki BackendManager]
            [hibiki.ipc Request Command Undo Redo]))
 
+(set! *warn-on-reflection* true)
+
 ;; ---------------------------------------------------------------------------
 ;; HiDPI helpers (ported from GuiMain.java)
 ;; ---------------------------------------------------------------------------

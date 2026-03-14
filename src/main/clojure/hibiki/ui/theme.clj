@@ -3,6 +3,8 @@
    Ported from Theme.java."
   (:import [java.awt Color Font]))
 
+(set! *warn-on-reflection* true)
+
 ;; ---------------------------------------------------------------------------
 ;; Presets — each is a map of keyword -> Color
 ;; ---------------------------------------------------------------------------

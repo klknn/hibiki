@@ -91,6 +91,12 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     private float creatingStartTime = 0;
     private ClipRect creatingClipRect = null;
 
+    // Clip resize state
+    private boolean resizingClip = false;
+    private ClipRect resizeClip = null;
+    private int resizeTrackIdx = -1;
+    private float resizeOriginalDuration = 0;
+
     /** Get the singleton TimelineView instance */
     public static TimelineView getInstance() {
         return instance;
@@ -343,9 +349,15 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                                 showEmptyAreaContextMenu(trackIdx, clickTime, e.getX(), e.getY());
                             }
                         } else if (SwingUtilities.isLeftMouseButton(e)) {
-                            // Left-click: start dragging if on a clip, or start creating a new clip
+                            // Left-click: check for resize handle, drag, or create new clip
                             ClipRect clip = findClipAtPosition(trackIdx, e.getX());
-                            if (clip != null) {
+                            if (clip != null && isNearRightEdge(clip, e.getX())) {
+                                // Start resizing from right edge
+                                resizingClip = true;
+                                resizeClip = clip;
+                                resizeTrackIdx = trackIdx;
+                                resizeOriginalDuration = clip.duration;
+                            } else if (clip != null) {
                                 draggingClip = clip;
                                 dragSourceTrack = trackIdx;
                                 dragStartX = e.getX();
@@ -441,6 +453,31 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 dragSourceTrack = -1;
                 isDragging = false;
 
+                // Handle clip resize completion
+                if (resizingClip && resizeClip != null) {
+                    // Snap duration to bar grid
+                    float endTime = resizeClip.startTime + resizeClip.duration;
+                    if (!e.isShiftDown()) {
+                        endTime = snapToBar(endTime);
+                    }
+                    float newDuration = Math.max(60.0f / bpm, endTime - resizeClip.startTime); // Min 1 beat
+                    resizeClip.duration = newDuration;
+                    float durationBeats = newDuration * (bpm / 60.0f);
+
+                    // Find clip index and sync to backend
+                    TrackTimeline track = tracks.get(resizeTrackIdx);
+                    int clipIndex = track.clips.indexOf(resizeClip);
+                    if (clipIndex >= 0) {
+                        BackendManager.getInstance().resizeTimelineClip(resizeTrackIdx, clipIndex, durationBeats);
+                    }
+                    repaint();
+                }
+
+                // Reset resize state
+                resizingClip = false;
+                resizeClip = null;
+                resizeTrackIdx = -1;
+
                 // Handle clip creation completion
                 if (creatingClip && creatingClipRect != null) {
                     float endTime = Math.max(0, e.getX() / getPixelsPerSecond());
@@ -471,8 +508,14 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             @Override
             public void mouseDragged(MouseEvent e) {
                 int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                if (e.getY() < scaleTimeRuler && draggingClip == null && !creatingClip) {
+                if (e.getY() < scaleTimeRuler && draggingClip == null && !creatingClip && !resizingClip) {
                     updatePlayhead(e.getX());
+                } else if (resizingClip && resizeClip != null) {
+                    // Update clip duration during resize
+                    float mouseTime = Math.max(0, e.getX() / getPixelsPerSecond());
+                    float newDuration = Math.max(60.0f / bpm, mouseTime - resizeClip.startTime); // Min 1 beat
+                    resizeClip.duration = newDuration;
+                    repaint();
                 } else if (creatingClip && creatingClipRect != null) {
                     // Update clip duration during creation
                     float endTime = Math.max(0, e.getX() / getPixelsPerSecond());
@@ -502,6 +545,23 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                         dragCurrentY = e.getY(); // Track Y for cross-track rendering
                         repaint();
                     }
+                }
+            }
+
+            @Override
+            public void mouseMoved(MouseEvent e) {
+                int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
+                int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
+                int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
+                if (trackIdx >= 0 && trackIdx < tracks.size()) {
+                    ClipRect clip = findClipAtPosition(trackIdx, e.getX());
+                    if (clip != null && isNearRightEdge(clip, e.getX())) {
+                        contentPanel.setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
+                    } else {
+                        contentPanel.setCursor(Cursor.getDefaultCursor());
+                    }
+                } else {
+                    contentPanel.setCursor(Cursor.getDefaultCursor());
                 }
             }
         });
@@ -566,6 +626,12 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             }
         }
         return null;
+    }
+
+    /** Check if x position is near the right edge of a clip (within 8px) */
+    private boolean isNearRightEdge(ClipRect clip, int x) {
+        int rightEdgeX = (int) ((clip.startTime + clip.duration) * getPixelsPerSecond());
+        return Math.abs(x - rightEdgeX) <= 8;
     }
 
     /** Show context menu for a timeline clip */

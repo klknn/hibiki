@@ -105,7 +105,8 @@ union Command {
     Seek,
     BounceProject,
     GetClipMidi,
-    UpdateClipMidi
+    UpdateClipMidi,
+    ResizeTimelineClip
 }
 
 // Request MIDI data for a clip (for Piano Roll editing)
@@ -152,6 +153,12 @@ table Seek {
 
 table Undo {}
 table Redo {}
+
+table ResizeTimelineClip {
+    track_index: int;
+    clip_index: int;
+    duration_beats: float;
+}
 
 table Request {
     command: Command;

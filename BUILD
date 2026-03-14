@@ -324,6 +324,8 @@ flatbuffer_library_public(
         "hibiki/ipc/UpdateMidiEventT.java",
         "hibiki/ipc/UpdateClipMidi.java",
         "hibiki/ipc/UpdateClipMidiT.java",
+        "hibiki/ipc/ResizeTimelineClip.java",
+        "hibiki/ipc/ResizeTimelineClipT.java",
     ],
     language_flag = "--java --gen-object-api",
 )

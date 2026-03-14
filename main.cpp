@@ -664,6 +664,29 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendAck("UPDATE_CLIP_MIDI", false);
             }
+        } else if (command_type == hibiki::ipc::Command_ResizeTimelineClip) {
+            auto cmd = request->command_as_ResizeTimelineClip();
+            int tidx = cmd->track_index();
+            int cidx = cmd->clip_index();
+            float dur_beats = cmd->duration_beats();
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
+            if (state.tracks.count(tidx)) {
+                auto& track = state.tracks[tidx];
+                if (cidx >= 0 && cidx < (int)track->timeline_clips.size() && track->timeline_clips[cidx]) {
+                    auto& tc = track->timeline_clips[cidx];
+                    tc->duration_beats = dur_beats;
+                    tc->clip->duration_beats = dur_beats;
+                    // Re-send TimelineClipInfo to refresh GUI
+                    float duration_for_gui = (float)(dur_beats * 60.0 / (state.bpm > 0 ? state.bpm : 120.0));
+                    std::string clipname = tc->clip->path;
+                    if (clipname.empty()) clipname = "New Clip";
+                    size_t pos = clipname.find_last_of("/\\");
+                    if (pos != std::string::npos) clipname = clipname.substr(pos + 1);
+                    hibiki::sendTimelineClipInfo(tidx, cidx, clipname, tc->clip->path, (float)tc->start_time_sec, duration_for_gui, tc->clip->waveform_summary);
+                }
+            }
+            hibiki::sendAck("RESIZE_TIMELINE_CLIP", true);
         } else if (command_type == hibiki::ipc::Command_Quit) {
             state.quit = true;
             break;

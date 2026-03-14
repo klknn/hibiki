@@ -239,6 +239,15 @@ public class BackendManager {
         sendRequest(builder);
     }
 
+    public void resizeTimelineClip(int trackIndex, int clipIndex, float durationBeats) {
+        FlatBufferBuilder builder = new FlatBufferBuilder(32);
+        int resOff = hibiki.ipc.ResizeTimelineClip.createResizeTimelineClip(builder, trackIndex, clipIndex,
+                durationBeats);
+        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.ResizeTimelineClip, resOff);
+        builder.finish(reqOff);
+        sendRequest(builder);
+    }
+
     /**
      * Request MIDI data for a clip (for Piano Roll editing)
      * Use slotIdx >= 0 for session clips, clipIdx >= 0 for timeline clips

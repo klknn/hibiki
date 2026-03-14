@@ -4,6 +4,7 @@ bazel-*
 # Build output
 bin/
 output.wav
+genhtml
 
 # IDEs
 .vscode/

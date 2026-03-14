@@ -489,7 +489,9 @@ java_test(
     test_class = "hibiki.ui.PianoRollTest",
     deps = [
         ":hibiki-gui-lib",
+        ":hibiki_response_java_lib",
         "@maven//:junit_junit",
+        "@maven//:com_google_flatbuffers_flatbuffers_java",
     ],
 )
 
@@ -500,5 +502,50 @@ java_test(
     deps = [
         ":hibiki-gui-lib",
         "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "midi_data_model_test",
+    srcs = ["src/test/java/hibiki/ui/MidiDataModelTest.java"],
+    test_class = "hibiki.ui.MidiDataModelTest",
+    data = ["//testdata"],
+    deps = [
+        ":hibiki-gui-lib",
+        ":hibiki_response_java_lib",
+        "@maven//:junit_junit",
+        "@maven//:com_google_flatbuffers_flatbuffers_java",
+    ],
+)
+
+java_test(
+    name = "plugin_pane_test",
+    srcs = ["src/test/java/hibiki/ui/PluginPaneTest.java"],
+    test_class = "hibiki.ui.PluginPaneTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "settings_dialog_test",
+    srcs = ["src/test/java/hibiki/ui/SettingsDialogTest.java"],
+    test_class = "hibiki.ui.SettingsDialogTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "session_view_ipc_test",
+    srcs = ["src/test/java/hibiki/ui/SessionViewIpcTest.java"],
+    test_class = "hibiki.ui.SessionViewIpcTest",
+    deps = [
+        ":hibiki-gui-lib",
+        ":hibiki_request_java_lib",
+        "@maven//:junit_junit",
+        "@maven//:com_google_flatbuffers_flatbuffers_java",
     ],
 )

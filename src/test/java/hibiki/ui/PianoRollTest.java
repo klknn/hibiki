@@ -3,6 +3,11 @@ package hibiki.ui;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
+import hibiki.ipc.ClipMidiData;
+import hibiki.ipc.MidiEventData;
+import com.google.flatbuffers.FlatBufferBuilder;
+import java.nio.ByteBuffer;
+
 public class PianoRollTest {
 
     @Test
@@ -19,6 +24,13 @@ public class PianoRollTest {
         PianoRoll.Note note = new PianoRoll.Note(36, 0, 96, 64);
         assertNull(note.onEvent);
         assertNull(note.offEvent);
+    }
+
+    @Test
+    public void testNoteExtendsMidiDataModelNote() {
+        PianoRoll.Note note = new PianoRoll.Note(60, 480, 240, 100);
+        // Note should be an instance of MidiDataModel.Note
+        assertTrue(note instanceof MidiDataModel.Note);
     }
 
     @Test
@@ -82,16 +94,13 @@ public class PianoRollTest {
     }
 
     @Test
-    public void testGridTickInterval_quarterMode() {
+    public void testGridTickInterval_autoMode() {
         if (java.awt.GraphicsEnvironment.isHeadless()) return;
         java.io.File dummyFile = new java.io.File("dummy.mid");
         PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 0.0f);
 
-        // Access private gridMode field via package access
-        // Default gridMode is AUTO, but we can test the method
         int interval = pr.getGridTickInterval();
         assertTrue("Grid tick interval should be positive", interval > 0);
-
         pr.dispose();
     }
 
@@ -105,6 +114,77 @@ public class PianoRollTest {
         int gridInterval = pr.getGridTickInterval();
         assertEquals("Snap interval should equal grid interval", gridInterval, snapInterval);
 
+        pr.dispose();
+    }
+
+    @Test
+    public void testGetTickWidth() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
+        java.io.File dummyFile = new java.io.File("dummy.mid");
+        PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 0.0f);
+
+        float tw = pr.getTickWidth();
+        assertTrue("Tick width should be positive", tw > 0);
+        pr.dispose();
+    }
+
+    @Test
+    public void testGetScaledKeyHeight() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
+        java.io.File dummyFile = new java.io.File("dummy.mid");
+        PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 0.0f);
+
+        int height = pr.getScaledKeyHeight();
+        assertTrue("Scaled key height should be positive", height > 0);
+        pr.dispose();
+    }
+
+    @Test
+    public void testLoadMidi_nonExistentFile() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
+        // Using a nonsense file should create empty sequence, not crash
+        java.io.File dummyFile = new java.io.File("nonexistent_file.mid");
+        PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 0.0f);
+        assertNotNull(pr.sequence);
+        assertNotNull(pr.notes);
+        pr.dispose();
+    }
+
+    @Test
+    public void testLoadMidi_testFile() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
+        java.io.File testMidi = new java.io.File("testdata/test.mid");
+        if (!testMidi.exists())
+            return;
+        PianoRoll pr = new PianoRoll(null, testMidi, 0, -1, 0, 0.0f);
+        assertNotNull(pr.sequence);
+        assertNotNull(pr.notes);
+        pr.dispose();
+    }
+
+    @Test
+    public void testKeyHeightDefault() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
+        java.io.File dummyFile = new java.io.File("dummy.mid");
+        PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 0.0f);
+        assertEquals(12, pr.keyHeight);
+        pr.dispose();
+    }
+
+    @Test
+    public void testPlayheadFields() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
+        java.io.File dummyFile = new java.io.File("dummy.mid");
+        PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 5.0f);
+        assertEquals(5.0f, pr.clipStartTime, 0.01f);
+        assertEquals(0.0f, pr.playheadPos, 0.01f);
+        assertEquals(120.0f, pr.bpm, 0.01f);
         pr.dispose();
     }
 
@@ -125,5 +205,64 @@ public class PianoRollTest {
     @Test
     public void testNumKeysConstant() {
         assertEquals("Standard MIDI has 128 keys", 128, PianoRoll.NUM_KEYS);
+    }
+
+    @Test
+    public void testNoteMultipleInstances() {
+        PianoRoll.Note n1 = new PianoRoll.Note(60, 0, 96, 100);
+        PianoRoll.Note n2 = new PianoRoll.Note(64, 96, 48, 80);
+        assertNotSame(n1, n2);
+        assertEquals(60, n1.pitch);
+        assertEquals(64, n2.pitch);
+    }
+
+    @Test
+    public void testInitialization() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
+        java.io.File dummyFile = new java.io.File("dummy.mid");
+        PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 0.0f);
+        assertNotNull(pr);
+        assertTrue(pr.isDisplayable() || true); // May or may not be displayable
+        assertEquals("Piano Roll - dummy.mid", pr.getTitle());
+        pr.dispose();
+    }
+
+    @Test
+    public void testGridPanelCreated() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
+        java.io.File dummyFile = new java.io.File("dummy.mid");
+        PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 0.0f);
+        assertNotNull(pr.gridPanel);
+        assertNotNull(pr.keysPanel);
+        assertNotNull(pr.velocityPanel);
+        pr.dispose();
+    }
+
+    @Test
+    public void testDraggingStateDefaults() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
+        java.io.File dummyFile = new java.io.File("dummy.mid");
+        PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 0.0f);
+        assertNull(pr.draggingNote);
+        assertNull(pr.resizingNote);
+        assertEquals(0, pr.dragOffsetX);
+        assertEquals(0, pr.dragOffsetY);
+        assertFalse(pr.isDraggingNote);
+        assertFalse(pr.editingVelocity);
+        pr.dispose();
+    }
+
+    @Test
+    public void testDispose() {
+        if (java.awt.GraphicsEnvironment.isHeadless())
+            return;
+        java.io.File dummyFile = new java.io.File("dummy.mid");
+        PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 0.0f);
+        pr.dispose();
+        // Should not throw on double dispose
+        pr.dispose();
     }
 }

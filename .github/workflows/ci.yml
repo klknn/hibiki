@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, experimental]
+    branches: [main, experimental, refactor-gui]
   pull_request:
     branches: [main]
 
@@ -60,3 +60,17 @@ jobs:
       # Test
       - name: Run tests
         run: bazel test -c opt --enable_platform_specific_config //:all --test_output=all
+
+      # Coverage (Linux only — generates LCOV for Codecov)
+      - name: Run coverage
+        if: runner.os == 'Linux'
+        run: bazel coverage -c opt --enable_platform_specific_config :all --combined_report=lcov
+
+      - name: Upload to Codecov
+        if: runner.os == 'Linux'
+        uses: codecov/codecov-action@v5
+        with:
+          files: bazel-out/_coverage/_coverage_report.dat
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

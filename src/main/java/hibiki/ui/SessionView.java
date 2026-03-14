@@ -29,9 +29,10 @@ import hibiki.ipc.ClipWaveform;
 
 public class SessionView extends JPanel {
     private static SessionView instance;
+    private final SessionViewIpc ipc = new SessionViewIpc(this);
 
     private JButton[][] slotButtons = new JButton[5][5]; // 4 tracks + master, 5 slots
-    private String[][] slotPaths = new String[5][5]; // paths to loaded clips
+    String[][] slotPaths = new String[5][5]; // paths to loaded clips
     private LevelMeter[] trackMeters = new LevelMeter[4]; // 0-3 for tracks
     private JPanel[] trackStrips = new JPanel[4]; // Track strip panels for selection highlighting
     JLabel[] trackHeaders = new JLabel[4]; // Track header labels (package-visible for TimelineView sync)
@@ -476,76 +477,27 @@ public class SessionView extends JPanel {
     }
 
     void sendLoadClip(int trackIdx, int slotIdx, String path, boolean isLoop) {
-        slotPaths[trackIdx][slotIdx] = path; // Remember the path locally
-        FlatBufferBuilder builder = new FlatBufferBuilder(512);
-        int pathOff = builder.createString(path);
-        LoadClip.startLoadClip(builder);
-        LoadClip.addTrackIndex(builder, trackIdx);
-        LoadClip.addSlotIndex(builder, slotIdx);
-        LoadClip.addPath(builder, pathOff);
-        LoadClip.addIsLoop(builder, isLoop);
-        int loadOff = LoadClip.endLoadClip(builder);
-        int requestOffset = Request.createRequest(builder, Command.LoadClip, loadOff);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        ipc.sendLoadClip(trackIdx, slotIdx, path, isLoop);
     }
 
     private void sendSetClipLoop(int trackIdx, int slotIdx, boolean isLoop) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(128);
-        SetClipLoop.startSetClipLoop(builder);
-        SetClipLoop.addTrackIndex(builder, trackIdx);
-        SetClipLoop.addSlotIndex(builder, slotIdx);
-        SetClipLoop.addIsLoop(builder, isLoop);
-        int setOff = SetClipLoop.endSetClipLoop(builder);
-        int requestOffset = Request.createRequest(builder, Command.SetClipLoop, setOff);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        ipc.sendSetClipLoop(trackIdx, slotIdx, isLoop);
     }
 
     private void sendPlayClip(int trackIdx, int slotIdx) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(128);
-        PlayClip.startPlayClip(builder);
-        PlayClip.addTrackIndex(builder, trackIdx);
-        PlayClip.addSlotIndex(builder, slotIdx);
-        int playClipOffset = PlayClip.endPlayClip(builder);
-        int requestOffset = Request.createRequest(builder, Command.PlayClip, playClipOffset);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        ipc.sendPlayClip(trackIdx, slotIdx);
     }
 
     private void sendStopTrack(int trackIdx) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(128);
-        StopTrack.startStopTrack(builder);
-        StopTrack.addTrackIndex(builder, trackIdx);
-        int stopTrackOffset = StopTrack.endStopTrack(builder);
-        int requestOffset = Request.createRequest(builder, Command.StopTrack, stopTrackOffset);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        ipc.sendStopTrack(trackIdx);
     }
 
     private void sendPlayScene(int slotIdx) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(128);
-        PlayScene.startPlayScene(builder);
-        PlayScene.addSlotIndex(builder, slotIdx);
-        int playSceneOff = PlayScene.endPlayScene(builder);
-        int requestOffset = Request.createRequest(builder, Command.PlayScene, playSceneOff);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        ipc.sendPlayScene(slotIdx);
     }
 
     private void sendDeleteClip(int trackIdx, int slotIdx) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(128);
-        DeleteClip.startDeleteClip(builder);
-        DeleteClip.addTrackIndex(builder, trackIdx);
-        DeleteClip.addSlotIndex(builder, slotIdx);
-        int deleteOff = DeleteClip.endDeleteClip(builder);
-        int requestOffset = Request.createRequest(builder, Command.DeleteClip, deleteOff);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
-
-        // Optimistically clear the UI
-        slotPaths[trackIdx][slotIdx] = null;
-        updateSlotLabel(trackIdx, slotIdx, "");
+        ipc.sendDeleteClip(trackIdx, slotIdx);
     }
 
 }

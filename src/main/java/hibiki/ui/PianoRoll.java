@@ -20,7 +20,7 @@ public class PianoRoll extends JDialog {
     static final int NUM_KEYS = 128;
 
     // Zoom settings (adjustable)
-    private int keyHeight = 12; // Default, adjustable via vertical zoom
+    int keyHeight = 12; // Default, adjustable via vertical zoom
     private float tickScale = 1.0f; // Multiplier for base tick width
     private float baseTickWidth = 1.0f; // Calculated to fit entire clip at scale=1.0
 
@@ -32,17 +32,17 @@ public class PianoRoll extends JDialog {
     private Track midiTrack;
     List<Note> notes = new ArrayList<>();
 
-    private JPanel gridPanel;
-    private JPanel keysPanel;
-    private JPanel velocityPanel;
+    JPanel gridPanel;
+    JPanel keysPanel;
+    JPanel velocityPanel;
     private JScrollPane gridScroll;
     private JScrollPane keysScroll;
 
     // Interaction state
-    private Note draggingNote = null;
-    private Note resizingNote = null;
-    private int dragOffsetX = 0;
-    private int dragOffsetY = 0;
+    Note draggingNote = null;
+    Note resizingNote = null;
+    int dragOffsetX = 0;
+    int dragOffsetY = 0;
 
     // Ghost/copy state for drag
     int dragOriginalPitch = -1;
@@ -54,7 +54,7 @@ public class PianoRoll extends JDialog {
     private JSlider vZoomSlider;
 
     // Velocity editing state
-    private boolean editingVelocity = false;
+    boolean editingVelocity = false;
 
     // Grid mode for rendering and snapping
     private enum GridMode {
@@ -95,6 +95,7 @@ public class PianoRoll extends JDialog {
 
     // Renderer delegate
     private final PianoRollRenderer renderer = new PianoRollRenderer(this);
+    private final PianoRollMouseHandler mouseHandler = new PianoRollMouseHandler(this);
 
     static class Note {
         int pitch;
@@ -216,7 +217,7 @@ public class PianoRoll extends JDialog {
         super.dispose();
     }
 
-    private float getTickWidth() {
+    float getTickWidth() {
         return baseTickWidth * tickScale;
     }
 
@@ -311,7 +312,7 @@ public class PianoRoll extends JDialog {
     /**
      * Sync notes to backend via IPC - changes apply immediately without file save
      */
-    private void syncToBackend() {
+    void syncToBackend() {
         int resolution = (sequence != null) ? sequence.getResolution() : 480;
         long[] ticks = new long[notes.size()];
         int[] pitches = new int[notes.size()];
@@ -704,203 +705,24 @@ public class PianoRoll extends JDialog {
         });
     }
 
-    /**
-     * Update velocity of notes at the given X position based on Y position
-     * Y is inverted: top = 127, bottom = 0
-     */
-    private void updateVelocityAt(int x, int y) {
-        float tw = getTickWidth();
-        int panelHeight = velocityPanel.getHeight() - 4;
-
-        // Calculate target velocity from Y (inverted: top = 127)
-        int newVelocity = 127 - (int) ((y - 2) * 127.0 / panelHeight);
-        newVelocity = Math.max(1, Math.min(127, newVelocity)); // Clamp to 1-127
-
-        // Find notes whose thin bar (4px at start) is at this X position
-        int thinBarWidth = 6; // Slightly larger hit area for usability
-        for (Note n : notes) {
-            int noteX = (int) (n.startTick * tw);
-
-            // Only match if clicking on the thin bar at the start of the note
-            if (x >= noteX && x < noteX + thinBarWidth) {
-                n.velocity = newVelocity;
-            }
-        }
-
-        velocityPanel.repaint();
-        gridPanel.repaint(); // Force grid repaint too for any highlighting
+    void updateVelocityAt(int x, int y) {
+        mouseHandler.updateVelocityAt(x, y);
     }
 
-    private int getScaledKeyHeight() {
-        return Theme.getInstance().scale(keyHeight);
+    int getScaledKeyHeight() {
+        return mouseHandler.getScaledKeyHeight();
     }
 
     private void setupMouseListeners() {
-        MouseAdapter ma = new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                int kh = getScaledKeyHeight();
-                float tw = getTickWidth();
-                int pitch = NUM_KEYS - 1 - (e.getY() / kh);
-                long tick = (long) (e.getX() / tw);
-
-                // Middle-click or Ctrl+click: Seek playhead to this position
-                if (SwingUtilities.isMiddleMouseButton(e) ||
-                        (SwingUtilities.isLeftMouseButton(e) && e.isControlDown())) {
-                    seekToTick(tick);
-                    return;
-                }
-
-                if (pitch < 0 || pitch >= NUM_KEYS)
-                    return;
-
-                Note clickedNote = getNoteAt(e.getX(), e.getY());
-
-                if (SwingUtilities.isRightMouseButton(e)) {
-                    if (clickedNote != null) {
-                        notes.remove(clickedNote);
-                        gridPanel.repaint();
-                        gridPanel.revalidate();
-                        syncToBackend(); // Auto-sync after delete
-                    }
-                } else if (SwingUtilities.isLeftMouseButton(e)) {
-                    if (clickedNote != null) {
-                        int noteEndX = (int) ((clickedNote.startTick + clickedNote.durationTicks) * tw);
-                        // If clicking near right edge -> resize
-                        if (Math.abs(e.getX() - noteEndX) <= 8) {
-                            resizingNote = clickedNote;
-                        } else {
-                            draggingNote = clickedNote;
-                            dragOffsetX = (int) (e.getX() - clickedNote.startTick * tw);
-                            dragOffsetY = pitch - clickedNote.pitch;
-                            // Store original position for ghost
-                            dragOriginalPitch = clickedNote.pitch;
-                            dragOriginalTick = clickedNote.startTick;
-                            isDraggingNote = false;
-                        }
-                    } else {
-                        // Create new note and let user drag to adjust length
-                        int snapInterval = getSnapTickInterval();
-                        long snapTick = (tick / snapInterval) * snapInterval;
-                        int minDuration = Math.max(snapInterval, sequence.getResolution() / 8); // At least grid or 1/8
-                        Note n = new Note(pitch, snapTick, minDuration, 100);
-                        notes.add(n);
-                        resizingNote = n; // Set to resizing mode so user can drag to adjust length
-                        gridPanel.repaint();
-                        gridPanel.revalidate();
-                        // Don't sync yet - wait until mouseReleased
-                    }
-                }
-            }
-
-            @Override
-            public void mouseReleased(MouseEvent e) {
-                boolean changed = false;
-                if (draggingNote != null && isDraggingNote && e.isAltDown()) {
-                    // Alt+release: Copy note to new location
-                    Note copy = new Note(draggingNote.pitch, draggingNote.startTick,
-                            draggingNote.durationTicks, draggingNote.velocity);
-                    // Restore original note position
-                    draggingNote.pitch = dragOriginalPitch;
-                    draggingNote.startTick = dragOriginalTick;
-                    // Add the copy
-                    notes.add(copy);
-                    changed = true;
-                } else if (isDraggingNote || resizingNote != null) {
-                    changed = true;
-                }
-                draggingNote = null;
-                resizingNote = null;
-                isDraggingNote = false;
-                dragOriginalPitch = -1;
-                gridPanel.repaint();
-                gridPanel.revalidate();
-
-                // Auto-sync to backend on any note change
-                if (changed) {
-                    syncToBackend();
-                }
-            }
-
-            @Override
-            public void mouseDragged(MouseEvent e) {
-                float tw = getTickWidth();
-                if (draggingNote != null) {
-                    int kh = getScaledKeyHeight();
-                    int pitch = NUM_KEYS - 1 - (e.getY() / kh);
-                    pitch = Math.max(0, Math.min(NUM_KEYS - 1, pitch));
-
-                    long tick = (long) ((e.getX() - dragOffsetX) / tw);
-                    long snapTick;
-                    if (e.isShiftDown()) {
-                        // Shift held: no snap
-                        snapTick = tick;
-                    } else {
-                        // Snap to current grid
-                        int snapInterval = getSnapTickInterval();
-                        snapTick = Math.round((double) tick / snapInterval) * snapInterval;
-                    }
-
-                    // Check drag threshold
-                    if (!isDraggingNote) {
-                        if (Math.abs(pitch - dragOriginalPitch) > 0 || Math.abs(snapTick - dragOriginalTick) > 0) {
-                            isDraggingNote = true;
-                        }
-                    }
-
-                    draggingNote.pitch = pitch;
-                    draggingNote.startTick = Math.max(0, snapTick);
-                    gridPanel.repaint();
-                } else if (resizingNote != null) {
-                    long newEndTick = (long) (e.getX() / tw);
-                    long snapEndTick;
-                    if (e.isShiftDown()) {
-                        snapEndTick = newEndTick;
-                    } else {
-                        snapEndTick = Math.round((double) newEndTick / (sequence.getResolution() / 4))
-                                * (sequence.getResolution() / 4);
-                    }
-
-                    long durTick = snapEndTick - resizingNote.startTick;
-                    resizingNote.durationTicks = Math.max(sequence.getResolution() / 8, durTick);
-                    gridPanel.repaint();
-                }
-            }
-        };
-
-        gridPanel.addMouseListener(ma);
-        gridPanel.addMouseMotionListener(ma);
+        mouseHandler.install();
     }
 
-    private Note getNoteAt(int x, int y) {
-        int kh = getScaledKeyHeight();
-        float tw = getTickWidth();
-        int pitch = NUM_KEYS - 1 - (y / kh);
-        long tick = (long) (x / tw);
-
-        for (int i = notes.size() - 1; i >= 0; i--) {
-            Note n = notes.get(i);
-            if (n.pitch == pitch && tick >= n.startTick && tick <= n.startTick + n.durationTicks) {
-                return n;
-            }
-        }
-        return null;
+    Note getNoteAt(int x, int y) {
+        return mouseHandler.getNoteAt(x, y);
     }
 
-    /**
-     * Seek the playhead to the given tick position within the clip
-     * Converts tick to absolute time (seconds) accounting for clip's start on
-     * timeline
-     */
-    private void seekToTick(long tick) {
-        int seqRes = sequence.getResolution();
-        // Convert ticks to seconds relative to clip start
-        float beatsPerSecond = bpm / 60.0f;
-        float ticksPerSecond = beatsPerSecond * seqRes;
-        float relativeSeconds = tick / ticksPerSecond;
-        // Add clip start time to get absolute position on timeline
-        float absoluteSeconds = clipStartTime + relativeSeconds;
-        BackendManager.getInstance().seek(absoluteSeconds);
+    void seekToTick(long tick) {
+        mouseHandler.seekToTick(tick);
     }
 
     boolean isBlackKey(int pitch) {

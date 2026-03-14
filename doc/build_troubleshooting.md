@@ -54,3 +54,46 @@ bazel test -c opt //...
 > # .bazelrc
 > build --compilation_mode=opt
 > ```
+
+## Test Coverage Measurement
+
+### Running Coverage
+
+Use `bazel coverage` with `--combined_report=lcov` to collect Java line-level coverage:
+
+```bash
+bazel coverage -c opt --enable_platform_specific_config \
+  :timeline_view_test :piano_roll_test :session_view_test \
+  :theme_test :component_initialization_test :backend_manager_test \
+  --combined_report=lcov
+```
+
+The combined LCOV report is written to:
+```
+bazel-out/_coverage/_coverage_report.dat
+```
+
+### Viewing Per-File Coverage
+
+Parse the LCOV report with this one-liner:
+
+```bash
+python3 -c "
+import re
+with open('$(bazel info execution_root)/bazel-out/_coverage/_coverage_report.dat') as f:
+    content = f.read()
+for block in content.split('end_of_record'):
+    sf = re.search(r'SF:(.*)', block)
+    lh = re.search(r'LH:(\d+)', block)
+    lf = re.search(r'LF:(\d+)', block)
+    if sf and lh and lf:
+        name = sf.group(1).strip()
+        hit, total = int(lh.group(1)), int(lf.group(1))
+        pct = 100.0 * hit / total if total > 0 else 0
+        if 'hibiki' in name:
+            print(f'{pct:5.1f}%  {hit:4d}/{total:4d}  {name}')
+"
+```
+
+> [!NOTE]
+> Individual test coverage `.dat` files are also available per target in the `testlogs/` directory under `bazel-out/`.

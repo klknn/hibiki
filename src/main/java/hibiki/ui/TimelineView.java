@@ -17,7 +17,7 @@ import java.util.HashMap;
 
 public class TimelineView extends JPanel implements Theme.ThemeListener {
     private static final int BASE_TRACK_HEIGHT = 80;
-    private static final int TIME_RULER_HEIGHT = 30;
+    static final int TIME_RULER_HEIGHT = 30;
     private static final int TRACK_LABEL_WIDTH = 100;
     private static final float BASE_PIXELS_PER_SECOND = 50.0f;
 
@@ -26,7 +26,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     private float vZoomScale = 1.0f; // Vertical zoom multiplier
 
     // Convenience getters for zoom-scaled values
-    private int getTrackHeight() {
+    int getTrackHeight() {
         return (int) (BASE_TRACK_HEIGHT * vZoomScale);
     }
 
@@ -70,7 +70,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     private int selectedTrack = 0; // Currently selected track for plugin/clip operations
     private static TimelineView instance; // Static reference for global access
     private final JScrollPane scrollPane;
-    private final JPanel contentPanel;
+    final JPanel contentPanel;
     private JPanel rowHeader; // Track labels panel (needs update on vZoom)
     private final Timer repaintTimer;
     private boolean autoScroll = true; // Auto-scroll to follow playhead during playback
@@ -80,25 +80,28 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     private final TimelineRenderer renderer = new TimelineRenderer(this);
 
     // Clip drag-and-drop state
-    private ClipRect draggingClip = null;
-    private int dragSourceTrack = -1;
-    private int dragStartX = 0;
-    private int dragStartY = 0;
-    private int dragCurrentY = 0; // Current Y position for rendering during cross-track drag
-    private float dragOriginalStartTime = 0;
-    private boolean isDragging = false;
+    ClipRect draggingClip = null;
+    int dragSourceTrack = -1;
+    int dragStartX = 0;
+    int dragStartY = 0;
+    int dragCurrentY = 0; // Current Y position for rendering during cross-track drag
+    float dragOriginalStartTime = 0;
+    boolean isDragging = false;
 
     // Clip creation state (like Piano Roll note creation)
-    private boolean creatingClip = false;
-    private int creatingTrackIdx = -1;
-    private float creatingStartTime = 0;
-    private ClipRect creatingClipRect = null;
+    boolean creatingClip = false;
+    int creatingTrackIdx = -1;
+    float creatingStartTime = 0;
+    ClipRect creatingClipRect = null;
 
     // Clip resize state
-    private boolean resizingClip = false;
-    private ClipRect resizeClip = null;
-    private int resizeTrackIdx = -1;
-    private float resizeOriginalDuration = 0;
+    boolean resizingClip = false;
+    ClipRect resizeClip = null;
+    int resizeTrackIdx = -1;
+    float resizeOriginalDuration = 0;
+
+    // Mouse handler delegate
+    private final TimelineMouseHandler mouseHandler = new TimelineMouseHandler(this);
 
     /** Get the singleton TimelineView instance */
     public static TimelineView getInstance() {
@@ -308,7 +311,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         });
     }
 
-    private void updateContentSize() {
+    void updateContentSize() {
         // Calculate content duration from longest track content
         float maxEndTime = 60.0f; // Minimum 60 seconds default
         for (TrackTimeline track : tracks) {
@@ -328,247 +331,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     private void setupMouseListeners() {
-        contentPanel.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                if (e.getY() < scaleTimeRuler) {
-                    updatePlayhead(e.getX());
-                } else {
-                    // Track selection
-                    int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
-                    int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
-                    if (trackIdx >= 0 && trackIdx < tracks.size()) {
-                        setSelectedTrack(trackIdx);
-
-                        // Right-click: show clip context menu if clicked on a clip, or empty area menu
-                        if (SwingUtilities.isRightMouseButton(e)) {
-                            ClipRect clip = findClipAtPosition(trackIdx, e.getX());
-                            if (clip != null) {
-                                showClipContextMenu(trackIdx, clip, e.getX(), e.getY());
-                            } else {
-                                // Show empty area context menu with "Create New Clip"
-                                float clickTime = e.getX() / getPixelsPerSecond();
-                                showEmptyAreaContextMenu(trackIdx, clickTime, e.getX(), e.getY());
-                            }
-                        } else if (SwingUtilities.isLeftMouseButton(e)) {
-                            // Left-click: check for resize handle, drag, or create new clip
-                            ClipRect clip = findClipAtPosition(trackIdx, e.getX());
-                            if (clip != null && isNearRightEdge(clip, e.getX())) {
-                                // Start resizing from right edge
-                                resizingClip = true;
-                                resizeClip = clip;
-                                resizeTrackIdx = trackIdx;
-                                resizeOriginalDuration = clip.duration;
-                            } else if (clip != null) {
-                                draggingClip = clip;
-                                dragSourceTrack = trackIdx;
-                                dragStartX = e.getX();
-                                dragStartY = e.getY();
-                                dragOriginalStartTime = clip.startTime;
-                                isDragging = false; // Will become true after threshold
-                            } else {
-                                // Start creating a new clip in empty area
-                                creatingClip = true;
-                                creatingTrackIdx = trackIdx;
-                                float startTime = e.getX() / getPixelsPerSecond();
-                                // Snap to grid unless shift is held
-                                if (!e.isShiftDown()) {
-                                    startTime = snapToBar(startTime);
-                                }
-                                creatingStartTime = startTime;
-                                // Create temporary clip rectangle for visual feedback
-                                creatingClipRect = new ClipRect();
-                                creatingClipRect.name = "New Clip";
-                                creatingClipRect.startTime = startTime;
-                                creatingClipRect.duration = 0;
-                            }
-                        }
-                    }
-                }
-            }
-
-            @Override
-            public void mouseReleased(MouseEvent e) {
-                if (draggingClip != null && isDragging) {
-                    int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                    int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
-                    int targetTrackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
-                    targetTrackIdx = Math.max(0, Math.min(tracks.size() - 1, targetTrackIdx));
-
-                    float newStartTime = Math.max(0, e.getX() / getPixelsPerSecond());
-                    // Snap to bar unless shift is held
-                    if (!e.isShiftDown()) {
-                        newStartTime = snapToBar(newStartTime);
-                    }
-
-                    boolean isCopy = e.isAltDown();
-
-                    if (isCopy) {
-                        // Alt+drag: Copy clip to new location
-                        ClipRect newClip = new ClipRect();
-                        newClip.name = draggingClip.name;
-                        newClip.path = draggingClip.path;
-                        newClip.startTime = newStartTime;
-                        newClip.duration = draggingClip.duration;
-                        newClip.waveform = draggingClip.waveform;
-
-                        // Add to target track
-                        TrackTimeline targetTrack = tracks.get(targetTrackIdx);
-                        targetTrack.clips.add(newClip);
-                        targetTrack.clipMap.put(targetTrack.clips.size() - 1, newClip);
-
-                        // Restore original clip position
-                        draggingClip.startTime = dragOriginalStartTime;
-                    } else {
-                        // Normal drag: Move clip to new location
-                        if (targetTrackIdx != dragSourceTrack) {
-                            // Moving to different track
-                            TrackTimeline sourceTrack = tracks.get(dragSourceTrack);
-                            TrackTimeline targetTrack = tracks.get(targetTrackIdx);
-
-                            // Remove from source
-                            int clipIdx = sourceTrack.clips.indexOf(draggingClip);
-                            if (clipIdx >= 0) {
-                                sourceTrack.clips.remove(clipIdx);
-                                sourceTrack.clipMap.clear();
-                                for (int i = 0; i < sourceTrack.clips.size(); i++) {
-                                    sourceTrack.clipMap.put(i, sourceTrack.clips.get(i));
-                                }
-                            }
-
-                            // Add to target
-                            draggingClip.startTime = newStartTime;
-                            targetTrack.clips.add(draggingClip);
-                            targetTrack.clipMap.put(targetTrack.clips.size() - 1, draggingClip);
-                        } else {
-                            // Same track, just update time
-                            draggingClip.startTime = newStartTime;
-                        }
-                    }
-
-                    updateContentSize();
-                    repaint();
-                }
-
-                // Reset drag state
-                draggingClip = null;
-                dragSourceTrack = -1;
-                isDragging = false;
-
-                // Handle clip resize completion
-                if (resizingClip && resizeClip != null) {
-                    // Snap duration to bar grid
-                    float endTime = resizeClip.startTime + resizeClip.duration;
-                    if (!e.isShiftDown()) {
-                        endTime = snapToBar(endTime);
-                    }
-                    float newDuration = Math.max(60.0f / bpm, endTime - resizeClip.startTime); // Min 1 beat
-                    resizeClip.duration = newDuration;
-                    float durationBeats = newDuration * (bpm / 60.0f);
-
-                    // Find clip index and sync to backend
-                    TrackTimeline track = tracks.get(resizeTrackIdx);
-                    int clipIndex = track.clips.indexOf(resizeClip);
-                    if (clipIndex >= 0) {
-                        BackendManager.getInstance().resizeTimelineClip(resizeTrackIdx, clipIndex, durationBeats);
-                    }
-                    repaint();
-                }
-
-                // Reset resize state
-                resizingClip = false;
-                resizeClip = null;
-                resizeTrackIdx = -1;
-
-                // Handle clip creation completion
-                if (creatingClip && creatingClipRect != null) {
-                    float endTime = Math.max(0, e.getX() / getPixelsPerSecond());
-                    if (!e.isShiftDown()) {
-                        endTime = snapToBar(endTime);
-                    }
-                    float duration = endTime - creatingStartTime;
-
-                    // Only create if duration is positive and meaningful
-                    if (duration > 0.1f) {
-                        // Convert dragged duration (seconds) to beats
-                        float durationBeats = duration * (bpm / 60.0f);
-                        // Send to backend - it will create the clip and notify us via TimelineClipInfo
-                        BackendManager.getInstance().addTimelineClip(creatingTrackIdx, "", creatingStartTime,
-                                durationBeats);
-                    }
-                    repaint();
-                }
-
-                // Reset creation state
-                creatingClip = false;
-                creatingTrackIdx = -1;
-                creatingClipRect = null;
-            }
-        });
-
-        contentPanel.addMouseMotionListener(new MouseMotionAdapter() {
-            @Override
-            public void mouseDragged(MouseEvent e) {
-                int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                if (e.getY() < scaleTimeRuler && draggingClip == null && !creatingClip && !resizingClip) {
-                    updatePlayhead(e.getX());
-                } else if (resizingClip && resizeClip != null) {
-                    // Update clip duration during resize
-                    float mouseTime = Math.max(0, e.getX() / getPixelsPerSecond());
-                    float newDuration = Math.max(60.0f / bpm, mouseTime - resizeClip.startTime); // Min 1 beat
-                    resizeClip.duration = newDuration;
-                    repaint();
-                } else if (creatingClip && creatingClipRect != null) {
-                    // Update clip duration during creation
-                    float endTime = Math.max(0, e.getX() / getPixelsPerSecond());
-                    if (!e.isShiftDown()) {
-                        endTime = snapToBar(endTime);
-                    }
-                    creatingClipRect.duration = Math.max(0, endTime - creatingStartTime);
-                    repaint();
-                } else if (draggingClip != null) {
-                    // Check drag threshold (5 pixels)
-                    if (!isDragging) {
-                        int dx = e.getX() - dragStartX;
-                        int dy = e.getY() - dragStartY;
-                        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-                            isDragging = true;
-                        }
-                    }
-
-                    if (isDragging) {
-                        // Update clip position visually during drag
-                        float newStartTime = Math.max(0, e.getX() / getPixelsPerSecond());
-                        // Snap to bar unless shift is held
-                        if (!e.isShiftDown()) {
-                            newStartTime = snapToBar(newStartTime);
-                        }
-                        draggingClip.startTime = newStartTime;
-                        dragCurrentY = e.getY(); // Track Y for cross-track rendering
-                        repaint();
-                    }
-                }
-            }
-
-            @Override
-            public void mouseMoved(MouseEvent e) {
-                int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
-                int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
-                if (trackIdx >= 0 && trackIdx < tracks.size()) {
-                    ClipRect clip = findClipAtPosition(trackIdx, e.getX());
-                    if (clip != null && isNearRightEdge(clip, e.getX())) {
-                        contentPanel.setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
-                    } else {
-                        contentPanel.setCursor(Cursor.getDefaultCursor());
-                    }
-                } else {
-                    contentPanel.setCursor(Cursor.getDefaultCursor());
-                }
-            }
-        });
+        mouseHandler.install();
     }
+
 
     /** Snap time to nearest bar boundary based on current BPM */
     float snapToBar(float time) {
@@ -638,7 +403,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     /** Show context menu for a timeline clip */
-    private void showClipContextMenu(int trackIdx, ClipRect clip, int x, int y) {
+    void showClipContextMenu(int trackIdx, ClipRect clip, int x, int y) {
         JPopupMenu menu = new JPopupMenu();
 
         // Edit Clip (MIDI only)
@@ -693,7 +458,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     /** Show context menu for empty track area */
-    private void showEmptyAreaContextMenu(int trackIdx, float clickTime, int x, int y) {
+    void showEmptyAreaContextMenu(int trackIdx, float clickTime, int x, int y) {
         JPopupMenu menu = new JPopupMenu();
 
         // Create New Clip
@@ -710,7 +475,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         menu.show(contentPanel, x, y);
     }
 
-    private void updatePlayhead(int x) {
+    void updatePlayhead(int x) {
         // Content panel starts at x=0, no label offset needed
         float timelineX = Math.max(0, x);
         playheadPos = timelineX / getPixelsPerSecond();

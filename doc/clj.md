@@ -671,4 +671,4 @@ and immutability in one line. In Java you'd add `equals`/`hashCode`/`toString` m
 - Java GUI and Clojure GUI use the same backend; both builds coexist
 - Clojure test startup is slower (~3s) due to runtime initialization
 - Some IDE lint errors for `ClojureMain.java` imports (expected — Clojure jar not in IDE classpath)
-- ~40 reflection warnings remain in UI rendering code; fix incrementally by adding type hints
+- All reflection warnings have been resolved with explicit type hints across all namespaces

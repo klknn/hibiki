@@ -23,8 +23,8 @@
                  (paintComponent [^Graphics g]
                    (proxy-super paintComponent g)
                    (let [^Graphics2D g2 (cast Graphics2D g)
-                         w (.getWidth this)
-                         h (.getHeight this)
+                         w (.getWidth ^JPanel this)
+                         h (.getHeight ^JPanel this)
                          [l r] @levels
                          bar-w (/ (- w 2) 2)
                          lh (int (* h (min 1.0 (max 0.0 l))))
@@ -72,7 +72,7 @@
 (defn make-top-bar
   "Creates the top toolbar. Returns {:panel JPanel :set-view-toggle fn}.
    backend: hibiki.BackendManager instance."
-  [backend]
+  [^hibiki.BackendManager backend]
   (let [panel    (JPanel. (BorderLayout.))
         left     (JPanel. (FlowLayout. FlowLayout/LEFT 5 2))
         center   (JPanel. (FlowLayout. FlowLayout/CENTER 5 2))
@@ -130,19 +130,19 @@
 
     (.setBackground panel (t/color :bg-darker))
     (.setPreferredSize panel (Dimension. 0 (t/scale 35)))
-    (doseq [p [left center right]]
+    (doseq [^JPanel p [left center right]]
       (.setOpaque p false))
 
-    (.add left play-btn)
-    (.add left stop-btn)
+    (.add left ^JButton play-btn)
+    (.add left ^JButton stop-btn)
     (.add left (Box/createHorizontalStrut (t/scale 10)))
-    (.add left bpm-lbl)
+    (.add left ^JLabel bpm-lbl)
 
-    (.add center session-btn)
-    (.add center timeline-btn)
+    (.add center ^JToggleButton session-btn)
+    (.add center ^JToggleButton timeline-btn)
 
-    (.add right save-btn)
-    (.add right load-btn)
+    (.add right ^JButton save-btn)
+    (.add right ^JButton load-btn)
 
     (.add panel left BorderLayout/WEST)
     (.add panel center BorderLayout/CENTER)

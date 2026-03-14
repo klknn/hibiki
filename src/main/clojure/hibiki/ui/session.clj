@@ -48,7 +48,7 @@
     (.finish builder req)
     (.sendRequest backend builder)))
 
-(defn- send-stop-track [backend track-idx]
+(defn- send-stop-track [^hibiki.BackendManager backend ^long track-idx]
   (let [builder (FlatBufferBuilder. 64)
         cmd (do (StopTrack/startStopTrack builder)
                 (StopTrack/addTrackIndex builder track-idx)
@@ -57,7 +57,7 @@
     (.finish builder req)
     (.sendRequest backend builder)))
 
-(defn- send-play-scene [backend slot-idx]
+(defn- send-play-scene [^hibiki.BackendManager backend ^long slot-idx]
   (let [builder (FlatBufferBuilder. 64)
         cmd (do (PlayScene/startPlayScene builder)
                 (PlayScene/addSlotIndex builder slot-idx)
@@ -66,7 +66,7 @@
     (.finish builder req)
     (.sendRequest backend builder)))
 
-(defn- send-set-clip-loop [backend track-idx slot-idx loop?]
+(defn- send-set-clip-loop [^hibiki.BackendManager backend ^long track-idx ^long slot-idx loop?]
   (let [builder (FlatBufferBuilder. 64)
         cmd (do (SetClipLoop/startSetClipLoop builder)
                 (SetClipLoop/addTrackIndex builder track-idx)
@@ -77,7 +77,7 @@
     (.finish builder req)
     (.sendRequest backend builder)))
 
-(defn- send-delete-clip [backend track-idx slot-idx]
+(defn- send-delete-clip [^hibiki.BackendManager backend ^long track-idx ^long slot-idx]
   (let [builder (FlatBufferBuilder. 64)
         cmd (do (DeleteClip/startDeleteClip builder)
                 (DeleteClip/addTrackIndex builder track-idx)
@@ -128,7 +128,7 @@
     (.addActionListener edit-item
       (reify ActionListener
         (actionPerformed [_ _]
-          (let [path (aget ^"[Ljava.lang.String;" (aget (:slot-paths @session-state) track-idx) slot-idx)]
+           (let [path (aget ^"[Ljava.lang.String;" (aget ^"[[Ljava.lang.String;" (:slot-paths @session-state) track-idx) slot-idx)]
             (if (and path (.endsWith ^String path ".mid"))
               ;; TODO: open PianoRoll
               (println "Would open PianoRoll for" path)
@@ -155,16 +155,16 @@
     (when (not= prev track-idx)
       (swap! session-state assoc :selected-track track-idx)
       (dotimes [i 4]
-        (when-let [strip (aget (:track-strips @session-state) i)]
+        (when-let [strip (aget ^"[Ljavax.swing.JPanel;" (:track-strips @session-state) i)]
           (if (= i track-idx)
-            (do (.setBackground ^JPanel strip (.darker (.darker (t/color :accent-blue))))
-                (when-let [hdr (aget (:track-headers @session-state) i)]
-                  (.setBackground ^JLabel hdr (.darker (t/color :accent-blue)))))
+            (do (.setBackground ^JPanel strip (.darker ^java.awt.Color (.darker ^java.awt.Color (t/color :accent-blue))))
+                (when-let [hdr (aget ^"[Ljavax.swing.JLabel;" (:track-headers @session-state) i)]
+                  (.setBackground ^JLabel hdr (.darker ^java.awt.Color (t/color :accent-blue)))))
             (do (.setBackground ^JPanel strip (t/color :panel-bg))
-                (when-let [hdr (aget (:track-headers @session-state) i)]
+                (when-let [hdr (aget ^"[Ljavax.swing.JLabel;" (:track-headers @session-state) i)]
                   (.setBackground ^JLabel hdr (t/color :track-header))))))))))
 
-(defn- create-track-strip [backend session-panel track-idx name]
+(defn- create-track-strip [^hibiki.BackendManager backend ^JPanel session-panel ^long track-idx ^String name]
   (let [strip (JPanel.)
         header (doto (JLabel. (str track-idx " " name) SwingConstants/CENTER)
                  (.setAlignmentX Component/CENTER_ALIGNMENT)
@@ -175,16 +175,16 @@
                  (.setForeground (t/color :text-bright))
                  (.setFont (t/font :font-ui-bold))
                  (.setOpaque true)
-                 (.setBorder (BorderFactory/createMatteBorder 0 0 1 0 (t/color :border)))
+                 (.setBorder (BorderFactory/createMatteBorder (int 0) (int 0) (int 1) (int 0) ^java.awt.Color (t/color :border)))
                  (.setCursor (Cursor/getPredefinedCursor Cursor/HAND_CURSOR)))]
     (.setLayout strip (BoxLayout. strip BoxLayout/Y_AXIS))
     (.setBackground strip (t/color :panel-bg))
     (.setPreferredSize strip (Dimension. (t/scale 110) (t/scale 400)))
     (.setMaximumSize strip (Dimension. (t/scale 110) 32767))
-    (.setBorder strip (BorderFactory/createMatteBorder 0 0 0 1 (t/color :border)))
+    (.setBorder strip (BorderFactory/createMatteBorder (int 0) (int 0) (int 0) (int 1) ^java.awt.Color (t/color :border)))
 
-    (aset (:track-strips @session-state) track-idx strip)
-    (aset (:track-headers @session-state) track-idx header)
+    (aset ^"[Ljavax.swing.JPanel;" (:track-strips @session-state) track-idx strip)
+    (aset ^"[Ljavax.swing.JLabel;" (:track-headers @session-state) track-idx header)
 
     (.addMouseListener header
       (proxy [MouseAdapter] []
@@ -262,9 +262,9 @@
                      (.setOpaque p false)
                      (.add p vol-slider)
                      p)]
-      (aset (:track-meters @session-state) track-idx {:set-levels! set-levels!})
+      (aset ^"[Ljava.lang.Object;" (:track-meters @session-state) track-idx {:set-levels! set-levels!})
       (.add controls (Box/createHorizontalStrut (t/scale 10)))
-      (.add controls meter-panel)
+      (.add controls ^JPanel meter-panel)
       (.add controls (Box/createHorizontalStrut (t/scale 5)))
       (.add controls vol-panel)
       (.add controls (Box/createHorizontalStrut (t/scale 10)))
@@ -299,13 +299,13 @@
       (.add strip (Box/createVerticalStrut (t/scale 5))))
     strip))
 
-(defn- create-master-strip [backend]
+(defn- create-master-strip [^hibiki.BackendManager backend]
   (let [strip (let [p (JPanel.)]
                 (.setLayout p (BoxLayout. p BoxLayout/Y_AXIS))
                 (.setBackground p (t/color :panel-bg))
                 (.setPreferredSize p (Dimension. (t/scale 110) (t/scale 400)))
                 (.setMaximumSize p (Dimension. (t/scale 110) 32767))
-                (.setBorder p (BorderFactory/createMatteBorder 0 0 0 1 (t/color :border)))
+                (.setBorder p (BorderFactory/createMatteBorder (int 0) (int 0) (int 0) (int 1) ^java.awt.Color (t/color :border)))
                 p)
         header (doto (JLabel. "Master" SwingConstants/CENTER)
                  (.setAlignmentX Component/CENTER_ALIGNMENT)
@@ -316,7 +316,7 @@
                  (.setForeground (t/color :text-bright))
                  (.setFont (t/font :font-ui-bold))
                  (.setOpaque true)
-                 (.setBorder (BorderFactory/createMatteBorder 0 0 1 0 (t/color :border))))]
+                 (.setBorder (BorderFactory/createMatteBorder (int 0) (int 0) (int 1) (int 0) ^java.awt.Color (t/color :border))))]
     (.add strip header)
     (dotimes [i 5]
       (let [scene-btn (doto (JButton. (str (inc i) " ►"))
@@ -346,7 +346,7 @@
 
 (defn make-session-view
   "Creates the session view panel. Returns {:panel JPanel}."
-  [backend]
+  [^hibiki.BackendManager backend]
   (let [panel (doto (JPanel. (BorderLayout.))
                 (.setBackground (t/color :bg-dark)))
         master (create-master-strip backend)
@@ -355,7 +355,7 @@
     (.setBackground track-panel (t/color :bg-dark))
 
     (dotimes [i 4]
-      (.add track-panel (create-track-strip backend panel i (str "Track " i))))
+      (.add track-panel ^JPanel (create-track-strip backend panel i (str "Track " i))))
 
     (let [scroll (doto (javax.swing.JScrollPane. track-panel)
                    (.setHorizontalScrollBarPolicy javax.swing.JScrollPane/HORIZONTAL_SCROLLBAR_AS_NEEDED)
@@ -364,7 +364,7 @@
                    (.setBackground (t/color :bg-dark)))]
       (.setUnitIncrement (.getHorizontalScrollBar scroll) (t/scale 16))
       (.add panel scroll BorderLayout/CENTER)
-      (.add panel master BorderLayout/EAST))
+      (.add panel ^JPanel master BorderLayout/EAST))
 
     ;; Notification handler
     (.addNotificationListener backend
@@ -377,8 +377,8 @@
               (let [ti (.trackIndex info) si (.slotIndex info) nm (.name info)]
                 (SwingUtilities/invokeLater
                   #(when (and (>= ti 0) (< ti 4) (>= si 0) (< si 5))
-                     (let [btn (aget ^"[Ljavax.swing.JButton;"
-                                     (aget ^"[[Ljavax.swing.JButton;" (:slot-buttons @session-state) ti) si)]
+                     (let [^JButton btn (aget ^"[Ljavax.swing.JButton;"
+                                              (aget ^"[[Ljavax.swing.JButton;" (:slot-buttons @session-state) ti) si)]
                        (when btn
                          (if (.isEmpty ^String nm)
                            (do (.setText btn "")
@@ -395,14 +395,14 @@
                    (let [l (.levels tl i)
                          ti (.trackIndex l)]
                      (when (and (>= ti 0) (< ti 4))
-                       (when-let [meter (aget (:track-meters @session-state) ti)]
+                        (when-let [meter (aget ^"[Ljava.lang.Object;" (:track-meters @session-state) ti)]
                          ((:set-levels! meter) (.peakL l) (.peakR l))))))))
 
             Response/ClearProject
             (SwingUtilities/invokeLater
               #(doseq [ti (range 1 5) si (range 5)]
-                 (let [btn (aget ^"[Ljavax.swing.JButton;"
-                                 (aget ^"[[Ljavax.swing.JButton;" (:slot-buttons @session-state) ti) si)]
+                 (let [^JButton btn (aget ^"[Ljavax.swing.JButton;"
+                                          (aget ^"[[Ljavax.swing.JButton;" (:slot-buttons @session-state) ti) si)]
                    (when btn
                      (.setText btn "")
                      (.setBackground btn (t/color :panel-bg-light))

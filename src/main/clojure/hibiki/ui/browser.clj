@@ -154,7 +154,7 @@
         panel  (doto (JPanel. (BorderLayout.))
                  (.setBackground (t/color :bg-dark))
                  (.setPreferredSize (Dimension. (t/scale 220) 0))
-                 (.setBorder (BorderFactory/createMatteBorder 0 0 0 1 (t/color :border)))
+                 (.setBorder (BorderFactory/createMatteBorder (int 0) (int 0) (int 0) (int 1) ^java.awt.Color (t/color :border)))
                  (.add header BorderLayout/NORTH)
                  (.add scroll BorderLayout/CENTER))
 

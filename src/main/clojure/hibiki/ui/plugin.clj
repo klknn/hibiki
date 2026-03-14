@@ -65,11 +65,11 @@
 ;; Device panel
 ;; ---------------------------------------------------------------------------
 
-(defn- make-param-slider [backend track-idx plugin-idx info]
+(defn- make-param-slider [^hibiki.BackendManager backend ^long track-idx ^long plugin-idx ^ParamInfo info]
   (let [name (.name info)
         slider (doto (JSlider. 0 1000 (int (* (.defaultValue info) 1000)))
                  (.setBackground (t/color :panel-bg)))
-        lbl (doto (JLabel. name)
+        lbl (doto (JLabel. ^String name)
               (.setForeground (t/color :text-normal))
               (.setFont (t/font :font-ui)))
         panel (doto (JPanel. (BorderLayout.))
@@ -129,12 +129,12 @@
                 (.add body BorderLayout/CENTER))]
     {:panel panel
      :param-list param-list
-     :set-params! (fn [param-list-data]
+     :set-params! (fn [^ParamList param-list-data]
                     (.removeAll param-list)
                     (dotimes [i (.paramsLength param-list-data)]
                       (let [info (.params param-list-data i)
                             ps (make-param-slider backend track-idx plugin-idx info)]
-                        (.add param-list (:panel ps))))
+                        (.add param-list ^JPanel (:panel ps))))
                     (.revalidate param-list)
                     (.repaint param-list))}))
 
@@ -144,7 +144,7 @@
 
 (defn make-plugin-pane
   "Creates the plugin parameter pane. Returns {:panel JPanel :set-selected-track! fn}."
-  [backend]
+  [^hibiki.BackendManager backend]
   (let [chain-content (let [p (JPanel.)]
                         (.setLayout p (BoxLayout. p BoxLayout/X_AXIS))
                         (.setBackground p (t/color :bg-dark))
@@ -162,7 +162,8 @@
     ;; Notification handler for param updates
     (.addNotificationListener backend
       (reify java.util.function.Consumer
-        (accept [_ notification]
+        (accept [_ notif]
+          (let [^Notification notification notif]
           (when (= (.responseType notification) Response/ParamList)
             (let [pl ^ParamList (.response notification (ParamList.))
                   ti (.trackIndex pl)
@@ -177,9 +178,9 @@
                      (let [dp (make-device-panel backend ti pi pname is-inst)]
                        (swap! plugin-state assoc-in [:track-devices ti pi] dp)
                        (when (= ti (:selected-track @plugin-state))
-                         (.add chain-content (:panel dp))
+                         (.add chain-content ^JPanel (:panel dp))
                          (.revalidate chain-content)
-                         (.repaint chain-content)))))))))))
+                         (.repaint chain-content))))))))))))
 
     (swap! plugin-state assoc :instance panel)
     {:panel panel
@@ -187,6 +188,6 @@
                             (swap! plugin-state assoc :selected-track idx)
                             (.removeAll chain-content)
                             (doseq [[_ dp] (sort-by key (get-in @plugin-state [:track-devices idx] {}))]
-                              (.add chain-content (:panel dp)))
+                              (.add chain-content ^JPanel (:panel dp)))
                             (.revalidate chain-content)
                             (.repaint chain-content))}))

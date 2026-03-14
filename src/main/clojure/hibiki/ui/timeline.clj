@@ -87,7 +87,7 @@
       (let [y (* i track-height)
             track (nth tracks i)]
         ;; Track background
-        (.setColor g (if (= i sel) (.darker (.darker (t/color :accent-blue))) (t/color :bg-medium)))
+        (.setColor g (if (= i sel) (.darker ^Color (.darker ^Color (t/color :accent-blue))) (t/color :bg-medium)))
         (.fillRect g 0 y w track-height)
         ;; Track border
         (.setColor g (t/color :border))
@@ -105,7 +105,7 @@
             (let [name (or (:name clip) (when (:path clip)
                                           (.getName (java.io.File. ^String (:path clip))))
                            "Clip")]
-              (.drawString g ^String name (+ cx 4) (+ y 16)))))))))
+              (.drawString g ^String name (int (+ cx 4)) (int (+ y 16))))))))))
 
 (defn- paint-playhead [^Graphics2D g h]
   (let [x (seconds-to-x (:playhead-sec @tl-state))]
@@ -120,21 +120,22 @@
 
 (defn make-timeline-view
   "Creates the timeline view panel. Returns {:panel JPanel}."
-  [backend]
+  [^hibiki.BackendManager backend]
   (let [track-height (t/scale 80)
-        grid-panel (proxy [JPanel] []
-                     (paintComponent [^Graphics g]
-                       (proxy-super paintComponent g)
-                       (let [^Graphics2D g2 (cast Graphics2D g)
-                             w (.getWidth this)
-                             h (.getHeight this)]
-                         (.setRenderingHint g2 RenderingHints/KEY_ANTIALIASING
-                                           RenderingHints/VALUE_ANTIALIAS_ON)
-                         (paint-grid g2 w h)
-                         (paint-tracks g2 w h track-height)
-                         (paint-playhead g2 h))))
+        grid-panel (let [p (proxy [JPanel] []
+                          (paintComponent [^Graphics g]
+                            (let [^JPanel this this] (proxy-super paintComponent g))
+                            (let [^Graphics2D g2 (cast Graphics2D g)
+                                  w (.getWidth ^JPanel this)
+                                  h (.getHeight ^JPanel this)]
+                              (.setRenderingHint g2 RenderingHints/KEY_ANTIALIASING
+                                                RenderingHints/VALUE_ANTIALIAS_ON)
+                              (paint-grid g2 w h)
+                              (paint-tracks g2 w h track-height)
+                              (paint-playhead g2 h))))]
+                     p)
         header-panel (proxy [JPanel] []
-                       (paintComponent [^Graphics g]
+                       (paintComponent [^java.awt.Graphics g]
                          (proxy-super paintComponent g)
                          (let [^Graphics2D g2 (cast Graphics2D g)]
                            (.setColor g2 (t/color :text-dim))
@@ -145,7 +146,7 @@
                                  (let [x (seconds-to-x sec)
                                        min (int (/ sec 60))
                                        s   (mod (int sec) 60)]
-                                   (.drawString g2 (format "%d:%02d" min s) x 12)
+                                   (.drawString g2 (format "%d:%02d" min s) (int x) (int 12))
                                    (.drawLine g2 x 14 x 20))
                                  (recur (+ sec 1.0))))))))
         track-labels (let [p (JPanel.)]
@@ -170,7 +171,7 @@
                   (.setFont (t/font :font-ui-bold))
                   (.setOpaque true)
                   (.setBackground (t/color :bg-darker))
-                  (.setBorder (BorderFactory/createMatteBorder 0 0 1 1 (t/color :border))))]
+                  (.setBorder (BorderFactory/createMatteBorder (int 0) (int 0) (int 1) (int 1) ^Color (t/color :border))))]
         (.addMouseListener lbl
           (proxy [MouseAdapter] []
             (mousePressed [^MouseEvent _] (set-selected-track i))))
@@ -199,7 +200,7 @@
     ;; Grid mode selector
     (let [modes (into-array String ["Auto" "1 sec" "Bar" "1/2" "1/4" "1/8" "1/16" "1/32"
                                      "1/4T" "1/8T" "1/16T" "1/32T"])
-          combo (JComboBox. modes)]
+          combo (JComboBox. ^"[Ljava.lang.Object;" modes)]
       (.setFont combo (t/font :font-ui))
       (.setMaximumSize combo (Dimension. (t/scale 80) (t/scale 22)))
       (.addActionListener combo

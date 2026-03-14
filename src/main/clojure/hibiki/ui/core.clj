@@ -27,11 +27,11 @@
   (try
     (let [p (.start (ProcessBuilder. ["gsettings" "get"
                                       "org.gnome.desktop.interface" "scaling-factor"]))
-          line (with-open [r (clojure.java.io/reader (.getInputStream p))]
+          line (with-open [r (java.io.BufferedReader. (clojure.java.io/reader (.getInputStream p)))]
                  (.readLine r))]
       (.waitFor p)
-      (when (and line (.startsWith line "uint32 "))
-        (let [v (Integer/parseInt (.trim (.substring line 7)))]
+      (when (and line (.startsWith ^String line "uint32 "))
+        (let [v (Integer/parseInt (.trim ^String (.substring ^String line 7)))]
           (when (pos? v) (str v)))))
     (catch Exception _ nil)))
 
@@ -70,8 +70,8 @@
 
     (.setBackground main-panel (t/color :bg-dark))
 
-    (.add center session-panel "SESSION")
-    (.add center timeline-panel "TIMELINE")
+    (.add center ^JPanel session-panel "SESSION")
+    (.add center ^JPanel timeline-panel "TIMELINE")
 
     ((:set-view-toggle! top-bar)
      (fn [is-timeline?]
@@ -79,16 +79,16 @@
          (.show cl center (if is-timeline? "TIMELINE" "SESSION")))))
 
     (let [v-split (doto (JSplitPane. JSplitPane/VERTICAL_SPLIT center plugin-panel)
-                    (.setDividerLocation (t/scale 450))
+                    (.setDividerLocation (int (t/scale 450)))
                     (.setDividerSize (t/scale 2))
                     (.setBorder nil)
                     (.setBackground (t/color :bg-dark)))
           h-split (doto (JSplitPane. JSplitPane/HORIZONTAL_SPLIT browser-panel v-split)
-                    (.setDividerLocation (t/scale 220))
+                    (.setDividerLocation (int (t/scale 220)))
                     (.setDividerSize (t/scale 2))
                     (.setBorder nil)
                     (.setBackground (t/color :bg-dark)))]
-      (.add main-panel (:panel top-bar) BorderLayout/NORTH)
+      (.add main-panel ^JPanel (:panel top-bar) BorderLayout/NORTH)
       (.add main-panel h-split BorderLayout/CENTER))
 
     ;; Status bar
@@ -146,7 +146,7 @@
       ;; 1-4 = Select track
       (doseq [i (range 1 5)]
         (let [key-name (str "selectTrack" i)]
-          (.put im (KeyStroke/getKeyStroke (+ KeyEvent/VK_0 i) 0) key-name)
+          (.put im (KeyStroke/getKeyStroke (int (+ KeyEvent/VK_0 i)) (int 0)) key-name)
           (.put am key-name (proxy [AbstractAction] []
                               (actionPerformed [_]
                                 (timeline/set-selected-track (dec i))
@@ -183,6 +183,6 @@
                (.setIconImage frame img)))
            (catch Exception _ nil))
 
-         (.add frame (make-main-view backend))
+         (.add frame ^JPanel (make-main-view backend))
          (.setLocationRelativeTo frame nil)
          (.setVisible frame true)))))

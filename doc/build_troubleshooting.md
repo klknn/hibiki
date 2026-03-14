@@ -75,7 +75,13 @@ bazel-out/_coverage/_coverage_report.dat
 
 ### Viewing Per-File Coverage
 
-Parse the LCOV report with this one-liner:
+1. Generate the LCOV official report:
+
+```bash
+genhtml --output genhtml "bazel-out/_coverage/_coverage_report.dat" --ignore-errors inconsistent
+```
+
+2. Parse the LCOV report with this one-liner:
 
 ```bash
 python3 -c "

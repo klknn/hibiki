@@ -577,8 +577,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         // Edit Clip (MIDI only)
         JMenuItem editItem = new JMenuItem("Edit Clip...");
         editItem.addActionListener(e -> {
-            if (clip.path != null && clip.path.endsWith(".mid")) {
-                File file = new File(clip.path);
+            boolean isMidi = (clip.path != null && clip.path.endsWith(".mid"))
+                    || clip.path == null; // Empty clips are treated as MIDI
+            if (isMidi) {
+                File file = clip.path != null ? new File(clip.path) : new File("New Clip.mid");
                 JFrame ownerFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
                 // Find clip index in track's timeline clips
                 TrackTimeline trackTimeline = tracks.get(trackIdx);

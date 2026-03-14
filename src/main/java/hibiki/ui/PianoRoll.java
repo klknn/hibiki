@@ -183,8 +183,15 @@ public class PianoRoll extends JDialog {
         javax.swing.SwingUtilities.invokeLater(() -> {
             notes.clear();
             int resolution = data.resolution();
-            if (resolution > 0 && sequence != null) {
-                // Keep resolution sync - but we use the sequence's PPQ for display
+            if (resolution > 0 && (sequence == null || sequence.getResolution() != resolution)) {
+                // Create new sequence matching backend resolution so grid lines align with note
+                // ticks
+                try {
+                    sequence = new javax.sound.midi.Sequence(javax.sound.midi.Sequence.PPQ, resolution);
+                    midiTrack = sequence.createTrack();
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
             }
             for (int i = 0; i < data.eventsLength(); i++) {
                 MidiEventData ev = data.events(i);

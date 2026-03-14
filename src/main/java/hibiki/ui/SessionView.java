@@ -4,15 +4,7 @@ import javax.swing.*;
 import java.awt.*;
 import hibiki.BackendManager;
 import hibiki.SimpleLaf;
-import com.google.flatbuffers.FlatBufferBuilder;
-import hibiki.ipc.Request;
-import hibiki.ipc.Command;
-import hibiki.ipc.PlayClip;
-import hibiki.ipc.StopTrack;
-import hibiki.ipc.LoadClip;
-import hibiki.ipc.SetClipLoop;
-import hibiki.ipc.PlayScene;
-import hibiki.ipc.DeleteClip;
+
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
@@ -257,7 +249,7 @@ public class SessionView extends JPanel {
             clipBtn.setFocusPainted(false);
 
             int slotIdx = i;
-            clipBtn.addActionListener(e -> sendPlayClip(trackIdx, slotIdx));
+            clipBtn.addActionListener(e -> ipc.sendPlayClip(trackIdx, slotIdx));
 
             clipBtn.addMouseListener(new MouseAdapter() {
                 public void mousePressed(MouseEvent e) {
@@ -352,7 +344,7 @@ public class SessionView extends JPanel {
         strip.add(panSlider);
 
         // Activator
-        JButton activeBtn = createFlatButton("" + trackIdx, e -> sendStopTrack(trackIdx));
+        JButton activeBtn = createFlatButton("" + trackIdx, e -> ipc.sendStopTrack(trackIdx));
         activeBtn.setBackground(new Color(200, 160, 50));
         activeBtn.setForeground(Color.BLACK);
         strip.add(Box.createVerticalStrut(Theme.getInstance().scale(5)));
@@ -384,7 +376,7 @@ public class SessionView extends JPanel {
 
         for (int i = 0; i < 5; i++) {
             int sceneIdx = i;
-            JButton sceneBtn = createFlatButton((i + 1) + " ►", e -> sendPlayScene(sceneIdx));
+            JButton sceneBtn = createFlatButton((i + 1) + " ►", e -> ipc.sendPlayScene(sceneIdx));
             sceneBtn.setMinimumSize(new Dimension(Theme.getInstance().scale(100), Theme.getInstance().scale(30)));
             sceneBtn.setMaximumSize(new Dimension(Theme.getInstance().scale(100), Theme.getInstance().scale(30)));
             sceneBtn.setPreferredSize(new Dimension(Theme.getInstance().scale(100), Theme.getInstance().scale(30)));
@@ -464,13 +456,13 @@ public class SessionView extends JPanel {
 
         JCheckBoxMenuItem loopItem = new JCheckBoxMenuItem("Loop");
         loopItem.addActionListener(e -> {
-            sendSetClipLoop(trackIdx, slotIdx, loopItem.isSelected());
+            ipc.sendSetClipLoop(trackIdx, slotIdx, loopItem.isSelected());
         });
         menu.add(loopItem);
 
         menu.addSeparator();
         JMenuItem deleteItem = new JMenuItem("Delete Clip");
-        deleteItem.addActionListener(e -> sendDeleteClip(trackIdx, slotIdx));
+        deleteItem.addActionListener(e -> ipc.sendDeleteClip(trackIdx, slotIdx));
         menu.add(deleteItem);
 
         menu.show(btn, x, y);
@@ -479,25 +471,4 @@ public class SessionView extends JPanel {
     void sendLoadClip(int trackIdx, int slotIdx, String path, boolean isLoop) {
         ipc.sendLoadClip(trackIdx, slotIdx, path, isLoop);
     }
-
-    private void sendSetClipLoop(int trackIdx, int slotIdx, boolean isLoop) {
-        ipc.sendSetClipLoop(trackIdx, slotIdx, isLoop);
-    }
-
-    private void sendPlayClip(int trackIdx, int slotIdx) {
-        ipc.sendPlayClip(trackIdx, slotIdx);
-    }
-
-    private void sendStopTrack(int trackIdx) {
-        ipc.sendStopTrack(trackIdx);
-    }
-
-    private void sendPlayScene(int slotIdx) {
-        ipc.sendPlayScene(slotIdx);
-    }
-
-    private void sendDeleteClip(int trackIdx, int slotIdx) {
-        ipc.sendDeleteClip(trackIdx, slotIdx);
-    }
-
 }

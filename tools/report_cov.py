@@ -43,8 +43,8 @@ def parse_lcov(path: str) -> dict[str, tuple[int, int]]:
         if not sf_match:
             continue
         source = sf_match.group(1)
-        if "/hibiki/ui/" not in source or source.endswith("Test.java"):
-            continue
+        # if "/hibiki/ui/" not in source or source.endswith("Test.java"):
+        #     continue
 
         basename = os.path.basename(source)
         lh = sum(int(line.split(":")[1]) for line in record.split("\n") if line.startswith("LH:"))

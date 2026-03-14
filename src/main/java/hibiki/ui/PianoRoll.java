@@ -199,23 +199,6 @@ public class PianoRoll extends JDialog {
         }
     }
 
-    private boolean hasNotes(Track t) {
-        return midiModel.hasNotes(t);
-    }
-
-    private void parseTrack(Track track) {
-        midiModel.parseTrack(track);
-        notes.clear();
-        for (MidiDataModel.Note mn : midiModel.notes) {
-            notes.add(new Note(mn.pitch, mn.startTick, mn.durationTicks, mn.velocity));
-        }
-    }
-
-    private void saveMidi() {
-        // Sync to backend via IPC (immediate in-memory update)
-        syncToBackend();
-    }
-
     /** Sync notes to backend via IPC - changes apply immediately without file save */
     void syncToBackend() {
         midiModel.notes.clear();
@@ -224,30 +207,6 @@ public class PianoRoll extends JDialog {
         midiModel.syncToBackend(trackIdx, slotIdx, clipIdx);
     }
 
-    private SessionView getParentSessionView() {
-        Component c = getOwner();
-        while (c != null) {
-            if (c instanceof JFrame) {
-                JFrame f = (JFrame) c;
-                return findSessionView(f.getContentPane());
-            }
-            c = c.getParent();
-        }
-        return null;
-    }
-
-    private SessionView findSessionView(Container c) {
-        if (c instanceof SessionView)
-            return (SessionView) c;
-        for (Component child : c.getComponents()) {
-            if (child instanceof Container) {
-                SessionView sv = findSessionView((Container) child);
-                if (sv != null)
-                    return sv;
-            }
-        }
-        return null;
-    }
 
     private void initUI() {
         setLayout(new BorderLayout());

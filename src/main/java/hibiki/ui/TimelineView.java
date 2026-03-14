@@ -30,7 +30,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         return (int) (BASE_TRACK_HEIGHT * vZoomScale);
     }
 
-    private float getPixelsPerSecond() {
+    float getPixelsPerSecond() {
         return BASE_PIXELS_PER_SECOND * hZoomScale;
     }
 
@@ -62,7 +62,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     private GridMode gridMode = GridMode.AUTO;
-    private volatile float bpm = 120.0f;
+    volatile float bpm = 120.0f;
     private volatile boolean isPlaying = false;
 
     volatile float playheadPos = 0.0f; // volatile for thread-safe updates from notification thread
@@ -75,6 +75,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     private final Timer repaintTimer;
     private boolean autoScroll = true; // Auto-scroll to follow playhead during playback
     private int playheadScreenOffset = -1; // Screen X position to keep playhead at during auto-scroll
+
+    // Renderer delegate
+    private final TimelineRenderer renderer = new TimelineRenderer(this);
 
     // Clip drag-and-drop state
     private ClipRect draggingClip = null;
@@ -568,7 +571,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     /** Snap time to nearest bar boundary based on current BPM */
-    private float snapToBar(float time) {
+    float snapToBar(float time) {
         float secondsPerBeat = 60.0f / bpm;
         float secondsPerBar = secondsPerBeat * 4; // 4/4 time signature
         return Math.round(time / secondsPerBar) * secondsPerBar;
@@ -615,7 +618,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     /** Find clip at the given x position in the specified track */
-    private ClipRect findClipAtPosition(int trackIdx, int x) {
+    ClipRect findClipAtPosition(int trackIdx, int x) {
         if (trackIdx < 0 || trackIdx >= tracks.size())
             return null;
         TrackTimeline track = tracks.get(trackIdx);
@@ -629,7 +632,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     /** Check if x position is near the right edge of a clip (within 8px) */
-    private boolean isNearRightEdge(ClipRect clip, int x) {
+    boolean isNearRightEdge(ClipRect clip, int x) {
         int rightEdgeX = (int) ((clip.startTime + clip.duration) * getPixelsPerSecond());
         return Math.abs(x - rightEdgeX) <= 8;
     }
@@ -780,283 +783,17 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     private void drawTrackLabels(Graphics g) {
-        Graphics2D g2 = (Graphics2D) g;
-        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-        int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-        int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
-        int scaleLabelWidth = Theme.getInstance().scale(TRACK_LABEL_WIDTH);
-
-        // Draw time ruler corner
-        g2.setColor(Theme.getInstance().BG_DARKER);
-        g2.fillRect(0, 0, scaleLabelWidth, scaleTimeRuler);
-
-        // Draw track labels
-        for (int i = 0; i < tracks.size(); i++) {
-            int y = scaleTimeRuler + i * scaleTrackHeight;
-
-            // Draw label background
-            if (i == selectedTrack) {
-                g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
-            } else {
-                g2.setColor(Theme.getInstance().TRACK_HEADER);
-            }
-            g2.fillRect(0, y, scaleLabelWidth, scaleTrackHeight - 1);
-
-            // Draw track number
-            g2.setColor(Theme.getInstance().TEXT_BRIGHT);
-            g2.setFont(Theme.getInstance().FONT_UI_BOLD);
-            g2.drawString(tracks.get(i).getDisplayName(), 5, y + 16);
-
-            // Draw plugin name if available
-            TrackTimeline track = tracks.get(i);
-            if (track.pluginName != null) {
-                g2.setFont(Theme.getInstance().FONT_UI);
-                g2.setColor(track.isInstrument ? Theme.getInstance().ACCENT_ORANGE : Theme.getInstance().TEXT_DIM);
-                String pname = track.pluginName;
-                if (pname.length() > 12)
-                    pname = pname.substring(0, 11) + "…";
-                g2.drawString(pname, 5, y + 32);
-            } else {
-                g2.setFont(Theme.getInstance().FONT_UI);
-                g2.setColor(Theme.getInstance().TEXT_DIM);
-                g2.drawString("(no plugin)", 5, y + 32);
-            }
-
-            // Draw separator line
-            g2.setColor(Theme.getInstance().BORDER);
-            g2.drawLine(0, y + scaleTrackHeight - 1, scaleLabelWidth, y + scaleTrackHeight - 1);
-        }
+        renderer.drawTrackLabels(g, tracks, selectedTrack, getTrackHeight(),
+                TIME_RULER_HEIGHT, TRACK_LABEL_WIDTH);
     }
 
     private void drawTimeline(Graphics g) {
-        Graphics2D g2 = (Graphics2D) g;
-        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-        int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-        int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
-        int scaleLabelWidth = 0; // Labels are in the row header now, content starts at x=0
-
-        // Draw tracks background (no labels - they're in the row header)
-        for (int i = 0; i < tracks.size(); i++) {
-            int y = scaleTimeRuler + i * scaleTrackHeight;
-            // Highlight selected track
-            if (i == selectedTrack) {
-                g2.setColor(Theme.getInstance().ACCENT_BLUE.darker().darker());
-            } else {
-                g2.setColor(i % 2 == 0 ? Theme.getInstance().BG_DARK : Theme.getInstance().BG_DARKER);
-            }
-            g2.fillRect(0, y, contentPanel.getWidth(), scaleTrackHeight);
-            g2.setColor(Theme.getInstance().PANEL_BG_LIGHT.darker());
-            g2.drawLine(0, y + scaleTrackHeight - 1, contentPanel.getWidth(), y + scaleTrackHeight - 1);
-        }
-        // Draw vertical grid lines through track area
-        int trackAreaBottom = scaleTimeRuler + tracks.size() * scaleTrackHeight;
-        float secondsPerBeat = 60.0f / bpm;
-        float secondsPerBar = secondsPerBeat * 4;
-        float gridSeconds = getGridSnapSeconds(gridMode, secondsPerBeat);
-
-        // Draw subdivision grid lines
-        if (gridSeconds > 0) {
-            float gridWidth = gridSeconds * getPixelsPerSecond();
-            if (gridWidth >= 2) {
-                g2.setColor(new Color(255, 255, 255, 15));
-                for (float t = 0; t * getPixelsPerSecond() < contentPanel.getWidth(); t += gridSeconds) {
-                    int x = scaleLabelWidth + (int) (t * getPixelsPerSecond());
-                    g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
-                }
-            }
-        }
-
-        // Draw beat lines (quarter notes)
-        float beatWidth = secondsPerBeat * getPixelsPerSecond();
-        if (beatWidth >= 4 && gridSeconds < secondsPerBeat) {
-            g2.setColor(new Color(255, 255, 255, 25));
-            for (float t = 0; t * getPixelsPerSecond() < contentPanel.getWidth(); t += secondsPerBeat) {
-                int x = scaleLabelWidth + (int) (t * getPixelsPerSecond());
-                g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
-            }
-        }
-
-        // Draw bar lines - brightest
-        float barWidth = secondsPerBar * getPixelsPerSecond();
-        if (barWidth >= 4) {
-            g2.setColor(new Color(255, 255, 255, 40));
-            for (float t = 0; t * getPixelsPerSecond() < contentPanel.getWidth(); t += secondsPerBar) {
-                int x = scaleLabelWidth + (int) (t * getPixelsPerSecond());
-                g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
-            }
-        }
-
-        // Draw ghost shadow of dragged clip at original position
-        if (isDragging && draggingClip != null && dragSourceTrack >= 0) {
-            int ghostY = scaleTimeRuler + dragSourceTrack * scaleTrackHeight + 5;
-            int ghostX = scaleLabelWidth + (int) (dragOriginalStartTime * getPixelsPerSecond());
-            int ghostW = (int) (draggingClip.duration * getPixelsPerSecond());
-            int ghostH = scaleTrackHeight - 10;
-
-            // Draw semi-transparent ghost outline
-            Graphics2D g2d = (Graphics2D) g2;
-            Composite oldComposite = g2d.getComposite();
-            g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.3f));
-            g2d.setColor(Theme.getInstance().ACCENT_BLUE.darker());
-            g2d.fillRoundRect(ghostX, ghostY, ghostW, ghostH, 8, 8);
-            g2d.setComposite(oldComposite);
-
-            // Draw dashed border
-            g2d.setColor(Theme.getInstance().ACCENT_BLUE);
-            Stroke oldStroke = g2d.getStroke();
-            g2d.setStroke(
-                    new BasicStroke(1.5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL, 0, new float[] { 4, 4 }, 0));
-            g2d.drawRoundRect(ghostX, ghostY, ghostW, ghostH, 8, 8);
-            g2d.setStroke(oldStroke);
-        }
-
-        // Draw clips
-        for (int i = 0; i < tracks.size(); i++) {
-            int y = scaleTimeRuler + i * scaleTrackHeight + 5;
-            for (ClipRect clip : tracks.get(i).clips) {
-                // Skip dragging clip - will be drawn separately at cursor position
-                if (isDragging && clip == draggingClip) {
-                    continue;
-                }
-                int x = scaleLabelWidth + (int) (clip.startTime * getPixelsPerSecond());
-                int w = (int) (clip.duration * getPixelsPerSecond());
-                int h = scaleTrackHeight - 10;
-
-                g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
-                g2.fillRoundRect(x, y, w, h, 8, 8);
-
-                boolean isMidi = clip.path == null || clip.path.isEmpty()
-                        || clip.path.toLowerCase().endsWith(".mid")
-                        || clip.path.toLowerCase().endsWith(".midi");
-
-                if (isMidi) {
-                    if (clip.waveform != null && clip.waveform.length > 0) {
-                        g2.setColor(new Color(255, 255, 255, 200));
-                        for (int nIdx = 0; nIdx + 2 < clip.waveform.length; nIdx += 3) {
-                            float startRatio = clip.waveform[nIdx]; // Now 0-1 ratio
-                            float pitch = clip.waveform[nIdx+1];
-                            float durationRatio = clip.waveform[nIdx + 2]; // Now 0-1 ratio
-
-                            int nx = x + (int) (startRatio * w);
-                            int nw = (int) (durationRatio * w);
-                            if (nw < 2) nw = 2; // Minimum visible width
-                            
-                            int minPitch = 21; // A0
-                            int maxPitch = 108; // C8
-                            float normalizedPitch = (pitch - minPitch) / (float)(maxPitch - minPitch);
-                            if (normalizedPitch < 0) normalizedPitch = 0;
-                            if (normalizedPitch > 1) normalizedPitch = 1;
-                            
-                            int nh = Math.max(2, h / 40);
-                            int ny = y + h - (int)(normalizedPitch * (h - nh)) - nh;
-
-                            // Clip to box
-                            if (nx < x + w && nx + nw >= x) {
-                                int drawX = Math.max(x, nx);
-                                int drawW = Math.min(x + w - drawX, nx + nw - drawX);
-                                g2.fillRect(drawX, ny, drawW, nh);
-                            }
-                        }
-                    }
-                } else {
-                    // Draw waveform inside audio clip
-                    if (clip.waveform != null && clip.waveform.length > 0) {
-                        g2.setColor(new Color(255, 255, 255, 120));
-                        int midY = y + h / 2;
-                        int halfH = h / 2 - 4;
-                        for (int px = 0; px < w && px < clip.waveform.length; px++) {
-                            int wfIdx = (int)((float)px / w * clip.waveform.length);
-                            if (wfIdx >= clip.waveform.length) wfIdx = clip.waveform.length - 1;
-                            float amp = clip.waveform[wfIdx];
-                            int barH = (int)(amp * halfH);
-                            g2.drawLine(x + px, midY - barH, x + px, midY + barH);
-                        }
-                    }
-                }
-
-                g2.setColor(Theme.getInstance().ACCENT_BLUE);
-                g2.drawRoundRect(x, y, w, h, 8, 8);
-
-                g2.setColor(Color.WHITE);
-                g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
-                g2.drawString(clip.name, x + 5, y + 15);
-            }
-        }
-
-        // Draw dragging clip at cursor position (for cross-track visualization)
-        if (isDragging && draggingClip != null) {
-            int targetTrackIdx = (dragCurrentY - scaleTimeRuler) / scaleTrackHeight;
-            targetTrackIdx = Math.max(0, Math.min(tracks.size() - 1, targetTrackIdx));
-            int y = scaleTimeRuler + targetTrackIdx * scaleTrackHeight + 5;
-            int x = scaleLabelWidth + (int) (draggingClip.startTime * getPixelsPerSecond());
-            int w = (int) (draggingClip.duration * getPixelsPerSecond());
-            int h = scaleTrackHeight - 10;
-
-            // Draw filled clip at drag position with slight transparency
-            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.8f));
-            g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
-            g2.fillRoundRect(x, y, w, h, 8, 8);
-            g2.setColor(Theme.getInstance().ACCENT_BLUE.brighter());
-            g2.drawRoundRect(x, y, w, h, 8, 8);
-            g2.setColor(Color.WHITE);
-            g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
-            g2.drawString(draggingClip.name, x + 5, y + 15);
-            g2.setComposite(AlphaComposite.SrcOver);
-        }
-
-        // Draw clip being created (visual feedback during drag creation)
-        if (creatingClip && creatingClipRect != null && creatingClipRect.duration > 0) {
-            int y = scaleTimeRuler + creatingTrackIdx * scaleTrackHeight + 5;
-            int x = scaleLabelWidth + (int) (creatingClipRect.startTime * getPixelsPerSecond());
-            int w = (int) (creatingClipRect.duration * getPixelsPerSecond());
-            int h = scaleTrackHeight - 10;
-
-            // Draw with green tint to indicate new clip creation
-            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.6f));
-            g2.setColor(new Color(100, 200, 100)); // Green tint for creation
-            g2.fillRoundRect(x, y, w, h, 8, 8);
-            g2.setColor(new Color(150, 255, 150));
-            g2.drawRoundRect(x, y, w, h, 8, 8);
-            g2.setColor(Color.WHITE);
-            g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
-            g2.drawString("New Clip", x + 5, y + 15);
-            g2.setComposite(AlphaComposite.SrcOver);
-        }
-
-        // Draw time ruler
-        g2.setColor(Theme.getInstance().BG_DARKER);
-        g2.fillRect(scaleLabelWidth, 0, contentPanel.getWidth() - scaleLabelWidth, scaleTimeRuler);
-        g2.setColor(Theme.getInstance().TEXT_DIM);
-        // Time ruler header - show seconds or bars based on mode
-        if (gridMode == GridMode.SECONDS) {
-            // Show absolute seconds
-            for (int s = 0; s < 600; s += 5) {
-                int x = scaleLabelWidth + (int) (s * getPixelsPerSecond());
-                if (x > contentPanel.getWidth())
-                    break;
-                g2.drawLine(x, scaleTimeRuler - 10, x, scaleTimeRuler);
-                g2.drawString(s + "s", x + 2, scaleTimeRuler - 12);
-            }
-        } else {
-            // Show bar numbers
-            float rulerSecondsPerBeat = 60.0f / bpm;
-            float rulerSecondsPerBar = rulerSecondsPerBeat * 4;
-            for (int bar = 0; bar < 200; bar++) {
-                int x = scaleLabelWidth + (int) (bar * rulerSecondsPerBar * getPixelsPerSecond());
-                if (x > contentPanel.getWidth()) break;
-                g2.drawLine(x, scaleTimeRuler - 10, x, scaleTimeRuler);
-                g2.drawString(String.valueOf(bar + 1), x + 3, scaleTimeRuler - 12);
-            }
-        }
-
-        // Draw playhead
-        int px = scaleLabelWidth + (int) (playheadPos * getPixelsPerSecond());
-        g2.setColor(Color.RED);
-        g2.setStroke(new BasicStroke(2.0f));
-        g2.drawLine(px, 0, px, contentPanel.getHeight());
+        renderer.drawTimeline(g, contentPanel, tracks, selectedTrack, bpm, gridMode,
+                playheadPos, isDragging, draggingClip, dragSourceTrack, dragOriginalStartTime,
+                dragCurrentY, creatingClip, creatingTrackIdx, creatingClipRect,
+                getTrackHeight(), TIME_RULER_HEIGHT);
     }
+
 
     @Override
     public void onThemeChanged() {
@@ -1122,7 +859,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
      * Get the snap interval in seconds for the given grid mode.
      * For AUTO mode, adapts based on pixel threshold.
      */
-    private float getGridSnapSeconds(GridMode mode, float secondsPerBeat) {
+    float getGridSnapSeconds(GridMode mode, float secondsPerBeat) {
         float secondsPerBar = secondsPerBeat * 4;
 
         // Handle SECONDS mode separately - 1 second grid interval

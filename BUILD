@@ -482,3 +482,23 @@ java_test(
         "@maven//:com_google_flatbuffers_flatbuffers_java",
     ],
 )
+
+java_test(
+    name = "piano_roll_test",
+    srcs = ["src/test/java/hibiki/ui/PianoRollTest.java"],
+    test_class = "hibiki.ui.PianoRollTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "session_view_test",
+    srcs = ["src/test/java/hibiki/ui/SessionViewTest.java"],
+    test_class = "hibiki.ui.SessionViewTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)

@@ -17,7 +17,7 @@ import hibiki.ipc.MidiEventData;
 import java.util.function.Consumer;
 
 public class PianoRoll extends JDialog {
-    private static final int NUM_KEYS = 128;
+    static final int NUM_KEYS = 128;
 
     // Zoom settings (adjustable)
     private int keyHeight = 12; // Default, adjustable via vertical zoom
@@ -28,9 +28,9 @@ public class PianoRoll extends JDialog {
     private final int trackIdx;
     private final int slotIdx; // Session clip slot (-1 for timeline clips)
     private final int clipIdx; // Timeline clip index (-1 for session clips)
-    private Sequence sequence;
+    Sequence sequence;
     private Track midiTrack;
-    private List<Note> notes = new ArrayList<>();
+    List<Note> notes = new ArrayList<>();
 
     private JPanel gridPanel;
     private JPanel keysPanel;
@@ -45,9 +45,9 @@ public class PianoRoll extends JDialog {
     private int dragOffsetY = 0;
 
     // Ghost/copy state for drag
-    private int dragOriginalPitch = -1;
-    private long dragOriginalTick = 0;
-    private boolean isDraggingNote = false;
+    int dragOriginalPitch = -1;
+    long dragOriginalTick = 0;
+    boolean isDraggingNote = false;
 
     // Zoom sliders
     private JSlider hZoomSlider;
@@ -85,15 +85,18 @@ public class PianoRoll extends JDialog {
     private GridMode gridMode = GridMode.AUTO;
 
     // Playhead and Auto-scroll state
-    private volatile float playheadPos = 0.0f; // in seconds
-    private volatile float bpm = 120.0f;
+    volatile float playheadPos = 0.0f; // in seconds
+    volatile float bpm = 120.0f;
     private volatile boolean isPlaying = false;
-    private float clipStartTime = 0.0f; // Start time of clip on timeline (seconds)
+    float clipStartTime = 0.0f; // Start time of clip on timeline (seconds)
     private boolean autoScroll = true; // Auto-scroll to follow playhead during playback
     private int playheadScreenOffset = -1; // Screen X position to keep playhead at during auto-scroll
     private javax.swing.Timer repaintTimer;
 
-    private static class Note {
+    // Renderer delegate
+    private final PianoRollRenderer renderer = new PianoRollRenderer(this);
+
+    static class Note {
         int pitch;
         long startTick;
         long durationTicks;
@@ -413,24 +416,7 @@ public class PianoRoll extends JDialog {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                int kh = getScaledKeyHeight();
-                for (int i = 0; i < NUM_KEYS; i++) {
-                    int pitch = NUM_KEYS - 1 - i;
-                    int y = i * kh;
-
-                    boolean isBlack = isBlackKey(pitch);
-                    g.setColor(isBlack ? Color.BLACK : Color.WHITE);
-                    g.fillRect(0, y, getWidth(), kh);
-
-                    g.setColor(Color.GRAY);
-                    g.drawRect(0, y, getWidth(), kh);
-
-                    if (!isBlack && (pitch % 12 == 0)) { // C notes
-                        g.setColor(Color.BLACK);
-                        g.setFont(new Font("SansSerif", Font.PLAIN, Math.min(kh - 2, Theme.getInstance().scale(9))));
-                        g.drawString("C" + (pitch / 12 - 1), 2, y + kh - 2);
-                    }
-                }
+                renderer.paintKeyLabels(g, this, NUM_KEYS, getScaledKeyHeight());
             }
         };
 
@@ -451,110 +437,10 @@ public class PianoRoll extends JDialog {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                int kh = getScaledKeyHeight();
-                float tw = getTickWidth();
-
-                // Draw horizontal grid lines
-                for (int i = 0; i < NUM_KEYS; i++) {
-                    int y = i * kh;
-                    int pitch = NUM_KEYS - 1 - i;
-                    g.setColor(isBlackKey(pitch) ? new Color(40, 40, 40) : Theme.getInstance().BG_DARKER);
-                    g.fillRect(0, y, getWidth(), kh);
-                    g.setColor(new Color(60, 60, 60));
-                    g.drawLine(0, y, getWidth(), y);
-                }
-
-                // Draw vertical grid lines with hierarchy
-                int res = sequence.getResolution();
-                int ticksPerBar = res * 4;
-                int gridTicks = getGridTickInterval();
-                float gridWidth = gridTicks * tw;
-
-                Graphics2D g2 = (Graphics2D) g; // Used for all 2D drawing below
-
-                // Draw grid subdivision lines (finest level)
-                if (gridWidth >= 2) {
-                    g2.setColor(new Color(60, 60, 60));
-                    for (long tick = 0; tick * tw < getWidth(); tick += gridTicks) {
-                        int x = (int) (tick * tw);
-                        g2.drawLine(x, 0, x, getHeight());
-                    }
-                }
-
-                // Draw beat lines (quarter notes) - medium brightness
-                float beatWidth = res * tw;
-                if (beatWidth >= 4 && gridTicks < res) {
-                    g2.setColor(new Color(90, 90, 90));
-                    for (long tick = 0; tick * tw < getWidth(); tick += res) {
-                        int x = (int) (tick * tw);
-                        g2.drawLine(x, 0, x, getHeight());
-                    }
-                }
-
-                // Draw bar lines - brightest, thicker
-                float barWidth = ticksPerBar * tw;
-                if (barWidth >= 4) {
-                    g2.setColor(new Color(120, 120, 120));
-                    g2.setStroke(new BasicStroke(1.5f));
-                    for (long tick = 0; tick * tw < getWidth(); tick += ticksPerBar) {
-                        int x = (int) (tick * tw);
-                        g2.drawLine(x, 0, x, getHeight());
-                    }
-                    g2.setStroke(new BasicStroke(1.0f));
-                }
-
-                // Draw ghost shadow of dragged note at original position
-                if (isDraggingNote && draggingNote != null && dragOriginalPitch >= 0) {
-                    int ghostX = (int) (dragOriginalTick * tw);
-                    int ghostY = (NUM_KEYS - 1 - dragOriginalPitch) * kh;
-                    int ghostW = Math.max(1, (int) (draggingNote.durationTicks * tw));
-
-                    // Reuse g2 from above
-                    Composite oldComposite = g2.getComposite();
-                    g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.3f));
-                    g2.setColor(Theme.getInstance().ACCENT_BLUE);
-                    g2.fillRect(ghostX, ghostY + 1, ghostW, kh - 2);
-                    g2.setComposite(oldComposite);
-
-                    // Draw dashed border
-                    g2.setColor(Theme.getInstance().ACCENT_BLUE.brighter());
-                    Stroke oldStroke = g2.getStroke();
-                    g2.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL, 0,
-                            new float[] { 2, 2 }, 0));
-                    g2.drawRect(ghostX, ghostY + 1, ghostW, kh - 2);
-                    g2.setStroke(oldStroke);
-                }
-
-                // Draw notes
-                for (Note n : notes) {
-                    int x = (int) (n.startTick * tw);
-                    int y = (NUM_KEYS - 1 - n.pitch) * kh;
-                    int w = Math.max(1, (int) (n.durationTicks * tw));
-
-                    // Draw filled rect
-                    g.setColor(Theme.getInstance().ACCENT_BLUE);
-                    g.fillRect(x, y + 1, w, kh - 2);
-
-                    // Draw border
-                    g.setColor(Theme.getInstance().ACCENT_BLUE.brighter());
-                    g.drawRect(x, y + 1, w, kh - 2);
-                }
-
-                // Draw playhead
-                // Convert playhead position (seconds relative to clip start) to ticks
-                float relativePos = playheadPos - clipStartTime;
-                if (relativePos >= 0) {
-                    int seqRes = sequence.getResolution();
-                    // Convert seconds to beats, then to ticks
-                    float beatsPerSecond = bpm / 60.0f;
-                    long playheadTick = (long) (relativePos * beatsPerSecond * seqRes);
-                    int px = (int) (playheadTick * tw);
-
-                    // Reuse g2 from above
-                    g2.setColor(Color.RED);
-                    g2.setStroke(new BasicStroke(2.0f));
-                    g2.drawLine(px, 0, px, getHeight());
-                }
+                renderer.paintGrid(g, this, NUM_KEYS, getScaledKeyHeight(), getTickWidth(),
+                        sequence, notes, isDraggingNote, draggingNote,
+                        dragOriginalPitch, dragOriginalTick,
+                        playheadPos, clipStartTime, bpm);
             }
         };
 
@@ -576,58 +462,7 @@ public class PianoRoll extends JDialog {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                Graphics2D g2 = (Graphics2D) g;
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-                // Background
-                g2.setColor(Theme.getInstance().BG_DARKER);
-                g2.fillRect(0, 0, getWidth(), getHeight());
-
-                float tw = getTickWidth();
-                int res = sequence.getResolution();
-                float ticksPerBar = res * 4; // 4/4 time
-
-                // Draw bar markers
-                g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.PLAIN, Theme.getInstance().scale(10.0f)));
-
-                for (int bar = 0; bar * ticksPerBar * tw < getWidth() + 200; bar++) {
-                    int x = (int) (bar * ticksPerBar * tw);
-
-                    // Bar line
-                    g2.setColor(new Color(255, 255, 255, 60));
-                    g2.drawLine(x, 0, x, getHeight());
-
-                    // Bar number
-                    g2.setColor(Theme.getInstance().TEXT_BRIGHT);
-                    g2.drawString(String.valueOf(bar + 1), x + 3, 14);
-
-                    // Beat markers within bar
-                    for (int beat = 1; beat < 4; beat++) {
-                        int bx = (int) ((bar * ticksPerBar + beat * res) * tw);
-                        g2.setColor(new Color(255, 255, 255, 30));
-                        g2.drawLine(bx, getHeight() - 6, bx, getHeight());
-                    }
-                }
-
-                // Draw playhead position indicator
-                float relativePos = playheadPos - clipStartTime;
-                if (relativePos >= 0) {
-                    float beatsPerSecond = bpm / 60.0f;
-                    long playheadTick = (long) (relativePos * beatsPerSecond * res);
-                    int px = (int) (playheadTick * tw);
-
-                    g2.setColor(Color.RED);
-                    g2.setStroke(new BasicStroke(2.0f));
-                    g2.drawLine(px, 0, px, getHeight());
-                    // Draw small triangle indicator at top
-                    int[] xPoints = { px - 4, px + 4, px };
-                    int[] yPoints = { 0, 0, 6 };
-                    g2.fillPolygon(xPoints, yPoints, 3);
-                }
-
-                // Bottom border
-                g2.setColor(Theme.getInstance().BORDER);
-                g2.drawLine(0, getHeight() - 1, getWidth(), getHeight() - 1);
+                renderer.paintTimeRuler(g, this, sequence, getTickWidth(), playheadPos, clipStartTime, bpm);
             }
         };
         timeRulerPanel.setBackground(Theme.getInstance().BG_DARKER);
@@ -696,52 +531,7 @@ public class PianoRoll extends JDialog {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                Graphics2D g2 = (Graphics2D) g;
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-                float tw = getTickWidth();
-                int panelHeight = getHeight() - 4; // Leave margin at top and bottom
-
-                // Background
-                g2.setColor(Theme.getInstance().BG_DARKER);
-                g2.fillRect(0, 0, getWidth(), getHeight());
-
-                // Draw grid lines for velocity levels
-                g2.setColor(new Color(60, 60, 60));
-                for (int v = 0; v <= 127; v += 32) {
-                    int y = getHeight() - 2 - (int) (v / 127.0 * panelHeight);
-                    g2.drawLine(0, y, getWidth(), y);
-                }
-
-                // Draw velocity label on left
-                g2.setColor(Theme.getInstance().TEXT_DIM);
-                g2.setFont(new Font("SansSerif", Font.PLAIN, 9));
-                g2.drawString("VEL", 2, 12);
-
-                // Draw bars for each note
-                for (Note n : notes) {
-                    int x = (int) (n.startTick * tw);
-                    int fullWidth = Math.max(4, (int) (n.durationTicks * tw));
-                    int barHeight = (int) (n.velocity / 127.0 * panelHeight);
-                    int y = getHeight() - 2 - barHeight;
-
-                    // Color based on velocity (red for high, blue for low)
-                    float hue = 0.6f - (n.velocity / 127.0f) * 0.6f; // Blue to red
-                    Color barColor = Color.getHSBColor(hue, 0.8f, 0.9f);
-
-                    // Draw ghost/shadow showing full note duration (semi-transparent)
-                    g2.setColor(new Color(barColor.getRed(), barColor.getGreen(), barColor.getBlue(), 30));
-                    g2.fillRect(x, y, fullWidth, barHeight);
-
-                    // Draw thin editable bar at start (4px wide) - solid
-                    int thinBarWidth = 4;
-                    g2.setColor(barColor);
-                    g2.fillRect(x, y, thinBarWidth, barHeight);
-
-                    // Highlight thin bar border
-                    g2.setColor(new Color(255, 255, 255, 80));
-                    g2.drawRect(x, y, thinBarWidth, barHeight);
-                }
+                renderer.paintVelocity(g, this, getTickWidth(), notes);
             }
         };
         velocityPanel.setBackground(Theme.getInstance().BG_DARKER);
@@ -1113,7 +903,7 @@ public class PianoRoll extends JDialog {
         BackendManager.getInstance().seek(absoluteSeconds);
     }
 
-    private boolean isBlackKey(int pitch) {
+    boolean isBlackKey(int pitch) {
         int note = pitch % 12;
         return note == 1 || note == 3 || note == 6 || note == 8 || note == 10;
     }
@@ -1123,7 +913,7 @@ public class PianoRoll extends JDialog {
      * For AUTO mode, adapts based on pixel threshold.
      * Returns tick interval for main grid lines.
      */
-    private int getGridTickInterval() {
+    int getGridTickInterval() {
         int res = sequence.getResolution(); // ticks per beat
         int ticksPerBar = res * 4; // 4/4 time
 
@@ -1180,7 +970,7 @@ public class PianoRoll extends JDialog {
     /**
      * Get snap interval for note creation/editing based on grid mode.
      */
-    private int getSnapTickInterval() {
+    int getSnapTickInterval() {
         return getGridTickInterval();
     }
 }

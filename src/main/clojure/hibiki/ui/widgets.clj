@@ -3,7 +3,7 @@
    Ported from TopBar.java, LevelMeter.java, ZoomControlPanel.java."
   (:require [hibiki.ui.theme :as t])
   (:import [javax.swing JPanel JButton JLabel JSlider JToggleButton JComboBox
-                         BorderFactory SwingConstants BoxLayout Box JFileChooser]
+                         BorderFactory SwingConstants SwingUtilities BoxLayout Box JFileChooser]
            [java.awt Color Dimension BorderLayout FlowLayout Font Graphics Graphics2D
                      RenderingHints BasicStroke]
            [java.awt.event ActionListener]
@@ -68,6 +68,8 @@
 ;; ---------------------------------------------------------------------------
 ;; TopBar — transport controls, BPM, view toggle
 ;; ---------------------------------------------------------------------------
+
+(declare ^:private show-settings-dialog)
 
 (defn make-top-bar
   "Creates the top toolbar. Returns {:panel JPanel :set-view-toggle fn}.
@@ -143,6 +145,8 @@
 
     (.add right ^JButton save-btn)
     (.add right ^JButton load-btn)
+    (.add right (Box/createHorizontalStrut (t/scale 5)))
+    (.add right ^JButton (make-btn "⚙" #(show-settings-dialog panel)))
 
     (.add panel left BorderLayout/WEST)
     (.add panel center BorderLayout/CENTER)
@@ -151,3 +155,120 @@
     {:panel panel
      :bpm-label bpm-lbl
      :set-view-toggle! (fn [f] (reset! view-toggle-atom f))}))
+
+;; ---------------------------------------------------------------------------
+;; Settings dialog
+;; ---------------------------------------------------------------------------
+
+(defn- show-settings-dialog
+  "Opens the Settings dialog (ported from SettingsDialog.java)."
+  [^java.awt.Component parent]
+  (let [owner (SwingUtilities/getWindowAncestor parent)
+        dialog (doto (javax.swing.JDialog. ^java.awt.Frame owner "Settings" true)
+                 (.setSize (t/scale 400) (t/scale 300))
+                 (.setLocationRelativeTo owner))
+        ;; Audio tab
+        audio-panel (doto (JPanel. (java.awt.BorderLayout.))
+                      (.setBorder (BorderFactory/createEmptyBorder 20 20 20 20))
+                      (.add (doto (JLabel. "Audio Engine: ALSA (alsa_playback.hbk-play)")
+                              (.setFont (t/font :font-ui))) java.awt.BorderLayout/NORTH))
+        ;; Appearance tab
+        appearance (JPanel. (java.awt.GridBagLayout.))
+        gbc (doto (java.awt.GridBagConstraints.)
+              (-> .-fill (set! java.awt.GridBagConstraints/HORIZONTAL))
+              (-> .-insets (set! (java.awt.Insets. 5 5 5 5))))
+        theme-combo (JComboBox. ^"[Ljava.lang.Object;"
+                      (into-array Object (map name (keys t/presets))))
+        scale-combo (JComboBox. ^"[Ljava.lang.Object;"
+                      (into-array Object ["50%" "75%" "100%" "125%" "150%" "175%" "200%"]))
+        font-spinner (javax.swing.JSpinner. (javax.swing.SpinnerNumberModel.
+                                              (int 12) (int 8) (int 24) (int 1)))
+        font-combo (JComboBox. ^"[Ljava.lang.Object;"
+                     (into-array Object (.getAvailableFontFamilyNames
+                                          (java.awt.GraphicsEnvironment/getLocalGraphicsEnvironment))))
+        laf-names (into-array Object
+                    (concat ["FlatDarkLaf"]
+                            (map #(.getName ^javax.swing.UIManager$LookAndFeelInfo %)
+                                 (javax.swing.UIManager/getInstalledLookAndFeels))))
+        laf-combo (JComboBox. ^"[Ljava.lang.Object;" laf-names)]
+
+    (.setBorder appearance (BorderFactory/createEmptyBorder 20 20 20 20))
+
+    ;; Theme row
+    (set! (. gbc gridx) 0) (set! (. gbc gridy) 0)
+    (.add appearance (JLabel. "Theme:") gbc)
+    (set! (. gbc gridx) 1)
+    (.add appearance theme-combo gbc)
+
+    ;; Scale row
+    (set! (. gbc gridx) 0) (set! (. gbc gridy) 1)
+    (.add appearance (JLabel. "UI Scaling:") gbc)
+    (set! (. gbc gridx) 1)
+    (.add appearance scale-combo gbc)
+
+    ;; Font size row 
+    (set! (. gbc gridx) 0) (set! (. gbc gridy) 2)
+    (.add appearance (JLabel. "Font Size:") gbc)
+    (set! (. gbc gridx) 1)
+    (.add appearance font-spinner gbc)
+
+    ;; Font family row
+    (set! (. gbc gridx) 0) (set! (. gbc gridy) 3)
+    (.add appearance (JLabel. "Font:") gbc)
+    (set! (. gbc gridx) 1)
+    (.add appearance font-combo gbc)
+
+    ;; LookAndFeel row
+    (set! (. gbc gridx) 0) (set! (. gbc gridy) 4)
+    (.add appearance (JLabel. "Look & Feel:") gbc)
+    (set! (. gbc gridx) 1)
+    (.add appearance laf-combo gbc)
+
+    ;; Apply button
+    (set! (. gbc gridx) 1) (set! (. gbc gridy) 5)
+    (let [apply-btn (doto (JButton. "Apply")
+                      (.addActionListener
+                        (reify ActionListener
+                          (actionPerformed [_ _]
+                            (let [preset-name (str (.getSelectedItem theme-combo))
+                                  preset-key (keyword preset-name)
+                                  scale-str (str (.getSelectedItem scale-combo))
+                                  scaling (/ (Integer/parseInt (.replace ^String scale-str "%" "")) 100.0)
+                                  font-size (.getValue font-spinner)
+                                  font-family (str (.getSelectedItem font-combo))
+                                  selected-laf (str (.getSelectedItem laf-combo))]
+                              ;; Apply theme
+                              (t/update-theme! :preset preset-key :scaling scaling
+                                               :font-size (int font-size) :font-family font-family)
+                              ;; Apply LookAndFeel
+                              (try
+                                (cond
+                                  (= selected-laf "FlatDarkLaf")
+                                  (javax.swing.UIManager/setLookAndFeel (com.formdev.flatlaf.FlatDarkLaf.))
+                                  :else
+                                  (doseq [^javax.swing.UIManager$LookAndFeelInfo info
+                                          (javax.swing.UIManager/getInstalledLookAndFeels)]
+                                    (when (= (.getName info) selected-laf)
+                                      (javax.swing.UIManager/setLookAndFeel (.getClassName info)))))
+                                (doseq [w (java.awt.Window/getWindows)]
+                                  (SwingUtilities/updateComponentTreeUI w))
+                                (catch Exception ex
+                                  (javax.swing.JOptionPane/showMessageDialog
+                                    dialog (str "Failed to apply Look & Feel: " (.getMessage ex))))))))))]
+      (.add appearance apply-btn gbc))
+
+    ;; Tabs
+    (let [tabs (javax.swing.JTabbedPane.)]
+      (.addTab tabs "Audio" audio-panel)
+      (.addTab tabs "Appearance" appearance)
+      (.add (.getContentPane dialog) tabs java.awt.BorderLayout/CENTER))
+
+    ;; Close button
+    (let [bottom (JPanel. (FlowLayout. FlowLayout/RIGHT))
+          close-btn (doto (JButton. "Close")
+                      (.addActionListener (reify ActionListener
+                                            (actionPerformed [_ _] (.dispose dialog)))))]
+      (.add bottom close-btn)
+      (.add (.getContentPane dialog) bottom java.awt.BorderLayout/SOUTH))
+
+    (.setVisible dialog true)))

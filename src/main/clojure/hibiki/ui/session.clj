@@ -2,7 +2,8 @@
   "Session View — clip grid with 4 tracks × 5 slots.
    Ported from SessionView.java + SessionViewIpc.java."
   (:require [hibiki.ui.theme :as t]
-            [hibiki.ui.widgets :as w])
+            [hibiki.ui.widgets :as w]
+            [hibiki.ui.piano-roll :as piano-roll])
   (:import [javax.swing JPanel JButton JLabel JSlider JPopupMenu JMenuItem
                          JCheckBoxMenuItem JOptionPane JFileChooser
                          BorderFactory SwingConstants SwingUtilities BoxLayout Box]
@@ -130,8 +131,9 @@
         (actionPerformed [_ _]
            (let [path (aget ^"[Ljava.lang.String;" (aget ^"[[Ljava.lang.String;" (:slot-paths @session-state) track-idx) slot-idx)]
             (if (and path (.endsWith ^String path ".mid"))
-              ;; TODO: open PianoRoll
-              (println "Would open PianoRoll for" path)
+              (let [owner ^java.awt.Frame (SwingUtilities/getWindowAncestor panel)]
+                (piano-roll/open-piano-roll owner (java.io.File. ^String path)
+                                           track-idx slot-idx))
               (JOptionPane/showMessageDialog panel "Can only edit MIDI (.mid) clips."
                                              "Error" JOptionPane/ERROR_MESSAGE))))))
     (.addActionListener loop-item

@@ -50,20 +50,29 @@
     @notes))
 
 (defn- load-midi-file
-  "Load a MIDI file, returns {:sequence :track :notes :resolution}."
+  "Load a MIDI file, returns {:sequence :track :notes :resolution}.
+   If file does not exist, creates an empty MIDI sequence."
   [^File file]
-  (let [seq  (MidiSystem/getSequence file)
-        tracks (.getTracks seq)
-        ;; Find first track with notes
-        track-idx (or (first (for [i (range (alength tracks))
-                                   :when (> (.size ^Track (aget tracks i)) 1)]
-                               i))
-                      0)
-        track (aget tracks track-idx)]
-    {:sequence   seq
-     :track      track
-     :notes      (parse-midi-track track)
-     :resolution (.getResolution seq)}))
+  (if (.exists file)
+    (let [seq  (MidiSystem/getSequence file)
+          tracks (.getTracks seq)
+          ;; Find first track with notes
+          track-idx (or (first (for [i (range (alength tracks))
+                                     :when (> (.size ^Track (aget tracks i)) 1)]
+                                 i))
+                        0)
+          track (aget tracks track-idx)]
+      {:sequence   seq
+       :track      track
+       :notes      (parse-midi-track track)
+       :resolution (.getResolution seq)})
+    ;; Create empty sequence for new clips
+    (let [seq (Sequence. javax.sound.midi.Sequence/PPQ 480)
+          track (.createTrack seq)]
+      {:sequence   seq
+       :track      track
+       :notes      []
+       :resolution 480})))
 
 ;; ---------------------------------------------------------------------------
 ;; Rendering
@@ -86,7 +95,7 @@
       (when (zero? (mod pitch 12))
         (.setColor g (t/color :text-dim))
         (.setFont g (Font. "SansSerif" Font/PLAIN 9))
-        (.drawString g (str "C" (- (/ pitch 12) 2)) 2 (+ y key-height -2))))))
+        (.drawString g (str "C" (- (/ pitch 12) 2)) (int 2) (int (+ y key-height -2)))))))
 
 (defn- paint-grid [^Graphics2D g key-height tick-width total-ticks grid-interval]
   (let [h (* NUM_KEYS key-height)]
@@ -103,7 +112,7 @@
                          (Color. 80 80 80)
                          (Color. 50 50 50)))
           (.drawLine g x 0 x h))
-        (recur (+ tick grid-interval))))))
+        (recur (long (+ tick grid-interval)))))))
 
 (defn- paint-notes [^Graphics2D g notes key-height tick-width]
   (doseq [{:keys [pitch start-tick duration-ticks velocity]} notes]
@@ -167,7 +176,7 @@
         keys-panel (proxy [JPanel] []
                      (paintComponent [^Graphics g]
                        (proxy-super paintComponent g)
-                       (paint-keys (cast Graphics2D g) key-height (.getWidth this))))
+                       (paint-keys (cast Graphics2D g) key-height (.getWidth ^javax.swing.JPanel this))))
 
         dialog (JDialog. owner (str "Piano Roll — " (.getName midi-file)) false)]
 
@@ -199,7 +208,7 @@
 
     ;; Grid mode combo
     (let [modes (into-array String ["Auto" "Bar" "1/2" "1/4" "1/8" "1/16" "1/32"])
-          combo (JComboBox. modes)]
+          combo (JComboBox. ^"[Ljava.lang.Object;" modes)]
       (.setFont combo (t/font :font-ui))
       (.addActionListener combo
         (reify ActionListener
@@ -235,7 +244,8 @@
 
     ;; Notification handler for playhead + MIDI data
     (let [listener (reify java.util.function.Consumer
-                     (accept [_ notification]
+                     (accept [_ notif]
+                       (let [^hibiki.ipc.Notification notification notif]
                        (condp = (.responseType notification)
                          Response/PlayheadInfo
                          (let [phi ^PlayheadInfo (.response notification (PlayheadInfo.))]
@@ -257,7 +267,7 @@
                                                               (.durationTicks ev) (.velocity ev)))))]
                                (reset! notes-a new-notes)
                                (SwingUtilities/invokeLater #(.repaint grid-panel)))))
-                         nil)))]
+                         nil))))]
       (.addNotificationListener backend listener)
       (.addWindowListener dialog
         (proxy [WindowAdapter] []

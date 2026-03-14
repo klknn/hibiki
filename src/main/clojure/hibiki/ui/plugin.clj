@@ -132,11 +132,79 @@
      :set-params! (fn [^ParamList param-list-data]
                     (.removeAll param-list)
                     (dotimes [i (.paramsLength param-list-data)]
-                      (let [info (.params param-list-data i)
+                      (let [^ParamInfo info (.params param-list-data i)
                             ps (make-param-slider backend track-idx plugin-idx info)]
                         (.add param-list ^JPanel (:panel ps))))
                     (.revalidate param-list)
                     (.repaint param-list))}))
+
+;; ---------------------------------------------------------------------------
+;; Waveform panel
+;; ---------------------------------------------------------------------------
+
+(defn- make-waveform-panel
+  "Creates a waveform display panel (ported from WaveformPanel.java)."
+  [^hibiki.BackendManager backend]
+  (let [wf-state (atom {:waveform nil :track-idx -1 :slot-idx -1})
+        wf-panel (proxy [JPanel] []
+                   (paintComponent [^java.awt.Graphics g]
+                     (proxy-super paintComponent g)
+                     (when-let [wf (:waveform @wf-state)]
+                       (when (pos? (alength ^floats wf))
+                         (let [^java.awt.Graphics2D g2 (cast java.awt.Graphics2D g)
+                               w (.getWidth ^JPanel this)
+                               h (.getHeight ^JPanel this)
+                               center-y (/ h 2)
+                               n (alength ^floats wf)]
+                           (.setRenderingHint g2 java.awt.RenderingHints/KEY_ANTIALIASING
+                                              java.awt.RenderingHints/VALUE_ANTIALIAS_ON)
+                           (.setColor g2 (t/color :accent-blue))
+                           (dotimes [i (dec n)]
+                             (let [x1 (int (/ (* i w) n))
+                                   x2 (int (/ (* (inc i) w) n))
+                                   y1 (int (* (aget ^floats wf i) (/ h 3)))
+                                   y2 (int (* (aget ^floats wf (inc i)) (/ h 3)))]
+                               (.drawLine g2 x1 (- center-y y1) x2 (- center-y y2))
+                               (.drawLine g2 x1 (+ center-y y1) x2 (+ center-y y2)))))))))
+        delete-btn (doto (javax.swing.JButton. "Delete Clip")
+                     (.setFont (t/font :font-ui))
+                     (.setVisible false))
+        top-p (doto (JPanel. (java.awt.FlowLayout. java.awt.FlowLayout/RIGHT))
+                (.setOpaque false)
+                (.add delete-btn))]
+    ;; Set up delete action listener after both wf-panel and delete-btn exist
+    (.addActionListener delete-btn
+      (reify ActionListener
+        (actionPerformed [_ _]
+          (let [{:keys [track-idx slot-idx]} @wf-state]
+            (when (>= track-idx 0)
+              (let [^FlatBufferBuilder b (FlatBufferBuilder. 128)]
+                (hibiki.ipc.DeleteClip/startDeleteClip b)
+                (hibiki.ipc.DeleteClip/addTrackIndex b (int track-idx))
+                (hibiki.ipc.DeleteClip/addSlotIndex b (int slot-idx))
+                (let [cmd (hibiki.ipc.DeleteClip/endDeleteClip b)
+                      req (Request/createRequest b Command/DeleteClip cmd)]
+                  (.finish b req)
+                  (.sendRequest backend b)))
+              (reset! wf-state {:waveform nil :track-idx -1 :slot-idx -1})
+              (.setVisible delete-btn false)
+              (.setVisible ^JPanel wf-panel false)
+              (.revalidate ^JPanel wf-panel)
+              (.repaint ^JPanel wf-panel))))))
+    (.setLayout wf-panel (BorderLayout.))
+    (.setBackground wf-panel (t/color :bg-darker))
+    (.setPreferredSize wf-panel (Dimension. (t/scale 300) (t/scale 150)))
+    (.setBorder wf-panel (BorderFactory/createLineBorder (t/color :border)))
+    (.add wf-panel top-p BorderLayout/NORTH)
+    (.setVisible wf-panel false)
+    {:panel wf-panel
+     :set-waveform! (fn [ti si ^floats wf]
+                      (reset! wf-state {:waveform wf :track-idx ti :slot-idx si})
+                      (let [has-data (and wf (pos? (alength wf)))]
+                        (.setVisible delete-btn has-data)
+                        (.setVisible ^JPanel wf-panel has-data))
+                      (.revalidate ^JPanel wf-panel)
+                      (.repaint ^JPanel wf-panel))}))
 
 ;; ---------------------------------------------------------------------------
 ;; Plugin pane (device chain)
@@ -154,17 +222,19 @@
                  (.setVerticalScrollBarPolicy javax.swing.JScrollPane/VERTICAL_SCROLLBAR_NEVER)
                  (.setBorder nil)
                  (.setBackground (t/color :bg-dark)))
+        waveform (make-waveform-panel backend)
         panel (doto (JPanel. (BorderLayout.))
                 (.setBackground (t/color :bg-dark))
                 (.setPreferredSize (Dimension. 0 (t/scale 200)))
                 (.add scroll BorderLayout/CENTER))]
 
-    ;; Notification handler for param updates
+    ;; Notification handler for param updates and waveform
     (.addNotificationListener backend
       (reify java.util.function.Consumer
         (accept [_ notif]
           (let [^Notification notification notif]
-          (when (= (.responseType notification) Response/ParamList)
+          (condp = (.responseType notification)
+            Response/ParamList
             (let [pl ^ParamList (.response notification (ParamList.))
                   ti (.trackIndex pl)
                   pi (.pluginIndex pl)
@@ -176,17 +246,42 @@
                    (if existing
                      ((:set-params! existing) pl)
                      (let [dp (make-device-panel backend ti pi pname is-inst)]
+                       ((:set-params! dp) pl)  ;; Fix: populate params on first creation
                        (swap! plugin-state assoc-in [:track-devices ti pi] dp)
                        (when (= ti (:selected-track @plugin-state))
                          (.add chain-content ^JPanel (:panel dp))
                          (.revalidate chain-content)
-                         (.repaint chain-content))))))))))))
+                         (.repaint chain-content)))))))
+
+            Response/ClipWaveform
+            (let [cw ^hibiki.ipc.ClipWaveform (.response notification (hibiki.ipc.ClipWaveform.))
+                  ti (.trackIndex cw)
+                  si (.slotIndex cw)
+                  len (.waveformLength cw)
+                  wf-data (float-array len)]
+              (dotimes [i len]
+                (aset wf-data i (.waveform cw i)))
+              (javax.swing.SwingUtilities/invokeLater
+                #(do ((:set-waveform! waveform) ti si wf-data)
+                     (when (= ti (:selected-track @plugin-state))
+                       ;; Rebuild chain with waveform
+                       (.removeAll chain-content)
+                       (when (.isVisible ^JPanel (:panel waveform))
+                         (.add chain-content ^JPanel (:panel waveform)))
+                       (doseq [[_ dp] (sort-by key (get-in @plugin-state [:track-devices ti] {}))]
+                         (.add chain-content ^JPanel (:panel dp)))
+                       (.revalidate chain-content)
+                       (.repaint chain-content)))))
+
+            nil)))))
 
     (swap! plugin-state assoc :instance panel)
     {:panel panel
      :set-selected-track! (fn [idx]
                             (swap! plugin-state assoc :selected-track idx)
                             (.removeAll chain-content)
+                            (when (.isVisible ^JPanel (:panel waveform))
+                              (.add chain-content ^JPanel (:panel waveform)))
                             (doseq [[_ dp] (sort-by key (get-in @plugin-state [:track-devices idx] {}))]
                               (.add chain-content ^JPanel (:panel dp)))
                             (.revalidate chain-content)

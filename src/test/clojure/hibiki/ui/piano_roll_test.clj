@@ -59,8 +59,11 @@
           (is (pos? (:resolution result))))))))
 
 (deftest test-load-midi-nonexistent
-  (testing "Loading a non-existent MIDI file throws"
-    (is (thrown? Exception (#'pr/load-midi-file (File. "/tmp/nonexistent.mid"))))))
+  (testing "Loading a non-existent MIDI file creates empty sequence"
+    (let [result (#'pr/load-midi-file (File. "/tmp/nonexistent.mid"))]
+      (is (some? (:sequence result)))
+      (is (empty? (:notes result)))
+      (is (= 480 (:resolution result))))))
 
 ;; ---------------------------------------------------------------------------
 ;; MIDI parsing tests

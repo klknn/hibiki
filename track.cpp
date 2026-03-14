@@ -145,8 +145,18 @@ bool Track::RemovePlugin(size_t pidx) {
 
 void Track::AddTimelineClip(const std::string& path, double start_time_sec, double bpm) {
     std::lock_guard<DummyMutex> lock(mutex);
-    auto clip = hibiki::LoadClip(path);
-    if (!clip) return;
+    std::unique_ptr<Clip> clip;
+    if (path.empty()) {
+        // Create an empty MIDI clip for composing from scratch
+        clip = std::make_unique<Clip>();
+        clip->type = Clip::Type::MIDI;
+        clip->path = "";
+        clip->duration_beats = 4.0; // Default to 1 bar (4 beats)
+        clip->duration_sec = 0.0;
+    } else {
+        clip = hibiki::LoadClip(path);
+        if (!clip) return;
+    }
 
     auto tc = std::make_unique<TimelineClip>();
     tc->duration_sec = clip->duration_sec;    // In seconds for audio clips, 0 for MIDI
@@ -161,9 +171,9 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec, doub
     timeline_clips.push_back(std::move(tc));
     int clip_idx = (int)timeline_clips.size() - 1;
     // Use basename for display name
-    std::string basename = path;
-    size_t pos = path.find_last_of("/\\");
-    if (pos != std::string::npos) basename = path.substr(pos + 1);
+    std::string basename = path.empty() ? "New Clip" : path;
+    size_t pos = basename.find_last_of("/\\");
+    if (pos != std::string::npos) basename = basename.substr(pos + 1);
     hibiki::sendTimelineClipInfo(index, clip_idx, basename, path, (float)start_time_sec, duration_for_gui, waveform);
 }
 

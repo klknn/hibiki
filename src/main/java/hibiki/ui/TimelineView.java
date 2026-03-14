@@ -451,13 +451,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
                     // Only create if duration is positive and meaningful
                     if (duration > 0.1f) {
-                        creatingClipRect.duration = duration;
-
-                        // Add the new clip to the track
-                        TrackTimeline track = tracks.get(creatingTrackIdx);
-                        track.clips.add(creatingClipRect);
-                        track.clipMap.put(track.clips.size() - 1, creatingClipRect);
-                        updateContentSize();
+                        // Send to backend - it will create the clip and notify us via TimelineClipInfo
+                        BackendManager.getInstance().addTimelineClip(creatingTrackIdx, "", creatingStartTime);
                     }
                     repaint();
                 }
@@ -577,10 +572,11 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         // Edit Clip (MIDI only)
         JMenuItem editItem = new JMenuItem("Edit Clip...");
         editItem.addActionListener(e -> {
-            boolean isMidi = (clip.path != null && clip.path.endsWith(".mid"))
-                    || clip.path == null; // Empty clips are treated as MIDI
+            boolean isMidi = clip.path == null || clip.path.isEmpty()
+                    || clip.path.endsWith(".mid"); // Empty clips are treated as MIDI
             if (isMidi) {
-                File file = clip.path != null ? new File(clip.path) : new File("New Clip.mid");
+                File file = (clip.path != null && !clip.path.isEmpty()) ? new File(clip.path)
+                        : new File("New Clip.mid");
                 JFrame ownerFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
                 // Find clip index in track's timeline clips
                 TrackTimeline trackTimeline = tracks.get(trackIdx);
@@ -633,19 +629,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         createItem.addActionListener(e -> {
             // Create a new clip at the clicked position
             float snapTime = snapToBar(clickTime);
-            float secondsPerBar = (60.0f / bpm) * 4; // 1 bar duration
 
-            ClipRect newClip = new ClipRect();
-            newClip.name = "New Clip";
-            newClip.startTime = snapTime;
-            newClip.duration = secondsPerBar; // Default to 1 bar
-
-            TrackTimeline track = tracks.get(trackIdx);
-            track.clips.add(newClip);
-            track.clipMap.put(track.clips.size() - 1, newClip);
-
-            updateContentSize();
-            repaint();
+            // Send to backend - it will create the clip and notify us via TimelineClipInfo
+            BackendManager.getInstance().addTimelineClip(trackIdx, "", snapTime);
         });
         menu.add(createItem);
 
@@ -872,7 +858,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
                 g2.fillRoundRect(x, y, w, h, 8, 8);
 
-                boolean isMidi = clip.path.toLowerCase().endsWith(".mid") || clip.path.toLowerCase().endsWith(".midi");
+                boolean isMidi = clip.path == null || clip.path.isEmpty()
+                        || clip.path.toLowerCase().endsWith(".mid")
+                        || clip.path.toLowerCase().endsWith(".midi");
 
                 if (isMidi) {
                     if (clip.waveform != null && clip.waveform.length > 0) {

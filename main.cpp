@@ -473,7 +473,7 @@ void run_ipc_loop(ProjectState& state) {
         } else if (command_type == hibiki::ipc::Command_AddTimelineClip) {
             auto cmd = request->command_as_AddTimelineClip();
             int tidx = cmd->track_index();
-            std::string path = cmd->path()->str();
+            std::string path = cmd->path() ? cmd->path()->str() : "";
             double start = cmd->start_time();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));

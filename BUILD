@@ -489,9 +489,7 @@ java_test(
     test_class = "hibiki.ui.PianoRollTest",
     deps = [
         ":hibiki-gui-lib",
-        ":hibiki_response_java_lib",
         "@maven//:junit_junit",
-        "@maven//:com_google_flatbuffers_flatbuffers_java",
     ],
 )
 

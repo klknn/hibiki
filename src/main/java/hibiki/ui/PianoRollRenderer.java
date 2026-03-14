@@ -25,7 +25,7 @@ class PianoRollRenderer {
         for (int i = 0; i < numKeys; i++) {
             int pitch = numKeys - 1 - i;
             int y = i * scaledKeyHeight;
-            boolean black = pianoRoll.isBlackKey(pitch);
+            boolean black = GridMode.isBlackKey(pitch);
 
             g2.setColor(black ? new Color(60, 60, 60) : new Color(240, 240, 240));
             g2.fillRect(0, y, panel.getWidth(), scaledKeyHeight);
@@ -56,7 +56,7 @@ class PianoRollRenderer {
         for (int i = 0; i < numKeys; i++) {
             int y = i * kh;
             int pitch = numKeys - 1 - i;
-            g.setColor(pianoRoll.isBlackKey(pitch) ? new Color(40, 40, 40) : Theme.getInstance().BG_DARKER);
+            g.setColor(GridMode.isBlackKey(pitch) ? new Color(40, 40, 40) : Theme.getInstance().BG_DARKER);
             g.fillRect(0, y, gridPanel.getWidth(), kh);
             g.setColor(new Color(60, 60, 60));
             g.drawLine(0, y, gridPanel.getWidth(), y);

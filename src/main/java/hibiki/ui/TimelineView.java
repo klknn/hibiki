@@ -508,56 +508,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
      * For AUTO mode, adapts based on pixel threshold.
      */
     float getGridSnapSeconds(GridMode mode, float secondsPerBeat) {
-        float secondsPerBar = secondsPerBeat * 4;
-
-        // Handle SECONDS mode separately - 1 second grid interval
-        if (mode == GridMode.SECONDS) {
-            return 1.0f;
+        if (mode == GridMode.AUTO) {
+            return GridMode.autoSecondsInterval(secondsPerBeat, getPixelsPerSecond(), 15);
         }
-
-        if (mode != GridMode.AUTO) {
-            switch (mode) {
-                case BAR:
-                    return secondsPerBar;
-                case HALF:
-                    return secondsPerBar / 2;
-                case QUARTER:
-                    return secondsPerBeat;
-                case EIGHTH:
-                    return secondsPerBeat / 2;
-                case SIXTEENTH:
-                    return secondsPerBeat / 4;
-                case THIRTY_SECOND:
-                    return secondsPerBeat / 8;
-                case TRIPLET_QUARTER:
-                    return secondsPerBar / 3;
-                case TRIPLET_EIGHTH:
-                    return secondsPerBar / 6;
-                case TRIPLET_16TH:
-                    return secondsPerBar / 12;
-                case TRIPLET_32ND:
-                    return secondsPerBar / 24;
-                default:
-                    return secondsPerBeat;
-            }
-        }
-
-        // AUTO mode: find finest grid that maintains minimum pixel spacing
-        int minPixels = 15;
-        float[] divisions = {
-                secondsPerBeat / 8, // 1/32
-                secondsPerBeat / 4, // 1/16
-                secondsPerBeat / 2, // 1/8
-                secondsPerBeat, // 1/4 (beat)
-                secondsPerBar / 2, // 1/2
-                secondsPerBar // 1/1 (bar)
-        };
-
-        for (float div : divisions) {
-            if (div * getPixelsPerSecond() >= minPixels) {
-                return div;
-            }
-        }
-        return secondsPerBar;
+        return mode.getSecondsInterval(secondsPerBeat);
     }
 }

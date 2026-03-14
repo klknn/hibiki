@@ -3,10 +3,7 @@ package hibiki.ui;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
-import hibiki.ipc.ClipMidiData;
-import hibiki.ipc.MidiEventData;
-import com.google.flatbuffers.FlatBufferBuilder;
-import java.nio.ByteBuffer;
+
 
 public class PianoRollTest {
 
@@ -57,40 +54,35 @@ public class PianoRollTest {
 
     @Test
     public void testIsBlackKey() {
-        if (java.awt.GraphicsEnvironment.isHeadless()) return;
-        java.io.File dummyFile = new java.io.File("dummy.mid");
-        PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 0.0f);
-
+        // Now a static method on GridMode — no PianoRoll instance needed
         // C=0 is white
-        assertFalse(pr.isBlackKey(0));
-        assertFalse(pr.isBlackKey(12));
-        assertFalse(pr.isBlackKey(60)); // Middle C
+        assertFalse(GridMode.isBlackKey(0));
+        assertFalse(GridMode.isBlackKey(12));
+        assertFalse(GridMode.isBlackKey(60)); // Middle C
         // C#=1 is black
-        assertTrue(pr.isBlackKey(1));
-        assertTrue(pr.isBlackKey(13));
-        assertTrue(pr.isBlackKey(61));
+        assertTrue(GridMode.isBlackKey(1));
+        assertTrue(GridMode.isBlackKey(13));
+        assertTrue(GridMode.isBlackKey(61));
         // D=2 is white
-        assertFalse(pr.isBlackKey(2));
+        assertFalse(GridMode.isBlackKey(2));
         // D#=3 is black
-        assertTrue(pr.isBlackKey(3));
+        assertTrue(GridMode.isBlackKey(3));
         // E=4 is white
-        assertFalse(pr.isBlackKey(4));
+        assertFalse(GridMode.isBlackKey(4));
         // F=5 is white
-        assertFalse(pr.isBlackKey(5));
+        assertFalse(GridMode.isBlackKey(5));
         // F#=6 is black
-        assertTrue(pr.isBlackKey(6));
+        assertTrue(GridMode.isBlackKey(6));
         // G=7 is white
-        assertFalse(pr.isBlackKey(7));
+        assertFalse(GridMode.isBlackKey(7));
         // G#=8 is black
-        assertTrue(pr.isBlackKey(8));
+        assertTrue(GridMode.isBlackKey(8));
         // A=9 is white
-        assertFalse(pr.isBlackKey(9));
+        assertFalse(GridMode.isBlackKey(9));
         // A#=10 is black
-        assertTrue(pr.isBlackKey(10));
+        assertTrue(GridMode.isBlackKey(10));
         // B=11 is white
-        assertFalse(pr.isBlackKey(11));
-
-        pr.dispose();
+        assertFalse(GridMode.isBlackKey(11));
     }
 
     @Test
@@ -130,15 +122,11 @@ public class PianoRollTest {
     }
 
     @Test
-    public void testGetScaledKeyHeight() {
-        if (java.awt.GraphicsEnvironment.isHeadless())
-            return;
-        java.io.File dummyFile = new java.io.File("dummy.mid");
-        PianoRoll pr = new PianoRoll(null, dummyFile, 0, -1, 0, 0.0f);
-
-        int height = pr.getScaledKeyHeight();
-        assertTrue("Scaled key height should be positive", height > 0);
-        pr.dispose();
+    public void testGridModeTickInterval() {
+        // Test that GridMode.getTickInterval works for QUARTER mode with resolution 96
+        assertEquals(96, GridMode.QUARTER.getTickInterval(96));
+        assertEquals(96 * 4, GridMode.BAR.getTickInterval(96));
+        assertEquals(48, GridMode.EIGHTH.getTickInterval(96));
     }
 
     @Test

@@ -304,13 +304,13 @@ public class PianoRoll extends JDialog {
         keysPanel = new JPanel() {
             @Override
             public Dimension getPreferredSize() {
-                return new Dimension(Theme.getInstance().scale(60), NUM_KEYS * getScaledKeyHeight());
+                return new Dimension(Theme.getInstance().scale(60), NUM_KEYS * mouseHandler.getScaledKeyHeight());
             }
 
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                renderer.paintKeyLabels(g, this, NUM_KEYS, getScaledKeyHeight());
+                renderer.paintKeyLabels(g, this, NUM_KEYS, mouseHandler.getScaledKeyHeight());
             }
         };
 
@@ -325,24 +325,24 @@ public class PianoRoll extends JDialog {
                     }
                 }
                 maxT = Math.max(maxT, sequence.getResolution() * 4 * 4); // At least 4 bars
-                return new Dimension((int) (maxT * getTickWidth()) + 200, NUM_KEYS * getScaledKeyHeight());
+                return new Dimension((int) (maxT * getTickWidth()) + 200, NUM_KEYS * mouseHandler.getScaledKeyHeight());
             }
 
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                renderer.paintGrid(g, this, NUM_KEYS, getScaledKeyHeight(), getTickWidth(),
+                renderer.paintGrid(g, this, NUM_KEYS, mouseHandler.getScaledKeyHeight(), getTickWidth(),
                         sequence, notes, isDraggingNote, draggingNote,
                         dragOriginalPitch, dragOriginalTick,
                         playheadPos, clipStartTime, bpm);
             }
         };
 
-        setupMouseListeners();
+        mouseHandler.install();
 
         // Sync scrolling
         gridScroll = new JScrollPane(gridPanel);
-        gridScroll.getVerticalScrollBar().setUnitIncrement(getScaledKeyHeight());
+        gridScroll.getVerticalScrollBar().setUnitIncrement(mouseHandler.getScaledKeyHeight());
         gridScroll.getHorizontalScrollBar().setUnitIncrement(Theme.getInstance().scale(20));
 
         // Time ruler panel (column header) - shows bars/beats and allows seeking
@@ -380,7 +380,7 @@ public class PianoRoll extends JDialog {
             private void seekFromRuler(int x) {
                 float tw = getTickWidth();
                 long tick = (long) (x / tw);
-                seekToTick(tick);
+                mouseHandler.seekToTick(tick);
                 timeRulerPanel.repaint();
             }
         };
@@ -436,7 +436,7 @@ public class PianoRoll extends JDialog {
             @Override
             public void mousePressed(MouseEvent e) {
                 editingVelocity = true;
-                updateVelocityAt(e.getX(), e.getY());
+                mouseHandler.updateVelocityAt(e.getX(), e.getY());
             }
 
             @Override
@@ -450,7 +450,7 @@ public class PianoRoll extends JDialog {
             @Override
             public void mouseDragged(MouseEvent e) {
                 if (editingVelocity) {
-                    updateVelocityAt(e.getX(), e.getY());
+                    mouseHandler.updateVelocityAt(e.getX(), e.getY());
                 }
             }
         };
@@ -520,7 +520,7 @@ public class PianoRoll extends JDialog {
 
         // Scroll to center on note content
         SwingUtilities.invokeLater(() -> {
-            int centerY = (NUM_KEYS - 1 - centerPitch) * getScaledKeyHeight();
+            int centerY = (NUM_KEYS - 1 - centerPitch) * mouseHandler.getScaledKeyHeight();
             int centerX = (int) (centerTick * getTickWidth());
             gridScroll.getVerticalScrollBar().setValue(Math.max(0, centerY - gridScroll.getViewport().getHeight() / 2));
             gridScroll.getHorizontalScrollBar()
@@ -558,93 +558,16 @@ public class PianoRoll extends JDialog {
         });
     }
 
-    void updateVelocityAt(int x, int y) {
-        mouseHandler.updateVelocityAt(x, y);
-    }
-
-    int getScaledKeyHeight() {
-        return mouseHandler.getScaledKeyHeight();
-    }
-
-    private void setupMouseListeners() {
-        mouseHandler.install();
-    }
-
-    Note getNoteAt(int x, int y) {
-        return mouseHandler.getNoteAt(x, y);
-    }
-
-    void seekToTick(long tick) {
-        mouseHandler.seekToTick(tick);
-    }
-
-    boolean isBlackKey(int pitch) {
-        int note = pitch % 12;
-        return note == 1 || note == 3 || note == 6 || note == 8 || note == 10;
-    }
-
-    /**
-     * Get the tick interval for grid lines based on current mode and zoom.
-     * For AUTO mode, adapts based on pixel threshold.
-     * Returns tick interval for main grid lines.
-     */
+    /** Get the tick interval for grid lines based on current mode and zoom. */
     int getGridTickInterval() {
-        int res = sequence.getResolution(); // ticks per beat
-        int ticksPerBar = res * 4; // 4/4 time
-
-        if (gridMode != GridMode.AUTO) {
-            // Fixed modes - return exact division
-            switch (gridMode) {
-                case BAR:
-                    return ticksPerBar;
-                case HALF:
-                    return ticksPerBar / 2;
-                case QUARTER:
-                    return res;
-                case EIGHTH:
-                    return res / 2;
-                case SIXTEENTH:
-                    return res / 4;
-                case THIRTY_SECOND:
-                    return res / 8;
-                case TRIPLET_QUARTER:
-                    return ticksPerBar / 3;
-                case TRIPLET_EIGHTH:
-                    return ticksPerBar / 6;
-                case TRIPLET_16TH:
-                    return ticksPerBar / 12;
-                case TRIPLET_32ND:
-                    return ticksPerBar / 24;
-                default:
-                    return res;
-            }
+        int res = sequence.getResolution();
+        if (gridMode == GridMode.AUTO) {
+            return GridMode.autoTickInterval(res, getTickWidth(), 15);
         }
-
-        // AUTO mode: find finest grid that maintains minimum pixel spacing
-        float tw = getTickWidth();
-        int minPixels = 15; // Minimum pixels between grid lines
-
-        // Try divisions from finest to coarsest, return first that fits
-        int[] divisions = {
-                res / 8, // 1/32
-                res / 4, // 1/16
-                res / 2, // 1/8
-                res, // 1/4 (beat)
-                ticksPerBar / 2, // 1/2
-                ticksPerBar // 1/1 (bar)
-        };
-
-        for (int div : divisions) {
-            if (div * tw >= minPixels) {
-                return div;
-            }
-        }
-        return ticksPerBar; // Fallback to bars
+        return gridMode.getTickInterval(res);
     }
 
-    /**
-     * Get snap interval for note creation/editing based on grid mode.
-     */
+    /** Get snap interval for note creation/editing based on grid mode. */
     int getSnapTickInterval() {
         return getGridTickInterval();
     }

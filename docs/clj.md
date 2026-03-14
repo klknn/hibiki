@@ -5,7 +5,7 @@ This document tracks the migration of the Hibiki DAW GUI from Java to Clojure.
 ## Motivation
 
 The Java GUI grew to ~4900 lines across 22 files. Clojure offers:
-- **Conciseness**: Equivalent UI code in ~60% fewer lines (4927 → 1978)
+- **Conciseness**: Equivalent UI code in ~50% fewer lines (4927 → 2424)
 - **Interactive development**: REPL-driven workflow for rapid UI iteration (see below)
 - **Functional state management**: Atoms and immutable data instead of mutable fields
 - **Hot reloading**: Live code reloading during development without restarting the app
@@ -106,14 +106,14 @@ This approach avoids AOT compilation and leverages Clojure's dynamic loading.
 
 | Namespace | Lines | Java Equivalent | Description |
 |-----------|-------|-----------------|-------------|
-| `hibiki.ui.core` | ~100 | `GuiMain.java` | Application entry point, JFrame setup |
-| `hibiki.ui.theme` | ~250 | `Theme.java` | Colors, fonts, scaling, grid helpers |
-| `hibiki.ui.widgets` | ~90 | (Part of Theme) | Reusable UI widgets (buttons, meters) |
-| `hibiki.ui.session` | ~400 | `SessionView.java`, `SessionViewIpc.java` | Session clip grid view |
-| `hibiki.ui.timeline` | ~265 | `TimelineView.java`, `TimelineRenderer.java`, etc. | Timeline arrangement view |
-| `hibiki.ui.piano-roll` | ~280 | `PianoRoll.java`, `PianoRollRenderer.java`, etc. | MIDI piano roll editor |
-| `hibiki.ui.plugin` | ~190 | `PluginPane.java` | Plugin device chain pane |
-| `hibiki.ui.browser` | ~230 | `BrowserPane.java` | File/plugin browser |
+| `hibiki.ui.core` | ~188 | `GuiMain.java` | Application entry point, JFrame setup |
+| `hibiki.ui.theme` | ~248 | `Theme.java` | Colors, fonts, scaling, grid helpers |
+| `hibiki.ui.widgets` | ~274 | (Part of Theme) | Reusable UI widgets (buttons, meters) |
+| `hibiki.ui.session` | ~416 | `SessionView.java`, `SessionViewIpc.java` | Session clip grid view |
+| `hibiki.ui.timeline` | ~488 | `TimelineView.java`, `TimelineRenderer.java`, etc. | Timeline arrangement view with 3-layer grid, drag-to-create, rounded-rect clips |
+| `hibiki.ui.piano-roll` | ~291 | `PianoRoll.java`, `PianoRollRenderer.java`, etc. | MIDI piano roll editor (supports new empty clips) |
+| `hibiki.ui.plugin` | ~288 | `PluginPane.java` | Plugin device chain pane |
+| `hibiki.ui.browser` | ~231 | `BrowserPane.java` | File/plugin browser |
 
 ### Build System
 
@@ -133,14 +133,14 @@ so the Clojure runtime can locate them on the classpath.
 
 | Component | Java Files | Java Lines | Clj Lines | Reduction |
 |-----------|-----------|-----------|---------------|-----------|
-| Theme + Widgets | `Theme.java`, `GridMode.java`, `LevelMeter.java`, `ZoomControlPanel.java` | 523 | 401 | 23% |
-| Session View | `SessionView.java`, `SessionViewIpc.java` | 571 | 414 | 28% |
-| Timeline View | `TimelineView.java`, `TimelineRenderer.java`, `TimelineMouseHandler.java`, `TimelineNotificationHandler.java` | 1190 | 271 | 77% |
-| Piano Roll | `PianoRoll.java`, `PianoRollRenderer.java`, `PianoRollMouseHandler.java`, `MidiDataModel.java` | 1047 | 281 | 73% |
-| Plugin Pane | `PluginPane.java` | 339 | 192 | 43% |
+| Theme + Widgets | `Theme.java`, `GridMode.java`, `LevelMeter.java`, `ZoomControlPanel.java` | 523 | 522 | 0% |
+| Session View | `SessionView.java`, `SessionViewIpc.java` | 571 | 416 | 27% |
+| Timeline View | `TimelineView.java`, `TimelineRenderer.java`, `TimelineMouseHandler.java`, `TimelineNotificationHandler.java` | 1190 | 488 | 59% |
+| Piano Roll | `PianoRoll.java`, `PianoRollRenderer.java`, `PianoRollMouseHandler.java`, `MidiDataModel.java` | 1047 | 291 | 72% |
+| Plugin Pane | `PluginPane.java` | 339 | 288 | 15% |
 | Browser | `BrowserPane.java` | 378 | 231 | 39% |
 | Main/Core | `GuiMain.java`, `MainView.java`, `TopBar.java`, `SettingsDialog.java`, `WaveformPanel.java` | 762 | 188 | 75% |
-| **Total** | **22 files** | **4927** | **1978** | **60%** |
+| **Total** | **22 files** | **4927** | **2424** | **51%** |
 
 ### Key Patterns
 
@@ -222,8 +222,8 @@ signature is `accept(Object)`. Adding `^Notification` on the parameter causes
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| `theme_test.clj` | 3 | Colors, fonts, scaling, presets, grid helpers |
-| `piano_roll_test.clj` | 12 | Note records, MIDI parsing, file loading |
+| `theme_test.clj` | 15 | Colors, fonts, scaling, presets, grid helpers |
+| `piano_roll_test.clj` | 12 | Note records, MIDI parsing, file loading (incl. empty sequence for new clips) |
 | `session_test.clj` | 3 | Track selection, default state |
 | `timeline_test.clj` | 8 | Track data records, state, pixel math |
 | `browser_test.clj` | 8 | FileItem records, toString, extension sets |
@@ -671,4 +671,5 @@ and immutability in one line. In Java you'd add `equals`/`hashCode`/`toString` m
 - Java GUI and Clojure GUI use the same backend; both builds coexist
 - Clojure test startup is slower (~3s) due to runtime initialization
 - Some IDE lint errors for `ClojureMain.java` imports (expected — Clojure jar not in IDE classpath)
-- All reflection warnings have been resolved with explicit type hints across all namespaces
+- 6 unfixable `paintComponent` reflection warnings remain — `proxy-super` cannot resolve protected parent methods at compile time (Clojure limitation). All other reflection warnings have been resolved with explicit type hints.
+- `Nonexistent button 4/5` warnings from `X11.XToolkit` appear on scroll wheel events — this is a JDK/X11 compatibility issue unrelated to application code

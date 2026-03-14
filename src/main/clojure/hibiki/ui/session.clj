@@ -15,7 +15,7 @@
            [com.google.flatbuffers FlatBufferBuilder]
            [hibiki.ipc Request Command PlayClip StopTrack LoadClip
                        SetClipLoop PlayScene DeleteClip
-                       Response ClipInfo TrackLevels TrackLevel]))
+                       Response Notification ClipInfo TrackLevels TrackLevel]))
 
 (set! *warn-on-reflection* true)
 
@@ -239,10 +239,9 @@
                 (.setBackground btn (t/color :accent-blue)))
               (dragExit [^DropTargetEvent _]
                 (.setBackground btn (t/color :panel-bg-light))))))
-        (aset ^"[[Ljavax.swing.JButton;" (:slot-buttons @session-state) track-idx
-              (doto (make-array JButton 5) (aset i btn)))
-        ;; Actually store per-slot
-        (aset ^"[Ljavax.swing.JButton;" (aget ^"[[Ljavax.swing.JButton;" (:slot-buttons @session-state) track-idx) i btn)
+        (aset ^"[Ljavax.swing.JButton;"
+              (aget ^"[[Ljavax.swing.JButton;" (:slot-buttons @session-state) track-idx)
+              i btn)
         (.add strip (Box/createVerticalStrut (t/scale 2)))
         (.add strip btn)))
 
@@ -370,7 +369,8 @@
     ;; Notification handler
     (.addNotificationListener backend
       (reify java.util.function.Consumer
-        (accept [_ notification]
+        (accept [_ notif]
+          (let [^Notification notification notif]
           (condp = (.responseType notification)
             Response/ClipInfo
             (let [info ^ClipInfo (.response notification (ClipInfo.))]
@@ -408,7 +408,7 @@
                      (.setBackground btn (t/color :panel-bg-light))
                      (.setForeground btn (t/color :text-normal))))))
 
-            nil))))
+            nil)))))
 
     (swap! session-state assoc :instance panel)
     {:panel panel}))

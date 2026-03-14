@@ -234,7 +234,8 @@
     ;; Notification handler
     (.addNotificationListener backend
       (reify java.util.function.Consumer
-        (accept [_ notification]
+        (accept [_ notif]
+          (let [^Notification notification notif]
           (condp = (.responseType notification)
             Response/PlayheadInfo
             (let [phi ^PlayheadInfo (.response notification (PlayheadInfo.))]
@@ -250,7 +251,7 @@
               (when (and (>= ti 0) (< ti 4))
                 (let [track (nth (:tracks @tl-state) ti)
                       clip (->TrackClip (.clipIndex ci) (.path ci)
-                                        (.startTime ci) (.durationBeats ci)
+                                        (.startTime ci) (.duration ci)
                                         (.name ci) nil)]
                   (swap! (:clips track)
                          (fn [clips]
@@ -258,7 +259,7 @@
                              (conj filtered clip))))
                   (SwingUtilities/invokeLater #(.repaint grid-panel)))))
 
-            nil))))
+            nil)))))
 
     ;; Repaint timer for playhead
     (let [timer (Timer. 33 (reify ActionListener

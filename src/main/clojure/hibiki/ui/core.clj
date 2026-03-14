@@ -53,7 +53,7 @@
 ;; MainView — assembles all panels
 ;; ---------------------------------------------------------------------------
 
-(defn- make-main-view [backend]
+(defn- make-main-view [^hibiki.BackendManager backend]
   (let [panel           (JPanel. (BorderLayout.))
         center          (JPanel. (CardLayout.))
         {:keys [panel] :as top-bar}  (w/make-top-bar backend)

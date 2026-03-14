@@ -32,6 +32,26 @@ maven.install(
 )
 use_repo(maven, "maven")
 
+http_jar = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_jar")
+
+http_jar(
+    name = "clojure_jar",
+    url = "https://repo1.maven.org/maven2/org/clojure/clojure/1.12.0/clojure-1.12.0.jar",
+    integrity = "sha256-xFMzAGRBoFnqn9sTQfxsH0C5IaENzNgmZTEeSKA4R2M=",
+)
+
+http_jar(
+    name = "clojure_spec_alpha_jar",
+    url = "https://repo1.maven.org/maven2/org/clojure/spec.alpha/0.5.238/spec.alpha-0.5.238.jar",
+    integrity = "sha256-lM2ZtupjlkHzevSGCmQ7btOZ7lqL5dcXz/C2Y8jXUHc=",
+)
+
+http_jar(
+    name = "clojure_core_specs_alpha_jar",
+    url = "https://repo1.maven.org/maven2/org/clojure/core.specs.alpha/0.4.74/core.specs.alpha-0.4.74.jar",
+    integrity = "sha256-63OsCM9JuoQMiLpnvu8RM2ylVDM9lAiAjXiUbg/rnds=",
+)
+
 http_archive(
     name = "vst3sdk",
     url = "https://download.steinberg.net/sdk_downloads/vst-sdk_3.8.0_build-66_2025-10-20.zip",

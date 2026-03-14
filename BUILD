@@ -416,7 +416,7 @@ java_library(
 
 java_library(
     name = "hibiki-gui-lib",
-    srcs = glob(["src/main/java/hibiki/**/*.java"]),
+    srcs = glob(["src/main/java/hibiki/**/*.java"], exclude = ["src/main/java/hibiki/ClojureMain.java"]),
     resources = glob(["src/main/resources/**/*"]),
     deps = [
         ":hibiki_request_java_lib",
@@ -432,6 +432,33 @@ java_binary(
     name = "hibiki-gui-java",
     main_class = "hibiki.GuiMain",
     runtime_deps = [":hibiki-gui-lib"],
+    data = [":hbk-play", "//testdata"],
+)
+
+# Clojure source files — strip src/main/clojure/ so Clojure RT can find them
+java_library(
+    name = "hibiki-clj-sources",
+    resources = glob(["src/main/clojure/**/*.clj"]),
+    resource_strip_prefix = "src/main/clojure",
+)
+
+# Clojure frontend — shares Java backend classes, adds Clojure sources as resources
+java_library(
+    name = "hibiki-clj-lib",
+    srcs = ["src/main/java/hibiki/ClojureMain.java"],
+    deps = [
+        ":hibiki-gui-lib",
+        ":hibiki-clj-sources",
+        "@clojure_jar//jar",
+        "@clojure_spec_alpha_jar//jar",
+        "@clojure_core_specs_alpha_jar//jar",
+    ],
+)
+
+java_binary(
+    name = "hibiki-gui-clj",
+    main_class = "hibiki.ClojureMain",
+    runtime_deps = [":hibiki-clj-lib"],
     data = [":hbk-play", "//testdata"],
 )
 
@@ -546,4 +573,33 @@ java_test(
         "@maven//:junit_junit",
         "@maven//:com_google_flatbuffers_flatbuffers_java",
     ],
+)
+
+# Clojure test resources
+java_library(
+    name = "hibiki-clj-test-sources",
+    resources = glob(["src/test/clojure/**/*.clj"]),
+    resource_strip_prefix = "src/test/clojure",
+)
+
+# Clojure tests (via ClojureTestRunner)
+java_test(
+    name = "clojure_tests",
+    srcs = ["src/test/java/hibiki/ClojureTestRunner.java"],
+    main_class = "hibiki.ClojureTestRunner",
+    test_class = "hibiki.ClojureTestRunner",
+    use_testrunner = False,
+    deps = [
+        ":hibiki-clj-lib",
+        ":hibiki-clj-sources",
+        ":hibiki-clj-test-sources",
+        ":hibiki-gui-lib",
+        ":hibiki_request_java_lib",
+        ":hibiki_response_java_lib",
+        "@clojure_jar//jar",
+        "@clojure_spec_alpha_jar//jar",
+        "@clojure_core_specs_alpha_jar//jar",
+        "@maven//:com_google_flatbuffers_flatbuffers_java",
+    ],
+    data = ["//testdata"],
 )

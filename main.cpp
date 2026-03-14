@@ -627,6 +627,8 @@ void run_ipc_loop(ProjectState& state) {
                         if (!clip->midi_events.empty()) {
                             clip->duration_beats = clip->midi_events.back().beats + 0.1;
                         }
+                        // Sync to TimelineClip so playback engine uses updated duration
+                        tc->duration_beats = clip->duration_beats;
                         // Regenerate waveform_summary (note preview data)
                         clip->waveform_summary.clear();
                         double total_beats = clip->duration_beats > 0 ? clip->duration_beats : 1.0;

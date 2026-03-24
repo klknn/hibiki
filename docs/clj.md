@@ -16,23 +16,37 @@ Unlike Java where every change requires recompile → restart → reproduce stat
 you modify a **running** GUI interactively. This is incredibly powerful for UI work — you can
 tweak colors, resize panels, and test event handlers instantly without losing application state.
 
-### Setup: Socket REPL via Deploy JAR
+### Setup: Socket REPL via Clojure CLI (preferred)
 
-Since we use Bazel (not Leiningen), we launch a Socket REPL using the built deploy JAR:
+The simplest way to get a REPL is via `deps.edn`:
 
 ```bash
-# Step 1: Build the deploy JAR (contains all dependencies)
-bazel build -c opt //:hibiki-gui-clj_deploy.jar
+# Step 1: Build the GUI jar (one-time, or after Java/.fbs changes)
+bazel build -c opt //:hibiki-gui-lib
 
-# Step 2: Launch with a Socket REPL server on port 5555
-#   -Dclojure.server.repl starts a built-in Socket REPL (no nREPL needed)
-#   The src/main/clojure path is added so file edits are picked up live
-java -Dclojure.server.repl="{:port 5555 :accept clojure.core.server/repl}" \
-     -cp "src/main/clojure:bazel-bin/hibiki-gui-clj_deploy.jar" \
-     hibiki.ClojureMain
+# Step 2: Launch GUI + Socket REPL on port 5555
+clj -M:repl
 
 # Step 3: In another terminal, connect to the REPL
 rlwrap nc localhost 5555
+```
+
+This uses `src/main/clojure/hibiki/repl.clj` which starts a Socket REPL server and
+launches the GUI. Clojure source files are loaded directly from disk, so edits are
+picked up immediately on `:reload`.
+
+### Alternative: Socket REPL via Deploy JAR
+
+You can also launch a Socket REPL using the Bazel-built deploy JAR:
+
+```bash
+# Build the deploy JAR (contains all dependencies)
+bazel build -c opt //:hibiki-gui-clj_deploy.jar
+
+# Launch with a Socket REPL server on port 5555
+java -Dclojure.server.repl="{:port 5555 :accept clojure.core.server/repl}" \
+     -cp "src/main/clojure:bazel-bin/hibiki-gui-clj_deploy.jar" \
+     hibiki.ClojureMain
 ```
 
 > **Tip**: Adding `src/main/clojure` to the classpath **before** the deploy JAR ensures that
@@ -231,22 +245,30 @@ signature is `accept(Object)`. Adding `^Notification` on the parameter causes
 ### Running Tests
 
 ```bash
-# Run all Clojure tests
+# Run all Clojure tests via Bazel
 bazel test -c opt :clojure_tests --test_output=all
 
 # Run alongside Java tests
 bazel test -c opt :all --test_output=errors
+
+# Run via Clojure CLI (cognitect test-runner, auto-discovers test namespaces)
+clj -X:test
+
+# Run via Clojure CLI (custom runner, hardcoded namespace list)
+clj -M:test-runner
 ```
 
-### Test Runner
+### Test Runners
 
-Tests use `clojure.test` and are executed via `ClojureTestRunner.java`,
-a Java main class that:
-1. Requires all Clojure test namespaces
-2. Invokes `clojure.test/run-tests` on each
-3. Exits with code 1 if any test fails
+| Runner | Command | Discovery |
+|--------|---------|-----------|
+| **Bazel** | `bazel test :clojure_tests` | `ClojureTestRunner.java` with hardcoded list |
+| **cognitect test-runner** | `clj -X:test` | Auto-discovers `*-test` namespaces in `src/test/clojure` |
+| **Custom runner** | `clj -M:test-runner` | `hibiki.test-runner` namespace with hardcoded list |
 
 ## Building & Running
+
+### Bazel (primary)
 
 ```bash
 # Build Clojure frontend
@@ -258,6 +280,49 @@ bazel run -c opt --enable_platform_specific_config :hibiki-gui-clj
 # Run Java frontend (still available)
 bazel run -c opt --enable_platform_specific_config :hibiki-gui-java
 ```
+
+### Clojure CLI (alternative)
+
+Clojure CLI (`deps.edn`) provides lightweight dependency resolution and integrates with
+standard Clojure tooling (CIDER, Calva, Cursive). Unlike Leiningen, it doesn't try to be
+a full build tool — it just resolves deps and sets up the classpath, which is ideal since
+Bazel already handles builds.
+
+**Prerequisites**: Java 17+, [Clojure CLI](https://clojure.org/guides/install), one initial Bazel build.
+
+#### First-Time Setup
+
+```bash
+# 1. Build the GUI jar with Bazel (required before any clj command)
+bazel build -c opt //:hibiki-gui-lib
+```
+
+This produces `bazel-bin/libhibiki-gui-lib.jar` which `deps.edn` references as a
+local dependency. It contains all compiled Java classes and FlatBuffer-generated IPC code.
+
+> **Note**: Re-run this command when Java sources or `.fbs` schemas change.
+> For day-to-day Clojure-only changes, `clj -M:run` works directly.
+
+#### Common Commands
+
+```bash
+clj -M:run          # Run the Clojure GUI
+clj -X:test         # Run Clojure tests (cognitect test-runner)
+clj -M:test-runner  # Run Clojure tests (custom runner, backup)
+clj -M:repl         # GUI + Socket REPL on port 5555
+```
+
+Connect to the REPL: `rlwrap nc localhost 5555`
+
+#### Bazel vs Clojure CLI
+
+| Aspect | Bazel | Clojure CLI |
+|--------|-------|-------------|
+| **Java/FlatBuffer build** | Automatic (build rule) | One-time: `bazel build -c opt //:hibiki-gui-lib` |
+| **C++ backend** | Built together | Not supported (uses pre-built `hbk-play`) |
+| **REPL** | Deploy JAR + `java -D...` | `clj -M:repl` |
+| **IDE integration** | Limited | CIDER, Calva, Cursive |
+| **CI/CD** | ✅ Primary | Optional |
 
 ## When Clojure Excels (with real examples)
 

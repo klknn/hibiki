@@ -3,8 +3,10 @@ bazel-*
 
 # Build output
 bin/
+target/
 output.wav
 genhtml
+.cpcache/
 
 # IDEs
 .vscode/

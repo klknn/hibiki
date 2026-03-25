@@ -155,7 +155,23 @@
     ;; Welcome message
     (.append output "── Hibiki Echo REPL ──\n")
     (.append output "Ctrl+Enter to evaluate. Select text for partial eval.\n")
-    (.append output "Try: (require '[hibiki.echo.dev :as dev]) (dev/theme! :solarized-dark)\n\n")
+
+    ;; Auto-import common classes so users can start right away
+    (future
+      (try
+        (eval '(do
+                 (import '[hibiki BackendManager]
+                         '[hibiki.ui SessionView TimelineView PluginPane Theme MainView]
+                         '[com.google.flatbuffers FlatBufferBuilder]
+                         '[hibiki.ipc Command Request LoadPlugin LoadClip ListPlugins
+                           ShowPluginGui SetParamValue RemovePlugin
+                           Response Notification ClipMidiData MidiEventData])
+                 (require '[hibiki.echo.dev :as dev])
+                 (def bm (BackendManager/getInstance))))
+        (append! "Ready. `bm`, `dev/*`, and all IPC classes are available.\n")
+        (append! "Try: (dev/theme! :solarized-dark)\n\n")
+        (catch Throwable t
+          (append! (str "Auto-import warning: " (.getMessage t) "\n\n")))))
 
     ;; Ctrl+Enter to evaluate (on the input text area)
     (let [im (.getInputMap input JComponent/WHEN_FOCUSED)

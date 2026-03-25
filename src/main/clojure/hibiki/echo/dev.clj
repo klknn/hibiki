@@ -47,6 +47,68 @@
        (.repaint f)))))
 
 ;; ---------------------------------------------------------------------------
+;; Plugin helpers
+;; ---------------------------------------------------------------------------
+
+(defn- send-request! [^com.google.flatbuffers.FlatBufferBuilder builder]
+  (.sendRequest (hibiki.BackendManager/getInstance) builder))
+
+(defn load-plugin!
+  "Load a VST3 plugin onto a track.
+   (load-plugin! 0 \"/path/to/Dexed.vst3\")       ;; first sub-plugin
+   (load-plugin! 0 \"/path/to/Dexed.vst3\" 1)     ;; second sub-plugin"
+  ([track-idx path] (load-plugin! track-idx path 0))
+  ([track-idx ^String path plugin-idx]
+   (let [builder (com.google.flatbuffers.FlatBufferBuilder. 512)
+         path-off (.createString builder path)
+         cmd-off  (hibiki.ipc.LoadPlugin/createLoadPlugin builder (int track-idx) path-off (int plugin-idx))
+         req-off  (hibiki.ipc.Request/createRequest builder hibiki.ipc.Command/LoadPlugin cmd-off)]
+     (.finish builder req-off)
+     (send-request! builder))))
+
+(defn remove-plugin!
+  "Remove a plugin from a track.
+   (remove-plugin! 0 0)  ;; remove plugin 0 from track 0"
+  [track-idx plugin-idx]
+  (let [builder (com.google.flatbuffers.FlatBufferBuilder. 64)
+        cmd-off (hibiki.ipc.RemovePlugin/createRemovePlugin builder (int track-idx) (int plugin-idx))
+        req-off (hibiki.ipc.Request/createRequest builder hibiki.ipc.Command/RemovePlugin cmd-off)]
+    (.finish builder req-off)
+    (send-request! builder)))
+
+(defn show-plugin-gui!
+  "Open the native GUI window for a plugin.
+   (show-plugin-gui! 0 0)  ;; track 0, plugin 0"
+  [track-idx plugin-idx]
+  (let [builder (com.google.flatbuffers.FlatBufferBuilder. 64)
+        cmd-off (hibiki.ipc.ShowPluginGui/createShowPluginGui builder (int track-idx) (int plugin-idx))
+        req-off (hibiki.ipc.Request/createRequest builder hibiki.ipc.Command/ShowPluginGui cmd-off)]
+    (.finish builder req-off)
+    (send-request! builder)))
+
+(defn set-param!
+  "Set a plugin parameter value (0.0–1.0).
+   (set-param! 0 0 42 0.75)  ;; track 0, plugin 0, param 42 = 75%"
+  [track-idx plugin-idx param-id value]
+  (let [builder (com.google.flatbuffers.FlatBufferBuilder. 64)
+        cmd-off (hibiki.ipc.SetParamValue/createSetParamValue
+                  builder (int track-idx) (int plugin-idx) (int param-id) (float value))
+        req-off (hibiki.ipc.Request/createRequest builder hibiki.ipc.Command/SetParamValue cmd-off)]
+    (.finish builder req-off)
+    (send-request! builder)))
+
+(defn list-plugins!
+  "Scan a VST3 bundle and list available sub-plugins.
+   (list-plugins! \"/path/to/Dexed.vst3\")"
+  [^String path]
+  (let [builder (com.google.flatbuffers.FlatBufferBuilder. 256)
+        path-off (.createString builder path)
+        cmd-off  (hibiki.ipc.ListPlugins/createListPlugins builder path-off)
+        req-off  (hibiki.ipc.Request/createRequest builder hibiki.ipc.Command/ListPlugins cmd-off)]
+    (.finish builder req-off)
+    (send-request! builder)))
+
+;; ---------------------------------------------------------------------------
 ;; Entry point — GUI + Socket REPL
 ;; ---------------------------------------------------------------------------
 

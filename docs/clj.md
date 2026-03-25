@@ -60,6 +60,8 @@ or `rlwrap nc localhost 5555` for socket REPL), you can interact with everything
 
 #### Setup (run once per session)
 
+This is prelude (i.e. preamble lines) in REPL:
+
 ```clojure
 ;; Echo frontend — dev utilities are auto-available
 (require '[hibiki.echo.dev :as dev])
@@ -67,6 +69,23 @@ or `rlwrap nc localhost 5555` for socket REPL), you can interact with everything
         '[hibiki.ui SessionView TimelineView PluginPane Theme])
 (def bm (BackendManager/getInstance))
 ```
+
+For starter, try copy-paste these lines and type Ctrl+Enter:
+
+```clojure
+(dev/theme! :solarized-dark)    ; switch entire GUI theme live
+
+(.addTimelineClip bm 0 "testdata/rickroll.mid" 0.0 4.0)
+(dev/load-plugin! 0 "testdata/Dexed.vst3")    ;; load plugin
+
+(.startPlayback bm)             ; start playback
+
+;; Open the native plugin GUI window
+(dev/show-plugin-gui! 0 0)       ;; track 0, plugin 0
+
+;; (.stopPlayback bm)              ; stop
+```
+
 
 #### 🎨 Theme — instant visual feedback
 
@@ -104,7 +123,7 @@ or `rlwrap nc localhost 5555` for socket REPL), you can interact with everything
                0 0 "/path/to/drums.mid" true)
 
 ;; Load a clip onto the Timeline (track 0 at beat 0, 4 beats long)
-(.addTimelineClip bm 0 "/path/to/melody.mid" 0.0 4.0)
+(.addTimelineClip bm 0 "testdata/rickroll.mid" 0.0 4.0)
 
 ;; Remove timeline clip (track 0, clip index 1)
 (.removeTimelineClip bm 0 1)
@@ -113,13 +132,29 @@ or `rlwrap nc localhost 5555` for socket REPL), you can interact with everything
 (.resizeTimelineClip bm 0 0 8.0)
 ```
 
-#### 🔌 Plugins — inspect and control
+#### 🔌 Plugins — load, tweak, remove
 
 ```clojure
-;; Switch plugin pane to show track 2's devices
-(.setSelectedTrack (PluginPane/getInstance) 1)
+;; Load a VST3 plugin onto track 0
+(dev/load-plugin! 0 "/home/user/.vst3/Dexed.vst3")
 
-;; Rebuild the device chain display
+;; Load a specific sub-plugin (index 1) from a multi-plugin bundle
+(dev/load-plugin! 0 "/home/user/.vst3/mda.vst3" 1)
+
+;; Open the native plugin GUI window
+(dev/show-plugin-gui! 0 0)       ;; track 0, plugin 0
+
+;; Tweak a parameter (0.0–1.0)
+(dev/set-param! 0 0 42 0.75)     ;; track 0, plugin 0, param 42 = 75%
+
+;; Remove a plugin
+(dev/remove-plugin! 0 0)         ;; track 0, plugin 0
+
+;; Scan a VST3 bundle for available sub-plugins
+(dev/list-plugins! "/home/user/.vst3/Dexed.vst3")
+
+;; Switch plugin pane view to another track
+(.setSelectedTrack (PluginPane/getInstance) 1)
 (.rebuildDeviceChain (PluginPane/getInstance))
 ```
 

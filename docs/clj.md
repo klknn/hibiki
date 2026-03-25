@@ -55,34 +55,218 @@ java -Dclojure.server.repl="{:port 5555 :accept clojure.core.server/repl}" \
 
 ### Live UI Examples
 
-Once connected to the running GUI via the Socket REPL, you can do things like:
+Once connected to the running GUI via the REPL (either embedded `Ctrl+R` panel in Echo,
+or `rlwrap nc localhost 5555` for socket REPL), you can interact with everything live.
+
+#### Setup (run once per session)
 
 ```clojure
-;; 1. Change the theme live — instant visual feedback
-(require '[hibiki.ui.theme :as t])
-(t/update-theme! :preset :solarized-dark)   ; switches the entire GUI theme
-(t/update-theme! :preset :ableton-dark)      ; switch back
+;; Echo frontend — dev utilities are auto-available
+(require '[hibiki.echo.dev :as dev])
+(import '[hibiki BackendManager]
+        '[hibiki.ui SessionView TimelineView PluginPane Theme])
+(def bm (BackendManager/getInstance))
+```
 
-;; 2. Inspect current state without restarting
-(require '[hibiki.ui.session :as s])
-(s/get-selected-track)         ;=> 0
-@#'s/session-state             ; dump full state atom
+#### 🎨 Theme — instant visual feedback
 
-;; 3. Modify a widget on the fly
+```clojure
+(dev/theme! :solarized-dark)    ; switch entire GUI theme live
+(dev/theme! :win95)             ; retro mode
+(dev/theme! :ableton-dark)      ; back to default
+
+;; Fine-tune: update with custom scaling and font size
+(.update (Theme/getInstance) Theme$Preset/ABLETON_DARK 1.5 14)
+```
+
+#### 🎹 Transport — play, stop, seek
+
+```clojure
+(.startPlayback bm)             ; start playback
+(.stopPlayback bm)              ; stop
+(.togglePlay bm)                ; Space key equivalent
+(.seek bm 0.0)                  ; jump to beginning
+(.seek bm 4.0)                  ; jump to beat 4
+```
+
+#### 🎚️ Tracks & Clips — load, select, rename
+
+```clojure
+;; Select track (1-based for SessionView, 0-based for TimelineView)
+(.selectTrackByIdx (SessionView/getInstance) 2)
+(.setSelectedTrack (TimelineView/getInstance) 1)
+
+;; Rename a track
+(.renameTrack (SessionView/getInstance) 1)  ; shows rename dialog
+
+;; Load a clip into Session View (track 1, slot 0)
+(.sendLoadClip (SessionView/getInstance)
+               0 0 "/path/to/drums.mid" true)
+
+;; Load a clip onto the Timeline (track 0 at beat 0, 4 beats long)
+(.addTimelineClip bm 0 "/path/to/melody.mid" 0.0 4.0)
+
+;; Remove timeline clip (track 0, clip index 1)
+(.removeTimelineClip bm 0 1)
+
+;; Resize timeline clip (track 0, clip 0, new duration 8 beats)
+(.resizeTimelineClip bm 0 0 8.0)
+```
+
+#### 🔌 Plugins — inspect and control
+
+```clojure
+;; Switch plugin pane to show track 2's devices
+(.setSelectedTrack (PluginPane/getInstance) 1)
+
+;; Rebuild the device chain display
+(.rebuildDeviceChain (PluginPane/getInstance))
+```
+
+#### 🔍 GUI Inspection — peek inside the running app
+
+```clojure
+;; Inspect session view state
+(.getSelectedTrack (SessionView/getInstance))    ;=> 0
+
+;; Check what's loaded in a slot
+(aget (.slotPaths (SessionView/getInstance)) 0 0)  ;=> "drums.mid" or nil
+
+;; Get timeline track info
+(.getSelectedTrack (TimelineView/getInstance))   ;=> 0
+
+;; Frame info
+(let [f (dev/frame)]
+  {:width (.getWidth f) :height (.getHeight f)
+   :title (.getTitle f)})
+```
+
+#### 🎨 Live Widget Hacking — modify components on the fly
+
+```clojure
+;; Turn a panel red (always use invokeLater for Swing mutations!)
 (import '[javax.swing SwingUtilities])
 (SwingUtilities/invokeLater
-  #(let [panel (s/get-instance)]
-     (.setBackground panel (java.awt.Color. 100 0 0))  ; turn the panel red
-     (.repaint panel)))
+  #(doto (SessionView/getInstance)
+     (.setBackground (java.awt.Color. 100 0 0))
+     (.repaint)))
 
-;; 4. Reload a namespace after editing the source file
-;;    (edit src/main/clojure/hibiki/ui/widgets.clj, then:)
-(require '[hibiki.ui.widgets :as w] :reload)
-;; The running app now uses your updated code!
+;; Reload a Clojure namespace after editing the source file
+(require '[hibiki.echo.dev :as dev] :reload)
 
-;; 5. Test an IPC call interactively
-(require '[hibiki.ui.plugin :as p])
-;; Trigger plugin GUI show without clicking through the UI
+;; Hot-swap the entire MainView
+(dev/reload!)
+```
+
+#### 🎵 MIDI Composition — create clips programmatically
+
+The `updateClipMidi` method takes arrays of ticks, pitches, durations, and velocities.
+Resolution is in ticks per quarter note (480 is standard).
+
+```clojure
+(def bm (hibiki.BackendManager/getInstance))
+(def PPQ 480)  ;; ticks per quarter note
+
+;; --- 16th note chord arpeggio (Cmaj7: C E G B) ---
+;; Creates a rising arp pattern, each note is a 16th (PPQ/4 = 120 ticks)
+(let [chord  [60 64 67 71]            ;; MIDI pitches: C4 E4 G4 B4
+      sixteenth (/ PPQ 4)              ;; 120 ticks
+      notes  (for [bar  (range 4)      ;; 4 bars
+                   step (range 16)]    ;; 16 steps per bar
+               {:tick     (long (+ (* bar 4 PPQ) (* step sixteenth)))
+                :pitch    (nth chord (mod step (count chord)))
+                :duration (long sixteenth)
+                :velocity (if (zero? (mod step 4)) 100 70)})]  ;; accent downbeats
+  (.updateClipMidi bm
+    0 0 -1                             ;; track 0, slot 0, session clip
+    PPQ
+    (long-array   (map :tick notes))
+    (int-array    (map :pitch notes))
+    (long-array   (map :duration notes))
+    (int-array    (map :velocity notes))))
+
+;; --- Simple chord progression (Cm → Fm → G → Cm) ---
+(let [chords [[60 63 67]              ;; Cm
+              [65 68 72]              ;; Fm
+              [67 71 74]              ;; G
+              [60 63 67]]             ;; Cm
+      notes  (for [[i chord] (map-indexed vector chords)
+                   pitch chord]
+               {:tick     (long (* i 4 PPQ))    ;; one chord per bar
+                :pitch    pitch
+                :duration (long (* 4 PPQ))      ;; whole note
+                :velocity 80})]
+  (.updateClipMidi bm 0 1 -1 PPQ
+    (long-array (map :tick notes))
+    (int-array  (map :pitch notes))
+    (long-array (map :duration notes))
+    (int-array  (map :velocity notes))))
+
+;; --- Euclidean rhythm (5 hits in 8 steps, like Bossa Nova) ---
+(let [steps    8
+      hits     5
+      sixteenth (/ PPQ 4)
+      pattern  (for [i (range steps)]    ;; Euclidean distribution
+                 (< (* i hits) (* steps (inc (quot (* i hits) steps)))))
+      notes   (keep-indexed
+                (fn [i hit?]
+                  (when hit?
+                    {:tick (long (* i sixteenth)) :pitch 36  ;; kick drum
+                     :duration (long sixteenth) :velocity 90}))
+                pattern)]
+  (.updateClipMidi bm 1 0 -1 PPQ
+    (long-array (map :tick notes))
+    (int-array  (map :pitch notes))
+    (long-array (map :duration notes))
+    (int-array  (map :velocity notes))))
+```
+
+**Read → Transform → Write**: The coolest pattern — read an existing chord clip,
+extract pitches, and rewrite it as a 16th note arpeggio:
+
+```clojure
+;; Step 1: Request MIDI data from an existing clip (track 0, slot 0)
+;;         The response arrives asynchronously via a notification listener.
+(import '[hibiki.ipc ClipMidiData MidiEventData Response Notification])
+
+(def midi-data (promise))
+
+(def listener
+  (reify java.util.function.Consumer
+    (accept [_ notif]
+      (let [^Notification n notif]
+        (when (= (.responseType n) Response/ClipMidiData)
+          (deliver midi-data (.response n (ClipMidiData.))))))))
+
+(.addNotificationListener bm listener)
+(.requestClipMidi bm 0 0 -1)          ;; track 0, slot 0, session clip
+
+;; Step 2: Wait for response and extract unique pitches
+(let [^ClipMidiData data (deref midi-data 5000 nil)]
+  (when data
+    (.removeNotificationListener bm listener)
+    (let [pitches (vec (distinct
+                         (for [i (range (.eventsLength data))]
+                           (.pitch (.events data i)))))
+          _       (println "Found pitches:" pitches "(chord size:" (count pitches) ")")
+
+          ;; Step 3: Arpeggiate! Cycle pitches as 16th notes over 4 bars
+          sixteenth (/ PPQ 4)
+          notes (for [bar  (range 4)
+                      step (range 16)]
+                  {:tick     (long (+ (* bar 4 PPQ) (* step sixteenth)))
+                   :pitch    (nth pitches (mod step (count pitches)))
+                   :duration (long sixteenth)
+                   :velocity (if (zero? (mod step 4)) 100 70)})]
+
+      ;; Step 4: Write back to the same clip — instant arp!
+      (.updateClipMidi bm 0 0 -1 PPQ
+        (long-array (map :tick notes))
+        (int-array  (map :pitch notes))
+        (long-array (map :duration notes))
+        (int-array  (map :velocity notes)))
+      (println "✨ Arpeggiated" (count pitches) "pitches into"
+               (count notes) "16th notes!"))))
 ```
 
 ### Workflow Tips
@@ -306,13 +490,19 @@ local dependency. It contains all compiled Java classes and FlatBuffer-generated
 #### Common Commands
 
 ```bash
-clj -M:run          # Run the Clojure GUI
+clj -M:run          # Run the Clojure GUI (full port)
+clj -M:echo         # Run Echo hybrid GUI (Java components + Clojure glue)
+clj -M:echo:dev     # Echo + Socket REPL on port 5555
 clj -X:test         # Run Clojure tests (cognitect test-runner)
 clj -M:test-runner  # Run Clojure tests (custom runner, backup)
-clj -M:repl         # GUI + Socket REPL on port 5555
+clj -M:repl         # Clojure GUI + Socket REPL on port 5555
 ```
 
-Connect to the REPL: `rlwrap nc localhost 5555`
+Connect to socket REPL: `rlwrap nc localhost 5555`
+
+> **Tip**: The Echo frontend (`clj -M:echo`) includes an embedded REPL panel.
+> Press **Ctrl+R** or click the **λ REPL** button to toggle it. Use **Ctrl+Enter**
+> to evaluate, select text for partial eval, and **Ctrl+↑↓** for history.
 
 #### Bazel vs Clojure CLI
 

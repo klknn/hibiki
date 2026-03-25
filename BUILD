@@ -416,7 +416,7 @@ java_library(
 
 java_library(
     name = "hibiki-gui-lib",
-    srcs = glob(["src/main/java/hibiki/**/*.java"], exclude = ["src/main/java/hibiki/ClojureMain.java"]),
+    srcs = glob(["src/main/java/hibiki/**/*.java"], exclude = ["src/main/java/hibiki/ClojureMain.java", "src/main/java/hibiki/EchoMain.java"]),
     resources = glob(["src/main/resources/**/*"]),
     deps = [
         ":hibiki_request_java_lib",
@@ -459,6 +459,26 @@ java_binary(
     name = "hibiki-gui-clj",
     main_class = "hibiki.ClojureMain",
     runtime_deps = [":hibiki-clj-lib"],
+    data = [":hbk-play", "//testdata"],
+)
+
+# Echo hybrid frontend — Java components + Clojure glue
+java_library(
+    name = "hibiki-echo-lib",
+    srcs = ["src/main/java/hibiki/EchoMain.java"],
+    deps = [
+        ":hibiki-gui-lib",
+        ":hibiki-clj-sources",
+        "@clojure_jar//jar",
+        "@clojure_spec_alpha_jar//jar",
+        "@clojure_core_specs_alpha_jar//jar",
+    ],
+)
+
+java_binary(
+    name = "hibiki-gui-echo",
+    main_class = "hibiki.EchoMain",
+    runtime_deps = [":hibiki-echo-lib"],
     data = [":hbk-play", "//testdata"],
 )
 

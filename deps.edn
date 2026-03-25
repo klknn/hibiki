@@ -23,4 +23,10 @@
                 :main-opts ["-m" "hibiki.test-runner"]}
 
   ;; Socket REPL + GUI:  clj -M:repl
-  :repl {:main-opts ["-m" "hibiki.repl"]}}}
+  :repl {:main-opts ["-m" "hibiki.repl"]}
+
+  ;; Echo hybrid frontend (Java components + Clojure glue):  clj -M:echo
+  :echo {:main-opts ["-m" "hibiki.echo"]}
+
+  ;; Echo + Socket REPL:  clj -M:echo:dev
+  :dev {:main-opts ["-m" "hibiki.echo.dev"]}}}

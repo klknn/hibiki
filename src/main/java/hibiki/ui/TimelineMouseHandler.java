@@ -54,8 +54,7 @@ class TimelineMouseHandler {
         if (e.getY() < scaleTimeRuler) {
             view.updatePlayhead(e.getX());
         } else {
-            int scaleTrackHeight = Theme.getInstance().scale(view.getTrackHeight());
-            int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
+            int trackIdx = view.getTrackIdxAtY(e.getY() - scaleTimeRuler);
             if (trackIdx >= 0 && trackIdx < view.tracks.size()) {
                 view.setSelectedTrack(trackIdx);
 
@@ -133,8 +132,7 @@ class TimelineMouseHandler {
 
     private void completeDrag(MouseEvent e) {
         int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
-        int scaleTrackHeight = Theme.getInstance().scale(view.getTrackHeight());
-        int targetTrackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
+        int targetTrackIdx = view.getTrackIdxAtY(e.getY() - scaleTimeRuler);
         targetTrackIdx = Math.max(0, Math.min(view.tracks.size() - 1, targetTrackIdx));
 
         float newStartTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
@@ -256,8 +254,7 @@ class TimelineMouseHandler {
 
     private void handleMouseMoved(MouseEvent e) {
         int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
-        int scaleTrackHeight = Theme.getInstance().scale(view.getTrackHeight());
-        int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
+        int trackIdx = view.getTrackIdxAtY(e.getY() - scaleTimeRuler);
         if (trackIdx >= 0 && trackIdx < view.tracks.size()) {
             TimelineView.ClipRect clip = view.findClipAtPosition(trackIdx, e.getX());
             if (clip != null && view.isNearRightEdge(clip, e.getX())) {

@@ -80,6 +80,34 @@ table BounceProject {
     path: string;
 }
 
+// Automation control point
+table AutomationPointData {
+    time_beats: float;
+    value: float;       // 0.0 – 1.0
+    tension: float = 0; // -1..1 (0=linear, >0=ease-in, <0=ease-out)
+}
+
+table AddAutomationLane {
+    track_index: int;
+    plugin_index: int;
+    param_id: uint;
+}
+
+table RemoveAutomationLane {
+    track_index: int;
+    lane_index: int;
+}
+
+table UpdateAutomationLane {
+    track_index: int;
+    lane_index: int;
+    points: [AutomationPointData];
+}
+
+table GetAutomationLanes {
+    track_index: int;
+}
+
 union Command {
     LoadPlugin,
     LoadClip,
@@ -106,7 +134,11 @@ union Command {
     BounceProject,
     GetClipMidi,
     UpdateClipMidi,
-    ResizeTimelineClip
+    ResizeTimelineClip,
+    AddAutomationLane,
+    RemoveAutomationLane,
+    UpdateAutomationLane,
+    GetAutomationLanes
 }
 
 // Request MIDI data for a clip (for Piano Roll editing)

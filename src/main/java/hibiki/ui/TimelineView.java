@@ -1,5 +1,7 @@
 package hibiki.ui;
 
+import com.google.flatbuffers.FlatBufferBuilder;
+
 import hibiki.BackendManager;
 import hibiki.ipc.Notification;
 import hibiki.ipc.TimelineClipInfo;
@@ -17,6 +19,7 @@ import java.util.HashMap;
 
 public class TimelineView extends JPanel implements Theme.ThemeListener {
     private static final int BASE_TRACK_HEIGHT = 80;
+    private static final int AUTOMATION_LANE_HEIGHT = 60;
     static final int TIME_RULER_HEIGHT = 30;
     private static final int TRACK_LABEL_WIDTH = 100;
     private static final float BASE_PIXELS_PER_SECOND = 50.0f;
@@ -27,11 +30,63 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
     // Convenience getters for zoom-scaled values
     int getTrackHeight() {
-        return (int) (BASE_TRACK_HEIGHT * vZoomScale);
+        return getBaseTrackHeight();
     }
 
     float getPixelsPerSecond() {
         return BASE_PIXELS_PER_SECOND * hZoomScale;
+    }
+
+    /** Height of just the clip area for one track (no automation). */
+    int getBaseTrackHeight() {
+        return (int) (BASE_TRACK_HEIGHT * vZoomScale);
+    }
+
+    /** Height of one automation lane sub-row. */
+    int getAutomationLaneHeight() {
+        return (int) (AUTOMATION_LANE_HEIGHT * vZoomScale);
+    }
+
+    /** Total height for a track including expanded automation lanes. */
+    int getTotalTrackHeight(int trackIdx) {
+        int h = getBaseTrackHeight();
+        if (trackIdx >= 0 && trackIdx < tracks.size()) {
+            TrackTimeline t = tracks.get(trackIdx);
+            if (t.automationExpanded && !t.automationLanes.isEmpty()) {
+                h += t.automationLanes.size() * getAutomationLaneHeight();
+            }
+        }
+        return h;
+    }
+
+    /** Y offset of a track from top of content area (after time ruler). */
+    int getTrackY(int trackIdx) {
+        int y = 0;
+        for (int i = 0; i < trackIdx && i < tracks.size(); i++) {
+            y += getTotalTrackHeight(i);
+        }
+        return y;
+    }
+
+    /** Total height of all tracks. */
+    int getTotalTracksHeight() {
+        int h = 0;
+        for (int i = 0; i < tracks.size(); i++) {
+            h += getTotalTrackHeight(i);
+        }
+        return h;
+    }
+
+    /** Resolve a track index from a scaled Y offset (after time ruler). */
+    int getTrackIdxAtY(int scaledY) {
+        int cumY = 0;
+        for (int i = 0; i < tracks.size(); i++) {
+            int th = Theme.getInstance().scale(getTotalTrackHeight(i));
+            if (scaledY < cumY + th)
+                return i;
+            cumY += th;
+        }
+        return Math.max(0, tracks.size() - 1);
     }
 
     // GridMode is shared - see GridMode.java
@@ -112,8 +167,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             public Dimension getPreferredSize() {
                 int scaleLabelWidth = Theme.getInstance().scale(TRACK_LABEL_WIDTH);
                 int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
-                return new Dimension(scaleLabelWidth, scaleTimeRuler + tracks.size() * scaleTrackHeight);
+                return new Dimension(scaleLabelWidth,
+                        scaleTimeRuler + Theme.getInstance().scale(getTotalTracksHeight()));
             }
         };
         rowHeader.setBackground(Theme.getInstance().BG_DARK);
@@ -123,10 +178,22 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             @Override
             public void mousePressed(MouseEvent e) {
                 int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
                 if (e.getY() >= scaleTimeRuler) {
-                    int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
+                    int trackIdx = getTrackIdxAtY(e.getY() - scaleTimeRuler);
                     if (trackIdx >= 0 && trackIdx < tracks.size()) {
+                        // Check if click is in the automation toggle area
+                        TrackTimeline track = tracks.get(trackIdx);
+                        int trackTopY = Theme.getInstance().scale(getTrackY(trackIdx));
+                        int baseH = Theme.getInstance().scale(getBaseTrackHeight());
+                        int clickYInTrack = (e.getY() - scaleTimeRuler) - trackTopY;
+                        if (!track.automationLanes.isEmpty() && clickYInTrack > baseH - 20 && clickYInTrack < baseH) {
+                            track.automationExpanded = !track.automationExpanded;
+                            updateContentSize();
+                            rowHeader.revalidate();
+                            rowHeader.repaint();
+                            contentPanel.repaint();
+                            return;
+                        }
                         setSelectedTrack(trackIdx);
                         rowHeader.repaint();
                         contentPanel.repaint();
@@ -138,9 +205,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) {
                     int scaleTimeRuler = Theme.getInstance().scale(TIME_RULER_HEIGHT);
-                    int scaleTrackHeight = Theme.getInstance().scale(getTrackHeight());
                     if (e.getY() >= scaleTimeRuler) {
-                        int trackIdx = (e.getY() - scaleTimeRuler) / scaleTrackHeight;
+                        int trackIdx = getTrackIdxAtY(e.getY() - scaleTimeRuler);
                         if (trackIdx >= 0 && trackIdx < tracks.size()) {
                             renameTrack(trackIdx);
                         }
@@ -228,8 +294,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                             String path = parts[1];
                             
                             Point p = dtde.getLocation();
-                            int trackIndex = (p.y - Theme.getInstance().scale(TIME_RULER_HEIGHT))
-                                    / Theme.getInstance().scale(getTrackHeight());
+                            int trackIndex = getTrackIdxAtY(p.y - Theme.getInstance().scale(TIME_RULER_HEIGHT));
                             double timeSec = p.x / getPixelsPerSecond();
 
                             // Snap to nearest grid boundary
@@ -267,7 +332,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         }
         // Add some padding (20% more)
         int width = (int) (getPixelsPerSecond() * maxEndTime * 1.2f);
-        int height = tracks.size() * Theme.getInstance().scale(getTrackHeight())
+        int height = Theme.getInstance().scale(getTotalTracksHeight())
                 + Theme.getInstance().scale(TIME_RULER_HEIGHT);
         contentPanel.setPreferredSize(new Dimension(width, height));
         contentPanel.revalidate();
@@ -407,15 +472,61 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         // Create New Clip
         JMenuItem createItem = new JMenuItem("Create New Clip");
         createItem.addActionListener(e -> {
-            // Create a new clip at the clicked position
             float snapTime = snapToBar(clickTime);
-
-            // Send to backend - it will create the clip and notify us via TimelineClipInfo
             BackendManager.getInstance().addTimelineClip(trackIdx, "", snapTime, 0);
         });
         menu.add(createItem);
 
+        // Add Automation Lane — use last touched param if available
+        PluginPane.LastTouchedParam ltp = PluginPane.getLastTouchedParam();
+        if (ltp != null && ltp.trackIndex == trackIdx) {
+            menu.addSeparator();
+            JMenuItem autoItem = new JMenuItem("Create Automation: " + ltp.paramName);
+            autoItem.addActionListener(e -> {
+                FlatBufferBuilder builder = new FlatBufferBuilder(64);
+                int cmdOff = hibiki.ipc.AddAutomationLane.createAddAutomationLane(
+                        builder, trackIdx, ltp.pluginIndex, (int) ltp.paramId);
+                int reqOff = hibiki.ipc.Request.createRequest(
+                        builder, hibiki.ipc.Command.AddAutomationLane, cmdOff);
+                builder.finish(reqOff);
+                BackendManager.getInstance().sendRequest(builder);
+            });
+            menu.add(autoItem);
+        } else if (trackIdx >= 0 && trackIdx < tracks.size() && tracks.get(trackIdx).pluginName != null) {
+            menu.addSeparator();
+            JMenuItem autoItem = new JMenuItem("Add Automation Lane...");
+            autoItem.addActionListener(e -> showAddAutomationDialog(trackIdx));
+            menu.add(autoItem);
+        }
+
         menu.show(contentPanel, x, y);
+    }
+
+    /**
+     * Show dialog to pick a parameter for automation (fallback when no param was
+     * touched)
+     */
+    private void showAddAutomationDialog(int trackIdx) {
+        String input = JOptionPane.showInputDialog(this,
+                "Adjust a plugin parameter first, then right-click.\n" +
+                        "Or enter plugin_index,param_id manually (e.g. 0,42):",
+                "Add Automation Lane", JOptionPane.PLAIN_MESSAGE);
+        if (input != null && input.contains(",")) {
+            String[] parts = input.split(",");
+            try {
+                int pluginIdx = Integer.parseInt(parts[0].trim());
+                int paramId = Integer.parseInt(parts[1].trim());
+                FlatBufferBuilder builder = new FlatBufferBuilder(64);
+                int cmdOff = hibiki.ipc.AddAutomationLane.createAddAutomationLane(
+                        builder, trackIdx, pluginIdx, paramId);
+                int reqOff = hibiki.ipc.Request.createRequest(
+                        builder, hibiki.ipc.Command.AddAutomationLane, cmdOff);
+                builder.finish(reqOff);
+                BackendManager.getInstance().sendRequest(builder);
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Invalid input format.");
+            }
+        }
     }
 
     void updatePlayhead(int x) {
@@ -460,6 +571,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         String pluginName = null;
         boolean isInstrument = false;
         String customName = null; // User-defined track name
+        List<AutomationLaneData> automationLanes = new ArrayList<>();
+        boolean automationExpanded = true; // Whether automation sub-rows are visible
 
         TrackTimeline(int index) {
             this.index = index;
@@ -493,6 +606,15 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 }
             }
         }
+    }
+
+    /** Data for one automation lane on a track */
+    static class AutomationLaneData {
+        int laneIndex;
+        int pluginIndex;
+        long paramId;
+        String paramName = "Parameter";
+        List<AutomationEditor.AutoPoint> points = new ArrayList<>();
     }
 
     static class ClipRect {

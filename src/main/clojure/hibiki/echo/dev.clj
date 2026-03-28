@@ -109,6 +109,59 @@
     (send-request! builder)))
 
 ;; ---------------------------------------------------------------------------
+;; Automation helpers
+;; ---------------------------------------------------------------------------
+
+(defn add-automation!
+  "Add an automation lane for a plugin parameter.
+   (add-automation! 0 0 42)  ;; track 0, plugin 0, param 42"
+  [track-idx plugin-idx param-id]
+  (let [builder (com.google.flatbuffers.FlatBufferBuilder. 64)
+        cmd-off (hibiki.ipc.AddAutomationLane/createAddAutomationLane
+                  builder (int track-idx) (int plugin-idx) (int param-id))
+        req-off (hibiki.ipc.Request/createRequest builder hibiki.ipc.Command/AddAutomationLane cmd-off)]
+    (.finish builder req-off)
+    (send-request! builder)))
+
+(defn remove-automation!
+  "Remove an automation lane.
+   (remove-automation! 0 0)  ;; track 0, lane 0"
+  [track-idx lane-idx]
+  (let [builder (com.google.flatbuffers.FlatBufferBuilder. 64)
+        cmd-off (hibiki.ipc.RemoveAutomationLane/createRemoveAutomationLane
+                  builder (int track-idx) (int lane-idx))
+        req-off (hibiki.ipc.Request/createRequest builder hibiki.ipc.Command/RemoveAutomationLane cmd-off)]
+    (.finish builder req-off)
+    (send-request! builder)))
+
+(defn set-automation!
+  "Update automation points for a lane.
+   Points are vectors of [time-beats value tension].
+   (set-automation! 0 0 [[0 0.0 0] [4 1.0 0.5] [8 0.0 0]])"
+  [track-idx lane-idx points]
+  (let [builder (com.google.flatbuffers.FlatBufferBuilder. (+ 256 (* (count points) 16)))
+        pt-offs (int-array (map (fn [[t v tension]]
+                                  (hibiki.ipc.AutomationPointData/createAutomationPointData
+                                    builder (float t) (float v) (float tension)))
+                                points))
+        pts-vec (hibiki.ipc.UpdateAutomationLane/createPointsVector builder pt-offs)
+        cmd-off (hibiki.ipc.UpdateAutomationLane/createUpdateAutomationLane
+                  builder (int track-idx) (int lane-idx) pts-vec)
+        req-off (hibiki.ipc.Request/createRequest builder hibiki.ipc.Command/UpdateAutomationLane cmd-off)]
+    (.finish builder req-off)
+    (send-request! builder)))
+
+(defn get-automation!
+  "Request automation lanes data for a track.
+   (get-automation! 0)  ;; track 0"
+  [track-idx]
+  (let [builder (com.google.flatbuffers.FlatBufferBuilder. 64)
+        cmd-off (hibiki.ipc.GetAutomationLanes/createGetAutomationLanes builder (int track-idx))
+        req-off (hibiki.ipc.Request/createRequest builder hibiki.ipc.Command/GetAutomationLanes cmd-off)]
+    (.finish builder req-off)
+    (send-request! builder)))
+
+;; ---------------------------------------------------------------------------
 ;; Entry point — GUI + Socket REPL
 ;; ---------------------------------------------------------------------------
 

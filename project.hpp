@@ -1,6 +1,7 @@
 #pragma once
 
 #include "track.hpp"
+#include "vst3_host.hpp"
 #include <limits>
 #include <map>
 #include <string>
@@ -35,5 +36,7 @@ bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data);
 void SyncProjectToGui(const ProjectState& state);
 double GetProjectDuration(const ProjectState& state);
 void BounceProject(ProjectState& live_state, const std::string& path);
+void sendAutomationLanesData(int track_idx, const std::vector<AutomationLane>& lanes,
+                             const std::vector<std::unique_ptr<Vst3Plugin>>& plugins);
 
 } // namespace hibiki

@@ -184,4 +184,22 @@ void Track::RemoveTimelineClip(int clip_index) {
     }
 }
 
+int Track::AddAutomationLane(int plugin_idx, uint32_t param_id) {
+    std::lock_guard<DummyMutex> lock(mutex);
+    AutomationLane lane;
+    lane.plugin_idx = plugin_idx;
+    lane.param_id = param_id;
+    automation_lanes.push_back(std::move(lane));
+    return (int)automation_lanes.size() - 1;
+}
+
+bool Track::RemoveAutomationLane(int lane_index) {
+    std::lock_guard<DummyMutex> lock(mutex);
+    if (lane_index >= 0 && lane_index < (int)automation_lanes.size()) {
+        automation_lanes.erase(automation_lanes.begin() + lane_index);
+        return true;
+    }
+    return false;
+}
+
 } // namespace hibiki

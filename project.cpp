@@ -2,6 +2,7 @@
 #include "ipc.hpp"
 #include "audio_file.hpp"
 #include "hibiki_project_generated.h"
+#include "hibiki_response_generated.h"
 #include <fstream>
 #include <iostream>
 
@@ -54,6 +55,19 @@ bool SaveProject(const ProjectState& state, const std::string& path) {
         auto plugins_vec = builder.CreateVector(plugin_offsets);
         auto clips_vec = builder.CreateVector(clip_offsets);
         auto timeline_clips_vec = builder.CreateVector(timeline_clip_offsets);
+
+        // Serialize automation lanes
+        std::vector<flatbuffers::Offset<hibiki::project::AutomationLaneSave>> auto_lane_offsets;
+        for (const auto& lane : track->automation_lanes) {
+            std::vector<flatbuffers::Offset<hibiki::project::AutomationPointSave>> point_offsets;
+            for (const auto& pt : lane.points) {
+                point_offsets.push_back(hibiki::project::CreateAutomationPointSave(builder, pt.time_beats, pt.value, pt.tension));
+            }
+            auto points_vec = builder.CreateVector(point_offsets);
+            auto_lane_offsets.push_back(hibiki::project::CreateAutomationLaneSave(builder, lane.plugin_idx, lane.param_id, points_vec));
+        }
+        auto auto_lanes_vec = builder.CreateVector(auto_lane_offsets);
+
         auto name_str = builder.CreateString(track->name);
         
         hibiki::project::TrackBuilder tb(builder);
@@ -62,6 +76,7 @@ bool SaveProject(const ProjectState& state, const std::string& path) {
         tb.add_plugins(plugins_vec);
         tb.add_clips(clips_vec);
         tb.add_timeline_clips(timeline_clips_vec);
+        tb.add_automation_lanes(auto_lanes_vec);
         track_offsets.push_back(tb.Finish());
     }
 
@@ -138,6 +153,24 @@ bool LoadProject(ProjectState& state, const std::string& path) {
                     track->timeline_clips.push_back(std::move(tc));
                 }
             }
+            // Load automation lanes
+            if (track_data->automation_lanes()) {
+                for (const auto* lane_data : *track_data->automation_lanes()) {
+                    AutomationLane lane;
+                    lane.plugin_idx = lane_data->plugin_index();
+                    lane.param_id = lane_data->param_id();
+                    if (lane_data->points()) {
+                        for (const auto* pt : *lane_data->points()) {
+                            AutomationPoint p;
+                            p.time_beats = pt->time_beats();
+                            p.value = pt->value();
+                            p.tension = pt->tension();
+                            lane.points.push_back(p);
+                        }
+                    }
+                    track->automation_lanes.push_back(std::move(lane));
+                }
+            }
         }
     }
     return true;
@@ -183,6 +216,19 @@ std::vector<uint8_t> CaptureProjectState(const ProjectState& state) {
         auto plugins_vec = builder.CreateVector(plugin_offsets);
         auto clips_vec = builder.CreateVector(clip_offsets);
         auto timeline_clips_vec = builder.CreateVector(timeline_clip_offsets);
+
+        // Capture automation lanes
+        std::vector<flatbuffers::Offset<hibiki::project::AutomationLaneSave>> auto_lane_offsets;
+        for (const auto& lane : track->automation_lanes) {
+            std::vector<flatbuffers::Offset<hibiki::project::AutomationPointSave>> point_offsets;
+            for (const auto& pt : lane.points) {
+                point_offsets.push_back(hibiki::project::CreateAutomationPointSave(builder, pt.time_beats, pt.value, pt.tension));
+            }
+            auto points_vec = builder.CreateVector(point_offsets);
+            auto_lane_offsets.push_back(hibiki::project::CreateAutomationLaneSave(builder, lane.plugin_idx, lane.param_id, points_vec));
+        }
+        auto auto_lanes_vec = builder.CreateVector(auto_lane_offsets);
+
         auto name_str = builder.CreateString(track->name);
         
         hibiki::project::TrackBuilder tb(builder);
@@ -191,6 +237,7 @@ std::vector<uint8_t> CaptureProjectState(const ProjectState& state) {
         tb.add_plugins(plugins_vec);
         tb.add_clips(clips_vec);
         tb.add_timeline_clips(timeline_clips_vec);
+        tb.add_automation_lanes(auto_lanes_vec);
         track_offsets.push_back(tb.Finish());
     }
 
@@ -242,6 +289,24 @@ bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data) {
                     track->timeline_clips.push_back(std::move(tc));
                 }
             }
+            // Load automation lanes
+            if (track_data->automation_lanes()) {
+                for (const auto* lane_data : *track_data->automation_lanes()) {
+                    AutomationLane lane;
+                    lane.plugin_idx = lane_data->plugin_index();
+                    lane.param_id = lane_data->param_id();
+                    if (lane_data->points()) {
+                        for (const auto* pt : *lane_data->points()) {
+                            AutomationPoint p;
+                            p.time_beats = pt->time_beats();
+                            p.value = pt->value();
+                            p.tension = pt->tension();
+                            lane.points.push_back(p);
+                        }
+                    }
+                    track->automation_lanes.push_back(std::move(lane));
+                }
+            }
         }
     }
     return true;
@@ -285,6 +350,10 @@ void SyncProjectToGui(const ProjectState& state) {
                 ? (float)(tc->duration_beats * 60.0 / state.bpm)
                 : (float)tc->duration_sec;
             hibiki::sendTimelineClipInfo(tidx, tc_idx, cname, tc->clip->path, tc->start_time_sec, duration_for_gui, tc->clip->waveform_summary);
+        }
+        // Sync Automation Lanes
+        if (!track->automation_lanes.empty()) {
+            hibiki::sendAutomationLanesData(tidx, track->automation_lanes, track->plugins);
         }
     }
 }
@@ -401,6 +470,16 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
                 }
             }
             
+            // Apply automation during bounce
+            double current_beats = state.playhead_pos_sec * (state.bpm / 60.0);
+            for (const auto& lane : track->automation_lanes) {
+                if (!lane.points.empty() &&
+                    lane.plugin_idx >= 0 && lane.plugin_idx < (int)track->plugins.size()) {
+                    float val = GetAutomationValue(lane, current_beats);
+                    track->plugins[lane.plugin_idx]->setParameterValue(lane.param_id, val);
+                }
+            }
+
             for (size_t i = 0; i < track->plugins.size(); ++i) {
                 if (i == 0 && track->plugins[i]->isInstrument()) continue;
                 track->plugins[i]->process(outChannels, outChannels, block_size, context, {});
@@ -424,6 +503,40 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
     
     bool success = SaveWav(path, output_buffer, actual_channels, sample_rate);
     hibiki::sendBounceFinished(path, success);
+}
+
+void sendAutomationLanesData(int track_idx, const std::vector<AutomationLane>& lanes,
+                             const std::vector<std::unique_ptr<Vst3Plugin>>& plugins) {
+    flatbuffers::FlatBufferBuilder builder(2048);
+    std::vector<flatbuffers::Offset<hibiki::ipc::AutomationLaneInfo>> lane_offsets;
+    for (int i = 0; i < (int)lanes.size(); ++i) {
+        const auto& lane = lanes[i];
+        // Get parameter name from plugin
+        std::string param_name = "param " + std::to_string(lane.param_id);
+        if (lane.plugin_idx >= 0 && lane.plugin_idx < (int)plugins.size()) {
+            VstParamInfo info;
+            for (int pi = 0; pi < plugins[lane.plugin_idx]->getParameterCount(); ++pi) {
+                if (plugins[lane.plugin_idx]->getParameterInfo(pi, info) && info.id == lane.param_id) {
+                    param_name = info.name;
+                    break;
+                }
+            }
+        }
+        // Serialize points
+        std::vector<flatbuffers::Offset<hibiki::ipc::AutomationPointInfo>> point_offsets;
+        for (const auto& pt : lane.points) {
+            point_offsets.push_back(hibiki::ipc::CreateAutomationPointInfo(builder, pt.time_beats, pt.value, pt.tension));
+        }
+        auto points_vec = builder.CreateVector(point_offsets);
+        auto name_off = builder.CreateString(param_name);
+        lane_offsets.push_back(hibiki::ipc::CreateAutomationLaneInfo(
+            builder, track_idx, i, lane.plugin_idx, lane.param_id, name_off, points_vec));
+    }
+    auto lanes_vec = builder.CreateVector(lane_offsets);
+    auto data_off = hibiki::ipc::CreateAutomationLanesData(builder, track_idx, lanes_vec);
+    auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_AutomationLanesData, data_off.Union());
+    builder.Finish(nf_off);
+    sendNotification(builder.GetBufferPointer(), builder.GetSize());
 }
 
 } // namespace hibiki

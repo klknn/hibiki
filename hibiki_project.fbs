@@ -26,12 +26,25 @@ table TimelineClip {
     duration: float;
 }
 
+table AutomationPointSave {
+    time_beats: float;
+    value: float;
+    tension: float;
+}
+
+table AutomationLaneSave {
+    plugin_index: int;
+    param_id: uint;
+    points: [AutomationPointSave];
+}
+
 table Track {
     index: int;
     name: string;  // User-defined track name
     plugins: [Plugin];
     clips: [Clip];
     timeline_clips: [TimelineClip];
+    automation_lanes: [AutomationLaneSave];
 }
 
 table Project {

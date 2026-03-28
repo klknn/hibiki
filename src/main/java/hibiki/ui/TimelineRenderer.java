@@ -6,7 +6,8 @@ import java.util.List;
 
 /**
  * Handles all rendering for the TimelineView: track backgrounds, grid lines,
- * clip rectangles (with MIDI/audio waveform previews), drag ghosts, and the playhead.
+ * clip rectangles (with MIDI/audio waveform previews), automation lanes,
+ * drag ghosts, and the playhead.
  */
 class TimelineRenderer {
     private final TimelineView view;
@@ -21,21 +22,23 @@ class TimelineRenderer {
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
         int scaleTimeRuler = Theme.getInstance().scale(timeRulerHeight);
-        int scaleTrackHeight = Theme.getInstance().scale(trackHeight);
+        int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight());
+        int scaleAutoLane = Theme.getInstance().scale(view.getAutomationLaneHeight());
         int scaleLabelWidth = Theme.getInstance().scale(labelWidth);
 
         g2.setColor(Theme.getInstance().BG_DARKER);
         g2.fillRect(0, 0, scaleLabelWidth, scaleTimeRuler);
 
         for (int i = 0; i < tracks.size(); i++) {
-            int y = scaleTimeRuler + i * scaleTrackHeight;
+            int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
 
+            // Main track label
             if (i == selectedTrack) {
                 g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
             } else {
                 g2.setColor(Theme.getInstance().TRACK_HEADER);
             }
-            g2.fillRect(0, y, scaleLabelWidth, scaleTrackHeight - 1);
+            g2.fillRect(0, y, scaleLabelWidth, scaleBaseTrack - 1);
 
             g2.setColor(Theme.getInstance().TEXT_BRIGHT);
             g2.setFont(Theme.getInstance().FONT_UI_BOLD);
@@ -54,8 +57,37 @@ class TimelineRenderer {
                 g2.drawString("(no plugin)", 5, y + 32);
             }
 
+            // Automation expand/collapse indicator
+            if (!track.automationLanes.isEmpty()) {
+                String toggleSymbol = track.automationExpanded ? "▼" : "▶";
+                g2.setColor(Theme.getInstance().ACCENT_BLUE);
+                g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(9.0f)));
+                g2.drawString(toggleSymbol + " Auto (" + track.automationLanes.size() + ")",
+                        5, y + scaleBaseTrack - 6);
+            }
+
             g2.setColor(Theme.getInstance().BORDER);
-            g2.drawLine(0, y + scaleTrackHeight - 1, scaleLabelWidth, y + scaleTrackHeight - 1);
+            g2.drawLine(0, y + scaleBaseTrack - 1, scaleLabelWidth, y + scaleBaseTrack - 1);
+
+            // Draw automation lane labels when expanded
+            if (track.automationExpanded) {
+                for (int j = 0; j < track.automationLanes.size(); j++) {
+                    int autoY = y + scaleBaseTrack + j * scaleAutoLane;
+                    g2.setColor(Theme.getInstance().BG_DARKER.brighter());
+                    g2.fillRect(0, autoY, scaleLabelWidth, scaleAutoLane - 1);
+
+                    TimelineView.AutomationLaneData lane = track.automationLanes.get(j);
+                    g2.setColor(Theme.getInstance().ACCENT_ORANGE);
+                    g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(9.0f)));
+                    String lName = lane.paramName;
+                    if (lName.length() > 14)
+                        lName = lName.substring(0, 13) + "…";
+                    g2.drawString(lName, 5, autoY + scaleAutoLane / 2 + 4);
+
+                    g2.setColor(Theme.getInstance().BORDER);
+                    g2.drawLine(0, autoY + scaleAutoLane - 1, scaleLabelWidth, autoY + scaleAutoLane - 1);
+                }
+            }
         }
     }
 
@@ -69,26 +101,40 @@ class TimelineRenderer {
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
         int scaleTimeRuler = Theme.getInstance().scale(timeRulerHeight);
-        int scaleTrackHeight = Theme.getInstance().scale(trackHeight);
+        int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight());
+        int scaleAutoLane = Theme.getInstance().scale(view.getAutomationLaneHeight());
         int scaleLabelWidth = 0;
         float pps = view.getPixelsPerSecond();
+        float secondsPerBeat = 60.0f / bpm;
 
         // Draw tracks background
         for (int i = 0; i < tracks.size(); i++) {
-            int y = scaleTimeRuler + i * scaleTrackHeight;
+            int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
+            // Main clip area
             if (i == selectedTrack) {
                 g2.setColor(Theme.getInstance().ACCENT_BLUE.darker().darker());
             } else {
                 g2.setColor(i % 2 == 0 ? Theme.getInstance().BG_DARK : Theme.getInstance().BG_DARKER);
             }
-            g2.fillRect(0, y, contentPanel.getWidth(), scaleTrackHeight);
+            g2.fillRect(0, y, contentPanel.getWidth(), scaleBaseTrack);
             g2.setColor(Theme.getInstance().PANEL_BG_LIGHT.darker());
-            g2.drawLine(0, y + scaleTrackHeight - 1, contentPanel.getWidth(), y + scaleTrackHeight - 1);
+            g2.drawLine(0, y + scaleBaseTrack - 1, contentPanel.getWidth(), y + scaleBaseTrack - 1);
+
+            // Automation lane backgrounds (when expanded)
+            TimelineView.TrackTimeline track = tracks.get(i);
+            if (track.automationExpanded) {
+                for (int j = 0; j < track.automationLanes.size(); j++) {
+                    int autoY = y + scaleBaseTrack + j * scaleAutoLane;
+                    g2.setColor(new Color(30, 30, 45));
+                    g2.fillRect(0, autoY, contentPanel.getWidth(), scaleAutoLane);
+                    g2.setColor(Theme.getInstance().BORDER);
+                    g2.drawLine(0, autoY + scaleAutoLane - 1, contentPanel.getWidth(), autoY + scaleAutoLane - 1);
+                }
+            }
         }
 
         // Draw grid lines
-        int trackAreaBottom = scaleTimeRuler + tracks.size() * scaleTrackHeight;
-        float secondsPerBeat = 60.0f / bpm;
+        int trackAreaBottom = scaleTimeRuler + Theme.getInstance().scale(view.getTotalTracksHeight());
         float secondsPerBar = secondsPerBeat * 4;
         float gridSeconds = view.getGridSnapSeconds(gridMode, secondsPerBeat);
 
@@ -97,28 +143,42 @@ class TimelineRenderer {
 
         // Draw ghost shadow of dragged clip
         if (isDragging && draggingClip != null && dragSourceTrack >= 0) {
-            drawDragGhost(g2, scaleTimeRuler, scaleTrackHeight, scaleLabelWidth, pps,
-                    dragSourceTrack, dragOriginalStartTime, draggingClip.duration);
+            int ghostY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(dragSourceTrack));
+            drawDragGhost(g2, ghostY, scaleBaseTrack, scaleLabelWidth, pps,
+                    dragOriginalStartTime, draggingClip.duration);
         }
 
         // Draw clips
-        drawClips(g2, tracks, scaleTimeRuler, scaleTrackHeight, scaleLabelWidth, pps,
+        drawClips(g2, tracks, scaleTimeRuler, scaleBaseTrack, scaleLabelWidth, pps,
                 isDragging, draggingClip);
+
+        // Draw automation curves (when expanded)
+        for (int i = 0; i < tracks.size(); i++) {
+            TimelineView.TrackTimeline track = tracks.get(i);
+            if (!track.automationExpanded || track.automationLanes.isEmpty())
+                continue;
+            int trackY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
+            for (int j = 0; j < track.automationLanes.size(); j++) {
+                int autoY = trackY + scaleBaseTrack + j * scaleAutoLane;
+                drawAutomationCurve(g2, track.automationLanes.get(j), autoY, scaleAutoLane,
+                        scaleLabelWidth, pps, secondsPerBeat);
+            }
+        }
 
         // Draw dragging clip at cursor position
         if (isDragging && draggingClip != null) {
-            int targetTrackIdx = (dragCurrentY - scaleTimeRuler) / scaleTrackHeight;
-            targetTrackIdx = Math.max(0, Math.min(tracks.size() - 1, targetTrackIdx));
-            drawClipAt(g2, draggingClip, scaleTimeRuler + targetTrackIdx * scaleTrackHeight + 5,
-                    scaleLabelWidth, pps, scaleTrackHeight, 0.8f, Theme.getInstance().ACCENT_BLUE.brighter());
+            int targetTrackIdx = getTrackAtY(dragCurrentY - scaleTimeRuler, tracks);
+            int targetY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(targetTrackIdx));
+            drawClipAt(g2, draggingClip, targetY + 5,
+                    scaleLabelWidth, pps, scaleBaseTrack, 0.8f, Theme.getInstance().ACCENT_BLUE.brighter());
         }
 
         // Draw clip being created
         if (creatingClip && creatingClipRect != null && creatingClipRect.duration > 0) {
-            int y = scaleTimeRuler + creatingTrackIdx * scaleTrackHeight + 5;
+            int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(creatingTrackIdx)) + 5;
             int x = scaleLabelWidth + (int) (creatingClipRect.startTime * pps);
             int w = (int) (creatingClipRect.duration * pps);
-            int h = scaleTrackHeight - 10;
+            int h = scaleBaseTrack - 10;
             g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.6f));
             g2.setColor(new Color(100, 200, 100));
             g2.fillRoundRect(x, y, w, h, 8, 8);
@@ -138,6 +198,75 @@ class TimelineRenderer {
         g2.setColor(Color.RED);
         g2.setStroke(new BasicStroke(2.0f));
         g2.drawLine(px, 0, px, contentPanel.getHeight());
+    }
+
+    /** Draw an automation curve inside its lane sub-row. */
+    private void drawAutomationCurve(Graphics2D g2, TimelineView.AutomationLaneData lane,
+            int y, int h, int xOff, float pps, float secPerBeat) {
+        List<AutomationEditor.AutoPoint> points = lane.points;
+        int pad = 4;
+        int drawH = h - pad * 2;
+        int drawY = y + pad;
+
+        // Draw 0.0 and 1.0 reference lines
+        g2.setColor(new Color(255, 255, 255, 20));
+        g2.drawLine(0, drawY, (int) (600 * pps), drawY); // 1.0
+        g2.drawLine(0, drawY + drawH, (int) (600 * pps), drawY + drawH); // 0.0
+        g2.setColor(new Color(255, 255, 255, 12));
+        g2.drawLine(0, drawY + drawH / 2, (int) (600 * pps), drawY + drawH / 2); // 0.5
+
+        if (points.isEmpty())
+            return;
+
+        // Draw curve segments between points using tension interpolation
+        g2.setColor(Theme.getInstance().ACCENT_ORANGE);
+        g2.setStroke(new BasicStroke(1.5f));
+        for (int i = 0; i < points.size() - 1; i++) {
+            AutomationEditor.AutoPoint p0 = points.get(i);
+            AutomationEditor.AutoPoint p1 = points.get(i + 1);
+            float x0sec = p0.timeBeats * secPerBeat;
+            float x1sec = p1.timeBeats * secPerBeat;
+            int px0 = xOff + (int) (x0sec * pps);
+            int px1 = xOff + (int) (x1sec * pps);
+            int py0 = drawY + drawH - (int) (p0.value * drawH);
+            int py1 = drawY + drawH - (int) (p1.value * drawH);
+            int steps = Math.max(4, Math.abs(px1 - px0) / 2);
+            int prevX = px0, prevPY = py0;
+            for (int s = 1; s <= steps; s++) {
+                float t = (float) s / steps;
+                float ct = (float) Math.pow(t, Math.pow(2, p0.tension));
+                float val = p0.value + (p1.value - p0.value) * ct;
+                int cx = px0 + (int) ((px1 - px0) * t);
+                int cy = drawY + drawH - (int) (val * drawH);
+                g2.drawLine(prevX, prevPY, cx, cy);
+                prevX = cx;
+                prevPY = cy;
+            }
+        }
+
+        // Draw control points
+        g2.setStroke(new BasicStroke(1.0f));
+        for (AutomationEditor.AutoPoint pt : points) {
+            float xSec = pt.timeBeats * secPerBeat;
+            int px = xOff + (int) (xSec * pps);
+            int py = drawY + drawH - (int) (pt.value * drawH);
+            g2.setColor(Color.WHITE);
+            g2.fillOval(px - 3, py - 3, 6, 6);
+            g2.setColor(Theme.getInstance().ACCENT_ORANGE);
+            g2.drawOval(px - 3, py - 3, 6, 6);
+        }
+    }
+
+    /** Find which track index corresponds to a given Y offset from time ruler. */
+    private int getTrackAtY(int yFromRuler, List<TimelineView.TrackTimeline> tracks) {
+        int cumY = 0;
+        for (int i = 0; i < tracks.size(); i++) {
+            int th = Theme.getInstance().scale(view.getTotalTrackHeight(i));
+            if (yFromRuler < cumY + th)
+                return i;
+            cumY += th;
+        }
+        return Math.max(0, tracks.size() - 1);
     }
 
     private void drawGridLines(Graphics2D g2, JPanel contentPanel, int scaleTimeRuler,
@@ -171,13 +300,13 @@ class TimelineRenderer {
         }
     }
 
-    private void drawDragGhost(Graphics2D g2, int scaleTimeRuler, int scaleTrackHeight,
-                               int scaleLabelWidth, float pps, int sourceTrack,
+    private void drawDragGhost(Graphics2D g2, int ghostTrackY, int scaleBaseTrack,
+            int scaleLabelWidth, float pps,
                                float originalStartTime, float duration) {
-        int ghostY = scaleTimeRuler + sourceTrack * scaleTrackHeight + 5;
+        int ghostY = ghostTrackY + 5;
         int ghostX = scaleLabelWidth + (int) (originalStartTime * pps);
         int ghostW = (int) (duration * pps);
-        int ghostH = scaleTrackHeight - 10;
+        int ghostH = scaleBaseTrack - 10;
 
         Composite oldComposite = g2.getComposite();
         g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.3f));
@@ -193,15 +322,15 @@ class TimelineRenderer {
     }
 
     private void drawClips(Graphics2D g2, List<TimelineView.TrackTimeline> tracks,
-                           int scaleTimeRuler, int scaleTrackHeight, int scaleLabelWidth,
+            int scaleTimeRuler, int scaleBaseTrack, int scaleLabelWidth,
                            float pps, boolean isDragging, TimelineView.ClipRect draggingClip) {
         for (int i = 0; i < tracks.size(); i++) {
-            int y = scaleTimeRuler + i * scaleTrackHeight + 5;
+            int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i)) + 5;
             for (TimelineView.ClipRect clip : tracks.get(i).clips) {
                 if (isDragging && clip == draggingClip) continue;
                 int x = scaleLabelWidth + (int) (clip.startTime * pps);
                 int w = (int) (clip.duration * pps);
-                int h = scaleTrackHeight - 10;
+                int h = scaleBaseTrack - 10;
 
                 g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
                 g2.fillRoundRect(x, y, w, h, 8, 8);

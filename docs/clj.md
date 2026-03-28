@@ -158,6 +158,27 @@ For starter, try copy-paste these lines and type Ctrl+Enter:
 (.rebuildDeviceChain (PluginPane/getInstance))
 ```
 
+#### 🎛️ Automation — parameter curves over time
+
+```clojure
+;; Add an automation lane for a plugin parameter
+(dev/add-automation! 0 0 42)         ;; track 0, plugin 0, param 42
+
+;; Draw a curve — points are [time-beats value tension]
+;; tension: 0=linear, >0=ease-in, <0=ease-out
+(dev/set-automation! 0 0
+  [[0 0.0 0]       ;; beat 0: value 0% (linear)
+   [4 1.0 0.5]     ;; beat 4: value 100% (ease-in curve)
+   [8 0.0 -0.5]    ;; beat 8: value 0% (ease-out curve)
+   [12 0.7 0]])     ;; beat 12: value 70% (linear)
+
+;; Request automation data for a track
+(dev/get-automation! 0)
+
+;; Remove an automation lane
+(dev/remove-automation! 0 0)         ;; track 0, lane 0
+```
+
 #### 🔍 GUI Inspection — peek inside the running app
 
 ```clojure

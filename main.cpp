@@ -208,6 +208,18 @@ void playback_thread(ProjectState& state) {
                     }
                 }
 
+                // 3. Apply Automation — set parameter values from curves
+                if (state.is_timeline_playing) {
+                    double current_beats = state.playhead_pos_sec * (state.bpm / 60.0);
+                    for (const auto& lane : track->automation_lanes) {
+                        if (!lane.points.empty() &&
+                            lane.plugin_idx >= 0 && lane.plugin_idx < (int)track->plugins.size()) {
+                            float val = GetAutomationValue(lane, current_beats);
+                            track->plugins[lane.plugin_idx]->setParameterValue(lane.param_id, val);
+                        }
+                    }
+                }
+
                 // Apply Effects (skip instrument if already processed)
                 for (size_t i = 0; i < track->plugins.size(); ++i) {
                     if (i == 0 && track->plugins[i]->isInstrument()) continue;
@@ -687,6 +699,71 @@ void run_ipc_loop(ProjectState& state) {
                 }
             }
             hibiki::sendAck("RESIZE_TIMELINE_CLIP", true);
+        } else if (command_type == hibiki::ipc::Command_AddAutomationLane) {
+            auto cmd = request->command_as_AddAutomationLane();
+            int tidx = cmd->track_index();
+            int pidx = cmd->plugin_index();
+            uint32_t param_id = cmd->param_id();
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
+            auto track = hibiki::GetOrCreateTrack(state, tidx);
+            int lane_idx = track->AddAutomationLane(pidx, param_id);
+            hibiki::sendAutomationLanesData(tidx, track->automation_lanes, track->plugins);
+            hibiki::sendAck("ADD_AUTOMATION_LANE", true);
+        } else if (command_type == hibiki::ipc::Command_RemoveAutomationLane) {
+            auto cmd = request->command_as_RemoveAutomationLane();
+            int tidx = cmd->track_index();
+            int lidx = cmd->lane_index();
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
+            auto track = hibiki::GetOrCreateTrack(state, tidx);
+            track->RemoveAutomationLane(lidx);
+            hibiki::sendAutomationLanesData(tidx, track->automation_lanes, track->plugins);
+            hibiki::sendAck("REMOVE_AUTOMATION_LANE", true);
+        } else if (command_type == hibiki::ipc::Command_UpdateAutomationLane) {
+            auto cmd = request->command_as_UpdateAutomationLane();
+            int tidx = cmd->track_index();
+            int lidx = cmd->lane_index();
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            history.pushState(CaptureProjectState(state));
+            if (state.tracks.count(tidx)) {
+                auto& track = state.tracks[tidx];
+                if (lidx >= 0 && lidx < (int)track->automation_lanes.size()) {
+                    auto& lane = track->automation_lanes[lidx];
+                    lane.points.clear();
+                    if (cmd->points()) {
+                        for (auto pt : *cmd->points()) {
+                            AutomationPoint p;
+                            p.time_beats = pt->time_beats();
+                            p.value = std::max(0.0f, std::min(1.0f, pt->value()));
+                            p.tension = std::max(-1.0f, std::min(1.0f, pt->tension()));
+                            lane.points.push_back(p);
+                        }
+                        // Ensure sorted by time
+                        std::sort(lane.points.begin(), lane.points.end(),
+                            [](const AutomationPoint& a, const AutomationPoint& b) {
+                                return a.time_beats < b.time_beats;
+                            });
+                    }
+                    hibiki::sendAutomationLanesData(tidx, track->automation_lanes, track->plugins);
+                    hibiki::sendAck("UPDATE_AUTOMATION_LANE", true);
+                } else {
+                    hibiki::sendAck("UPDATE_AUTOMATION_LANE", false);
+                }
+            } else {
+                hibiki::sendAck("UPDATE_AUTOMATION_LANE", false);
+            }
+        } else if (command_type == hibiki::ipc::Command_GetAutomationLanes) {
+            auto cmd = request->command_as_GetAutomationLanes();
+            int tidx = cmd->track_index();
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
+            if (state.tracks.count(tidx)) {
+                auto& track = state.tracks[tidx];
+                hibiki::sendAutomationLanesData(tidx, track->automation_lanes, track->plugins);
+                hibiki::sendAck("GET_AUTOMATION_LANES", true);
+            } else {
+                hibiki::sendAck("GET_AUTOMATION_LANES", false);
+            }
         } else if (command_type == hibiki::ipc::Command_Quit) {
             state.quit = true;
             break;

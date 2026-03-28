@@ -4,6 +4,11 @@ import hibiki.ipc.Notification;
 import hibiki.ipc.ParamList;
 import hibiki.ipc.Response;
 import hibiki.ipc.TimelineClipInfo;
+import hibiki.ipc.AutomationLanesData;
+import hibiki.ipc.AutomationLaneInfo;
+import hibiki.ipc.AutomationPointInfo;
+
+import java.util.ArrayList;
 
 /**
  * Handles all IPC notification dispatch for TimelineView.
@@ -27,6 +32,8 @@ class TimelineNotificationHandler {
             handleClearProject();
         } else if (n.responseType() == hibiki.ipc.Response.TrackInfo) {
             handleTrackInfo(n);
+        } else if (n.responseType() == hibiki.ipc.Response.AutomationLanesData) {
+            handleAutomationLanes(n);
         }
     }
 
@@ -74,6 +81,7 @@ class TimelineNotificationHandler {
             t.pluginName = null;
             t.isInstrument = false;
             t.customName = null;
+            t.automationLanes.clear();
         }
     }
 
@@ -94,5 +102,31 @@ class TimelineNotificationHandler {
                 header.setText(tidx + " " + displayName);
             }
         }
+    }
+
+    private void handleAutomationLanes(Notification n) {
+        AutomationLanesData data = (AutomationLanesData) n.response(new AutomationLanesData());
+        int tidx = data.trackIndex();
+        while (view.tracks.size() <= tidx) {
+            view.tracks.add(new TimelineView.TrackTimeline(view.tracks.size()));
+        }
+        TimelineView.TrackTimeline track = view.tracks.get(tidx);
+        track.automationLanes.clear();
+        for (int i = 0; i < data.lanesLength(); i++) {
+            AutomationLaneInfo laneInfo = data.lanes(i);
+            TimelineView.AutomationLaneData laneData = new TimelineView.AutomationLaneData();
+            laneData.laneIndex = laneInfo.laneIndex();
+            laneData.pluginIndex = laneInfo.pluginIndex();
+            laneData.paramId = laneInfo.paramId();
+            laneData.paramName = laneInfo.paramName();
+            for (int j = 0; j < laneInfo.pointsLength(); j++) {
+                AutomationPointInfo pt = laneInfo.points(j);
+                laneData.points.add(new AutomationEditor.AutoPoint(
+                        pt.timeBeats(), pt.value(), pt.tension()));
+            }
+            track.automationLanes.add(laneData);
+        }
+        view.updateContentSize();
+        view.repaint();
     }
 }

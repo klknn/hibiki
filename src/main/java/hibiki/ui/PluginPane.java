@@ -19,6 +19,28 @@ public class PluginPane extends JPanel {
     private final WaveformPanel waveformPanel = new WaveformPanel();
     private int selectedTrack = 0; // Currently selected track to display
 
+    /** Records the last parameter the user touched via a slider. */
+    public static class LastTouchedParam {
+        public final int trackIndex;
+        public final int pluginIndex;
+        public final long paramId;
+        public final String paramName;
+
+        LastTouchedParam(int t, int p, long id, String name) {
+            this.trackIndex = t;
+            this.pluginIndex = p;
+            this.paramId = id;
+            this.paramName = name;
+        }
+    }
+
+    private static volatile LastTouchedParam lastTouched = null;
+
+    /** Get the last parameter the user adjusted (or null). */
+    public static LastTouchedParam getLastTouchedParam() {
+        return lastTouched;
+    }
+
     public static PluginPane getInstance() {
         return instance;
     }
@@ -328,6 +350,7 @@ public class PluginPane extends JPanel {
         }
 
         private void sendParamChange(int trackIndex, int pluginIndex, long paramId, float value) {
+            lastTouched = new LastTouchedParam(trackIndex, pluginIndex, paramId, name);
             FlatBufferBuilder builder = new FlatBufferBuilder(128);
             int setParamOffset = SetParamValue.createSetParamValue(builder,
                     trackIndex, pluginIndex, (int) paramId, value);

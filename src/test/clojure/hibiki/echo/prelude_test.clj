@@ -5,7 +5,9 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [hibiki.echo.prelude :as hbk])
   (:import [hibiki.pb.commands Request TransportCmd TrackCmd PluginCmd
-                               AutomationCmd MidiCmd ProjectCmd]
+                               AutomationCmd MidiCmd ProjectCmd
+                               TransportCmd$Action TrackCmd$Action PluginCmd$Action
+                               AutomationCmd$Action MidiCmd$Action ProjectCmd$Action]
            [hibiki.pb.core EntityRef AutomationPoint MidiEvent]))
 
 ;; ---------------------------------------------------------------------------

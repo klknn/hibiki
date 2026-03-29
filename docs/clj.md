@@ -21,8 +21,10 @@ tweak colors, resize panels, and test event handlers instantly without losing ap
 The simplest way to get a REPL is via `deps.edn`:
 
 ```bash
-# Step 1: Build the GUI jar (one-time, or after Java/.fbs changes)
-bazel build -c opt //:hibiki-gui-lib
+# Step 1: Build the GUI fat jar and C++ backend (one-time, or after C++/Java/.proto changes)
+# We use the _deploy.jar to ensure Protobuf dependencies are packaged for Clojure.
+# The backend is also required as the frontend spawns it automatically.
+bazel build -c opt //:hibiki-gui-echo_deploy.jar //:hbk-play
 
 # Step 2: Launch GUI + Socket REPL on port 5555
 clj -M:repl

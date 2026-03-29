@@ -14,7 +14,9 @@
   (:require [hibiki.echo :as echo])
   (:import [hibiki.ui SessionView TimelineView Theme Theme$Preset]
            [hibiki.pb.commands Request TransportCmd TrackCmd PluginCmd
-                              AutomationCmd MidiCmd ProjectCmd]
+                              AutomationCmd MidiCmd ProjectCmd
+                              TransportCmd$Action TrackCmd$Action PluginCmd$Action
+                              AutomationCmd$Action MidiCmd$Action ProjectCmd$Action]
            [hibiki.pb.core EntityRef Clip AutomationPoint MidiEvent]))
 
 (set! *warn-on-reflection* true)
@@ -67,15 +69,14 @@
 
 (defn- ->ref
   "Build an EntityRef from keyword args."
-  ^EntityRef [& {:keys [track plugin slot clip lane]
-                 :or {track 0 plugin 0 slot 0 clip -1 lane 0}}]
-  (-> (EntityRef/newBuilder)
-      (.setTrackIndex (int track))
-      (.setPluginIndex (int plugin))
-      (.setSessionSlot (int slot))
-      (.setTimelineClip (int clip))
-      (.setLaneIndex (int lane))
-      (.build)))
+  ^EntityRef [& {:keys [track plugin slot clip lane] :as m}]
+  (let [builder (-> (EntityRef/newBuilder)
+                    (.setTrackIndex (int (or track 0))))]
+    (when (contains? m :plugin) (.setPluginIndex builder (int plugin)))
+    (when (contains? m :slot)   (.setSessionSlot builder (int slot)))
+    (when (contains? m :clip)   (.setTimelineClip builder (int clip)))
+    (when (contains? m :lane)   (.setLaneIndex builder (int lane)))
+    (.build builder)))
 
 ;; ---------------------------------------------------------------------------
 ;; Transport — play / stop / seek

@@ -9,16 +9,8 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import hibiki.BackendManager;
-import com.google.flatbuffers.FlatBufferBuilder;
-import hibiki.ipc.Request;
-import hibiki.ipc.Command;
-import hibiki.ipc.LoadPlugin;
-import hibiki.ipc.LoadClip;
-import hibiki.ipc.ListPlugins;
-import hibiki.ipc.PluginList;
-import hibiki.ipc.PluginDescription;
-import hibiki.ipc.Response;
-import hibiki.ipc.Notification;
+import hibiki.pb.HibikiProto;
+import hibiki.pb.HibikiProto.Notification;
 
 public class BrowserPane extends JPanel {
     private JTree tree;
@@ -126,13 +118,13 @@ public class BrowserPane extends JPanel {
     }
 
     private void handleNotification(Notification n) {
-        if (n.responseType() == Response.PluginList) {
-            PluginList list = (PluginList) n.response(new PluginList());
-            String path = list.path();
+        if (n.getResponseCase() == Notification.ResponseCase.PLUGIN_LIST) {
+            var list = n.getPluginList();
+            String path = list.getPath();
             List<PluginMetadata> plugins = new ArrayList<>();
-            for (int i = 0; i < list.pluginsLength(); i++) {
-                PluginDescription p = list.plugins(i);
-                plugins.add(new PluginMetadata(p.index(), p.name(), p.vendor()));
+            for (int i = 0; i < list.getPluginsCount(); i++) {
+                var p = list.getPlugins(i);
+                plugins.add(new PluginMetadata(p.getIndex(), p.getName(), p.getVendor()));
             }
             bundlesDiscovered.put(path, plugins);
             // Debounce: wait 300ms after last notification before refreshing
@@ -278,13 +270,9 @@ public class BrowserPane extends JPanel {
 
     private void requestPluginsInBundle(File bundle) {
         String path = bundle.getAbsolutePath();
-        // Send IPC request
-        FlatBufferBuilder builder = new FlatBufferBuilder(1024);
-        int pathOffset = builder.createString(path);
-        int listPluginsOffset = ListPlugins.createListPlugins(builder, pathOffset);
-        int requestOffset = Request.createRequest(builder, Command.ListPlugins, listPluginsOffset);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
+                .setListPlugins(HibikiProto.ListPlugins.newBuilder().setPath(path))
+                .build());
     }
 
     private void scanDirectory(File dir, DefaultMutableTreeNode pluginsNode, DefaultMutableTreeNode midiNode,
@@ -329,26 +317,24 @@ public class BrowserPane extends JPanel {
     }
 
     private void sendLoadPlugin(String path, int pluginIndex) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(1024);
-        int pathOffset = builder.createString(path);
-        // Use the selected track from SessionView (for session clips) or TimelineView
-        // (for timeline)
         int trackIndex = SessionView.getInstance() != null ? SessionView.getInstance().getSelectedTrack() : 0;
-        int loadPluginOffset = LoadPlugin.createLoadPlugin(builder, trackIndex, pathOffset, pluginIndex);
-        int requestOffset = Request.createRequest(builder, Command.LoadPlugin, loadPluginOffset);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
+                .setLoadPlugin(HibikiProto.LoadPlugin.newBuilder()
+                        .setTrackIndex(trackIndex)
+                        .setPath(path)
+                        .setPluginIndex(pluginIndex))
+                .build());
     }
 
     private void sendLoadClip(String path, boolean isLoop) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(1024);
-        int pathOffset = builder.createString(path);
-        // Use the selected track from SessionView (0-based)
         int trackIndex = SessionView.getInstance() != null ? SessionView.getInstance().getSelectedTrack() : 0;
-        int loadClipOffset = LoadClip.createLoadClip(builder, trackIndex, 0, pathOffset, isLoop);
-        int requestOffset = Request.createRequest(builder, Command.LoadClip, loadClipOffset);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
+                .setLoadClip(HibikiProto.LoadClip.newBuilder()
+                        .setTrackIndex(trackIndex)
+                        .setSlotIndex(0)
+                        .setPath(path)
+                        .setIsLoop(isLoop))
+                .build());
     }
 
     public static class FileItem {

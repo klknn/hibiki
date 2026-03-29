@@ -25,9 +25,7 @@
 #endif
 #include "vst3_host.hpp"
 
-#include "hibiki_request_generated.h"
-#include "hibiki_response_generated.h"
-#include "hibiki_project_generated.h"
+#include "hibiki.pb.h"
 
 #include "ipc.hpp"
 #include "audio_file.hpp"
@@ -62,71 +60,39 @@ void playback_thread(ProjectState& state) {
 
     HostProcessContext context;
     context.sampleRate = sample_rate;
-    context.tempo = state.bpm;
     context.timeSigNumerator = 4;
     context.timeSigDenominator = 4;
-
+    context.continuousTimeSamples = 0;
+    context.projectTimeMusic = 0;
+    context.tempo = state.bpm;
     double time_per_block = block_size / (double)sample_rate;
-    std::vector<float> mixBufferL(block_size);
-    std::vector<float> mixBufferR(block_size);
-    std::vector<float> interleaved(block_size * actual_channels);
 
     while (!state.quit) {
+        std::vector<float> mixBufferL(block_size, 0.0f);
+        std::vector<float> mixBufferR(block_size, 0.0f);
 
-        std::fill(mixBufferL.begin(), mixBufferL.end(), 0.0f);
-        std::fill(mixBufferR.begin(), mixBufferR.end(), 0.0f);
-
-        bool any_playing = false;
-        if (state.is_timeline_playing) {
-            any_playing = true;
-        }
+        context.tempo = state.bpm;
 
         {
+            std::lock_guard<std::mutex> lock(state.tracks_mutex);
             for (auto& pair : state.tracks) {
                 Track* track = pair.second.get();
                 std::fill(bufferL, bufferL + block_size, 0.0f);
                 std::fill(bufferR, bufferR + block_size, 0.0f);
-                bool track_playing = false;
 
-                // 1. Process Session View Clip
-                if (track->playing_slot != -1) {
-                    track_playing = true;
-                    any_playing = true;
+                // 1. Session clip playback
+                if (track->playing_slot >= 0 &&
+                    track->clips.count(track->playing_slot) &&
+                    track->clips[track->playing_slot]) {
                     auto& clip = track->clips[track->playing_slot];
-                    
-                    context.continuousTimeSamples = track->current_time_sec * sample_rate;
-                    context.projectTimeMusic = track->current_time_sec * (context.tempo / 60.0);
-
-                    if (clip->type == Clip::Type::MIDI) {
-                        std::vector<MidiNoteEvent> blockEvents;
-                        int search_idx = track->current_midi_idx;
-                        double beats_per_sec = state.bpm / 60.0;  // Convert beats to seconds
-                        while (search_idx < (int)clip->midi_events.size()) {
-                            auto& me = clip->midi_events[search_idx];
-                            double event_time_sec = me.beats / beats_per_sec;  // me.beats is in beats
-                            if (event_time_sec >= track->current_time_sec + time_per_block) break;
-                            if (event_time_sec >= track->current_time_sec) {
-                                if (hibiki::isNoteOn(me) || hibiki::isNoteOff(me)) {
-                                    MidiNoteEvent e;
-                                    e.sampleOffset = std::max(0, (int)((event_time_sec - track->current_time_sec) * sample_rate));
-                                    if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
-                                    e.channel = me.channel;
-                                    e.pitch = me.note;
-                                    e.isNoteOn = hibiki::isNoteOn(me);
-                                    e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
-                                    blockEvents.push_back(e);
-                                }
-                            }
-                            search_idx++;
-                        }
-                        track->current_midi_idx = search_idx;
-                        if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
-                            track->plugins[0]->process(nullptr, outChannels, block_size, context, blockEvents);
-                        }
-                    } else {
+                    if (clip->type == Clip::Type::AUDIO) {
                         int start_sample = (int)(track->current_time_sec * sample_rate);
                         for (int i = 0; i < block_size; ++i) {
                             int sample_pos = start_sample + i;
+                            if (clip->is_loop) {
+                                int total_samples = clip->audio_data.size() / clip->num_channels;
+                                if (total_samples > 0) sample_pos = sample_pos % total_samples;
+                            }
                             if (clip->num_channels == 2 && sample_pos * 2 + 1 < (int)clip->audio_data.size()) {
                                 bufferL[i] += clip->audio_data[sample_pos * 2];
                                 bufferR[i] += clip->audio_data[sample_pos * 2 + 1];
@@ -135,73 +101,87 @@ void playback_thread(ProjectState& state) {
                                 bufferL[i] += s; bufferR[i] += s;
                             }
                         }
-                    }
-
-                    track->current_time_sec += time_per_block;
-                    // Get clip duration in seconds - for MIDI clips, convert duration_beats using project BPM
-                    double actual_clip_duration = (clip->type == Clip::Type::MIDI)
-                        ? clip->duration_beats * 60.0 / state.bpm
-                        : clip->duration_sec;
-                    if (track->current_time_sec >= actual_clip_duration) {
-                        if (clip->is_loop) {
-                            track->current_time_sec = fmod(track->current_time_sec, actual_clip_duration);
-                            track->current_midi_idx = 0;
-                        } else {
-                            track->playing_slot = -1;
+                    } else if (clip->type == Clip::Type::MIDI) {
+                        // MIDI playback for session clips (looping)
+                        double beats_per_sec = state.bpm / 60.0;
+                        double current_beats = track->current_time_sec * beats_per_sec;
+                        double block_end_beats = (track->current_time_sec + time_per_block) * beats_per_sec;
+                        // Handle looping
+                        double loop_beats = clip->duration_beats > 0 ? clip->duration_beats : 4.0;
+                        if (clip->is_loop && loop_beats > 0) {
+                            current_beats = std::fmod(current_beats, loop_beats);
+                            block_end_beats = current_beats + time_per_block * beats_per_sec;
+                        }
+                        std::vector<MidiNoteEvent> blockEvents;
+                        for (const auto& me : clip->midi_events) {
+                            if (me.beats >= current_beats && me.beats < block_end_beats) {
+                                MidiNoteEvent e;
+                                double event_sec = me.beats / beats_per_sec - track->current_time_sec;
+                                if (clip->is_loop && loop_beats > 0) {
+                                    event_sec = (me.beats - current_beats) / beats_per_sec;
+                                }
+                                e.sampleOffset = std::max(0, (int)(event_sec * sample_rate));
+                                if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
+                                e.channel = me.channel;
+                                e.pitch = me.note;
+                                e.isNoteOn = isNoteOn(me);
+                                e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+                                blockEvents.push_back(e);
+                            }
+                        }
+                        if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
+                            track->plugins[0]->process(nullptr, outChannels, block_size, context, blockEvents);
                         }
                     }
+                    track->current_time_sec += time_per_block;
                 }
 
-                // 2. Process Timeline Clips
-                for (const auto& tc : track->timeline_clips) {
-                    // Get clip duration - use duration_beats for MIDI clips, duration_sec for audio
-                    double clip_duration = (tc->duration_beats > 0)
-                        ? tc->duration_beats * 60.0 / state.bpm
-                        : tc->duration_sec;
-                    if (state.playhead_pos_sec + time_per_block > tc->start_time_sec &&
-                        state.playhead_pos_sec < tc->start_time_sec + clip_duration) {
-                        
-                        track_playing = true;
-                        any_playing = true;
-                        double clip_local_time = state.playhead_pos_sec - tc->start_time_sec;
-                        
-                        if (tc->clip->type == Clip::Type::MIDI) {
-                             std::vector<MidiNoteEvent> blockEvents;
-                             double beats_per_sec = state.bpm / 60.0;  // Convert beats to seconds
-                             // Convert clip_local_time to beats for comparison
-                             double window_start_beats = clip_local_time * beats_per_sec;
-                             double window_end_beats = (clip_local_time + time_per_block) * beats_per_sec;
-                             for (size_t me_idx = 0; me_idx < tc->clip->midi_events.size(); ++me_idx) {
-                                 const auto& me = tc->clip->midi_events[me_idx];
-                                 if (me.beats >= window_end_beats) break; // Events are sorted by time (in beats)
-                                 if (me.beats >= window_start_beats) {
-                                     if (hibiki::isNoteOn(me) || hibiki::isNoteOff(me)) {
-                                         MidiNoteEvent e;
-                                         double event_local_sec = me.beats / beats_per_sec - clip_local_time;
-                                         e.sampleOffset = std::max(0, (int)(event_local_sec * sample_rate));
-                                         if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
-                                         e.channel = me.channel;
-                                         e.pitch = me.note;
-                                         e.isNoteOn = hibiki::isNoteOn(me);
-                                         e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
-                                         blockEvents.push_back(e);
-                                     }
-                                 }
-                             }
-                             if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
-                                 track->plugins[0]->process(nullptr, outChannels, block_size, context, blockEvents);
-                             }
-                        } else {
-                            int start_sample = (int)(clip_local_time * sample_rate);
-                            for (int i = 0; i < block_size; ++i) {
-                                int sample_pos = start_sample + i;
-                                if (sample_pos < 0) continue;
-                                if (tc->clip->num_channels == 2 && sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
-                                    bufferL[i] += tc->clip->audio_data[sample_pos * 2];
-                                    bufferR[i] += tc->clip->audio_data[sample_pos * 2 + 1];
-                                } else if (tc->clip->num_channels == 1 && sample_pos < (int)tc->clip->audio_data.size()) {
-                                    float s = tc->clip->audio_data[sample_pos];
-                                    bufferL[i] += s; bufferR[i] += s;
+                // 2. Timeline clip playback
+                if (state.is_timeline_playing) {
+                    for (const auto& tc : track->timeline_clips) {
+                        if (!tc->clip) continue;
+                        // Get clip duration - use duration_beats for MIDI clips, duration_sec for audio
+                        double clip_duration = (tc->duration_beats > 0)
+                            ? tc->duration_beats * 60.0 / state.bpm
+                            : tc->duration_sec;
+                        if (state.playhead_pos_sec + time_per_block > tc->start_time_sec &&
+                            state.playhead_pos_sec < tc->start_time_sec + clip_duration) {
+
+                            double clip_local_time = state.playhead_pos_sec - tc->start_time_sec;
+
+                            if (tc->clip->type == Clip::Type::MIDI) {
+                                std::vector<MidiNoteEvent> blockEvents;
+                                double beats_per_sec = state.bpm / 60.0;
+                                double window_start_beats = clip_local_time * beats_per_sec;
+                                double window_end_beats = (clip_local_time + time_per_block) * beats_per_sec;
+                                for (const auto& me : tc->clip->midi_events) {
+                                    if (me.beats >= window_start_beats && me.beats < window_end_beats) {
+                                        MidiNoteEvent e;
+                                        double event_local_sec = me.beats / beats_per_sec - clip_local_time;
+                                        e.sampleOffset = std::max(0, (int)(event_local_sec * sample_rate));
+                                        if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
+                                        e.channel = me.channel;
+                                        e.pitch = me.note;
+                                        e.isNoteOn = hibiki::isNoteOn(me);
+                                        e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+                                        blockEvents.push_back(e);
+                                    }
+                                }
+                                if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
+                                    track->plugins[0]->process(nullptr, outChannels, block_size, context, blockEvents);
+                                }
+                            } else {
+                                int start_sample = (int)(clip_local_time * sample_rate);
+                                for (int i = 0; i < block_size; ++i) {
+                                    int sample_pos = start_sample + i;
+                                    if (sample_pos < 0) continue;
+                                    if (tc->clip->num_channels == 2 && sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
+                                        bufferL[i] += tc->clip->audio_data[sample_pos * 2];
+                                        bufferR[i] += tc->clip->audio_data[sample_pos * 2 + 1];
+                                    } else if (tc->clip->num_channels == 1 && sample_pos < (int)tc->clip->audio_data.size()) {
+                                        float s = tc->clip->audio_data[sample_pos];
+                                        bufferL[i] += s; bufferR[i] += s;
+                                    }
                                 }
                             }
                         }
@@ -220,60 +200,40 @@ void playback_thread(ProjectState& state) {
                     }
                 }
 
-                // Apply Effects (skip instrument if already processed)
+                // 4. Process effects (skip instrument at slot 0 — already used above)
                 for (size_t i = 0; i < track->plugins.size(); ++i) {
                     if (i == 0 && track->plugins[i]->isInstrument()) continue;
                     track->plugins[i]->process(outChannels, outChannels, block_size, context, {});
                 }
 
+                // 5. Track peak levels
+                float peakL = 0.0f, peakR = 0.0f;
                 for (int i = 0; i < block_size; ++i) {
                     mixBufferL[i] += bufferL[i];
                     mixBufferR[i] += bufferR[i];
-                }
-
-                float peakL = 0, peakR = 0;
-                for (int i = 0; i < block_size; i++) {
                     peakL = std::max(peakL, std::abs(bufferL[i]));
                     peakR = std::max(peakR, std::abs(bufferR[i]));
                 }
-                if (track_playing) {
+                {
                     std::lock_guard<std::mutex> llock(state.levels_mutex);
-                    state.track_levels[track->index] = {peakL, peakR};
+                    state.track_levels[pair.first] = {peakL, peakR};
                 }
             }
         }
-        
+
+        // Mix to output
+        std::vector<float> interleaved(block_size * actual_channels, 0.0f);
+        for (int i = 0; i < block_size; ++i) {
+            interleaved[i * actual_channels] = mixBufferL[i];
+            interleaved[i * actual_channels + 1] = mixBufferR[i];
+        }
+        alsa.write(interleaved, block_size);
+
         if (state.is_timeline_playing) {
             state.playhead_pos_sec += time_per_block;
         }
-        
-        if (!any_playing) {
-            if (state.is_playing) {
-                std::lock_guard<std::mutex> llock(state.levels_mutex);
-                for (auto& p : state.track_levels) p.second = {0, 0};
-                state.is_playing = false;
-            }
-        } else {
-            state.is_playing = true;
-        }
-
-        // NO IPC work here — notification_thread handles it separately
-
-        if (actual_channels >= 2) {
-            for (int i = 0; i < block_size; ++i) {
-                interleaved[i * actual_channels + 0] = mixBufferL[i];
-                interleaved[i * actual_channels + 1] = mixBufferR[i];
-                for (int c = 2; c < actual_channels; ++c) {
-                    interleaved[i * actual_channels + c] = 0.0f;
-                }
-            }
-        } else {
-            for (int i = 0; i < block_size; ++i) {
-                interleaved[i] = (mixBufferL[i] + mixBufferR[i]) * 0.5f;
-            }
-        }
-
-        alsa.write(interleaved, block_size);
+        context.continuousTimeSamples += block_size;
+        context.projectTimeMusic = state.playhead_pos_sec * (context.tempo / 60.0);
     }
 }
 
@@ -285,19 +245,20 @@ void notification_thread(ProjectState& state) {
 
         hibiki::sendPlayheadInfo((float)state.playhead_pos_sec, (float)state.bpm, state.is_timeline_playing);
 
-        flatbuffers::FlatBufferBuilder builder(512);
-        std::vector<flatbuffers::Offset<hibiki::ipc::TrackLevel>> level_offsets;
+        hibiki::pb::Notification notification;
+        auto* tl = notification.mutable_track_levels();
         {
             std::lock_guard<std::mutex> llock(state.levels_mutex);
             for (auto& pair : state.track_levels) {
-                level_offsets.push_back(hibiki::ipc::CreateTrackLevel(builder, pair.first, pair.second.first, pair.second.second));
+                auto* level = tl->add_levels();
+                level->set_track_index(pair.first);
+                level->set_peak_l(pair.second.first);
+                level->set_peak_r(pair.second.second);
             }
         }
-        auto levels_vec = builder.CreateVector(level_offsets);
-        auto levels_off = hibiki::ipc::CreateTrackLevels(builder, levels_vec);
-        auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_TrackLevels, levels_off.Union());
-        builder.Finish(nf_off);
-        sendNotification(builder.GetBufferPointer(), builder.GetSize());
+        std::string data;
+        notification.SerializeToString(&data);
+        sendNotification(reinterpret_cast<const uint8_t*>(data.data()), data.size());
     }
 }
 
@@ -324,14 +285,18 @@ void run_ipc_loop(ProjectState& state) {
             break;
         }
 
-        auto request = hibiki::ipc::GetRequest(buffer.get());
-        auto command_type = request->command_type();
+        hibiki::pb::Request request;
+        if (!request.ParseFromArray(buffer.get(), msg_size)) {
+            std::cerr << "BACKEND ERROR: Failed to parse protobuf request" << std::endl;
+            continue;
+        }
 
-        if (command_type == hibiki::ipc::Command_LoadPlugin) {
-            auto cmd = request->command_as_LoadPlugin();
-            int tidx = cmd->track_index();
-            std::string vpath = cmd->path()->str();
-            int pidx = cmd->plugin_index();
+        switch (request.command_case()) {
+        case hibiki::pb::Request::kLoadPlugin: {
+            const auto& cmd = request.load_plugin();
+            int tidx = cmd.track_index();
+            std::string vpath = cmd.path();
+            int pidx = cmd.plugin_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
             auto track = hibiki::GetOrCreateTrack(state, tidx);
@@ -349,24 +314,30 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendLog("Failed to load plugin: " + vpath);
             }
-        } else if (command_type == hibiki::ipc::Command_SaveProject) {
-            auto cmd = request->command_as_SaveProject();
+            break;
+        }
+        case hibiki::pb::Request::kSaveProject: {
+            const auto& cmd = request.save_project();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
-            hibiki::SaveProject(state, cmd->path()->str());
+            hibiki::SaveProject(state, cmd.path());
             hibiki::sendAck("SAVE_PROJECT", true);
-        } else if (command_type == hibiki::ipc::Command_LoadProject) {
-            auto cmd = request->command_as_LoadProject();
+            break;
+        }
+        case hibiki::pb::Request::kLoadProject: {
+            const auto& cmd = request.load_project();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
-            hibiki::LoadProject(state, cmd->path()->str());
+            hibiki::LoadProject(state, cmd.path());
             hibiki::SyncProjectToGui(state);
             hibiki::sendAck("LOAD_PROJECT", true);
-        } else if (command_type == hibiki::ipc::Command_LoadClip) {
-            auto cmd = request->command_as_LoadClip();
-            int tidx = cmd->track_index();
-            int sidx = cmd->slot_index();
-            std::string mpath = cmd->path()->str();
-            bool is_loop = cmd->is_loop();
+            break;
+        }
+        case hibiki::pb::Request::kLoadClip: {
+            const auto& cmd = request.load_clip();
+            int tidx = cmd.track_index();
+            int sidx = cmd.slot_index();
+            std::string mpath = cmd.path();
+            bool is_loop = cmd.is_loop();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
             auto track = hibiki::GetOrCreateTrack(state, tidx);
@@ -381,53 +352,57 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendLog("Failed to load clip: " + mpath);
             }
-        } else if (command_type == hibiki::ipc::Command_SetClipLoop) {
-            auto cmd = request->command_as_SetClipLoop();
+            break;
+        }
+        case hibiki::pb::Request::kSetClipLoop: {
+            const auto& cmd = request.set_clip_loop();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
-            hibiki::GetOrCreateTrack(state, cmd->track_index())->SetClipLoop(cmd->slot_index(), cmd->is_loop());
+            hibiki::GetOrCreateTrack(state, cmd.track_index())->SetClipLoop(cmd.slot_index(), cmd.is_loop());
             hibiki::sendAck("SET_CLIP_LOOP", true);
-        } else if (command_type == hibiki::ipc::Command_Play) {
+            break;
+        }
+        case hibiki::pb::Request::kPlay:
             state.is_timeline_playing = true;
             hibiki::sendAck("PLAY", true);
-        } else if (command_type == hibiki::ipc::Command_Stop) {
+            break;
+        case hibiki::pb::Request::kStop: {
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             state.is_timeline_playing = false;
             for (auto& pair : state.tracks) {
                 pair.second->Stop();
             }
             hibiki::sendAck("STOP", true);
-        } else if (command_type == hibiki::ipc::Command_PlayClip) {
-            auto cmd = request->command_as_PlayClip();
-            int tidx = cmd->track_index();
-            int sidx = cmd->slot_index();
+            break;
+        }
+        case hibiki::pb::Request::kPlayClip: {
+            const auto& cmd = request.play_clip();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
-            auto track = hibiki::GetOrCreateTrack(state, tidx);
-            track->PlayClip(sidx);
+            hibiki::GetOrCreateTrack(state, cmd.track_index())->PlayClip(cmd.slot_index());
             hibiki::sendAck("PLAY_CLIP", true);
-        } else if (command_type == hibiki::ipc::Command_StopTrack) {
-            auto cmd = request->command_as_StopTrack();
-            int tidx = cmd->track_index();
+            break;
+        }
+        case hibiki::pb::Request::kStopTrack: {
+            const auto& cmd = request.stop_track();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
-            auto track = hibiki::GetOrCreateTrack(state, tidx);
-            track->Stop();
+            hibiki::GetOrCreateTrack(state, cmd.track_index())->Stop();
             hibiki::sendAck("STOP_TRACK", true);
-        } else if (command_type == hibiki::ipc::Command_RemovePlugin) {
-            auto cmd = request->command_as_RemovePlugin();
-            int tidx = cmd->track_index();
-            int pidx = cmd->plugin_index();
+            break;
+        }
+        case hibiki::pb::Request::kRemovePlugin: {
+            const auto& cmd = request.remove_plugin();
+            int tidx = cmd.track_index();
+            int pidx = cmd.plugin_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
             auto track = hibiki::GetOrCreateTrack(state, tidx);
-            if (track->RemovePlugin(pidx)) {
-                hibiki::sendAck("REMOVE_PLUGIN", true);
-            } else {
-                hibiki::sendAck("REMOVE_PLUGIN", false);
-            }
-        } else if (command_type == hibiki::ipc::Command_ShowPluginGui) {
-            auto cmd = request->command_as_ShowPluginGui();
-            int track_idx = cmd->track_index();
-            int plugin_idx = cmd->plugin_index();
+            hibiki::sendAck("REMOVE_PLUGIN", track->RemovePlugin(pidx));
+            break;
+        }
+        case hibiki::pb::Request::kShowPluginGui: {
+            const auto& cmd = request.show_plugin_gui();
+            int track_idx = cmd.track_index();
+            int plugin_idx = cmd.plugin_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             if (state.tracks.count(track_idx)) {
                 auto& plugins = state.tracks[track_idx]->plugins;
@@ -441,12 +416,14 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendAck("SHOW_PLUGIN_GUI", false);
             }
-        } else if (command_type == hibiki::ipc::Command_SetParamValue) {
-            auto cmd = request->command_as_SetParamValue();
-            int track_idx = cmd->track_index();
-            int plugin_idx = cmd->plugin_index();
-            uint32_t param_id = cmd->param_id();
-            float value = cmd->value();
+            break;
+        }
+        case hibiki::pb::Request::kSetParamValue: {
+            const auto& cmd = request.set_param_value();
+            int track_idx = cmd.track_index();
+            int plugin_idx = cmd.plugin_index();
+            uint32_t param_id = cmd.param_id();
+            float value = cmd.value();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             if (state.tracks.count(track_idx)) {
                 auto& plugins = state.tracks[track_idx]->plugins;
@@ -454,22 +431,27 @@ void run_ipc_loop(ProjectState& state) {
                     plugins[plugin_idx]->setParameterValue(param_id, value);
                 }
             }
-        } else if (command_type == hibiki::ipc::Command_SetBpm) {
-            auto cmd = request->command_as_SetBpm();
-            state.bpm = cmd->bpm();
+            break;
+        }
+        case hibiki::pb::Request::kSetBpm: {
+            state.bpm = request.set_bpm().bpm();
             hibiki::sendAck("SET_BPM", true);
-        } else if (command_type == hibiki::ipc::Command_PlayScene) {
-            auto cmd = request->command_as_PlayScene();
-            int sidx = cmd->slot_index();
+            break;
+        }
+        case hibiki::pb::Request::kPlayScene: {
+            const auto& cmd = request.play_scene();
+            int sidx = cmd.slot_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             for (auto& pair : state.tracks) {
                 pair.second->PlayClip(sidx);
             }
             hibiki::sendAck("PLAY_SCENE", true);
-        } else if (command_type == hibiki::ipc::Command_DeleteClip) {
-            auto cmd = request->command_as_DeleteClip();
-            int track_idx = cmd->track_index();
-            int slot_index = cmd->slot_index();
+            break;
+        }
+        case hibiki::pb::Request::kDeleteClip: {
+            const auto& cmd = request.delete_clip();
+            int track_idx = cmd.track_index();
+            int slot_index = cmd.slot_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
             if (hibiki::GetOrCreateTrack(state, track_idx)->DeleteClip(slot_index)) {
@@ -478,42 +460,50 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendAck("DELETE_CLIP", false);
             }
-        } else if (command_type == hibiki::ipc::Command_Seek) {
-            auto cmd = request->command_as_Seek();
-            state.playhead_pos_sec = cmd->position();
+            break;
+        }
+        case hibiki::pb::Request::kSeek: {
+            state.playhead_pos_sec = request.seek().position();
             hibiki::sendAck("SEEK", true);
-        } else if (command_type == hibiki::ipc::Command_AddTimelineClip) {
-            auto cmd = request->command_as_AddTimelineClip();
-            int tidx = cmd->track_index();
-            std::string path = cmd->path() ? cmd->path()->str() : "";
-            double start = cmd->start_time();
-            double dur_beats = cmd->duration_beats();
+            break;
+        }
+        case hibiki::pb::Request::kAddTimelineClip: {
+            const auto& cmd = request.add_timeline_clip();
+            int tidx = cmd.track_index();
+            std::string path = cmd.path();
+            double start = cmd.start_time();
+            double dur_beats = cmd.duration_beats();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
             hibiki::GetOrCreateTrack(state, tidx)->AddTimelineClip(path, start, state.bpm, dur_beats);
             hibiki::sendAck("ADD_TIMELINE_CLIP", true);
-        } else if (command_type == hibiki::ipc::Command_RemoveTimelineClip) {
-            auto cmd = request->command_as_RemoveTimelineClip();
-            int tidx = cmd->track_index();
-            int cidx = cmd->clip_index();
+            break;
+        }
+        case hibiki::pb::Request::kRemoveTimelineClip: {
+            const auto& cmd = request.remove_timeline_clip();
+            int tidx = cmd.track_index();
+            int cidx = cmd.clip_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
             hibiki::GetOrCreateTrack(state, tidx)->RemoveTimelineClip(cidx);
             hibiki::sendAck("REMOVE_TIMELINE_CLIP", true);
-        } else if (command_type == hibiki::ipc::Command_ListPlugins) {
-            auto cmd = request->command_as_ListPlugins();
-            std::string path = cmd->path()->str();
-            // Start a thread for each scan to avoid blocking IPC loop and allow parallelism
+            break;
+        }
+        case hibiki::pb::Request::kListPlugins: {
+            std::string path = request.list_plugins().path();
             std::thread([path]() {
                 hibiki::sendPluginList(path, Vst3Plugin::listPluginsIsolated(path));
             }).detach();
-        } else if (command_type == hibiki::ipc::Command_BounceProject) {
-            auto cmd = request->command_as_BounceProject();
-            std::string path = cmd->path()->str();
+            break;
+        }
+        case hibiki::pb::Request::kBounceProject: {
+            std::string path = request.bounce_project().path();
             std::thread([&state, path]() {
                 hibiki::BounceProject(state, path);
             }).detach();
-        } else if (command_type == hibiki::ipc::Command_Undo) {
+            break;
+        }
+        case hibiki::pb::Request::kUndo: {
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             std::vector<uint8_t> current = CaptureProjectState(state);
             std::vector<uint8_t> prev;
@@ -524,7 +514,9 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendAck("UNDO", false);
             }
-        } else if (command_type == hibiki::ipc::Command_Redo) {
+            break;
+        }
+        case hibiki::pb::Request::kRedo: {
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             std::vector<uint8_t> current = CaptureProjectState(state);
             std::vector<uint8_t> next;
@@ -535,11 +527,13 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendAck("REDO", false);
             }
-        } else if (command_type == hibiki::ipc::Command_GetClipMidi) {
-            auto cmd = request->command_as_GetClipMidi();
-            int tidx = cmd->track_index();
-            int sidx = cmd->slot_index();
-            int cidx = cmd->clip_index();
+            break;
+        }
+        case hibiki::pb::Request::kGetClipMidi: {
+            const auto& cmd = request.get_clip_midi();
+            int tidx = cmd.track_index();
+            int sidx = cmd.slot_index();
+            int cidx = cmd.clip_index();
             std::cerr << "[GetClipMidi] track=" << tidx << " slot=" << sidx << " clip=" << cidx << std::endl;
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             
@@ -556,8 +550,8 @@ void run_ipc_loop(ProjectState& state) {
             
             if (clip && clip->type == Clip::Type::MIDI) {
                 int ppq = 480; // Standard MIDI resolution
-                std::vector<MidiNote> notes;
-                // Convert internal midi_events to MidiNote format
+                std::vector<hibiki::pb::MidiEvent> notes;
+                // Convert internal midi_events to MidiEvent format
                 // Group NOTE_ON/OFF pairs into notes
                 std::map<int, std::pair<long, int>> active_notes; // note -> (tick, velocity)
                 for (const auto& ev : clip->midi_events) {
@@ -567,7 +561,12 @@ void run_ipc_loop(ProjectState& state) {
                     } else if (isNoteOff(ev)) {
                         if (active_notes.count(ev.note)) {
                             auto [start_tick, vel] = active_notes[ev.note];
-                            notes.push_back({start_tick, ev.note, tick - start_tick, vel});
+                            hibiki::pb::MidiEvent me;
+                            me.set_tick(start_tick);
+                            me.set_pitch(ev.note);
+                            me.set_duration_ticks(tick - start_tick);
+                            me.set_velocity(vel);
+                            notes.push_back(me);
                             active_notes.erase(ev.note);
                         }
                     }
@@ -579,13 +578,15 @@ void run_ipc_loop(ProjectState& state) {
                 std::cerr << "[GetClipMidi] Clip not found or not MIDI" << std::endl;
                 hibiki::sendAck("GET_CLIP_MIDI", false);
             }
-        } else if (command_type == hibiki::ipc::Command_UpdateClipMidi) {
-            auto cmd = request->command_as_UpdateClipMidi();
-            int tidx = cmd->track_index();
-            int sidx = cmd->slot_index();
-            int cidx = cmd->clip_index();
-            int ppq = cmd->resolution();
-            int numEvents = cmd->events() ? cmd->events()->size() : 0;
+            break;
+        }
+        case hibiki::pb::Request::kUpdateClipMidi: {
+            const auto& cmd = request.update_clip_midi();
+            int tidx = cmd.track_index();
+            int sidx = cmd.slot_index();
+            int cidx = cmd.clip_index();
+            int ppq = cmd.resolution();
+            int numEvents = cmd.events_size();
             std::cerr << "[UpdateClipMidi] track=" << tidx << " slot=" << sidx << " clip=" << cidx << " ppq=" << ppq << " events=" << numEvents << std::endl;
             if (ppq <= 0) ppq = 480;
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
@@ -605,27 +606,25 @@ void run_ipc_loop(ProjectState& state) {
             if (clip && clip->type == Clip::Type::MIDI) {
                 // Rebuild midi_events from the notes
                 clip->midi_events.clear();
-                if (cmd->events()) {
-                    for (auto ev : *cmd->events()) {
-                        double startBeats = (double)ev->tick() / ppq;
-                        double endBeats = (double)(ev->tick() + ev->duration_ticks()) / ppq;
-                        // Add NOTE_ON (status 0x90)
-                        MidiEvent noteOn;
-                        noteOn.beats = startBeats;
-                        noteOn.type = 0x90;
-                        noteOn.channel = 0;
-                        noteOn.note = (uint8_t)ev->pitch();
-                        noteOn.velocity = (uint8_t)ev->velocity();
-                        clip->midi_events.push_back(noteOn);
-                        // Add NOTE_OFF (status 0x80)
-                        MidiEvent noteOff;
-                        noteOff.beats = endBeats;
-                        noteOff.type = 0x80;
-                        noteOff.channel = 0;
-                        noteOff.note = (uint8_t)ev->pitch();
-                        noteOff.velocity = 0;
-                        clip->midi_events.push_back(noteOff);
-                    }
+                for (const auto& ev : cmd.events()) {
+                    double startBeats = (double)ev.tick() / ppq;
+                    double endBeats = (double)(ev.tick() + ev.duration_ticks()) / ppq;
+                    // Add NOTE_ON (status 0x90)
+                    MidiEvent noteOn;
+                    noteOn.beats = startBeats;
+                    noteOn.type = 0x90;
+                    noteOn.channel = 0;
+                    noteOn.note = (uint8_t)ev.pitch();
+                    noteOn.velocity = (uint8_t)ev.velocity();
+                    clip->midi_events.push_back(noteOn);
+                    // Add NOTE_OFF (status 0x80)
+                    MidiEvent noteOff;
+                    noteOff.beats = endBeats;
+                    noteOff.type = 0x80;
+                    noteOff.channel = 0;
+                    noteOff.note = (uint8_t)ev.pitch();
+                    noteOff.velocity = 0;
+                    clip->midi_events.push_back(noteOff);
                 }
                 // Sort events by beats
                 std::sort(clip->midi_events.begin(), clip->midi_events.end(), 
@@ -676,11 +675,13 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendAck("UPDATE_CLIP_MIDI", false);
             }
-        } else if (command_type == hibiki::ipc::Command_ResizeTimelineClip) {
-            auto cmd = request->command_as_ResizeTimelineClip();
-            int tidx = cmd->track_index();
-            int cidx = cmd->clip_index();
-            float dur_beats = cmd->duration_beats();
+            break;
+        }
+        case hibiki::pb::Request::kResizeTimelineClip: {
+            const auto& cmd = request.resize_timeline_clip();
+            int tidx = cmd.track_index();
+            int cidx = cmd.clip_index();
+            float dur_beats = cmd.duration_beats();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
             if (state.tracks.count(tidx)) {
@@ -699,31 +700,37 @@ void run_ipc_loop(ProjectState& state) {
                 }
             }
             hibiki::sendAck("RESIZE_TIMELINE_CLIP", true);
-        } else if (command_type == hibiki::ipc::Command_AddAutomationLane) {
-            auto cmd = request->command_as_AddAutomationLane();
-            int tidx = cmd->track_index();
-            int pidx = cmd->plugin_index();
-            uint32_t param_id = cmd->param_id();
+            break;
+        }
+        case hibiki::pb::Request::kAddAutomationLane: {
+            const auto& cmd = request.add_automation_lane();
+            int tidx = cmd.track_index();
+            int pidx = cmd.plugin_index();
+            uint32_t param_id = cmd.param_id();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
             auto track = hibiki::GetOrCreateTrack(state, tidx);
-            int lane_idx = track->AddAutomationLane(pidx, param_id);
+            track->AddAutomationLane(pidx, param_id);
             hibiki::sendAutomationLanesData(tidx, track->automation_lanes, track->plugins);
             hibiki::sendAck("ADD_AUTOMATION_LANE", true);
-        } else if (command_type == hibiki::ipc::Command_RemoveAutomationLane) {
-            auto cmd = request->command_as_RemoveAutomationLane();
-            int tidx = cmd->track_index();
-            int lidx = cmd->lane_index();
+            break;
+        }
+        case hibiki::pb::Request::kRemoveAutomationLane: {
+            const auto& cmd = request.remove_automation_lane();
+            int tidx = cmd.track_index();
+            int lidx = cmd.lane_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
             auto track = hibiki::GetOrCreateTrack(state, tidx);
             track->RemoveAutomationLane(lidx);
             hibiki::sendAutomationLanesData(tidx, track->automation_lanes, track->plugins);
             hibiki::sendAck("REMOVE_AUTOMATION_LANE", true);
-        } else if (command_type == hibiki::ipc::Command_UpdateAutomationLane) {
-            auto cmd = request->command_as_UpdateAutomationLane();
-            int tidx = cmd->track_index();
-            int lidx = cmd->lane_index();
+            break;
+        }
+        case hibiki::pb::Request::kUpdateAutomationLane: {
+            const auto& cmd = request.update_automation_lane();
+            int tidx = cmd.track_index();
+            int lidx = cmd.lane_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
             if (state.tracks.count(tidx)) {
@@ -731,20 +738,18 @@ void run_ipc_loop(ProjectState& state) {
                 if (lidx >= 0 && lidx < (int)track->automation_lanes.size()) {
                     auto& lane = track->automation_lanes[lidx];
                     lane.points.clear();
-                    if (cmd->points()) {
-                        for (auto pt : *cmd->points()) {
-                            AutomationPoint p;
-                            p.time_beats = pt->time_beats();
-                            p.value = std::max(0.0f, std::min(1.0f, pt->value()));
-                            p.tension = std::max(-1.0f, std::min(1.0f, pt->tension()));
-                            lane.points.push_back(p);
-                        }
-                        // Ensure sorted by time
-                        std::sort(lane.points.begin(), lane.points.end(),
-                            [](const AutomationPoint& a, const AutomationPoint& b) {
-                                return a.time_beats < b.time_beats;
-                            });
+                    for (const auto& pt : cmd.points()) {
+                        hibiki::pb::AutomationPoint p;
+                        p.set_time_beats(pt.time_beats());
+                        p.set_value(std::max(0.0f, std::min(1.0f, pt.value())));
+                        p.set_tension(std::max(-1.0f, std::min(1.0f, pt.tension())));
+                        lane.points.push_back(p);
                     }
+                    // Ensure sorted by time
+                    std::sort(lane.points.begin(), lane.points.end(),
+                        [](const hibiki::pb::AutomationPoint& a, const hibiki::pb::AutomationPoint& b) {
+                            return a.time_beats() < b.time_beats();
+                        });
                     hibiki::sendAutomationLanesData(tidx, track->automation_lanes, track->plugins);
                     hibiki::sendAck("UPDATE_AUTOMATION_LANE", true);
                 } else {
@@ -753,9 +758,11 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendAck("UPDATE_AUTOMATION_LANE", false);
             }
-        } else if (command_type == hibiki::ipc::Command_GetAutomationLanes) {
-            auto cmd = request->command_as_GetAutomationLanes();
-            int tidx = cmd->track_index();
+            break;
+        }
+        case hibiki::pb::Request::kGetAutomationLanes: {
+            const auto& cmd = request.get_automation_lanes();
+            int tidx = cmd.track_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             if (state.tracks.count(tidx)) {
                 auto& track = state.tracks[tidx];
@@ -764,10 +771,16 @@ void run_ipc_loop(ProjectState& state) {
             } else {
                 hibiki::sendAck("GET_AUTOMATION_LANES", false);
             }
-        } else if (command_type == hibiki::ipc::Command_Quit) {
-            state.quit = true;
             break;
         }
+        case hibiki::pb::Request::kQuit:
+            state.quit = true;
+            break;
+        default:
+            std::cerr << "BACKEND: Unknown command type" << std::endl;
+            break;
+        }
+        if (state.quit) break;
     }
 }
 

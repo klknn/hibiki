@@ -6,6 +6,7 @@
 #include <cstddef>
 
 #include "vst3_host.hpp"
+#include "hibiki.pb.h"
 
 namespace hibiki {
 
@@ -22,14 +23,7 @@ void sendPlayheadInfo(float position_sec, float bpm, bool is_playing);
 void sendBounceFinished(const std::string& path, bool success);
 void sendTrackInfo(int track_idx, const std::string& name);
 
-// MIDI event for ClipMidiData response
-struct MidiNote {
-    long tick;
-    int pitch;
-    long duration_ticks;
-    int velocity;
-};
 // Send clip MIDI data to GUI. Use slot_idx >= 0 for session clips, clip_idx >= 0 for timeline clips
-void sendClipMidiData(int track_idx, int slot_idx, int clip_idx, int resolution, const std::vector<MidiNote>& notes);
+void sendClipMidiData(int track_idx, int slot_idx, int clip_idx, int resolution, const std::vector<hibiki::pb::MidiEvent>& notes);
  
 } // namespace hibiki

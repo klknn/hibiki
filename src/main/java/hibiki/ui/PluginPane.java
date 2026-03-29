@@ -7,9 +7,9 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.TreeMap;
-import hibiki.ipc.*;
+import hibiki.pb.HibikiProto;
+import hibiki.pb.HibikiProto.Notification;
 import hibiki.BackendManager;
-import com.google.flatbuffers.FlatBufferBuilder;
 
 public class PluginPane extends JPanel {
     private static PluginPane instance;
@@ -64,17 +64,24 @@ public class PluginPane extends JPanel {
         add(scrollPane, BorderLayout.CENTER);
 
         BackendManager.getInstance().addNotificationListener(notification -> {
-            if (notification.responseType() == Response.ParamList) {
-                updateParams((ParamList) notification.response(new ParamList()));
-            } else if (notification.responseType() == Response.ClearProject) {
-                clearPanels();
-            } else if (notification.responseType() == Response.ClipWaveform) {
-                ClipWaveform cw = (ClipWaveform) notification.response(new ClipWaveform());
-                float[] wf = new float[cw.waveformLength()];
-                for (int i = 0; i < wf.length; i++)
-                    wf[i] = cw.waveform(i);
-                waveformPanel.setWaveform(cw.trackIndex(), cw.slotIndex(), wf);
-                rebuildDeviceChain();
+            switch (notification.getResponseCase()) {
+                case PARAM_LIST:
+                    updateParams(notification.getParamList());
+                    break;
+                case CLEAR_PROJECT:
+                    clearPanels();
+                    break;
+                case CLIP_WAVEFORM: {
+                    var cw = notification.getClipWaveform();
+                    float[] wf = new float[cw.getWaveformCount()];
+                    for (int i = 0; i < wf.length; i++)
+                        wf[i] = cw.getWaveform(i);
+                    waveformPanel.setWaveform(cw.getTrackIndex(), cw.getSlotIndex(), wf);
+                    rebuildDeviceChain();
+                    break;
+                }
+                default:
+                    break;
             }
         });
     }
@@ -87,15 +94,15 @@ public class PluginPane extends JPanel {
         });
     }
 
-    public void updateParams(ParamList paramList) {
+    public void updateParams(HibikiProto.ParamList paramList) {
         SwingUtilities.invokeLater(() -> {
-            int trackIdx = paramList.trackIndex();
-            int pIdx = paramList.pluginIndex();
+            int trackIdx = paramList.getTrackIndex();
+            int pIdx = paramList.getPluginIndex();
 
             // Get or create the device panel map for this track
             Map<Integer, DevicePanel> devicePanels = trackDevicePanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
 
-            if (paramList.pluginName().isEmpty()) {
+            if (paramList.getPluginName().isEmpty()) {
                 devicePanels.remove(pIdx);
                 if (trackIdx == selectedTrack) {
                     rebuildDeviceChain();
@@ -104,8 +111,8 @@ public class PluginPane extends JPanel {
             }
 
             DevicePanel panel = devicePanels.get(pIdx);
-            if (panel == null || !panel.pluginName.equals(paramList.pluginName())) {
-                panel = new DevicePanel(trackIdx, pIdx, paramList.pluginName(), paramList.isInstrument());
+            if (panel == null || !panel.pluginName.equals(paramList.getPluginName())) {
+                panel = new DevicePanel(trackIdx, pIdx, paramList.getPluginName(), paramList.getIsInstrument());
                 devicePanels.put(pIdx, panel);
             }
             panel.setParams(paramList);
@@ -276,11 +283,11 @@ public class PluginPane extends JPanel {
             add(body, BorderLayout.CENTER);
         }
 
-        void setParams(ParamList paramList) {
+        void setParams(HibikiProto.ParamList paramList) {
             paramListPanel.removeAll();
             allParams.clear();
-            for (int i = 0; i < paramList.paramsLength(); i++) {
-                ParamPanel pp = new ParamPanel(trackIndex, pluginIndex, paramList.params(i));
+            for (int i = 0; i < paramList.getParamsCount(); i++) {
+                ParamPanel pp = new ParamPanel(trackIndex, pluginIndex, paramList.getParams(i));
                 allParams.add(pp);
             }
             filterParams();
@@ -299,19 +306,19 @@ public class PluginPane extends JPanel {
         }
 
         private void sendShowGui() {
-            FlatBufferBuilder builder = new FlatBufferBuilder(128);
-            int showGuiOffset = hibiki.ipc.ShowPluginGui.createShowPluginGui(builder, trackIndex, pluginIndex);
-            int requestOffset = Request.createRequest(builder, Command.ShowPluginGui, showGuiOffset);
-            builder.finish(requestOffset);
-            BackendManager.getInstance().sendRequest(builder);
+            BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
+                    .setShowPluginGui(HibikiProto.ShowPluginGui.newBuilder()
+                            .setTrackIndex(trackIndex)
+                            .setPluginIndex(pluginIndex))
+                    .build());
         }
 
         private void sendRemovePlugin() {
-            FlatBufferBuilder builder = new FlatBufferBuilder(128);
-            int removeOff = hibiki.ipc.RemovePlugin.createRemovePlugin(builder, trackIndex, pluginIndex);
-            int requestOffset = Request.createRequest(builder, Command.RemovePlugin, removeOff);
-            builder.finish(requestOffset);
-            BackendManager.getInstance().sendRequest(builder);
+            BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
+                    .setRemovePlugin(HibikiProto.RemovePlugin.newBuilder()
+                            .setTrackIndex(trackIndex)
+                            .setPluginIndex(pluginIndex))
+                    .build());
 
             // Immediate local feedback
             Map<Integer, DevicePanel> panels = trackDevicePanels.get(trackIndex);
@@ -325,8 +332,8 @@ public class PluginPane extends JPanel {
     private class ParamPanel extends JPanel {
         final String name;
 
-        ParamPanel(int trackIndex, int pluginIndex, hibiki.ipc.ParamInfo info) {
-            this.name = info.name();
+        ParamPanel(int trackIndex, int pluginIndex, HibikiProto.ParamInfo info) {
+            this.name = info.getName();
             setLayout(new BorderLayout());
             setBackground(Theme.getInstance().BG_MEDIUM);
             setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
@@ -337,26 +344,27 @@ public class PluginPane extends JPanel {
             label.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(10.0f)));
             add(label, BorderLayout.NORTH);
 
-            JSlider slider = new JSlider(0, 1000, (int) (info.defaultValue() * 1000));
+            JSlider slider = new JSlider(0, 1000, (int) (info.getDefaultValue() * 1000));
             slider.setBackground(Theme.getInstance().BG_MEDIUM);
             slider.setPreferredSize(new Dimension(Theme.getInstance().scale(150), Theme.getInstance().scale(20)));
             slider.addChangeListener(e -> {
                 if (!slider.getValueIsAdjusting()) {
                     float val = slider.getValue() / 1000.0f;
-                    sendParamChange(trackIndex, pluginIndex, info.id(), val);
+                    sendParamChange(trackIndex, pluginIndex, info.getId(), val);
                 }
             });
             add(slider, BorderLayout.CENTER);
         }
 
-        private void sendParamChange(int trackIndex, int pluginIndex, long paramId, float value) {
+        private void sendParamChange(int trackIndex, int pluginIndex, int paramId, float value) {
             lastTouched = new LastTouchedParam(trackIndex, pluginIndex, paramId, name);
-            FlatBufferBuilder builder = new FlatBufferBuilder(128);
-            int setParamOffset = SetParamValue.createSetParamValue(builder,
-                    trackIndex, pluginIndex, (int) paramId, value);
-            int requestOffset = Request.createRequest(builder, Command.SetParamValue, setParamOffset);
-            builder.finish(requestOffset);
-            BackendManager.getInstance().sendRequest(builder);
+            BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
+                    .setSetParamValue(HibikiProto.SetParamValue.newBuilder()
+                            .setTrackIndex(trackIndex)
+                            .setPluginIndex(pluginIndex)
+                            .setParamId(paramId)
+                            .setValue(value))
+                    .build());
         }
     }
 }

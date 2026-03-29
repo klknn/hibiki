@@ -1,7 +1,6 @@
 package hibiki;
 
-import hibiki.ipc.Response;
-import com.google.flatbuffers.FlatBufferBuilder;
+import hibiki.pb.HibikiProto;
 import org.junit.Test;
 import static org.junit.Assert.*;
 import java.io.File;
@@ -26,20 +25,24 @@ public class BackendManagerTest {
         System.err.println("DEBUG_TEST: testdata does not exist at CWD");
     }
 
-    CompletableFuture<hibiki.ipc.ParamList> paramListFuture = new CompletableFuture<>();
+    CompletableFuture<HibikiProto.ParamList> paramListFuture = new CompletableFuture<>();
     CompletableFuture<String> logFuture = new CompletableFuture<>();
 
     backend.addNotificationListener(notification -> {
-      System.out.println("Received notification type: " + notification.responseType());
-      if (notification.responseType() == Response.ParamList) {
-        paramListFuture.complete((hibiki.ipc.ParamList) notification.response(new hibiki.ipc.ParamList()));
-      } else if (notification.responseType() == Response.Log) {
-        hibiki.ipc.Log log = (hibiki.ipc.Log) notification.response(new hibiki.ipc.Log());
-        System.out.println("Backend Log: " + log.message());
-        logFuture.complete(log.message());
-      } else if (notification.responseType() == Response.Acknowledge) {
-        hibiki.ipc.Acknowledge ack = (hibiki.ipc.Acknowledge) notification.response(new hibiki.ipc.Acknowledge());
-        System.out.println("Backend Ack: " + ack.commandType() + " success=" + ack.success());
+      switch (notification.getResponseCase()) {
+        case PARAM_LIST:
+          paramListFuture.complete(notification.getParamList());
+          break;
+        case LOG:
+          System.out.println("Backend Log: " + notification.getLog().getMessage());
+          logFuture.complete(notification.getLog().getMessage());
+          break;
+        case ACKNOWLEDGE:
+          System.out.println("Backend Ack: " + notification.getAcknowledge().getCommandType() + " success="
+              + notification.getAcknowledge().getSuccess());
+          break;
+        default:
+          break;
       }
     });
 
@@ -52,21 +55,20 @@ public class BackendManagerTest {
     String vstPath = vstFile.getAbsolutePath();
 
     System.out.println("Sending LoadPlugin request for " + vstPath);
-    FlatBufferBuilder builder = new FlatBufferBuilder(1024);
-    int pathOff = builder.createString(vstPath);
-    int loadPluginOff = hibiki.ipc.LoadPlugin.createLoadPlugin(builder, 0, pathOff, 0);
-    int requestOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.LoadPlugin, loadPluginOff);
-    builder.finish(requestOff);
-
-    backend.sendRequest(builder);
+    backend.sendRequest(HibikiProto.Request.newBuilder()
+        .setLoadPlugin(HibikiProto.LoadPlugin.newBuilder()
+            .setTrackIndex(0)
+            .setPath(vstPath)
+            .setPluginIndex(0))
+        .build());
 
     try {
       // Verify receipt of ParamList
-      hibiki.ipc.ParamList params = paramListFuture.get(10, TimeUnit.SECONDS);
+      HibikiProto.ParamList params = paramListFuture.get(10, TimeUnit.SECONDS);
       assertNotNull("Should receive ParamList notification", params);
-      assertTrue("Should have at least one parameter", params.paramsLength() > 0);
-      assertEquals("Track index should match", 0, params.trackIndex());
-      System.out.println("Successfully loaded plugin with " + params.paramsLength() + " parameters.");
+      assertTrue("Should have at least one parameter", params.getParamsCount() > 0);
+      assertEquals("Track index should match", 0, params.getTrackIndex());
+      System.out.println("Successfully loaded plugin with " + params.getParamsCount() + " parameters.");
     } catch (TimeoutException e) {
       if (logFuture.isDone()) {
         fail("Timed out waiting for ParamList. Backend said: " + logFuture.get());

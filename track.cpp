@@ -1,7 +1,7 @@
 #include "track.hpp"
 #include "ipc.hpp"
 #include "audio_file.hpp"
-#include "hibiki_response_generated.h"
+#include "hibiki.pb.h"
 #include <algorithm>
 #include <iostream>
 
@@ -29,8 +29,6 @@ int Track::LoadPlugin(const std::string& path, int plugin_index, double sample_r
     if (target_idx != -1) {
         // Stop playback to prevent audio thread from accessing plugin during replacement
         playing_slot = -1;
-        // Stop processing on the old plugin before destroying it
-        // This allows the old plugin to clean up properly
         plugins[target_idx] = std::move(plugin);
     } else if (is_instrument) {
         // New instrument, insert at 0
@@ -95,12 +93,16 @@ bool Track::LoadClip(int slot, const std::string& path, bool is_loop) {
 
     // Send waveform to GUI if generated
     if (clip->type == Clip::Type::AUDIO && !clip->waveform_summary.empty()) {
-        flatbuffers::FlatBufferBuilder builder(1024 + clip->waveform_summary.size() * 4);
-        auto wf_vec = builder.CreateVector(clip->waveform_summary);
-        auto wf_off = hibiki::ipc::CreateClipWaveform(builder, index, slot, wf_vec);
-        auto nf_off = hibiki::ipc::CreateNotification(builder, hibiki::ipc::Response_ClipWaveform, wf_off.Union());
-        builder.Finish(nf_off);
-        hibiki::sendNotification(builder.GetBufferPointer(), builder.GetSize());
+        hibiki::pb::Notification notification;
+        auto* wf = notification.mutable_clip_waveform();
+        wf->set_track_index(index);
+        wf->set_slot_index(slot);
+        for (float v : clip->waveform_summary) {
+            wf->add_waveform(v);
+        }
+        std::string data;
+        notification.SerializeToString(&data);
+        hibiki::sendNotification(reinterpret_cast<const uint8_t*>(data.data()), data.size());
     }
 
     clips[slot] = std::move(clip);
@@ -195,11 +197,9 @@ int Track::AddAutomationLane(int plugin_idx, uint32_t param_id) {
 
 bool Track::RemoveAutomationLane(int lane_index) {
     std::lock_guard<DummyMutex> lock(mutex);
-    if (lane_index >= 0 && lane_index < (int)automation_lanes.size()) {
-        automation_lanes.erase(automation_lanes.begin() + lane_index);
-        return true;
-    }
-    return false;
+    if (lane_index < 0 || lane_index >= (int)automation_lanes.size()) return false;
+    automation_lanes.erase(automation_lanes.begin() + lane_index);
+    return true;
 }
 
 } // namespace hibiki

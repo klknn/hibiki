@@ -7,9 +7,8 @@ import java.awt.geom.*;
 import java.util.*;
 import java.util.List;
 
-import com.google.flatbuffers.FlatBufferBuilder;
 import hibiki.BackendManager;
-import hibiki.ipc.*;
+import hibiki.pb.HibikiProto;
 
 /**
  * AutomationEditor — renders and edits automation curves for a single lane.
@@ -209,18 +208,18 @@ public class AutomationEditor extends JPanel {
 
     // --- Send data to backend ---
     private void sendUpdateToBackend() {
-        BackendManager bm = BackendManager.getInstance();
-        FlatBufferBuilder builder = new FlatBufferBuilder(256 + points.size() * 16);
-        int[] pointOffsets = new int[points.size()];
-        for (int i = 0; i < points.size(); i++) {
-            AutoPoint p = points.get(i);
-            pointOffsets[i] = AutomationPointData.createAutomationPointData(builder, p.timeBeats, p.value, p.tension);
+        HibikiProto.UpdateAutomationLane.Builder cmdBuilder = HibikiProto.UpdateAutomationLane.newBuilder()
+                .setTrackIndex(trackIndex)
+                .setLaneIndex(laneIndex);
+        for (AutoPoint p : points) {
+            cmdBuilder.addPoints(HibikiProto.AutomationPoint.newBuilder()
+                    .setTimeBeats(p.timeBeats)
+                    .setValue(p.value)
+                    .setTension(p.tension));
         }
-        int pointsVec = UpdateAutomationLane.createPointsVector(builder, pointOffsets);
-        int cmdOff = UpdateAutomationLane.createUpdateAutomationLane(builder, trackIndex, laneIndex, pointsVec);
-        int reqOff = Request.createRequest(builder, Command.UpdateAutomationLane, cmdOff);
-        builder.finish(reqOff);
-        bm.sendRequest(builder);
+        BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
+                .setUpdateAutomationLane(cmdBuilder)
+                .build());
     }
 
     // --- Tension interpolation (must match C++) ---

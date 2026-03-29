@@ -1,18 +1,13 @@
 package hibiki.ui;
 
-import hibiki.ipc.Notification;
-import hibiki.ipc.ParamList;
-import hibiki.ipc.Response;
-import hibiki.ipc.TimelineClipInfo;
-import hibiki.ipc.AutomationLanesData;
-import hibiki.ipc.AutomationLaneInfo;
-import hibiki.ipc.AutomationPointInfo;
+import hibiki.pb.HibikiProto.Notification;
 
 import java.util.ArrayList;
 
 /**
  * Handles all IPC notification dispatch for TimelineView.
- * Processes PlayheadInfo, TimelineClipInfo, ParamList, ClearProject, and TrackInfo.
+ * Processes PlayheadInfo, TimelineClipInfo, ParamList, ClearProject, TrackInfo,
+ * and AutomationLanesData.
  */
 class TimelineNotificationHandler {
     private final TimelineView view;
@@ -22,27 +17,36 @@ class TimelineNotificationHandler {
     }
 
     void handleNotification(Notification n) {
-        if (n.responseType() == hibiki.ipc.Response.PlayheadInfo) {
-            handlePlayhead(n);
-        } else if (n.responseType() == hibiki.ipc.Response.TimelineClipInfo) {
-            handleTimelineClip(n);
-        } else if (n.responseType() == Response.ParamList) {
-            handleParamList(n);
-        } else if (n.responseType() == hibiki.ipc.Response.ClearProject) {
-            handleClearProject();
-        } else if (n.responseType() == hibiki.ipc.Response.TrackInfo) {
-            handleTrackInfo(n);
-        } else if (n.responseType() == hibiki.ipc.Response.AutomationLanesData) {
-            handleAutomationLanes(n);
+        switch (n.getResponseCase()) {
+            case PLAYHEAD_INFO:
+                handlePlayhead(n);
+                break;
+            case TIMELINE_CLIP_INFO:
+                handleTimelineClip(n);
+                break;
+            case PARAM_LIST:
+                handleParamList(n);
+                break;
+            case CLEAR_PROJECT:
+                handleClearProject();
+                break;
+            case TRACK_INFO:
+                handleTrackInfo(n);
+                break;
+            case AUTOMATION_LANES_DATA:
+                handleAutomationLanes(n);
+                break;
+            default:
+                break;
         }
     }
 
     private void handlePlayhead(Notification n) {
-        hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) n.response(new hibiki.ipc.PlayheadInfo());
-        view.playheadPos = info.positionSec();
-        view.bpm = info.bpm();
+        var info = n.getPlayheadInfo();
+        view.playheadPos = info.getPositionSec();
+        view.bpm = info.getBpm();
         boolean wasPlaying = view.isPlaying;
-        view.isPlaying = info.isPlaying();
+        view.isPlaying = info.getIsPlaying();
 
         if (view.isPlaying && !wasPlaying && view.autoScroll) {
             int playheadX = (int) (view.playheadPos * view.getPixelsPerSecond());
@@ -52,8 +56,8 @@ class TimelineNotificationHandler {
     }
 
     private void handleTimelineClip(Notification n) {
-        TimelineClipInfo info = (TimelineClipInfo) n.response(new TimelineClipInfo());
-        int tidx = info.trackIndex();
+        var info = n.getTimelineClipInfo();
+        int tidx = info.getTrackIndex();
 
         while (view.tracks.size() <= tidx) {
             view.tracks.add(new TimelineView.TrackTimeline(view.tracks.size()));
@@ -63,14 +67,14 @@ class TimelineNotificationHandler {
     }
 
     private void handleParamList(Notification n) {
-        ParamList paramList = (ParamList) n.response(new ParamList());
-        int tidx = paramList.trackIndex();
+        var paramList = n.getParamList();
+        int tidx = paramList.getTrackIndex();
         while (view.tracks.size() <= tidx) {
             view.tracks.add(new TimelineView.TrackTimeline(view.tracks.size()));
         }
-        if (paramList.pluginName() != null && !paramList.pluginName().isEmpty()) {
-            view.tracks.get(tidx).pluginName = paramList.pluginName();
-            view.tracks.get(tidx).isInstrument = paramList.isInstrument();
+        if (!paramList.getPluginName().isEmpty()) {
+            view.tracks.get(tidx).pluginName = paramList.getPluginName();
+            view.tracks.get(tidx).isInstrument = paramList.getIsInstrument();
         }
     }
 
@@ -86,13 +90,13 @@ class TimelineNotificationHandler {
     }
 
     private void handleTrackInfo(Notification n) {
-        hibiki.ipc.TrackInfo info = (hibiki.ipc.TrackInfo) n.response(new hibiki.ipc.TrackInfo());
-        int tidx = info.trackIndex();
+        var info = n.getTrackInfo();
+        int tidx = info.getTrackIndex();
         while (view.tracks.size() <= tidx) {
             view.tracks.add(new TimelineView.TrackTimeline(view.tracks.size()));
         }
-        String name = info.name();
-        view.tracks.get(tidx).customName = (name == null || name.isEmpty()) ? null : name;
+        String name = info.getName();
+        view.tracks.get(tidx).customName = name.isEmpty() ? null : name;
         view.repaint();
         // Sync with SessionView
         if (SessionView.getInstance() != null && SessionView.getInstance().trackHeaders.length > tidx) {
@@ -105,24 +109,24 @@ class TimelineNotificationHandler {
     }
 
     private void handleAutomationLanes(Notification n) {
-        AutomationLanesData data = (AutomationLanesData) n.response(new AutomationLanesData());
-        int tidx = data.trackIndex();
+        var data = n.getAutomationLanesData();
+        int tidx = data.getTrackIndex();
         while (view.tracks.size() <= tidx) {
             view.tracks.add(new TimelineView.TrackTimeline(view.tracks.size()));
         }
         TimelineView.TrackTimeline track = view.tracks.get(tidx);
         track.automationLanes.clear();
-        for (int i = 0; i < data.lanesLength(); i++) {
-            AutomationLaneInfo laneInfo = data.lanes(i);
+        for (int i = 0; i < data.getLanesCount(); i++) {
+            var laneInfo = data.getLanes(i);
             TimelineView.AutomationLaneData laneData = new TimelineView.AutomationLaneData();
-            laneData.laneIndex = laneInfo.laneIndex();
-            laneData.pluginIndex = laneInfo.pluginIndex();
-            laneData.paramId = laneInfo.paramId();
-            laneData.paramName = laneInfo.paramName();
-            for (int j = 0; j < laneInfo.pointsLength(); j++) {
-                AutomationPointInfo pt = laneInfo.points(j);
+            laneData.laneIndex = laneInfo.getLaneIndex();
+            laneData.pluginIndex = laneInfo.getPluginIndex();
+            laneData.paramId = laneInfo.getParamId();
+            laneData.paramName = laneInfo.getParamName();
+            for (int j = 0; j < laneInfo.getPointsCount(); j++) {
+                var pt = laneInfo.getPoints(j);
                 laneData.points.add(new AutomationEditor.AutoPoint(
-                        pt.timeBeats(), pt.value(), pt.tension()));
+                        pt.getTimeBeats(), pt.getValue(), pt.getTension()));
             }
             track.automationLanes.add(laneData);
         }

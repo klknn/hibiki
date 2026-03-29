@@ -4,8 +4,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.KeyEvent;
 import hibiki.BackendManager;
-import hibiki.ipc.Response;
-import com.google.flatbuffers.FlatBufferBuilder;
+import hibiki.pb.HibikiProto;
 
 public class MainView extends JPanel implements Theme.ThemeListener {
     private PluginPane pluginPane;
@@ -67,12 +66,9 @@ public class MainView extends JPanel implements Theme.ThemeListener {
         actionMap.put("undo", new AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
-                FlatBufferBuilder builder = new FlatBufferBuilder(16);
-                hibiki.ipc.Undo.startUndo(builder);
-                int undoOffset = hibiki.ipc.Undo.endUndo(builder);
-                int requestOffset = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.Undo, undoOffset);
-                builder.finish(requestOffset);
-                BackendManager.getInstance().sendRequest(builder);
+                BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
+                        .setUndo(HibikiProto.Undo.getDefaultInstance())
+                        .build());
             }
         });
 
@@ -83,12 +79,9 @@ public class MainView extends JPanel implements Theme.ThemeListener {
         actionMap.put("redo", new AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
-                FlatBufferBuilder builder = new FlatBufferBuilder(16);
-                hibiki.ipc.Redo.startRedo(builder);
-                int redoOffset = hibiki.ipc.Redo.endRedo(builder);
-                int requestOffset = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.Redo, redoOffset);
-                builder.finish(requestOffset);
-                BackendManager.getInstance().sendRequest(builder);
+                BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
+                        .setRedo(HibikiProto.Redo.getDefaultInstance())
+                        .build());
             }
         });
 
@@ -130,8 +123,6 @@ public class MainView extends JPanel implements Theme.ThemeListener {
             actionMap.put("selectTrack" + i, new AbstractAction() {
                 @Override
                 public void actionPerformed(java.awt.event.ActionEvent e) {
-                    // Select track in both views (SessionView uses 1-based, TimelineView uses
-                    // 0-based)
                     if (TimelineView.getInstance() != null) {
                         TimelineView.getInstance().setSelectedTrack(trackNum - 1);
                     }

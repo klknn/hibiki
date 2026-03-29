@@ -1,8 +1,8 @@
 package hibiki;
 
-import hibiki.ipc.Request;
-import hibiki.ipc.Notification;
-import com.google.flatbuffers.FlatBufferBuilder;
+import hibiki.pb.HibikiProto;
+import hibiki.pb.HibikiProto.Notification;
+import hibiki.pb.HibikiProto.Request;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -101,14 +101,12 @@ public class BackendManager {
                     System.err.println("[READSTDOUT ERROR] Invalid magic: 0x" + Integer.toHexString(magic) + " at msg#"
                             + msgCount + ", resyncing...");
                     // Resync: search for magic header byte by byte
-                    // We need to find the sequence that when read as little-endian equals IPC_MAGIC
-                    // IPC_MAGIC = 0x48424B49, as little-endian bytes: 49 4B 42 48
                     int resyncCount = 0;
-                    int buf = Integer.reverseBytes(magic); // Convert back to raw bytes order
+                    int buf = Integer.reverseBytes(magic);
                     while (resyncCount < 10000) {
                         int b = in.readByte() & 0xFF;
-                        buf = (buf << 8) | b; // Slide window left, add new byte on right
-                        if (buf == 0x494B4248) { // Raw bytes for magic in big-endian order
+                        buf = (buf << 8) | b;
+                        if (buf == 0x494B4248) {
                             System.err.println("[READSTDOUT] Resynced after " + resyncCount + " bytes");
                             break;
                         }
@@ -130,12 +128,10 @@ public class BackendManager {
                     continue;
                 }
 
-                byte[] buf = new byte[size];
-                in.readFully(buf);
+                byte[] data = new byte[size];
+                in.readFully(data);
 
-                ByteBuffer bb = ByteBuffer.wrap(buf);
-                bb.order(ByteOrder.LITTLE_ENDIAN);
-                Notification notification = Notification.getRootAsNotification(bb);
+                Notification notification = Notification.parseFrom(data);
                 handleNotification(notification);
             }
         } catch (IOException e) {
@@ -167,13 +163,13 @@ public class BackendManager {
         }
     }
 
-    public synchronized void sendRequest(FlatBufferBuilder builder) {
+    public synchronized void sendRequest(Request request) {
         if (out == null) {
             System.err.println("Warning: Backend not ready, request dropped.");
             return;
         }
         try {
-            byte[] data = builder.sizedByteArray();
+            byte[] data = request.toByteArray();
             int size = data.length;
             // Send size as little-endian 4-byte int
             out.writeInt(Integer.reverseBytes(size));
@@ -185,22 +181,16 @@ public class BackendManager {
     }
 
     public void startPlayback() {
-        FlatBufferBuilder builder = new FlatBufferBuilder(16);
-        hibiki.ipc.Play.startPlay(builder);
-        int playOff = hibiki.ipc.Play.endPlay(builder);
-        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.Play, playOff);
-        builder.finish(reqOff);
-        sendRequest(builder);
+        sendRequest(Request.newBuilder()
+                .setPlay(HibikiProto.Play.getDefaultInstance())
+                .build());
         isPlaying = true;
     }
 
     public void stopPlayback() {
-        FlatBufferBuilder builder = new FlatBufferBuilder(16);
-        hibiki.ipc.Stop.startStop(builder);
-        int stopOff = hibiki.ipc.Stop.endStop(builder);
-        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.Stop, stopOff);
-        builder.finish(reqOff);
-        sendRequest(builder);
+        sendRequest(Request.newBuilder()
+                .setStop(HibikiProto.Stop.getDefaultInstance())
+                .build());
         isPlaying = false;
     }
 
@@ -214,38 +204,36 @@ public class BackendManager {
     }
 
     public void seek(float position) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(32);
-        int seekOff = hibiki.ipc.Seek.createSeek(builder, position);
-        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.Seek, seekOff);
-        builder.finish(reqOff);
-        sendRequest(builder);
+        sendRequest(Request.newBuilder()
+                .setSeek(HibikiProto.Seek.newBuilder().setPosition(position))
+                .build());
     }
 
     public void addTimelineClip(int trackIndex, String path, float startTime, float durationBeats) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(512);
-        int pathOff = builder.createString(path);
-        int addOff = hibiki.ipc.AddTimelineClip.createAddTimelineClip(builder, trackIndex, pathOff, startTime,
-                durationBeats);
-        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.AddTimelineClip, addOff);
-        builder.finish(reqOff);
-        sendRequest(builder);
+        sendRequest(Request.newBuilder()
+                .setAddTimelineClip(HibikiProto.AddTimelineClip.newBuilder()
+                        .setTrackIndex(trackIndex)
+                        .setPath(path)
+                        .setStartTime(startTime)
+                        .setDurationBeats(durationBeats))
+                .build());
     }
 
     public void removeTimelineClip(int trackIndex, int clipIndex) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(32);
-        int remOff = hibiki.ipc.RemoveTimelineClip.createRemoveTimelineClip(builder, trackIndex, clipIndex);
-        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.RemoveTimelineClip, remOff);
-        builder.finish(reqOff);
-        sendRequest(builder);
+        sendRequest(Request.newBuilder()
+                .setRemoveTimelineClip(HibikiProto.RemoveTimelineClip.newBuilder()
+                        .setTrackIndex(trackIndex)
+                        .setClipIndex(clipIndex))
+                .build());
     }
 
     public void resizeTimelineClip(int trackIndex, int clipIndex, float durationBeats) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(32);
-        int resOff = hibiki.ipc.ResizeTimelineClip.createResizeTimelineClip(builder, trackIndex, clipIndex,
-                durationBeats);
-        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.ResizeTimelineClip, resOff);
-        builder.finish(reqOff);
-        sendRequest(builder);
+        sendRequest(Request.newBuilder()
+                .setResizeTimelineClip(HibikiProto.ResizeTimelineClip.newBuilder()
+                        .setTrackIndex(trackIndex)
+                        .setClipIndex(clipIndex)
+                        .setDurationBeats(durationBeats))
+                .build());
     }
 
     /**
@@ -253,11 +241,12 @@ public class BackendManager {
      * Use slotIdx >= 0 for session clips, clipIdx >= 0 for timeline clips
      */
     public void requestClipMidi(int trackIdx, int slotIdx, int clipIdx) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(256);
-        int cmdOff = hibiki.ipc.GetClipMidi.createGetClipMidi(builder, trackIdx, slotIdx, clipIdx);
-        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.GetClipMidi, cmdOff);
-        builder.finish(reqOff);
-        sendRequest(builder);
+        sendRequest(Request.newBuilder()
+                .setGetClipMidi(HibikiProto.GetClipMidi.newBuilder()
+                        .setTrackIndex(trackIdx)
+                        .setSlotIndex(slotIdx)
+                        .setClipIndex(clipIdx))
+                .build());
     }
 
     /**
@@ -266,20 +255,21 @@ public class BackendManager {
      */
     public void updateClipMidi(int trackIdx, int slotIdx, int clipIdx, int resolution, long[] ticks, int[] pitches,
             long[] durationTicks, int[] velocities) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(1024);
-
-        // Create the events vector
-        int[] eventOffsets = new int[ticks.length];
+        HibikiProto.UpdateClipMidi.Builder cmdBuilder = HibikiProto.UpdateClipMidi.newBuilder()
+                .setTrackIndex(trackIdx)
+                .setSlotIndex(slotIdx)
+                .setClipIndex(clipIdx)
+                .setResolution(resolution);
         for (int i = 0; i < ticks.length; i++) {
-            eventOffsets[i] = hibiki.ipc.UpdateMidiEvent.createUpdateMidiEvent(builder, ticks[i], pitches[i],
-                    durationTicks[i], velocities[i]);
+            cmdBuilder.addEvents(HibikiProto.MidiEvent.newBuilder()
+                    .setTick(ticks[i])
+                    .setPitch(pitches[i])
+                    .setDurationTicks(durationTicks[i])
+                    .setVelocity(velocities[i]));
         }
-        int eventsOff = hibiki.ipc.UpdateClipMidi.createEventsVector(builder, eventOffsets);
-        int cmdOff = hibiki.ipc.UpdateClipMidi.createUpdateClipMidi(builder, trackIdx, slotIdx, clipIdx, resolution,
-                eventsOff);
-        int reqOff = hibiki.ipc.Request.createRequest(builder, hibiki.ipc.Command.UpdateClipMidi, cmdOff);
-        builder.finish(reqOff);
-        sendRequest(builder);
+        sendRequest(Request.newBuilder()
+                .setUpdateClipMidi(cmdBuilder)
+                .build());
     }
 
     private String findBinary(String binaryName) {

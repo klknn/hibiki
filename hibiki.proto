@@ -1,0 +1,381 @@
+syntax = "proto3";
+
+package hibiki.pb;
+
+option java_package = "hibiki.pb";
+option java_outer_classname = "HibikiProto";
+
+// ─── Shared Messages ───────────────────────────────────────────────
+
+message AutomationPoint {
+  float time_beats = 1;
+  float value = 2;       // 0.0 – 1.0
+  float tension = 3;     // -1..1 (0=linear, >0=ease-in, <0=ease-out)
+}
+
+message MidiEvent {
+  int64 tick = 1;
+  int32 pitch = 2;
+  int64 duration_ticks = 3;
+  int32 velocity = 4;
+}
+
+// ─── Request Messages (Java GUI → C++ Engine) ──────────────────────
+
+message LoadPlugin {
+  int32 track_index = 1;
+  string path = 2;
+  int32 plugin_index = 3;
+}
+
+message LoadClip {
+  int32 track_index = 1;
+  int32 slot_index = 2;
+  string path = 3;
+  bool is_loop = 4;
+}
+
+message SetClipLoop {
+  int32 track_index = 1;
+  int32 slot_index = 2;
+  bool is_loop = 3;
+}
+
+message Play {}
+message Stop {}
+
+message PlayClip {
+  int32 track_index = 1;
+  int32 slot_index = 2;
+}
+
+message StopTrack {
+  int32 track_index = 1;
+}
+
+message ShowPluginGui {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+}
+
+message SetParamValue {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+  uint32 param_id = 3;
+  float value = 4;
+}
+
+message RemovePlugin {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+}
+
+message SaveProject {
+  string path = 1;
+}
+
+message LoadProjectCmd {
+  string path = 1;
+}
+
+message SetBpm {
+  float bpm = 1;
+}
+
+message PlayScene {
+  int32 slot_index = 1;
+}
+
+message DeleteClip {
+  int32 track_index = 1;
+  int32 slot_index = 2;
+}
+
+message Quit {}
+
+message ListPlugins {
+  string path = 1;
+}
+
+message BounceProjectCmd {
+  string path = 1;
+}
+
+message Undo {}
+message Redo {}
+
+message AddTimelineClip {
+  int32 track_index = 1;
+  string path = 2;
+  float start_time = 3;
+  float duration_beats = 4;  // 0 = auto-detect from file
+}
+
+message RemoveTimelineClip {
+  int32 track_index = 1;
+  int32 clip_index = 2;
+}
+
+message Seek {
+  float position = 1;
+}
+
+message ResizeTimelineClip {
+  int32 track_index = 1;
+  int32 clip_index = 2;
+  float duration_beats = 3;
+}
+
+// Request MIDI data for a clip (for Piano Roll editing)
+// Use slot_index >= 0 for session clips, clip_index >= 0 for timeline clips
+message GetClipMidi {
+  int32 track_index = 1;
+  int32 slot_index = 2;   // -1 = use clip_index instead
+  int32 clip_index = 3;   // -1 = use slot_index instead
+}
+
+// Update clip's MIDI data (from Piano Roll edits)
+message UpdateClipMidi {
+  int32 track_index = 1;
+  int32 slot_index = 2;
+  int32 clip_index = 3;
+  int32 resolution = 4;
+  repeated MidiEvent events = 5;
+}
+
+message AddAutomationLane {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+  uint32 param_id = 3;
+}
+
+message RemoveAutomationLane {
+  int32 track_index = 1;
+  int32 lane_index = 2;
+}
+
+message UpdateAutomationLane {
+  int32 track_index = 1;
+  int32 lane_index = 2;
+  repeated AutomationPoint points = 3;
+}
+
+message GetAutomationLanes {
+  int32 track_index = 1;
+}
+
+message Request {
+  oneof command {
+    LoadPlugin load_plugin = 1;
+    LoadClip load_clip = 2;
+    Play play = 3;
+    Stop stop = 4;
+    PlayClip play_clip = 5;
+    StopTrack stop_track = 6;
+    ShowPluginGui show_plugin_gui = 7;
+    SetParamValue set_param_value = 8;
+    RemovePlugin remove_plugin = 9;
+    SaveProject save_project = 10;
+    LoadProjectCmd load_project = 11;
+    SetClipLoop set_clip_loop = 12;
+    SetBpm set_bpm = 13;
+    PlayScene play_scene = 14;
+    DeleteClip delete_clip = 15;
+    Quit quit = 16;
+    ListPlugins list_plugins = 17;
+    Undo undo = 18;
+    Redo redo = 19;
+    AddTimelineClip add_timeline_clip = 20;
+    RemoveTimelineClip remove_timeline_clip = 21;
+    Seek seek = 22;
+    BounceProjectCmd bounce_project = 23;
+    GetClipMidi get_clip_midi = 24;
+    UpdateClipMidi update_clip_midi = 25;
+    ResizeTimelineClip resize_timeline_clip = 26;
+    AddAutomationLane add_automation_lane = 27;
+    RemoveAutomationLane remove_automation_lane = 28;
+    UpdateAutomationLane update_automation_lane = 29;
+    GetAutomationLanes get_automation_lanes = 30;
+  }
+}
+
+// ─── Response Messages (C++ Engine → Java GUI) ─────────────────────
+
+message ParamInfo {
+  uint32 id = 1;
+  string name = 2;
+  float default_value = 3;
+}
+
+message ParamList {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+  string plugin_name = 3;
+  bool is_instrument = 4;
+  repeated ParamInfo params = 5;
+}
+
+message Log {
+  string message = 1;
+}
+
+message Acknowledge {
+  string command_type = 1;
+  bool success = 2;
+}
+
+message ClipInfo {
+  int32 track_index = 1;
+  int32 slot_index = 2;
+  string name = 3;
+  string path = 4;
+}
+
+message ClearProject {}
+
+message TrackLevel {
+  int32 track_index = 1;
+  float peak_l = 2;
+  float peak_r = 3;
+}
+
+message TrackLevels {
+  repeated TrackLevel levels = 1;
+}
+
+message ClipWaveform {
+  int32 track_index = 1;
+  int32 slot_index = 2;
+  repeated float waveform = 3;
+}
+
+message PluginDescription {
+  int32 index = 1;
+  string name = 2;
+  string vendor = 3;
+}
+
+message PluginList {
+  string path = 1;
+  repeated PluginDescription plugins = 2;
+}
+
+message TimelineClipInfo {
+  int32 track_index = 1;
+  int32 clip_index = 2;
+  string name = 3;
+  string path = 4;
+  float start_time = 5;
+  float duration = 6;
+  repeated float waveform = 7;
+}
+
+message PlayheadInfo {
+  float position_sec = 1;
+  float bpm = 2;
+  bool is_playing = 3;
+}
+
+message TrackInfo {
+  int32 track_index = 1;
+  string name = 2;
+}
+
+message BounceFinished {
+  string path = 1;
+  bool success = 2;
+}
+
+// Response containing clip's MIDI data for editing
+message ClipMidiData {
+  int32 track_index = 1;
+  int32 slot_index = 2;
+  int32 clip_index = 3;
+  int32 resolution = 4;
+  repeated MidiEvent events = 5;
+}
+
+message AutomationLaneInfo {
+  int32 track_index = 1;
+  int32 lane_index = 2;
+  int32 plugin_index = 3;
+  uint32 param_id = 4;
+  string param_name = 5;
+  repeated AutomationPoint points = 6;
+}
+
+message AutomationLanesData {
+  int32 track_index = 1;
+  repeated AutomationLaneInfo lanes = 2;
+}
+
+message Notification {
+  oneof response {
+    ParamList param_list = 1;
+    Log log = 2;
+    Acknowledge acknowledge = 3;
+    ClipInfo clip_info = 4;
+    ClearProject clear_project = 5;
+    TrackLevels track_levels = 6;
+    ClipWaveform clip_waveform = 7;
+    PluginList plugin_list = 8;
+    TimelineClipInfo timeline_clip_info = 9;
+    PlayheadInfo playhead_info = 10;
+    BounceFinished bounce_finished = 11;
+    TrackInfo track_info = 12;
+    ClipMidiData clip_midi_data = 13;
+    AutomationLanesData automation_lanes_data = 14;
+  }
+}
+
+// ─── Project Save/Load ──────────────────────────────────────────────
+
+message ParameterSave {
+  uint32 id = 1;
+  float value = 2;
+}
+
+message PluginSave {
+  string path = 1;
+  int32 index = 2;
+  repeated ParameterSave parameters = 3;
+}
+
+enum ClipType {
+  MIDI = 0;
+  AUDIO = 1;
+}
+
+message ClipSave {
+  int32 slot_index = 1;
+  string path = 2;
+  bool is_loop = 3;
+  ClipType type = 4;
+}
+
+message TimelineClipSave {
+  string path = 1;
+  float start_time = 2;
+  float duration = 3;
+}
+
+message AutomationLaneSave {
+  int32 plugin_index = 1;
+  uint32 param_id = 2;
+  repeated AutomationPoint points = 3;  // Reuses shared AutomationPoint
+}
+
+message TrackSave {
+  int32 index = 1;
+  string name = 2;
+  repeated PluginSave plugins = 3;
+  repeated ClipSave clips = 4;
+  repeated TimelineClipSave timeline_clips = 5;
+  repeated AutomationLaneSave automation_lanes = 6;
+}
+
+message Project {
+  float bpm = 1;
+  float playhead_pos = 2;
+  repeated TrackSave tracks = 3;
+}

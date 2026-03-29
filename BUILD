@@ -1,6 +1,8 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test", "objc_library")
 load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_test")
-load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library", "flatbuffer_library_public")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@protobuf//bazel:java_proto_library.bzl", "java_proto_library")
 
 cc_library(
     name = "alsa_out",
@@ -105,8 +107,7 @@ cc_library(
     deps = [
         ":track",
         ":ipc",
-        ":hibiki_project_cc",
-        ":hibiki_response_cc",
+        ":hibiki_cc_proto",
         ":audio_file",
     ],
 )
@@ -117,8 +118,7 @@ cc_library(
     hdrs = ["ipc.hpp"],
     deps = [
         ":vst3_host",
-        ":hibiki_request_cc",
-        ":hibiki_response_cc",
+        ":hibiki_cc_proto",
     ],
 )
 
@@ -250,201 +250,35 @@ cc_test(
     linkstatic = True,
 )
 
-flatbuffer_cc_library(
-    name = "hibiki_request_cc",
-    srcs = ["hibiki_request.fbs"],
+proto_library(
+    name = "hibiki_proto",
+    srcs = ["hibiki.proto"],
 )
 
-flatbuffer_cc_library(
-    name = "hibiki_response_cc",
-    srcs = ["hibiki_response.fbs"],
+cc_proto_library(
+    name = "hibiki_cc_proto",
+    deps = [":hibiki_proto"],
 )
 
-flatbuffer_cc_library(
-    name = "hibiki_project_cc",
-    srcs = ["hibiki_project.fbs"],
+java_proto_library(
+    name = "hibiki_java_proto",
+    deps = [":hibiki_proto"],
 )
 
-flatbuffer_library_public(
-    name = "hibiki_request_java_gen",
-    srcs = ["hibiki_request.fbs"],
-    outs = [
-        "hibiki/ipc/Command.java",
-        "hibiki/ipc/CommandUnion.java",
-        "hibiki/ipc/LoadClip.java",
-        "hibiki/ipc/LoadClipT.java",
-        "hibiki/ipc/LoadPlugin.java",
-        "hibiki/ipc/LoadPluginT.java",
-        "hibiki/ipc/Play.java",
-        "hibiki/ipc/PlayT.java",
-        "hibiki/ipc/PlayClip.java",
-        "hibiki/ipc/PlayClipT.java",
-        "hibiki/ipc/Quit.java",
-        "hibiki/ipc/QuitT.java",
-        "hibiki/ipc/RemovePlugin.java",
-        "hibiki/ipc/RemovePluginT.java",
-        "hibiki/ipc/Request.java",
-        "hibiki/ipc/RequestT.java",
-        "hibiki/ipc/SetParamValue.java",
-        "hibiki/ipc/SetParamValueT.java",
-        "hibiki/ipc/ShowPluginGui.java",
-        "hibiki/ipc/ShowPluginGuiT.java",
-        "hibiki/ipc/SetClipLoop.java",
-        "hibiki/ipc/SetClipLoopT.java",
-        "hibiki/ipc/Stop.java",
-        "hibiki/ipc/StopT.java",
-        "hibiki/ipc/StopTrack.java",
-        "hibiki/ipc/StopTrackT.java",
-        "hibiki/ipc/SaveProject.java",
-        "hibiki/ipc/SaveProjectT.java",
-        "hibiki/ipc/LoadProject.java",
-        "hibiki/ipc/LoadProjectT.java",
-        "hibiki/ipc/SetBpm.java",
-        "hibiki/ipc/SetBpmT.java",
-        "hibiki/ipc/PlayScene.java",
-        "hibiki/ipc/PlaySceneT.java",
-        "hibiki/ipc/DeleteClip.java",
-        "hibiki/ipc/DeleteClipT.java",
-        "hibiki/ipc/ListPlugins.java",
-        "hibiki/ipc/ListPluginsT.java",
-        "hibiki/ipc/Undo.java",
-        "hibiki/ipc/UndoT.java",
-        "hibiki/ipc/Redo.java",
-        "hibiki/ipc/RedoT.java",
-        "hibiki/ipc/AddTimelineClip.java",
-        "hibiki/ipc/AddTimelineClipT.java",
-        "hibiki/ipc/RemoveTimelineClip.java",
-        "hibiki/ipc/RemoveTimelineClipT.java",
-        "hibiki/ipc/Seek.java",
-        "hibiki/ipc/SeekT.java",
-        "hibiki/ipc/BounceProject.java",
-        "hibiki/ipc/BounceProjectT.java",
-        "hibiki/ipc/GetClipMidi.java",
-        "hibiki/ipc/GetClipMidiT.java",
-        "hibiki/ipc/UpdateMidiEvent.java",
-        "hibiki/ipc/UpdateMidiEventT.java",
-        "hibiki/ipc/UpdateClipMidi.java",
-        "hibiki/ipc/UpdateClipMidiT.java",
-        "hibiki/ipc/ResizeTimelineClip.java",
-        "hibiki/ipc/ResizeTimelineClipT.java",
-        "hibiki/ipc/AutomationPointData.java",
-        "hibiki/ipc/AutomationPointDataT.java",
-        "hibiki/ipc/AddAutomationLane.java",
-        "hibiki/ipc/AddAutomationLaneT.java",
-        "hibiki/ipc/RemoveAutomationLane.java",
-        "hibiki/ipc/RemoveAutomationLaneT.java",
-        "hibiki/ipc/UpdateAutomationLane.java",
-        "hibiki/ipc/UpdateAutomationLaneT.java",
-        "hibiki/ipc/GetAutomationLanes.java",
-        "hibiki/ipc/GetAutomationLanesT.java",
-    ],
-    language_flag = "--java --gen-object-api",
-)
 
-flatbuffer_library_public(
-    name = "hibiki_response_java_gen",
-    srcs = ["hibiki_response.fbs"],
-    outs = [
-        "hibiki/ipc/Notification.java",
-        "hibiki/ipc/NotificationT.java",
-        "hibiki/ipc/ParamInfo.java",
-        "hibiki/ipc/ParamInfoT.java",
-        "hibiki/ipc/ParamList.java",
-        "hibiki/ipc/ParamListT.java",
-        "hibiki/ipc/Log.java",
-        "hibiki/ipc/LogT.java",
-        "hibiki/ipc/Acknowledge.java",
-        "hibiki/ipc/AcknowledgeT.java",
-        "hibiki/ipc/ClipInfo.java",
-        "hibiki/ipc/ClipInfoT.java",
-        "hibiki/ipc/ClearProject.java",
-        "hibiki/ipc/ClearProjectT.java",
-        "hibiki/ipc/TrackLevel.java",
-        "hibiki/ipc/TrackLevelT.java",
-        "hibiki/ipc/TrackLevels.java",
-        "hibiki/ipc/TrackLevelsT.java",
-        "hibiki/ipc/ClipWaveform.java",
-        "hibiki/ipc/ClipWaveformT.java",
-        "hibiki/ipc/PluginDescription.java",
-        "hibiki/ipc/PluginDescriptionT.java",
-        "hibiki/ipc/PluginList.java",
-        "hibiki/ipc/PluginListT.java",
-        "hibiki/ipc/Response.java",
-        "hibiki/ipc/ResponseUnion.java",
-        "hibiki/ipc/TimelineClipInfo.java",
-        "hibiki/ipc/TimelineClipInfoT.java",
-        "hibiki/ipc/PlayheadInfo.java",
-        "hibiki/ipc/PlayheadInfoT.java",
-        "hibiki/ipc/BounceFinished.java",
-        "hibiki/ipc/BounceFinishedT.java",
-        "hibiki/ipc/TrackInfo.java",
-        "hibiki/ipc/TrackInfoT.java",
-        "hibiki/ipc/MidiEventData.java",
-        "hibiki/ipc/MidiEventDataT.java",
-        "hibiki/ipc/ClipMidiData.java",
-        "hibiki/ipc/ClipMidiDataT.java",
-        "hibiki/ipc/AutomationPointInfo.java",
-        "hibiki/ipc/AutomationPointInfoT.java",
-        "hibiki/ipc/AutomationLaneInfo.java",
-        "hibiki/ipc/AutomationLaneInfoT.java",
-        "hibiki/ipc/AutomationLanesData.java",
-        "hibiki/ipc/AutomationLanesDataT.java",
-    ],
-    language_flag = "--java --gen-object-api",
-)
 
-flatbuffer_library_public(
-    name = "hibiki_project_java_gen",
-    srcs = ["hibiki_project.fbs"],
-    outs = [
-        "hibiki/project/Clip.java",
-        "hibiki/project/ClipT.java",
-        "hibiki/project/Parameter.java",
-        "hibiki/project/ParameterT.java",
-        "hibiki/project/Plugin.java",
-        "hibiki/project/PluginT.java",
-        "hibiki/project/Project.java",
-        "hibiki/project/ProjectT.java",
-        "hibiki/project/Track.java",
-        "hibiki/project/TrackT.java",
-        "hibiki/project/TimelineClip.java",
-        "hibiki/project/TimelineClipT.java",
-        "hibiki/project/ClipType.java",
-        "hibiki/project/AutomationPointSave.java",
-        "hibiki/project/AutomationPointSaveT.java",
-        "hibiki/project/AutomationLaneSave.java",
-        "hibiki/project/AutomationLaneSaveT.java",
-    ],
-    language_flag = "--java --gen-object-api",
-)
 
-java_library(
-    name = "hibiki_request_java_lib",
-    srcs = [":hibiki_request_java_gen"],
-    deps = ["@maven//:com_google_flatbuffers_flatbuffers_java"],
-)
 
-java_library(
-    name = "hibiki_response_java_lib",
-    srcs = [":hibiki_response_java_gen"],
-    deps = ["@maven//:com_google_flatbuffers_flatbuffers_java"],
-)
 
-java_library(
-    name = "hibiki_project_java_lib",
-    srcs = [":hibiki_project_java_gen"],
-    deps = ["@maven//:com_google_flatbuffers_flatbuffers_java"],
-)
+
 
 java_library(
     name = "hibiki-gui-lib",
     srcs = glob(["src/main/java/hibiki/**/*.java"], exclude = ["src/main/java/hibiki/ClojureMain.java", "src/main/java/hibiki/EchoMain.java"]),
     resources = glob(["src/main/resources/**/*"]),
     deps = [
-        ":hibiki_request_java_lib",
-        ":hibiki_response_java_lib",
-        ":hibiki_project_java_lib",
-        "@maven//:com_google_flatbuffers_flatbuffers_java",
+        ":hibiki_java_proto",
+        "@maven//:com_google_protobuf_protobuf_java",
         "@maven//:com_formdev_flatlaf",
     ],
     visibility = ["//visibility:public"],
@@ -510,10 +344,9 @@ java_test(
     test_class = "hibiki.BackendManagerTest",
     deps = [
         ":hibiki-gui-lib",
-        ":hibiki_request_java_lib",
-        ":hibiki_response_java_lib",
+        ":hibiki_java_proto",
         "@maven//:junit_junit",
-        "@maven//:com_google_flatbuffers_flatbuffers_java",
+        "@maven//:com_google_protobuf_protobuf_java",
     ],
     data = [
         ":hbk-play",
@@ -546,9 +379,9 @@ java_test(
     test_class = "hibiki.ui.TimelineViewTest",
     deps = [
         ":hibiki-gui-lib",
-        ":hibiki_response_java_lib",
+        ":hibiki_java_proto",
         "@maven//:junit_junit",
-        "@maven//:com_google_flatbuffers_flatbuffers_java",
+        "@maven//:com_google_protobuf_protobuf_java",
     ],
 )
 
@@ -579,9 +412,9 @@ java_test(
     data = ["//testdata"],
     deps = [
         ":hibiki-gui-lib",
-        ":hibiki_response_java_lib",
+        ":hibiki_java_proto",
         "@maven//:junit_junit",
-        "@maven//:com_google_flatbuffers_flatbuffers_java",
+        "@maven//:com_google_protobuf_protobuf_java",
     ],
 )
 
@@ -611,9 +444,9 @@ java_test(
     test_class = "hibiki.ui.SessionViewIpcTest",
     deps = [
         ":hibiki-gui-lib",
-        ":hibiki_request_java_lib",
+        ":hibiki_java_proto",
         "@maven//:junit_junit",
-        "@maven//:com_google_flatbuffers_flatbuffers_java",
+        "@maven//:com_google_protobuf_protobuf_java",
     ],
 )
 
@@ -636,12 +469,11 @@ java_test(
         ":hibiki-clj-sources",
         ":hibiki-clj-test-sources",
         ":hibiki-gui-lib",
-        ":hibiki_request_java_lib",
-        ":hibiki_response_java_lib",
+        ":hibiki_java_proto",
         "@clojure_jar//jar",
         "@clojure_spec_alpha_jar//jar",
         "@clojure_core_specs_alpha_jar//jar",
-        "@maven//:com_google_flatbuffers_flatbuffers_java",
+        "@maven//:com_google_protobuf_protobuf_java",
     ],
     data = ["//testdata"],
 )

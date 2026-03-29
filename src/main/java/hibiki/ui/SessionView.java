@@ -13,11 +13,7 @@ import java.awt.datatransfer.Transferable;
 import java.awt.dnd.*;
 import java.util.List;
 
-import hibiki.ipc.Response;
-import hibiki.ipc.ClipInfo;
-import hibiki.ipc.TrackLevels;
-import hibiki.ipc.TrackLevel;
-import hibiki.ipc.ClipWaveform;
+import hibiki.pb.HibikiProto.Notification;
 
 public class SessionView extends JPanel {
     private static SessionView instance;
@@ -79,22 +75,30 @@ public class SessionView extends JPanel {
         add(master, BorderLayout.EAST);
 
         BackendManager.getInstance().addNotificationListener(notification -> {
-            if (notification.responseType() == Response.ClipInfo) {
-                ClipInfo info = (ClipInfo) notification.response(new ClipInfo());
-                updateSlotLabel(info.trackIndex(), info.slotIndex(), info.name());
-                if (info.path() != null && !info.path().isEmpty()) {
-                    slotPaths[info.trackIndex()][info.slotIndex()] = info.path();
-                } else {
-                    slotPaths[info.trackIndex()][info.slotIndex()] = null;
+            switch (notification.getResponseCase()) {
+                case CLIP_INFO: {
+                    var info = notification.getClipInfo();
+                    updateSlotLabel(info.getTrackIndex(), info.getSlotIndex(), info.getName());
+                    if (!info.getPath().isEmpty()) {
+                        slotPaths[info.getTrackIndex()][info.getSlotIndex()] = info.getPath();
+                    } else {
+                        slotPaths[info.getTrackIndex()][info.getSlotIndex()] = null;
+                    }
+                    break;
                 }
-            } else if (notification.responseType() == Response.ClearProject) {
-                clearAllSlots();
-            } else if (notification.responseType() == Response.TrackLevels) {
-                TrackLevels tl = (TrackLevels) notification.response(new TrackLevels());
-                for (int i = 0; i < tl.levelsLength(); i++) {
-                    TrackLevel l = tl.levels(i);
-                    updateLevel(l.trackIndex(), l.peakL(), l.peakR());
+                case CLEAR_PROJECT:
+                    clearAllSlots();
+                    break;
+                case TRACK_LEVELS: {
+                    var tl = notification.getTrackLevels();
+                    for (int i = 0; i < tl.getLevelsCount(); i++) {
+                        var l = tl.getLevels(i);
+                        updateLevel(l.getTrackIndex(), l.getPeakL(), l.getPeakR());
+                    }
+                    break;
                 }
+                default:
+                    break;
             }
         });
     }

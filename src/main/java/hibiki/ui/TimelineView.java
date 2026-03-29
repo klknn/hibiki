@@ -1,6 +1,8 @@
 package hibiki.ui;
 
 import hibiki.pb.commands.*;
+import hibiki.pb.core.EntityRef;
+import hibiki.pb.core.Clip;
 import hibiki.pb.notifications.*;
 import hibiki.pb.core.*;
 import hibiki.pb.notifications.Notification;
@@ -483,10 +485,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             JMenuItem autoItem = new JMenuItem("Create Automation: " + ltp.paramName);
             autoItem.addActionListener(e -> {
                 BackendManager.getInstance().sendRequest(Request.newBuilder()
-                        .setAddAutomationLane(AddAutomationLane.newBuilder()
-                                .setTrackIndex(trackIdx)
-                                .setPluginIndex(ltp.pluginIndex)
-                                .setParamId((int) ltp.paramId))
+                        .setAutomation(AutomationCmd.newBuilder().setAction(AutomationCmd.Action.ACTION_ADD_LANE).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setPluginIndex(ltp.pluginIndex)).setParamId((int) ltp.paramId))
                         .build());
             });
             menu.add(autoItem);
@@ -515,10 +514,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 int pluginIdx = Integer.parseInt(parts[0].trim());
                 int paramId = Integer.parseInt(parts[1].trim());
                 BackendManager.getInstance().sendRequest(Request.newBuilder()
-                        .setAddAutomationLane(AddAutomationLane.newBuilder()
-                                .setTrackIndex(trackIdx)
-                                .setPluginIndex(pluginIdx)
-                                .setParamId(paramId))
+                        .setAutomation(AutomationCmd.newBuilder().setAction(AutomationCmd.Action.ACTION_ADD_LANE).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setPluginIndex(pluginIdx)).setParamId(paramId))
                         .build());
             } catch (NumberFormatException ex) {
                 JOptionPane.showMessageDialog(this, "Invalid input format.");

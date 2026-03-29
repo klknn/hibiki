@@ -2,6 +2,8 @@ package hibiki.ui;
 
 import hibiki.BackendManager;
 import hibiki.pb.commands.*;
+import hibiki.pb.core.EntityRef;
+import hibiki.pb.core.Clip;
 import hibiki.pb.notifications.*;
 import hibiki.pb.core.*;
 import hibiki.pb.commands.Request;
@@ -20,50 +22,37 @@ class SessionViewIpc {
     void sendLoadClip(int trackIdx, int slotIdx, String path, boolean isLoop) {
         view.slotPaths[trackIdx][slotIdx] = path;
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setLoadClip(LoadClip.newBuilder()
-                        .setTrackIndex(trackIdx)
-                        .setSlotIndex(slotIdx)
-                        .setPath(path)
-                        .setIsLoop(isLoop))
+                .setTrack(TrackCmd.newBuilder().setAction(TrackCmd.Action.ACTION_LOAD_CLIP).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setSessionSlot(slotIdx)).setClipData(Clip.newBuilder().setPath(path).setIsLoop(isLoop)))
                 .build());
     }
 
     void sendSetClipLoop(int trackIdx, int slotIdx, boolean isLoop) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setSetClipLoop(SetClipLoop.newBuilder()
-                        .setTrackIndex(trackIdx)
-                        .setSlotIndex(slotIdx)
-                        .setIsLoop(isLoop))
+                .setTrack(TrackCmd.newBuilder().setAction(TrackCmd.Action.ACTION_SET_CLIP_LOOP).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setSessionSlot(slotIdx)).setFlag(isLoop))
                 .build());
     }
 
     void sendPlayClip(int trackIdx, int slotIdx) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setPlayClip(PlayClip.newBuilder()
-                        .setTrackIndex(trackIdx)
-                        .setSlotIndex(slotIdx))
+                .setTrack(TrackCmd.newBuilder().setAction(TrackCmd.Action.ACTION_PLAY_SLOT).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setSessionSlot(slotIdx)))
                 .build());
     }
 
     void sendStopTrack(int trackIdx) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setStopTrack(StopTrack.newBuilder()
-                        .setTrackIndex(trackIdx))
+                .setTrack(TrackCmd.newBuilder().setAction(TrackCmd.Action.ACTION_STOP).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx)))
                 .build());
     }
 
     void sendPlayScene(int slotIdx) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setPlayScene(PlayScene.newBuilder()
-                        .setSlotIndex(slotIdx))
+                .setTrack(TrackCmd.newBuilder().setAction(TrackCmd.Action.ACTION_PLAY_SLOT).setTarget(EntityRef.newBuilder().setTrackIndex(-1).setSessionSlot(slotIdx)))
                 .build());
     }
 
     void sendDeleteClip(int trackIdx, int slotIdx) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setDeleteClip(DeleteClip.newBuilder()
-                        .setTrackIndex(trackIdx)
-                        .setSlotIndex(slotIdx))
+                .setTrack(TrackCmd.newBuilder().setAction(TrackCmd.Action.ACTION_DELETE_CLIP).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setSessionSlot(slotIdx)))
                 .build());
 
         // Optimistically clear the UI

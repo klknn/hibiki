@@ -283,7 +283,9 @@ extract pitches, and rewrite it as a 16th note arpeggio:
 ```clojure
 ;; Step 1: Request MIDI data from an existing clip (track 0, slot 0)
 ;;         The response arrives asynchronously via a notification listener.
-(import '[hibiki.ipc ClipMidiData MidiEventData Response Notification])
+(import '[hibiki.pb.notifications Notification Notification$ResponseCase]
+        '[hibiki.pb.core ClipMidiData MidiEvent EntityRef]
+        '[hibiki.pb.commands Request MidiCmd])
 
 (def midi-data (promise))
 
@@ -291,19 +293,29 @@ extract pitches, and rewrite it as a 16th note arpeggio:
   (reify java.util.function.Consumer
     (accept [_ notif]
       (let [^Notification n notif]
-        (when (= (.responseType n) Response/ClipMidiData)
-          (deliver midi-data (.response n (ClipMidiData.))))))))
+        (when (= (.getResponseCase n) Notification$ResponseCase/CLIP_MIDI_DATA)
+          (deliver midi-data (.getClipMidiData n)))))))
 
 (.addNotificationListener bm listener)
-(.requestClipMidi bm 0 0 -1)          ;; track 0, slot 0, session clip
+
+;; Send GET command
+(.sendRequest bm
+  (-> (Request/newBuilder)
+      (.setMidi (-> (MidiCmd/newBuilder)
+                    (.setAction hibiki.pb.commands.MidiCmd$Action/ACTION_GET)
+                    (.setTarget (-> (EntityRef/newBuilder)
+                                    (.setTrackIndex 0)
+                                    (.setSessionSlot 0)
+                                    (.setTimelineClip -1)))))
+      (.build)))
 
 ;; Step 2: Wait for response and extract unique pitches
 (let [^ClipMidiData data (deref midi-data 5000 nil)]
   (when data
     (.removeNotificationListener bm listener)
     (let [pitches (vec (distinct
-                         (for [i (range (.eventsLength data))]
-                           (.pitch (.events data i)))))
+                         (for [i (range (.getEventsCount data))]
+                           (.getPitch (.getEvents data i)))))
           _       (println "Found pitches:" pitches "(chord size:" (count pitches) ")")
 
           ;; Step 3: Arpeggiate! Cycle pitches as 16th notes over 4 bars
@@ -316,11 +328,24 @@ extract pitches, and rewrite it as a 16th note arpeggio:
                    :velocity (if (zero? (mod step 4)) 100 70)})]
 
       ;; Step 4: Write back to the same clip — instant arp!
-      (.updateClipMidi bm 0 0 -1 PPQ
-        (long-array (map :tick notes))
-        (int-array  (map :pitch notes))
-        (long-array (map :duration notes))
-        (int-array  (map :velocity notes)))
+      (let [cmd-builder (-> (hibiki.pb.commands.MidiCmd/newBuilder)
+                            (.setAction hibiki.pb.commands.MidiCmd$Action/ACTION_UPDATE)
+                            (.setTarget (-> (hibiki.pb.core.EntityRef/newBuilder)
+                                            (.setTrackIndex 0)
+                                            (.setSessionSlot 0)
+                                            (.setTimelineClip -1)))
+                            (.setResolution PPQ))]
+        (doseq [{:keys [tick pitch duration velocity]} notes]
+          (.addEvents cmd-builder
+            (-> (hibiki.pb.core.MidiEvent/newBuilder)
+                (.setTick tick)
+                (.setPitch pitch)
+                (.setDurationTicks duration)
+                (.setVelocity velocity))))
+        (.sendRequest bm
+          (-> (hibiki.pb.commands.Request/newBuilder)
+              (.setMidi cmd-builder)
+              (.build))))
       (println "✨ Arpeggiated" (count pitches) "pitches into"
                (count notes) "16th notes!"))))
 ```
@@ -714,37 +739,41 @@ and `when`/`case` patterns make complex notification handlers shorter.
 
 ## Where Java and Clojure Are Similar
 
-### IPC helpers — FlatBuffer boilerplate (comparable)
+### IPC helpers — Protobuf Builder boilerplate (comparable)
 
-Both need the same FlatBuffer builder ceremony — Clojure doesn't save much here:
+Both need the same Protobuf builder ceremony — Clojure doesn't save much here:
 
 ```java
-// PluginPane.java — 7 lines
-private void sendShowGui() {
-    FlatBufferBuilder builder = new FlatBufferBuilder(128);
-    int cmd = ShowPluginGui.createShowPluginGui(builder, trackIndex, pluginIndex);
-    int req = Request.createRequest(builder, Command.ShowPluginGui, cmd);
-    builder.finish(req);
-    BackendManager.getInstance().sendRequest(builder);
+// PluginPane.java
+private void sendShowGui(int trackIndex, int pluginIndex) {
+    Request req = Request.newBuilder()
+        .setPlugin(PluginCmd.newBuilder()
+            .setAction(PluginCmd.Action.ACTION_SHOW_GUI)
+            .setTarget(EntityRef.newBuilder()
+                .setTrackIndex(trackIndex)
+                .setPluginIndex(pluginIndex)))
+        .build();
+    BackendManager.getInstance().sendRequest(req);
 }
 ```
 
 ```clojure
-;; plugin.clj — 10 lines (type hints add verbosity)
+;; plugin.clj (type hints add verbosity but enable direct dispatch)
 (defn- send-show-gui
   [^BackendManager backend ^long track-idx ^long plugin-idx]
-  (let [^FlatBufferBuilder b (FlatBufferBuilder. 64)
-        cmd (do (ShowPluginGui/startShowPluginGui b)
-                (ShowPluginGui/addTrackIndex b track-idx)
-                (ShowPluginGui/addPluginIndex b plugin-idx)
-                (ShowPluginGui/endShowPluginGui b))
-        req (Request/createRequest b Command/ShowPluginGui cmd)]
-    (.finish b req)
-    (.sendRequest backend b)))
+  (.sendRequest backend
+    (-> (Request/newBuilder)
+        (.setPlugin (-> (PluginCmd/newBuilder)
+                        (.setAction PluginCmd$Action/ACTION_SHOW_GUI)
+                        (.setTarget (-> (EntityRef/newBuilder)
+                                        (.setTrackIndex (int track-idx))
+                                        (.setPluginIndex (int plugin-idx))))))
+        (.build))))
 ```
 
-**Similar**: FlatBuffer code is inherently imperative. Type hints make Clojure slightly
-more verbose than Java for this pattern.
+**Similar**: Protobuf Builder code is inherently imperative. Method chaining (`->`)
+makes Clojure look similar to Java's pattern, though type casing `(int ...)` can be slightly
+more verbose than Java's implicit primitive widening/narrowing.
 
 ## Java Design Patterns → Clojure
 

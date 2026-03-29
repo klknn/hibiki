@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.TreeMap;
 import hibiki.pb.commands.*;
+import hibiki.pb.core.EntityRef;
+import hibiki.pb.core.Clip;
 import hibiki.pb.notifications.*;
 import hibiki.pb.notifications.ParamInfo;
 import hibiki.pb.notifications.Notification;
@@ -309,17 +311,13 @@ public class PluginPane extends JPanel {
 
         private void sendShowGui() {
             BackendManager.getInstance().sendRequest(Request.newBuilder()
-                    .setShowPluginGui(ShowPluginGui.newBuilder()
-                            .setTrackIndex(trackIndex)
-                            .setPluginIndex(pluginIndex))
+                    .setPlugin(PluginCmd.newBuilder().setAction(PluginCmd.Action.ACTION_SHOW_GUI).setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex).setPluginIndex(pluginIndex)))
                     .build());
         }
 
         private void sendRemovePlugin() {
             BackendManager.getInstance().sendRequest(Request.newBuilder()
-                    .setRemovePlugin(RemovePlugin.newBuilder()
-                            .setTrackIndex(trackIndex)
-                            .setPluginIndex(pluginIndex))
+                    .setPlugin(PluginCmd.newBuilder().setAction(PluginCmd.Action.ACTION_REMOVE).setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex).setPluginIndex(pluginIndex)))
                     .build());
 
             // Immediate local feedback
@@ -361,11 +359,7 @@ public class PluginPane extends JPanel {
         private void sendParamChange(int trackIndex, int pluginIndex, int paramId, float value) {
             lastTouched = new LastTouchedParam(trackIndex, pluginIndex, paramId, name);
             BackendManager.getInstance().sendRequest(Request.newBuilder()
-                    .setSetParamValue(SetParamValue.newBuilder()
-                            .setTrackIndex(trackIndex)
-                            .setPluginIndex(pluginIndex)
-                            .setParamId(paramId)
-                            .setValue(value))
+                    .setPlugin(PluginCmd.newBuilder().setAction(PluginCmd.Action.ACTION_SET_PARAM).setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex).setPluginIndex(pluginIndex)).setParamId(paramId).setParamValue(value))
                     .build());
         }
     }

@@ -254,20 +254,6 @@ cc_test(
     linkstatic = True,
 )
 
-proto_library(
-    name = "hibiki_proto",
-    srcs = ["hibiki.proto"],
-)
-
-cc_proto_library(
-    name = "hibiki_cc_proto",
-    deps = [":hibiki_proto"],
-)
-
-java_proto_library(
-    name = "hibiki_java_proto",
-    deps = [":hibiki_proto"],
-)
 
 
 

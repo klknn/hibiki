@@ -194,13 +194,13 @@ public class TopBar extends JPanel {
 
     private void sendSaveProject(String path) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setSaveProject(SaveProject.newBuilder().setPath(path))
+                .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_SAVE).setPath(path))
                 .build());
     }
 
     private void sendLoadProject(String path) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setLoadProject(LoadProjectCmd.newBuilder().setPath(path))
+                .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_LOAD).setPath(path))
                 .build());
     }
 
@@ -208,7 +208,7 @@ public class TopBar extends JPanel {
         try {
             float bpm = Float.parseFloat(bpmStr);
             BackendManager.getInstance().sendRequest(Request.newBuilder()
-                    .setSetBpm(SetBpm.newBuilder().setBpm(bpm))
+                    .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_SET_BPM).setBpm(bpm))
                     .build());
         } catch (NumberFormatException ex) {
             // Revert or ignore

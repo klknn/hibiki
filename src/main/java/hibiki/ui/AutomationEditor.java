@@ -9,6 +9,8 @@ import java.util.List;
 
 import hibiki.BackendManager;
 import hibiki.pb.commands.*;
+import hibiki.pb.core.EntityRef;
+import hibiki.pb.core.Clip;
 import hibiki.pb.notifications.*;
 import hibiki.pb.core.*;
 
@@ -210,9 +212,7 @@ public class AutomationEditor extends JPanel {
 
     // --- Send data to backend ---
     private void sendUpdateToBackend() {
-        UpdateAutomationLane.Builder cmdBuilder = UpdateAutomationLane.newBuilder()
-                .setTrackIndex(trackIndex)
-                .setLaneIndex(laneIndex);
+        AutomationCmd.Builder cmdBuilder = AutomationCmd.newBuilder().setAction(AutomationCmd.Action.ACTION_UPDATE_POINTS).setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex).setLaneIndex(laneIndex));
         for (AutoPoint p : points) {
             cmdBuilder.addPoints(AutomationPoint.newBuilder()
                     .setTimeBeats(p.timeBeats)
@@ -220,7 +220,7 @@ public class AutomationEditor extends JPanel {
                     .setTension(p.tension));
         }
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setUpdateAutomationLane(cmdBuilder)
+                .setAutomation(cmdBuilder)
                 .build());
     }
 

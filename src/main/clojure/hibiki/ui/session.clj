@@ -13,7 +13,8 @@
            [java.awt.dnd DropTarget DropTargetAdapter DropTargetDropEvent
                          DropTargetDragEvent DropTargetEvent DnDConstants]
            [java.io File]
-           [hibiki.pb.commands Request LoadClip PlayClip StopTrack PlayScene SetClipLoop DeleteClip]
+           [hibiki.pb.commands Request TrackCmd]
+           [hibiki.pb.core EntityRef Clip]
            [hibiki.pb.notifications Notification Notification$ResponseCase]))
 
 (set! *warn-on-reflection* true)
@@ -26,51 +27,63 @@
   [^hibiki.BackendManager backend track-idx slot-idx ^String path loop?]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setLoadClip (-> (LoadClip/newBuilder)
-                          (.setTrackIndex (int track-idx))
-                          (.setSlotIndex (int slot-idx))
-                          (.setPath path)
-                          (.setIsLoop (boolean loop?))))
+        (.setTrack (-> (TrackCmd/newBuilder)
+                       (.setAction hibiki.pb.commands.TrackCmd$Action/ACTION_LOAD_CLIP)
+                       (.setTarget (-> (EntityRef/newBuilder)
+                                       (.setTrackIndex (int track-idx))
+                                       (.setSessionSlot (int slot-idx))))
+                       (.setClipData (-> (Clip/newBuilder)
+                                         (.setPath path)
+                                         (.setIsLoop (boolean loop?))))))
         (.build))))
 
 (defn- send-play-clip
   [^hibiki.BackendManager backend ^long track-idx ^long slot-idx]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setPlayClip (-> (PlayClip/newBuilder)
-                          (.setTrackIndex (int track-idx))
-                          (.setSlotIndex (int slot-idx))))
+        (.setTrack (-> (TrackCmd/newBuilder)
+                       (.setAction hibiki.pb.commands.TrackCmd$Action/ACTION_PLAY_SLOT)
+                       (.setTarget (-> (EntityRef/newBuilder)
+                                       (.setTrackIndex (int track-idx))
+                                       (.setSessionSlot (int slot-idx))))))
         (.build))))
 
 (defn- send-stop-track [^hibiki.BackendManager backend ^long track-idx]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setStopTrack (-> (StopTrack/newBuilder)
-                           (.setTrackIndex (int track-idx))))
+        (.setTrack (-> (TrackCmd/newBuilder)
+                       (.setAction hibiki.pb.commands.TrackCmd$Action/ACTION_STOP)
+                       (.setTarget (-> (EntityRef/newBuilder)
+                                       (.setTrackIndex (int track-idx))))))
         (.build))))
 
 (defn- send-play-scene [^hibiki.BackendManager backend ^long slot-idx]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setPlayScene (-> (PlayScene/newBuilder)
-                           (.setSlotIndex (int slot-idx))))
+        (.setTrack (-> (TrackCmd/newBuilder)
+                       (.setAction hibiki.pb.commands.TrackCmd$Action/ACTION_PLAY_SLOT)
+                       (.setValue (float slot-idx))))
         (.build))))
 
 (defn- send-set-clip-loop [^hibiki.BackendManager backend ^long track-idx ^long slot-idx loop?]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setSetClipLoop (-> (SetClipLoop/newBuilder)
-                             (.setTrackIndex (int track-idx))
-                             (.setSlotIndex (int slot-idx))
-                             (.setIsLoop (boolean loop?))))
+        (.setTrack (-> (TrackCmd/newBuilder)
+                       (.setAction hibiki.pb.commands.TrackCmd$Action/ACTION_SET_CLIP_LOOP)
+                       (.setTarget (-> (EntityRef/newBuilder)
+                                       (.setTrackIndex (int track-idx))
+                                       (.setSessionSlot (int slot-idx))))
+                       (.setFlag (boolean loop?))))
         (.build))))
 
 (defn- send-delete-clip [^hibiki.BackendManager backend ^long track-idx ^long slot-idx]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setDeleteClip (-> (DeleteClip/newBuilder)
-                            (.setTrackIndex (int track-idx))
-                            (.setSlotIndex (int slot-idx))))
+        (.setTrack (-> (TrackCmd/newBuilder)
+                       (.setAction hibiki.pb.commands.TrackCmd$Action/ACTION_DELETE_CLIP)
+                       (.setTarget (-> (EntityRef/newBuilder)
+                                       (.setTrackIndex (int track-idx))
+                                       (.setSessionSlot (int slot-idx))))))
         (.build))))
 
 ;; ---------------------------------------------------------------------------

@@ -69,7 +69,7 @@ public class MainView extends JPanel implements Theme.ThemeListener {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
                 BackendManager.getInstance().sendRequest(Request.newBuilder()
-                        .setUndo(Undo.getDefaultInstance())
+                        .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_UNDO))
                         .build());
             }
         });
@@ -82,7 +82,7 @@ public class MainView extends JPanel implements Theme.ThemeListener {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
                 BackendManager.getInstance().sendRequest(Request.newBuilder()
-                        .setRedo(Redo.getDefaultInstance())
+                        .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_REDO))
                         .build());
             }
         });

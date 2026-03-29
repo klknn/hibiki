@@ -7,7 +7,8 @@
            [java.awt BorderLayout Dimension Font Color Graphics Graphics2D RenderingHints]
            [java.awt.event ActionListener FocusListener FocusEvent]
            [javax.swing.event DocumentListener ChangeListener]
-           [hibiki.pb.commands Request ShowPluginGui RemovePlugin SetParamValue DeleteClip]
+           [hibiki.pb.core EntityRef]
+           [hibiki.pb.commands Request TrackCmd]
            [hibiki.pb.notifications Notification Notification$ResponseCase]))
 
 (set! *warn-on-reflection* true)
@@ -29,29 +30,35 @@
   [^hibiki.BackendManager backend ^long track-idx ^long plugin-idx]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setShowPluginGui (-> (ShowPluginGui/newBuilder)
-                               (.setTrackIndex (int track-idx))
-                               (.setPluginIndex (int plugin-idx))))
+        (.setPlugin (-> (PluginCmd/newBuilder)
+                        (.setAction hibiki.pb.commands.PluginCmd$Action/ACTION_SHOW_GUI)
+                        (.setTarget (-> (EntityRef/newBuilder)
+                                        (.setTrackIndex (int track-idx))
+                                        (.setPluginIndex (int plugin-idx))))))
         (.build))))
 
 (defn- send-remove-plugin
   [^hibiki.BackendManager backend ^long track-idx ^long plugin-idx]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setRemovePlugin (-> (RemovePlugin/newBuilder)
-                              (.setTrackIndex (int track-idx))
-                              (.setPluginIndex (int plugin-idx))))
+        (.setPlugin (-> (PluginCmd/newBuilder)
+                        (.setAction hibiki.pb.commands.PluginCmd$Action/ACTION_REMOVE)
+                        (.setTarget (-> (EntityRef/newBuilder)
+                                        (.setTrackIndex (int track-idx))
+                                        (.setPluginIndex (int plugin-idx))))))
         (.build))))
 
 (defn- send-param-change
   [^hibiki.BackendManager backend track-idx plugin-idx param-id value]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setSetParamValue (-> (SetParamValue/newBuilder)
-                               (.setTrackIndex (int track-idx))
-                               (.setPluginIndex (int plugin-idx))
-                               (.setParamId (int param-id))
-                               (.setValue (float value))))
+        (.setPlugin (-> (PluginCmd/newBuilder)
+                        (.setAction hibiki.pb.commands.PluginCmd$Action/ACTION_SET_PARAM)
+                        (.setTarget (-> (EntityRef/newBuilder)
+                                        (.setTrackIndex (int track-idx))
+                                        (.setPluginIndex (int plugin-idx))))
+                        (.setParamId (int param-id))
+                        (.setParamValue (float value))))
         (.build))))
 
 ;; ---------------------------------------------------------------------------
@@ -173,9 +180,11 @@
             (when (>= track-idx 0)
               (.sendRequest backend
                 (-> (Request/newBuilder)
-                    (.setDeleteClip (-> (DeleteClip/newBuilder)
-                                       (.setTrackIndex (int track-idx))
-                                       (.setSlotIndex (int slot-idx))))
+                    (.setTrack (-> (hibiki.pb.commands.TrackCmd/newBuilder)
+                                   (.setAction hibiki.pb.commands.TrackCmd$Action/ACTION_DELETE_CLIP)
+                                   (.setTarget (-> (hibiki.pb.core.EntityRef/newBuilder)
+                                                   (.setTrackIndex (int track-idx))
+                                                   (.setSessionSlot (int slot-idx))))))
                     (.build)))
               (reset! wf-state {:waveform nil :track-idx -1 :slot-idx -1})
               (.setVisible delete-btn false)

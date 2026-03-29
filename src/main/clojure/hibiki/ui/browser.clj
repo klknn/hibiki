@@ -9,8 +9,9 @@
            [java.awt.event MouseAdapter MouseEvent]
            [java.io File]
            [hibiki BackendManager]
-           [hibiki.pb.commands Request LoadPlugin LoadClip ListPlugins]
-           [hibiki.pb.notifications Notification Notification$ResponseCase]))
+           [hibiki.pb.commands Request PluginCmd TrackCmd]
+           [hibiki.pb.notifications Notification Notification$ResponseCase]
+           [hibiki.pb.core EntityRef Clip]))
 
 (set! *warn-on-reflection* true)
 
@@ -38,10 +39,12 @@
   [^BackendManager backend ^String path ^long plugin-index]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setLoadPlugin (-> (LoadPlugin/newBuilder)
-                            (.setTrackIndex (int (session/get-selected-track)))
-                            (.setPath path)
-                            (.setPluginIndex (int plugin-index))))
+        (.setPlugin (-> (PluginCmd/newBuilder)
+                        (.setAction hibiki.pb.commands.PluginCmd$Action/ACTION_LOAD)
+                        (.setTarget (-> (EntityRef/newBuilder)
+                                        (.setTrackIndex (int (session/get-selected-track)))
+                                        (.setPluginIndex (int plugin-index))))
+                        (.setPath path)))
         (.build))))
 
 (defn- send-load-clip
@@ -49,11 +52,14 @@
   [^BackendManager backend ^String path loop?]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setLoadClip (-> (LoadClip/newBuilder)
-                          (.setTrackIndex (int (session/get-selected-track)))
-                          (.setSlotIndex (int 0))
-                          (.setPath path)
-                          (.setIsLoop (boolean loop?))))
+        (.setTrack (-> (TrackCmd/newBuilder)
+                       (.setAction hibiki.pb.commands.TrackCmd$Action/ACTION_LOAD_CLIP)
+                       (.setTarget (-> (EntityRef/newBuilder)
+                                       (.setTrackIndex (int (session/get-selected-track)))
+                                       (.setSessionSlot (int 0))))
+                       (.setClipData (-> (Clip/newBuilder)
+                                         (.setPath path)
+                                         (.setIsLoop (boolean loop?))))))
         (.build))))
 
 (defn- send-list-plugins
@@ -61,8 +67,9 @@
   [^BackendManager backend ^String path]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setListPlugins (-> (ListPlugins/newBuilder)
-                             (.setPath path)))
+        (.setPlugin (-> (PluginCmd/newBuilder)
+                        (.setAction hibiki.pb.commands.PluginCmd$Action/ACTION_LIST)
+                        (.setPath path)))
         (.build))))
 
 ;; ---------------------------------------------------------------------------

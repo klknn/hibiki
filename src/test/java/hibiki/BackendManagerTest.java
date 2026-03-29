@@ -1,6 +1,8 @@
 package hibiki;
 
 import hibiki.pb.commands.*;
+import hibiki.pb.core.EntityRef;
+import hibiki.pb.core.Clip;
 import hibiki.pb.notifications.*;
 import hibiki.pb.core.*;
 import org.junit.Test;
@@ -58,10 +60,7 @@ public class BackendManagerTest {
 
     System.out.println("Sending LoadPlugin request for " + vstPath);
     backend.sendRequest(Request.newBuilder()
-        .setLoadPlugin(LoadPlugin.newBuilder()
-            .setTrackIndex(0)
-            .setPath(vstPath)
-            .setPluginIndex(0))
+        .setPlugin(PluginCmd.newBuilder().setAction(PluginCmd.Action.ACTION_LOAD).setTarget(EntityRef.newBuilder().setTrackIndex(0).setPluginIndex(0)).setPath(vstPath))
         .build());
 
     try {

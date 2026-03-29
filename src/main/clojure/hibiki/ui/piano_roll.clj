@@ -9,6 +9,7 @@
                            ActionListener WindowAdapter WindowEvent KeyEvent]
            [javax.sound.midi MidiSystem Sequence Track MidiEvent ShortMessage]
            [java.io File]
+           [hibiki.pb.core TransportState]
            [hibiki.pb.notifications Notification Notification$ResponseCase]))
 
 (set! *warn-on-reflection* true)
@@ -147,7 +148,7 @@
                            Notification$ResponseCase/PLAYHEAD_INFO
                            (let [phi (.getPlayheadInfo n)]
                              (reset! bpm-a (.getBpm phi))
-                             (when (.getIsPlaying phi)
+                             (when (= (.getTransportState phi) TransportState/TRANSPORT_STATE_PLAYING)
                                (let [sec (- (.getPositionSec phi) clip-start-time)
                                      tps (/ res (/ 60.0 (.getBpm phi)))]
                                  (reset! playhead (long (* sec tps)))

@@ -11,7 +11,7 @@
                      RenderingHints BasicStroke Rectangle Cursor]
            [java.awt.event MouseAdapter MouseEvent MouseMotionAdapter
                            ActionListener ComponentAdapter]
-           [hibiki.pb.commands Request AddTimelineClip RemoveTimelineClip LoadClip]
+           [hibiki.pb.commands Request TrackCmd]
            [hibiki.pb.notifications Notification Notification$ResponseCase]))
 
 (set! *warn-on-reflection* true)
@@ -90,11 +90,14 @@
   [^hibiki.BackendManager backend track-idx path start-time duration-beats]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setAddTimelineClip (-> (AddTimelineClip/newBuilder)
-                                 (.setTrackIndex (int track-idx))
-                                 (.setPath (or path ""))
-                                 (.setStartTime (float start-time))
-                                 (.setDurationBeats (float duration-beats))))
+        (.setTrack (-> (TrackCmd/newBuilder)
+                       (.setAction hibiki.pb.commands.TrackCmd$Action/ACTION_ADD_TIMELINE_CLIP)
+                       (.setTarget (-> (hibiki.pb.core.EntityRef/newBuilder)
+                                       (.setTrackIndex (int track-idx))))
+                       (.setValue (float start-time))
+                       (.setClipData (-> (hibiki.pb.core.Clip/newBuilder)
+                                         (.setPath (or path ""))
+                                         (.setDurationBeats (float duration-beats))))))
         (.build))))
 
 (defn- send-remove-timeline-clip
@@ -102,21 +105,14 @@
   [^hibiki.BackendManager backend ^long track-idx ^long clip-idx]
   (.sendRequest backend
     (-> (Request/newBuilder)
-        (.setRemoveTimelineClip (-> (RemoveTimelineClip/newBuilder)
-                                    (.setTrackIndex (int track-idx))
-                                    (.setClipIndex (int clip-idx))))
+        (.setTrack (-> (TrackCmd/newBuilder)
+                       (.setAction hibiki.pb.commands.TrackCmd$Action/ACTION_REMOVE_TIMELINE_CLIP)
+                       (.setTarget (-> (hibiki.pb.core.EntityRef/newBuilder)
+                                       (.setTrackIndex (int track-idx))
+                                       (.setTimelineClip (int clip-idx))))))
         (.build))))
 
-(defn- send-load-clip
-  "Send LoadClip to backend for timeline."
-  [^hibiki.BackendManager backend ^long track-idx ^String path ^double start-time]
-  (.sendRequest backend
-    (-> (Request/newBuilder)
-        (.setLoadClip (-> (LoadClip/newBuilder)
-                          (.setTrackIndex (int track-idx))
-                          (.setSlotIndex (int -1))
-                          (.setPath path)))
-        (.build))))
+
 
 ;; ---------------------------------------------------------------------------
 ;; Context menus

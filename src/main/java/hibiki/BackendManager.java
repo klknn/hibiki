@@ -184,14 +184,14 @@ public class BackendManager {
 
     public void startPlayback() {
         sendRequest(Request.newBuilder()
-                .setPlay(Play.getDefaultInstance())
+                .setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_PLAY))
                 .build());
         isPlaying = true;
     }
 
     public void stopPlayback() {
         sendRequest(Request.newBuilder()
-                .setStop(Stop.getDefaultInstance())
+                .setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_STOP))
                 .build());
         isPlaying = false;
     }
@@ -207,34 +207,25 @@ public class BackendManager {
 
     public void seek(float position) {
         sendRequest(Request.newBuilder()
-                .setSeek(Seek.newBuilder().setPosition(position))
+                .setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_SEEK).setSeekPos(position))
                 .build());
     }
 
     public void addTimelineClip(int trackIndex, String path, float startTime, float durationBeats) {
         sendRequest(Request.newBuilder()
-                .setAddTimelineClip(AddTimelineClip.newBuilder()
-                        .setTrackIndex(trackIndex)
-                        .setPath(path)
-                        .setStartTime(startTime)
-                        .setDurationBeats(durationBeats))
+                .setTrack(TrackCmd.newBuilder().setAction(TrackCmd.Action.ACTION_ADD_TIMELINE_CLIP).setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex)).setClipData(Clip.newBuilder().setPath(path).setDurationBeats(durationBeats)).setValue(startTime))
                 .build());
     }
 
     public void removeTimelineClip(int trackIndex, int clipIndex) {
         sendRequest(Request.newBuilder()
-                .setRemoveTimelineClip(RemoveTimelineClip.newBuilder()
-                        .setTrackIndex(trackIndex)
-                        .setClipIndex(clipIndex))
+                .setTrack(TrackCmd.newBuilder().setAction(TrackCmd.Action.ACTION_REMOVE_TIMELINE_CLIP).setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex).setTimelineClip(clipIndex)))
                 .build());
     }
 
     public void resizeTimelineClip(int trackIndex, int clipIndex, float durationBeats) {
         sendRequest(Request.newBuilder()
-                .setResizeTimelineClip(ResizeTimelineClip.newBuilder()
-                        .setTrackIndex(trackIndex)
-                        .setClipIndex(clipIndex)
-                        .setDurationBeats(durationBeats))
+                .setTrack(TrackCmd.newBuilder().setAction(TrackCmd.Action.ACTION_RESIZE_TIMELINE_CLIP).setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex).setTimelineClip(clipIndex)).setClipData(Clip.newBuilder().setDurationBeats(durationBeats)))
                 .build());
     }
 
@@ -244,10 +235,7 @@ public class BackendManager {
      */
     public void requestClipMidi(int trackIdx, int slotIdx, int clipIdx) {
         sendRequest(Request.newBuilder()
-                .setGetClipMidi(GetClipMidi.newBuilder()
-                        .setTrackIndex(trackIdx)
-                        .setSlotIndex(slotIdx)
-                        .setClipIndex(clipIdx))
+                .setMidi(MidiCmd.newBuilder().setAction(MidiCmd.Action.ACTION_GET).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setSessionSlot(slotIdx).setTimelineClip(clipIdx)))
                 .build());
     }
 
@@ -257,11 +245,7 @@ public class BackendManager {
      */
     public void updateClipMidi(int trackIdx, int slotIdx, int clipIdx, int resolution, long[] ticks, int[] pitches,
             long[] durationTicks, int[] velocities) {
-        UpdateClipMidi.Builder cmdBuilder = UpdateClipMidi.newBuilder()
-                .setTrackIndex(trackIdx)
-                .setSlotIndex(slotIdx)
-                .setClipIndex(clipIdx)
-                .setResolution(resolution);
+        MidiCmd.Builder cmdBuilder = MidiCmd.newBuilder().setAction(MidiCmd.Action.ACTION_UPDATE).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setSessionSlot(slotIdx).setTimelineClip(clipIdx)).setResolution(resolution);
         for (int i = 0; i < ticks.length; i++) {
             cmdBuilder.addEvents(MidiEvent.newBuilder()
                     .setTick(ticks[i])
@@ -270,7 +254,7 @@ public class BackendManager {
                     .setVelocity(velocities[i]));
         }
         sendRequest(Request.newBuilder()
-                .setUpdateClipMidi(cmdBuilder)
+                .setMidi(cmdBuilder)
                 .build());
     }
 

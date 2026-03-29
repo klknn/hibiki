@@ -5,6 +5,8 @@ import java.awt.*;
 import java.awt.event.*;
 import hibiki.BackendManager;
 import hibiki.pb.commands.*;
+import hibiki.pb.core.EntityRef;
+import hibiki.pb.core.Clip;
 import hibiki.pb.notifications.*;
 import hibiki.pb.core.*;
 
@@ -68,9 +70,7 @@ public class WaveformPanel extends JPanel {
             return;
 
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setDeleteClip(DeleteClip.newBuilder()
-                        .setTrackIndex(trackIdx)
-                        .setSlotIndex(slotIdx))
+                .setTrack(TrackCmd.newBuilder().setAction(TrackCmd.Action.ACTION_DELETE_CLIP).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setSessionSlot(slotIdx)))
                 .build());
 
         // Clear view

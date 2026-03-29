@@ -163,10 +163,10 @@
                  (import '[hibiki BackendManager]
                          '[hibiki.ui SessionView TimelineView PluginPane Theme MainView]
                          '[hibiki.pb.commands Request] '[hibiki.pb.notifications Notification])
-                 (require '[hibiki.echo.dev :as dev])
+                 (require '[hibiki.echo.prelude :as hbk])
                  (def bm (BackendManager/getInstance))))
-        (append! "Ready. `bm`, `dev/*`, and all protobuf classes are available.\n")
-        (append! "Try: (dev/theme! :solarized-dark)\n\n")
+        (append! "Ready. `bm`, `hbk/*`, and all protobuf classes are available.\n")
+        (append! "Try: (hbk/theme! :solarized-dark)\n\n")
         (catch Throwable t
           (append! (str "Auto-import warning: " (.getMessage t) "\n\n")))))
 

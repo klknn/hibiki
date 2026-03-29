@@ -8,7 +8,7 @@
            [java.awt.event ActionListener FocusListener FocusEvent]
            [javax.swing.event DocumentListener ChangeListener]
            [hibiki.pb.core EntityRef]
-           [hibiki.pb.commands Request TrackCmd]
+           [hibiki.pb.commands Request PluginCmd TrackCmd]
            [hibiki.pb.notifications Notification Notification$ResponseCase]))
 
 (set! *warn-on-reflection* true)

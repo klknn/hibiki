@@ -29,4 +29,7 @@
   :echo {:main-opts ["-m" "hibiki.echo"]}
 
   ;; Echo + Socket REPL:  clj -M:echo:dev
-  :dev {:main-opts ["-m" "hibiki.echo.dev"]}}}
+  :dev {:main-opts ["-m" "hibiki.echo.prelude"]}
+
+  ;; Headless script runner (no GUI):  clj -M:headless script.clj
+  :headless {:main-opts ["-m" "hibiki.headless"]}}}

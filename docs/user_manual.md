@@ -7,6 +7,7 @@ A lightweight Digital Audio Workstation with VST3 plugin support.
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Session View](#session-view)
 - [Timeline View](#timeline-view)
+- [Automation](#automation)
 - [Piano Roll Editor](#piano-roll-editor)
 - [Loading Plugins](#loading-plugins)
 - [Playing MIDI](#playing-midi)
@@ -101,6 +102,56 @@ The control bar at the bottom provides:
 - **H** slider: Horizontal zoom (5%–400%)
 - **V** slider: Vertical zoom / track height (5%–200%)
 - **Auto-scroll**: Checkbox to follow the playhead during playback
+
+---
+
+## Automation
+
+Automation lets you record and edit parameter changes over time. Each track can have multiple automation lanes controlling different plugin parameters.
+
+### Adding Automation Lanes
+
+| Method | Description |
+|--------|-------------|
+| **Right-click** track header → "Add Automation: \<param>" | Add a lane for the last parameter you adjusted |
+| **Right-click** track header → "Add Automation Lane..." | Enter plugin_index,param_id manually |
+| **Right-click** empty timeline area → "Add Automation Lane..." | Same as above, from timeline context menu |
+
+> **Tip**: Adjust a plugin slider first, then right-click the track header — the last-touched parameter appears as a quick option.
+
+### Expanding / Collapsing Lanes
+- Click the **▶ Auto** indicator at the bottom of a track header to expand automation lanes
+- Click **▼ Auto** to collapse them
+
+### Editing Automation Points
+
+| Action | Description |
+|--------|-------------|
+| **Left-click** empty lane area | Add a new automation point (snaps to grid) |
+| **Drag** existing point | Move in time and value (snaps to grid) |
+| **Shift + click/drag** | Disable grid snapping for precise positioning |
+| **Right-click** a point → "Delete Point" | Remove the point |
+| **Right-click** a point → "Tension" | Choose a curve shape preset |
+
+### Tension Handles (Non-Linear Curves)
+- Between every two consecutive points, a **cyan circle** appears at the curve midpoint
+- **Drag** the handle **up** for ease-out (fast start, slow arrival)
+- **Drag** the handle **down** for ease-in (slow start, fast arrival)
+- The handle position updates the curve shape in real-time
+
+### Dedicated Automation Editor
+- **Right-click** empty area in an automation lane → "Edit Automation..."
+- Opens a full-size editor window with:
+  - **Beat grid** with bar/beat numbers
+  - **Value ruler** (0%–100%)
+  - **Zoom controls** (+ / -)
+  - All the same click/drag/right-click interactions as the inline editor
+
+### Removing Automation Lanes
+- **Right-click** track header → "Remove Automation Lane" → select the lane to remove
+
+### Slider Sync
+- Plugin sliders in the **Plugin Panel** automatically follow parameter value changes from automation playback and native plugin GUI edits
 
 ---
 

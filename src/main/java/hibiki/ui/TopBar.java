@@ -15,6 +15,8 @@ public class TopBar extends JPanel {
     private JLabel positionLabel;
     private JLabel cpuLabel;
     private ViewToggleListener viewToggleListener;
+    private ReplToggleListener replToggleListener;
+    private JButton replBtn;
     private boolean isLooping = false;
     private JButton loopBtn;
 
@@ -22,8 +24,16 @@ public class TopBar extends JPanel {
         void onViewToggle(boolean isTimeline);
     }
 
+    public interface ReplToggleListener {
+        void onReplToggle();
+    }
+
     public void setViewToggleListener(ViewToggleListener listener) {
         this.viewToggleListener = listener;
+    }
+
+    public void setReplToggleListener(ReplToggleListener listener) {
+        this.replToggleListener = listener;
     }
 
     public TopBar() {
@@ -100,11 +110,19 @@ public class TopBar extends JPanel {
 
         cpuLabel = createDisplayLabel("CPU: 0%", Theme.getInstance().scale(70));
 
+        replBtn = Theme.getInstance().createButton("λ REPL", e -> {
+            if (replToggleListener != null)
+                replToggleListener.onReplToggle();
+        });
+        replBtn.setFont(new Font("SansSerif", Font.BOLD, Theme.getInstance().scale(11)));
+        replBtn.setToolTipText("Toggle REPL panel (Ctrl+R)");
+
         JButton settingsBtn = Theme.getInstance().createButton("⚙", e -> showSettings());
         settingsBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
 
         rightPanel.add(rateLabel);
         rightPanel.add(cpuLabel);
+        rightPanel.add(replBtn);
         rightPanel.add(settingsBtn);
         add(rightPanel, BorderLayout.EAST);
     }

@@ -272,6 +272,9 @@ java_library(
         "//pb:notifications_java_proto",
         "@maven//:com_google_protobuf_protobuf_java",
         "@maven//:com_formdev_flatlaf",
+        "@clojure_jar//jar",
+        "@clojure_spec_alpha_jar//jar",
+        "@clojure_core_specs_alpha_jar//jar",
     ],
     visibility = ["//visibility:public"],
 )
@@ -279,7 +282,7 @@ java_library(
 java_binary(
     name = "hibiki-gui-java",
     main_class = "hibiki.GuiMain",
-    runtime_deps = [":hibiki-gui-lib"],
+    runtime_deps = [":hibiki-gui-lib", ":hibiki-clj-sources"],
     data = [":hbk-play", "//testdata"],
 )
 

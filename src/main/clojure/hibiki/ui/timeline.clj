@@ -11,11 +11,7 @@
                      RenderingHints BasicStroke Rectangle Cursor]
            [java.awt.event MouseAdapter MouseEvent MouseMotionAdapter
                            ActionListener ComponentAdapter]
-           [com.google.flatbuffers FlatBufferBuilder]
-           [hibiki.ipc Request Command AddTimelineClip RemoveTimelineClip
-                       ResizeTimelineClip Seek LoadClip
-                       Response Notification PlayheadInfo
-                       TimelineClipInfo ClipWaveform]))
+           [hibiki.pb HibikiProto HibikiProto$Request HibikiProto$Notification HibikiProto$Notification$ResponseCase HibikiProto$AddTimelineClip HibikiProto$RemoveTimelineClip HibikiProto$LoadClip]))
 
 (set! *warn-on-reflection* true)
 
@@ -85,45 +81,41 @@
                        @(:clips track)))))))
 
 ;; ---------------------------------------------------------------------------
-;; IPC helpers
+;; IPC helpers (protobuf)
 ;; ---------------------------------------------------------------------------
 
 (defn- send-add-timeline-clip
   "Send AddTimelineClip to backend."
   [^hibiki.BackendManager backend track-idx path start-time duration-beats]
-  (let [^String p (or path "")
-        ^FlatBufferBuilder b (FlatBufferBuilder. 512)
-        path-off (.createString b p)
-        cmd (AddTimelineClip/createAddTimelineClip b (int track-idx) path-off (float start-time) (float duration-beats))
-        req (Request/createRequest b Command/AddTimelineClip cmd)]
-    (.finish b req)
-    (.sendRequest backend b)))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setAddTimelineClip (-> (HibikiProto$AddTimelineClip/newBuilder)
+                                 (.setTrackIndex (int track-idx))
+                                 (.setPath (or path ""))
+                                 (.setStartTime (float start-time))
+                                 (.setDurationBeats (float duration-beats))))
+        (.build))))
 
 (defn- send-remove-timeline-clip
   "Send RemoveTimelineClip to backend."
   [^hibiki.BackendManager backend ^long track-idx ^long clip-idx]
-  (let [^FlatBufferBuilder b (FlatBufferBuilder. 128)]
-    (RemoveTimelineClip/startRemoveTimelineClip b)
-    (RemoveTimelineClip/addTrackIndex b (int track-idx))
-    (RemoveTimelineClip/addClipIndex b (int clip-idx))
-    (let [cmd (RemoveTimelineClip/endRemoveTimelineClip b)
-          req (Request/createRequest b Command/RemoveTimelineClip cmd)]
-      (.finish b req)
-      (.sendRequest backend b))))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setRemoveTimelineClip (-> (HibikiProto$RemoveTimelineClip/newBuilder)
+                                    (.setTrackIndex (int track-idx))
+                                    (.setClipIndex (int clip-idx))))
+        (.build))))
 
 (defn- send-load-clip
   "Send LoadClip to backend for timeline."
   [^hibiki.BackendManager backend ^long track-idx ^String path ^double start-time]
-  (let [^FlatBufferBuilder b (FlatBufferBuilder. 512)
-        path-off (.createString b path)]
-    (LoadClip/startLoadClip b)
-    (LoadClip/addTrackIndex b (int track-idx))
-    (LoadClip/addSlotIndex b (int -1))   ;; -1 = timeline
-    (LoadClip/addPath b path-off)
-    (let [cmd (LoadClip/endLoadClip b)
-          req (Request/createRequest b Command/LoadClip cmd)]
-      (.finish b req)
-      (.sendRequest backend b))))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setLoadClip (-> (HibikiProto$LoadClip/newBuilder)
+                          (.setTrackIndex (int track-idx))
+                          (.setSlotIndex (int -1))
+                          (.setPath path)))
+        (.build))))
 
 ;; ---------------------------------------------------------------------------
 ;; Context menus
@@ -451,24 +443,24 @@
     (.addNotificationListener backend
       (reify java.util.function.Consumer
         (accept [_ notif]
-          (let [^Notification notification notif]
-          (condp = (.responseType notification)
-            Response/PlayheadInfo
-            (let [phi ^PlayheadInfo (.response notification (PlayheadInfo.))]
+          (let [^HibikiProto$Notification notification notif]
+          (case (.getResponseCase notification)
+            HibikiProto$Notification$ResponseCase/PLAYHEAD_INFO
+            (let [phi (.getPlayheadInfo notification)]
               (swap! tl-state assoc
-                     :playhead-sec (.positionSec phi)
-                     :bpm (.bpm phi)
-                     :is-playing (.isPlaying phi))
+                     :playhead-sec (.getPositionSec phi)
+                     :bpm (.getBpm phi)
+                     :is-playing (.getIsPlaying phi))
               (SwingUtilities/invokeLater #(.repaint grid-panel)))
 
-            Response/TimelineClipInfo
-            (let [ci ^TimelineClipInfo (.response notification (TimelineClipInfo.))
-                  ti (.trackIndex ci)]
+            HibikiProto$Notification$ResponseCase/TIMELINE_CLIP_INFO
+            (let [ci (.getTimelineClipInfo notification)
+                  ti (.getTrackIndex ci)]
               (when (and (>= ti 0) (< ti 4))
                 (let [track (nth (:tracks @tl-state) ti)
-                      clip (->TrackClip (.clipIndex ci) (.path ci)
-                                        (.startTime ci) (.duration ci)
-                                        (.name ci) nil)]
+                      clip (->TrackClip (.getClipIndex ci) (.getPath ci)
+                                        (.getStartTime ci) (.getDuration ci)
+                                        (.getName ci) nil)]
                   (swap! (:clips track)
                          (fn [clips]
                            (let [filtered (vec (remove #(= (:clip-index %) (:clip-index clip)) clips))]

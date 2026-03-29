@@ -162,13 +162,10 @@
         (eval '(do
                  (import '[hibiki BackendManager]
                          '[hibiki.ui SessionView TimelineView PluginPane Theme MainView]
-                         '[com.google.flatbuffers FlatBufferBuilder]
-                         '[hibiki.ipc Command Request LoadPlugin LoadClip ListPlugins
-                           ShowPluginGui SetParamValue RemovePlugin
-                           Response Notification ClipMidiData MidiEventData])
+                         '[hibiki.pb HibikiProto HibikiProto$Request HibikiProto$Notification])
                  (require '[hibiki.echo.dev :as dev])
                  (def bm (BackendManager/getInstance))))
-        (append! "Ready. `bm`, `dev/*`, and all IPC classes are available.\n")
+        (append! "Ready. `bm`, `dev/*`, and all protobuf classes are available.\n")
         (append! "Try: (dev/theme! :solarized-dark)\n\n")
         (catch Throwable t
           (append! (str "Auto-import warning: " (.getMessage t) "\n\n")))))

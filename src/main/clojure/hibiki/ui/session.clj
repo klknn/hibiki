@@ -13,80 +13,64 @@
            [java.awt.dnd DropTarget DropTargetAdapter DropTargetDropEvent
                          DropTargetDragEvent DropTargetEvent DnDConstants]
            [java.io File]
-           [com.google.flatbuffers FlatBufferBuilder]
-           [hibiki.ipc Request Command PlayClip StopTrack LoadClip
-                       SetClipLoop PlayScene DeleteClip
-                       Response Notification ClipInfo TrackLevels TrackLevel]))
+           [hibiki.pb HibikiProto HibikiProto$Request HibikiProto$Notification HibikiProto$Notification$ResponseCase HibikiProto$LoadClip HibikiProto$PlayClip HibikiProto$StopTrack HibikiProto$PlayScene HibikiProto$SetClipLoop HibikiProto$DeleteClip]))
 
 (set! *warn-on-reflection* true)
 
 ;; ---------------------------------------------------------------------------
-;; IPC helpers
+;; IPC helpers (protobuf)
 ;; ---------------------------------------------------------------------------
 
 (defn- send-load-clip
   [^hibiki.BackendManager backend track-idx slot-idx ^String path loop?]
-  (let [^FlatBufferBuilder builder (FlatBufferBuilder. 256)
-        path-off (.createString builder path)
-        cmd-off  (do (LoadClip/startLoadClip builder)
-                     (LoadClip/addTrackIndex builder track-idx)
-                     (LoadClip/addSlotIndex builder slot-idx)
-                     (LoadClip/addPath builder path-off)
-                     (LoadClip/addIsLoop builder loop?)
-                     (LoadClip/endLoadClip builder))
-        req-off  (Request/createRequest builder Command/LoadClip cmd-off)]
-    (.finish builder req-off)
-    (.sendRequest backend builder)))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setLoadClip (-> (HibikiProto$LoadClip/newBuilder)
+                          (.setTrackIndex (int track-idx))
+                          (.setSlotIndex (int slot-idx))
+                          (.setPath path)
+                          (.setIsLoop (boolean loop?))))
+        (.build))))
 
 (defn- send-play-clip
   [^hibiki.BackendManager backend ^long track-idx ^long slot-idx]
-  (let [^FlatBufferBuilder builder (FlatBufferBuilder. 64)
-        cmd (do (PlayClip/startPlayClip builder)
-                (PlayClip/addTrackIndex builder track-idx)
-                (PlayClip/addSlotIndex builder slot-idx)
-                (PlayClip/endPlayClip builder))
-        req (Request/createRequest builder Command/PlayClip cmd)]
-    (.finish builder req)
-    (.sendRequest backend builder)))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setPlayClip (-> (HibikiProto$PlayClip/newBuilder)
+                          (.setTrackIndex (int track-idx))
+                          (.setSlotIndex (int slot-idx))))
+        (.build))))
 
 (defn- send-stop-track [^hibiki.BackendManager backend ^long track-idx]
-  (let [builder (FlatBufferBuilder. 64)
-        cmd (do (StopTrack/startStopTrack builder)
-                (StopTrack/addTrackIndex builder track-idx)
-                (StopTrack/endStopTrack builder))
-        req (Request/createRequest builder Command/StopTrack cmd)]
-    (.finish builder req)
-    (.sendRequest backend builder)))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setStopTrack (-> (HibikiProto$StopTrack/newBuilder)
+                           (.setTrackIndex (int track-idx))))
+        (.build))))
 
 (defn- send-play-scene [^hibiki.BackendManager backend ^long slot-idx]
-  (let [builder (FlatBufferBuilder. 64)
-        cmd (do (PlayScene/startPlayScene builder)
-                (PlayScene/addSlotIndex builder slot-idx)
-                (PlayScene/endPlayScene builder))
-        req (Request/createRequest builder Command/PlayScene cmd)]
-    (.finish builder req)
-    (.sendRequest backend builder)))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setPlayScene (-> (HibikiProto$PlayScene/newBuilder)
+                           (.setSlotIndex (int slot-idx))))
+        (.build))))
 
 (defn- send-set-clip-loop [^hibiki.BackendManager backend ^long track-idx ^long slot-idx loop?]
-  (let [builder (FlatBufferBuilder. 64)
-        cmd (do (SetClipLoop/startSetClipLoop builder)
-                (SetClipLoop/addTrackIndex builder track-idx)
-                (SetClipLoop/addSlotIndex builder slot-idx)
-                (SetClipLoop/addIsLoop builder loop?)
-                (SetClipLoop/endSetClipLoop builder))
-        req (Request/createRequest builder Command/SetClipLoop cmd)]
-    (.finish builder req)
-    (.sendRequest backend builder)))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setSetClipLoop (-> (HibikiProto$SetClipLoop/newBuilder)
+                             (.setTrackIndex (int track-idx))
+                             (.setSlotIndex (int slot-idx))
+                             (.setIsLoop (boolean loop?))))
+        (.build))))
 
 (defn- send-delete-clip [^hibiki.BackendManager backend ^long track-idx ^long slot-idx]
-  (let [builder (FlatBufferBuilder. 64)
-        cmd (do (DeleteClip/startDeleteClip builder)
-                (DeleteClip/addTrackIndex builder track-idx)
-                (DeleteClip/addSlotIndex builder slot-idx)
-                (DeleteClip/endDeleteClip builder))
-        req (Request/createRequest builder Command/DeleteClip cmd)]
-    (.finish builder req)
-    (.sendRequest backend builder)))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setDeleteClip (-> (HibikiProto$DeleteClip/newBuilder)
+                            (.setTrackIndex (int track-idx))
+                            (.setSlotIndex (int slot-idx))))
+        (.build))))
 
 ;; ---------------------------------------------------------------------------
 ;; State
@@ -372,11 +356,11 @@
     (.addNotificationListener backend
       (reify java.util.function.Consumer
         (accept [_ notif]
-          (let [^Notification notification notif]
-          (condp = (.responseType notification)
-            Response/ClipInfo
-            (let [info ^ClipInfo (.response notification (ClipInfo.))]
-              (let [ti (.trackIndex info) si (.slotIndex info) nm (.name info)]
+          (let [^HibikiProto$Notification notification notif]
+          (case (.getResponseCase notification)
+            HibikiProto$Notification$ResponseCase/CLIP_INFO
+            (let [info (.getClipInfo notification)]
+              (let [ti (.getTrackIndex info) si (.getSlotIndex info) nm (.getName info)]
                 (SwingUtilities/invokeLater
                   #(when (and (>= ti 0) (< ti 4) (>= si 0) (< si 5))
                      (let [^JButton btn (aget ^"[Ljavax.swing.JButton;"
@@ -390,17 +374,17 @@
                                (.setBackground btn (t/color :clip-playing))
                                (.setForeground btn Color/BLACK)))))))))
 
-            Response/TrackLevels
-            (let [tl ^TrackLevels (.response notification (TrackLevels.))]
+            HibikiProto$Notification$ResponseCase/TRACK_LEVELS
+            (let [tl (.getTrackLevels notification)]
               (SwingUtilities/invokeLater
-                #(dotimes [i (.levelsLength tl)]
-                   (let [l (.levels tl i)
-                         ti (.trackIndex l)]
+                #(dotimes [i (.getLevelsCount tl)]
+                   (let [l (.getLevels tl i)
+                         ti (.getTrackIndex l)]
                      (when (and (>= ti 0) (< ti 4))
                         (when-let [meter (aget ^"[Ljava.lang.Object;" (:track-meters @session-state) ti)]
-                         ((:set-levels! meter) (.peakL l) (.peakR l))))))))
+                         ((:set-levels! meter) (.getPeakL l) (.getPeakR l))))))))
 
-            Response/ClearProject
+            HibikiProto$Notification$ResponseCase/CLEAR_PROJECT
             (SwingUtilities/invokeLater
               #(doseq [ti (range 1 5) si (range 5)]
                  (let [^JButton btn (aget ^"[Ljavax.swing.JButton;"

@@ -7,9 +7,7 @@
            [java.awt BorderLayout Dimension Font Color Graphics Graphics2D RenderingHints]
            [java.awt.event ActionListener FocusListener FocusEvent]
            [javax.swing.event DocumentListener ChangeListener]
-           [com.google.flatbuffers FlatBufferBuilder]
-           [hibiki.ipc Request Command ShowPluginGui RemovePlugin SetParamValue
-                       ParamList ParamInfo Response Notification]))
+           [hibiki.pb HibikiProto HibikiProto$Request HibikiProto$Notification HibikiProto$Notification$ResponseCase HibikiProto$ShowPluginGui HibikiProto$RemovePlugin HibikiProto$SetParamValue HibikiProto$DeleteClip]))
 
 (set! *warn-on-reflection* true)
 
@@ -23,53 +21,47 @@
          :instance nil}))
 
 ;; ---------------------------------------------------------------------------
-;; IPC
+;; IPC (protobuf)
 ;; ---------------------------------------------------------------------------
 
 (defn- send-show-gui
   [^hibiki.BackendManager backend ^long track-idx ^long plugin-idx]
-  (let [^FlatBufferBuilder b (FlatBufferBuilder. 64)
-        cmd (do (ShowPluginGui/startShowPluginGui b)
-                (ShowPluginGui/addTrackIndex b track-idx)
-                (ShowPluginGui/addPluginIndex b plugin-idx)
-                (ShowPluginGui/endShowPluginGui b))
-        req (Request/createRequest b Command/ShowPluginGui cmd)]
-    (.finish b req)
-    (.sendRequest backend b)))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setShowPluginGui (-> (HibikiProto$ShowPluginGui/newBuilder)
+                               (.setTrackIndex (int track-idx))
+                               (.setPluginIndex (int plugin-idx))))
+        (.build))))
 
 (defn- send-remove-plugin
   [^hibiki.BackendManager backend ^long track-idx ^long plugin-idx]
-  (let [^FlatBufferBuilder b (FlatBufferBuilder. 64)
-        cmd (do (RemovePlugin/startRemovePlugin b)
-                (RemovePlugin/addTrackIndex b track-idx)
-                (RemovePlugin/addPluginIndex b plugin-idx)
-                (RemovePlugin/endRemovePlugin b))
-        req (Request/createRequest b Command/RemovePlugin cmd)]
-    (.finish b req)
-    (.sendRequest backend b)))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setRemovePlugin (-> (HibikiProto$RemovePlugin/newBuilder)
+                              (.setTrackIndex (int track-idx))
+                              (.setPluginIndex (int plugin-idx))))
+        (.build))))
 
 (defn- send-param-change
   [^hibiki.BackendManager backend track-idx plugin-idx param-id value]
-  (let [^FlatBufferBuilder b (FlatBufferBuilder. 64)
-        cmd (do (SetParamValue/startSetParamValue b)
-                (SetParamValue/addTrackIndex b track-idx)
-                (SetParamValue/addPluginIndex b plugin-idx)
-                (SetParamValue/addParamId b param-id)
-                (SetParamValue/addValue b (double value))
-                (SetParamValue/endSetParamValue b))
-        req (Request/createRequest b Command/SetParamValue cmd)]
-    (.finish b req)
-    (.sendRequest backend b)))
+  (.sendRequest backend
+    (-> (HibikiProto$Request/newBuilder)
+        (.setSetParamValue (-> (HibikiProto$SetParamValue/newBuilder)
+                               (.setTrackIndex (int track-idx))
+                               (.setPluginIndex (int plugin-idx))
+                               (.setParamId (int param-id))
+                               (.setValue (float value))))
+        (.build))))
 
 ;; ---------------------------------------------------------------------------
 ;; Device panel
 ;; ---------------------------------------------------------------------------
 
-(defn- make-param-slider [^hibiki.BackendManager backend ^long track-idx ^long plugin-idx ^ParamInfo info]
-  (let [name (.name info)
-        slider (doto (JSlider. 0 1000 (int (* (.defaultValue info) 1000)))
+(defn- make-param-slider [^hibiki.BackendManager backend ^long track-idx ^long plugin-idx param-info]
+  (let [pname (.getName param-info)
+        slider (doto (JSlider. 0 1000 (int (* (.getDefaultValue param-info) 1000)))
                  (.setBackground (t/color :panel-bg)))
-        lbl (doto (JLabel. ^String name)
+        lbl (doto (JLabel. ^String pname)
               (.setForeground (t/color :text-normal))
               (.setFont (t/font :font-ui)))
         panel (doto (JPanel. (BorderLayout.))
@@ -82,8 +74,8 @@
         (stateChanged [_ _]
           (when-not (.getValueIsAdjusting slider)
             (send-param-change backend track-idx plugin-idx
-                               (.id info) (/ (.getValue slider) 1000.0))))))
-    {:panel panel :name name}))
+                               (.getId param-info) (/ (.getValue slider) 1000.0))))))
+    {:panel panel :name pname}))
 
 (defn- make-device-panel [backend track-idx plugin-idx plugin-name is-instrument?]
   (let [header (doto (JLabel. (str (if is-instrument? "🎹 " "🔌 ") plugin-name)
@@ -129,10 +121,10 @@
                 (.add body BorderLayout/CENTER))]
     {:panel panel
      :param-list param-list
-     :set-params! (fn [^ParamList param-list-data]
+     :set-params! (fn [param-list-data]
                     (.removeAll param-list)
-                    (dotimes [i (.paramsLength param-list-data)]
-                      (let [^ParamInfo info (.params param-list-data i)
+                    (dotimes [i (.getParamsCount param-list-data)]
+                      (let [info (.getParams param-list-data i)
                             ps (make-param-slider backend track-idx plugin-idx info)]
                         (.add param-list ^JPanel (:panel ps))))
                     (.revalidate param-list)
@@ -172,20 +164,18 @@
         top-p (doto (JPanel. (java.awt.FlowLayout. java.awt.FlowLayout/RIGHT))
                 (.setOpaque false)
                 (.add delete-btn))]
-    ;; Set up delete action listener after both wf-panel and delete-btn exist
+    ;; Set up delete action listener
     (.addActionListener delete-btn
       (reify ActionListener
         (actionPerformed [_ _]
           (let [{:keys [track-idx slot-idx]} @wf-state]
             (when (>= track-idx 0)
-              (let [^FlatBufferBuilder b (FlatBufferBuilder. 128)]
-                (hibiki.ipc.DeleteClip/startDeleteClip b)
-                (hibiki.ipc.DeleteClip/addTrackIndex b (int track-idx))
-                (hibiki.ipc.DeleteClip/addSlotIndex b (int slot-idx))
-                (let [cmd (hibiki.ipc.DeleteClip/endDeleteClip b)
-                      req (Request/createRequest b Command/DeleteClip cmd)]
-                  (.finish b req)
-                  (.sendRequest backend b)))
+              (.sendRequest backend
+                (-> (HibikiProto$Request/newBuilder)
+                    (.setDeleteClip (-> (HibikiProto$DeleteClip/newBuilder)
+                                       (.setTrackIndex (int track-idx))
+                                       (.setSlotIndex (int slot-idx))))
+                    (.build)))
               (reset! wf-state {:waveform nil :track-idx -1 :slot-idx -1})
               (.setVisible delete-btn false)
               (.setVisible ^JPanel wf-panel false)
@@ -232,35 +222,35 @@
     (.addNotificationListener backend
       (reify java.util.function.Consumer
         (accept [_ notif]
-          (let [^Notification notification notif]
-          (condp = (.responseType notification)
-            Response/ParamList
-            (let [pl ^ParamList (.response notification (ParamList.))
-                  ti (.trackIndex pl)
-                  pi (.pluginIndex pl)
-                  pname (.pluginName pl)
-                  is-inst (.isInstrument pl)]
+          (let [^HibikiProto$Notification notification notif]
+          (case (.getResponseCase notification)
+            HibikiProto$Notification$ResponseCase/PARAM_LIST
+            (let [pl (.getParamList notification)
+                  ti (.getTrackIndex pl)
+                  pi (.getPluginIndex pl)
+                  pname (.getPluginName pl)
+                  is-inst (.getIsInstrument pl)]
               (javax.swing.SwingUtilities/invokeLater
                 #(let [devices (get-in @plugin-state [:track-devices ti] {})
                        existing (get devices pi)]
                    (if existing
                      ((:set-params! existing) pl)
                      (let [dp (make-device-panel backend ti pi pname is-inst)]
-                       ((:set-params! dp) pl)  ;; Fix: populate params on first creation
+                       ((:set-params! dp) pl)
                        (swap! plugin-state assoc-in [:track-devices ti pi] dp)
                        (when (= ti (:selected-track @plugin-state))
                          (.add chain-content ^JPanel (:panel dp))
                          (.revalidate chain-content)
                          (.repaint chain-content)))))))
 
-            Response/ClipWaveform
-            (let [cw ^hibiki.ipc.ClipWaveform (.response notification (hibiki.ipc.ClipWaveform.))
-                  ti (.trackIndex cw)
-                  si (.slotIndex cw)
-                  len (.waveformLength cw)
+            HibikiProto$Notification$ResponseCase/CLIP_WAVEFORM
+            (let [cw (.getClipWaveform notification)
+                  ti (.getTrackIndex cw)
+                  si (.getSlotIndex cw)
+                  len (.getWaveformCount cw)
                   wf-data (float-array len)]
               (dotimes [i len]
-                (aset wf-data i (.waveform cw i)))
+                (aset wf-data i (.getWaveform cw i)))
               (javax.swing.SwingUtilities/invokeLater
                 #(do ((:set-waveform! waveform) ti si wf-data)
                      (when (= ti (:selected-track @plugin-state))

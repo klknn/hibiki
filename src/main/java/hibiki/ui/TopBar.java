@@ -4,14 +4,9 @@ import javax.swing.*;
 import java.awt.*;
 import hibiki.BackendManager;
 import hibiki.SimpleLaf;
-import com.google.flatbuffers.FlatBufferBuilder;
-import hibiki.ipc.Request;
-import hibiki.ipc.Command;
-import hibiki.ipc.Play;
-import hibiki.ipc.Stop;
-import hibiki.ipc.SaveProject;
-import hibiki.ipc.LoadProject;
-import hibiki.ipc.SetBpm;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
 import java.io.File;
 
 public class TopBar extends JPanel {
@@ -198,31 +193,23 @@ public class TopBar extends JPanel {
     }
 
     private void sendSaveProject(String path) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(512);
-        int pathOff = builder.createString(path);
-        int saveOff = SaveProject.createSaveProject(builder, pathOff);
-        int requestOffset = Request.createRequest(builder, Command.SaveProject, saveOff);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        BackendManager.getInstance().sendRequest(Request.newBuilder()
+                .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_SAVE).setPath(path))
+                .build());
     }
 
     private void sendLoadProject(String path) {
-        FlatBufferBuilder builder = new FlatBufferBuilder(512);
-        int pathOff = builder.createString(path);
-        int loadOff = LoadProject.createLoadProject(builder, pathOff);
-        int requestOffset = Request.createRequest(builder, Command.LoadProject, loadOff);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        BackendManager.getInstance().sendRequest(Request.newBuilder()
+                .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_LOAD).setPath(path))
+                .build());
     }
 
     private void sendSetBpm(String bpmStr) {
         try {
             float bpm = Float.parseFloat(bpmStr);
-            FlatBufferBuilder builder = new FlatBufferBuilder(128);
-            int setBpmOff = SetBpm.createSetBpm(builder, bpm);
-            int requestOffset = Request.createRequest(builder, Command.SetBpm, setBpmOff);
-            builder.finish(requestOffset);
-            BackendManager.getInstance().sendRequest(builder);
+            BackendManager.getInstance().sendRequest(Request.newBuilder()
+                    .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_SET_BPM).setBpm(bpm))
+                    .build());
         } catch (NumberFormatException ex) {
             // Revert or ignore
         }

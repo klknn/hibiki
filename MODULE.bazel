@@ -10,19 +10,13 @@ bazel_dep(name = "rules_java", version = "9.0.3")
 bazel_dep(name = "rules_jvm_external", version = "6.7")
 bazel_dep(name = "googletest", version = "1.17.0.bcr.2")
 
-http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
-http_archive(
-    name = "flatbuffers",
-    url = "https://github.com/google/flatbuffers/archive/refs/tags/v25.1.24.zip",
-    strip_prefix = "flatbuffers-25.1.24",
-    integrity = "sha256-de1fBnLDvf4+aOkHUJD6zGe52loNjb1jYBP9g+uG6ug=",
-)
+bazel_dep(name = "protobuf", version = "29.3")
+bazel_dep(name = "rules_proto", version = "7.1.0")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 maven.install(
     artifacts = [
-        "com.google.flatbuffers:flatbuffers-java:25.1.24",
+        "com.google.protobuf:protobuf-java:4.29.3",
         "com.formdev:flatlaf:3.5.4",
         "junit:junit:4.13.2",
     ],
@@ -51,6 +45,8 @@ http_jar(
     url = "https://repo1.maven.org/maven2/org/clojure/core.specs.alpha/0.4.74/core.specs.alpha-0.4.74.jar",
     integrity = "sha256-63OsCM9JuoQMiLpnvu8RM2ylVDM9lAiAjXiUbg/rnds=",
 )
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "vst3sdk",

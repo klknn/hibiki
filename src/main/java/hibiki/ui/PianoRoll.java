@@ -10,10 +10,7 @@ import java.util.List;
 import javax.sound.midi.*;
 
 import hibiki.BackendManager;
-import hibiki.ipc.Notification;
-import hibiki.ipc.Response;
-import hibiki.ipc.ClipMidiData;
-import hibiki.ipc.MidiEventData;
+import hibiki.pb.notifications.Notification;
 import java.util.function.Consumer;
 
 public class PianoRoll extends JDialog {
@@ -113,48 +110,55 @@ public class PianoRoll extends JDialog {
     private Consumer<Notification> notificationListener;
 
     private void handleNotification(Notification notification) {
-        if (notification.responseType() == Response.ClipMidiData) {
-            ClipMidiData data = (ClipMidiData) notification.response(new ClipMidiData());
-            // Match either by slotIdx (session clip) or clipIdx (timeline clip)
-            System.out.println("[PianoRoll] Got ClipMidiData: track=" + data.trackIndex() +
-                    " slot=" + data.slotIndex() + " clip=" + data.clipIndex() +
-                    " events=" + data.eventsLength());
-            System.out.println("[PianoRoll] My trackIdx=" + trackIdx + " slotIdx=" + slotIdx + " clipIdx=" + clipIdx);
-            if (data != null && data.trackIndex() == trackIdx) {
-                boolean matches = (slotIdx >= 0 && data.slotIndex() == slotIdx) ||
-                        (clipIdx >= 0 && data.clipIndex() == clipIdx);
-                System.out.println("[PianoRoll] matches=" + matches);
-                if (matches) {
-                    // Load notes from backend memory
-                    loadFromBackendData(data);
+        switch (notification.getResponseCase()) {
+            case CLIP_MIDI_DATA: {
+                var data = notification.getClipMidiData();
+                // Match either by slotIdx (session clip) or clipIdx (timeline clip)
+                System.out.println("[PianoRoll] Got ClipMidiData: track=" + data.getTrackIndex() +
+                        " slot=" + data.getSlotIndex() + " clip=" + data.getClipIndex() +
+                        " events=" + data.getEventsCount());
+                System.out
+                        .println("[PianoRoll] My trackIdx=" + trackIdx + " slotIdx=" + slotIdx + " clipIdx=" + clipIdx);
+                if (data.getTrackIndex() == trackIdx) {
+                    boolean matches = (slotIdx >= 0 && data.getSlotIndex() == slotIdx) ||
+                            (clipIdx >= 0 && data.getClipIndex() == clipIdx);
+                    System.out.println("[PianoRoll] matches=" + matches);
+                    if (matches) {
+                        // Load notes from backend memory
+                        loadFromBackendData(data);
+                    }
                 }
+                break;
             }
-        } else if (notification.responseType() == Response.PlayheadInfo) {
-            hibiki.ipc.PlayheadInfo info = (hibiki.ipc.PlayheadInfo) notification
-                    .response(new hibiki.ipc.PlayheadInfo());
-            playheadPos = info.positionSec();
-            bpm = info.bpm();
-            boolean wasPlaying = isPlaying;
-            isPlaying = info.isPlaying();
+            case PLAYHEAD_INFO: {
+                var info = notification.getPlayheadInfo();
+                playheadPos = info.getPositionSec();
+                bpm = info.getBpm();
+                boolean wasPlaying = isPlaying;
+                isPlaying = info.getTransportState() == hibiki.pb.core.TransportState.TRANSPORT_STATE_PLAYING;
 
-            // Capture playhead screen position when playback starts
-            if (isPlaying && !wasPlaying && autoScroll) {
-                float relativePos = playheadPos - clipStartTime;
-                if (relativePos >= 0 && sequence != null) {
-                    float beatsPerSecond = bpm / 60.0f;
-                    long playheadTick = (long) (relativePos * beatsPerSecond * sequence.getResolution());
-                    int playheadX = (int) (playheadTick * getTickWidth());
-                    int scrollX = gridScroll.getHorizontalScrollBar().getValue();
-                    playheadScreenOffset = playheadX - scrollX;
+                // Capture playhead screen position when playback starts
+                if (isPlaying && !wasPlaying && autoScroll) {
+                    float relativePos = playheadPos - clipStartTime;
+                    if (relativePos >= 0 && sequence != null) {
+                        float beatsPerSecond = bpm / 60.0f;
+                        long playheadTick = (long) (relativePos * beatsPerSecond * sequence.getResolution());
+                        int playheadX = (int) (playheadTick * getTickWidth());
+                        int scrollX = gridScroll.getHorizontalScrollBar().getValue();
+                        playheadScreenOffset = playheadX - scrollX;
+                    }
                 }
+                break;
             }
+            default:
+                break;
         }
     }
 
-    private void loadFromBackendData(ClipMidiData data) {
+    private void loadFromBackendData(hibiki.pb.notifications.ClipMidiData data) {
         javax.swing.SwingUtilities.invokeLater(() -> {
             notes.clear();
-            int resolution = data.resolution();
+            int resolution = data.getResolution();
             if (resolution > 0 && (sequence == null || sequence.getResolution() != resolution)) {
                 // Create new sequence matching backend resolution so grid lines align with note
                 // ticks
@@ -165,9 +169,9 @@ public class PianoRoll extends JDialog {
                     ex.printStackTrace();
                 }
             }
-            for (int i = 0; i < data.eventsLength(); i++) {
-                MidiEventData ev = data.events(i);
-                Note n = new Note(ev.pitch(), ev.tick(), ev.durationTicks(), ev.velocity());
+            for (int i = 0; i < data.getEventsCount(); i++) {
+                var ev = data.getEvents(i);
+                Note n = new Note(ev.getPitch(), ev.getTick(), ev.getDurationTicks(), ev.getVelocity());
                 notes.add(n);
             }
             if (gridPanel != null) {

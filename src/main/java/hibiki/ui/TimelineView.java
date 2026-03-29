@@ -1,12 +1,13 @@
 package hibiki.ui;
 
-import com.google.flatbuffers.FlatBufferBuilder;
+import hibiki.pb.commands.*;
+import hibiki.pb.core.EntityRef;
+import hibiki.pb.core.Clip;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
+import hibiki.pb.notifications.Notification;
 
 import hibiki.BackendManager;
-import hibiki.ipc.Notification;
-import hibiki.ipc.TimelineClipInfo;
-import hibiki.ipc.ParamList;
-import hibiki.ipc.Response;
 
 import javax.swing.*;
 import java.awt.*;
@@ -483,13 +484,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             menu.addSeparator();
             JMenuItem autoItem = new JMenuItem("Create Automation: " + ltp.paramName);
             autoItem.addActionListener(e -> {
-                FlatBufferBuilder builder = new FlatBufferBuilder(64);
-                int cmdOff = hibiki.ipc.AddAutomationLane.createAddAutomationLane(
-                        builder, trackIdx, ltp.pluginIndex, (int) ltp.paramId);
-                int reqOff = hibiki.ipc.Request.createRequest(
-                        builder, hibiki.ipc.Command.AddAutomationLane, cmdOff);
-                builder.finish(reqOff);
-                BackendManager.getInstance().sendRequest(builder);
+                BackendManager.getInstance().sendRequest(Request.newBuilder()
+                        .setAutomation(AutomationCmd.newBuilder().setAction(AutomationCmd.Action.ACTION_ADD_LANE).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setPluginIndex(ltp.pluginIndex)).setParamId((int) ltp.paramId))
+                        .build());
             });
             menu.add(autoItem);
         } else if (trackIdx >= 0 && trackIdx < tracks.size() && tracks.get(trackIdx).pluginName != null) {
@@ -516,13 +513,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             try {
                 int pluginIdx = Integer.parseInt(parts[0].trim());
                 int paramId = Integer.parseInt(parts[1].trim());
-                FlatBufferBuilder builder = new FlatBufferBuilder(64);
-                int cmdOff = hibiki.ipc.AddAutomationLane.createAddAutomationLane(
-                        builder, trackIdx, pluginIdx, paramId);
-                int reqOff = hibiki.ipc.Request.createRequest(
-                        builder, hibiki.ipc.Command.AddAutomationLane, cmdOff);
-                builder.finish(reqOff);
-                BackendManager.getInstance().sendRequest(builder);
+                BackendManager.getInstance().sendRequest(Request.newBuilder()
+                        .setAutomation(AutomationCmd.newBuilder().setAction(AutomationCmd.Action.ACTION_ADD_LANE).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setPluginIndex(pluginIdx)).setParamId(paramId))
+                        .build());
             } catch (NumberFormatException ex) {
                 JOptionPane.showMessageDialog(this, "Invalid input format.");
             }
@@ -586,23 +579,23 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         }
 
         void addOrUpdateClip(TimelineClipInfo info) {
-            int cidx = info.clipIndex();
+            int cidx = info.getClipIndex();
             ClipRect cr = clipMap.get(cidx);
             if (cr == null) {
                 cr = new ClipRect();
                 clips.add(cr);
                 clipMap.put(cidx, cr);
             }
-            cr.name = info.name();
-            cr.path = info.path();
-            cr.startTime = info.startTime();
-            cr.duration = info.duration();
+            cr.name = info.getName();
+            cr.path = info.getPath();
+            cr.startTime = info.getStartTime();
+            cr.duration = info.getDuration();
             // Extract waveform data
-            int wfLen = info.waveformLength();
+            int wfLen = info.getWaveformCount();
             if (wfLen > 0) {
                 cr.waveform = new float[wfLen];
                 for (int i = 0; i < wfLen; i++) {
-                    cr.waveform[i] = info.waveform(i);
+                    cr.waveform[i] = info.getWaveform(i);
                 }
             }
         }

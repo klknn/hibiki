@@ -3,7 +3,7 @@
  :deps {org.clojure/clojure           {:mvn/version "1.12.0"}
         com.google.flatbuffers/flatbuffers-java {:mvn/version "25.1.24"}
         com.formdev/flatlaf            {:mvn/version "3.5.4"}
-        hibiki/gui-lib                 {:local/root "bazel-bin/libhibiki-gui-lib.jar"}}
+        hibiki/gui-lib                 {:local/root "bazel-bin/hibiki-gui-echo_deploy.jar"}}
 
  :aliases
  {;; Run the Clojure GUI:  clj -M:run
@@ -29,4 +29,7 @@
   :echo {:main-opts ["-m" "hibiki.echo"]}
 
   ;; Echo + Socket REPL:  clj -M:echo:dev
-  :dev {:main-opts ["-m" "hibiki.echo.dev"]}}}
+  :dev {:main-opts ["-m" "hibiki.echo.prelude"]}
+
+  ;; Headless script runner (no GUI):  clj -M:headless script.clj
+  :headless {:main-opts ["-m" "hibiki.headless"]}}}

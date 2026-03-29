@@ -8,6 +8,9 @@
 #include <string>
 #include "clip.hpp"
 #include "vst3_host.hpp"
+#include "pb/core.pb.h"
+#include "pb/commands.pb.h"
+#include "pb/notifications.pb.h"
 
 namespace hibiki {
 
@@ -23,18 +26,11 @@ struct TimelineClip {
     double duration_beats = 0.0;  // Duration in beats (for MIDI clips)
 };
 
-// Automation control point (sorted by time_beats)
-struct AutomationPoint {
-    float time_beats = 0.0f;
-    float value = 0.0f;       // 0.0 – 1.0
-    float tension = 0.0f;     // -1..1 (0=linear, >0=ease-in, <0=ease-out)
-};
-
 // Automation lane targeting a single plugin parameter
 struct AutomationLane {
     int plugin_idx = 0;
     uint32_t param_id = 0;
-    std::vector<AutomationPoint> points;  // sorted by time_beats
+    std::vector<hibiki::pb::core::AutomationPoint> points;
 };
 
 // Tension-based interpolation between two automation points
@@ -49,24 +45,26 @@ inline float InterpolateAutomation(float v0, float v1, float t, float tension) {
     return v0 + (v1 - v0) * curved_t;
 }
 
-// Get the automation value at a given time in beats (binary search + interpolation)
+// Get the automation value at a given time in beats
 inline float GetAutomationValue(const AutomationLane& lane, double time_beats) {
-    if (lane.points.empty()) return 0.0f;
-    if (lane.points.size() == 1) return lane.points[0].value;
-    if (time_beats <= lane.points.front().time_beats) return lane.points.front().value;
-    if (time_beats >= lane.points.back().time_beats) return lane.points.back().value;
+    const auto& points = lane.points;
+    if (points.empty()) return 0.0f;
+
+    if (points.size() == 1) return points[0].value();
+    if (time_beats <= points.front().time_beats()) return points.front().value();
+    if (time_beats >= points.back().time_beats()) return points.back().value();
 
     // Binary search for the segment containing time_beats
-    size_t lo = 0, hi = lane.points.size() - 1;
+    size_t lo = 0, hi = points.size() - 1;
     while (lo + 1 < hi) {
         size_t mid = (lo + hi) / 2;
-        if (lane.points[mid].time_beats <= time_beats) lo = mid;
+        if (points[mid].time_beats() <= time_beats) lo = mid;
         else hi = mid;
     }
-    const auto& p0 = lane.points[lo];
-    const auto& p1 = lane.points[hi];
-    float segment_t = (float)((time_beats - p0.time_beats) / (p1.time_beats - p0.time_beats));
-    return InterpolateAutomation(p0.value, p1.value, segment_t, p0.tension);
+    const auto& p0 = points[lo];
+    const auto& p1 = points[hi];
+    float segment_t = (float)((time_beats - p0.time_beats()) / (p1.time_beats() - p0.time_beats()));
+    return InterpolateAutomation(p0.value(), p1.value(), segment_t, p0.tension());
 }
 
 class Track {

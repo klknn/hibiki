@@ -1,0 +1,123 @@
+// Command messages sent from the GUI to the C++ engine.
+//
+// This file contains both:
+//   - New domain-grouped commands (TransportCmd, TrackCmd, etc.)
+//   - Legacy per-verb commands for incremental migration
+//
+// The legacy commands mirror the old hibiki.proto messages so the
+// codebase can migrate namespaces first, then semantics second.
+
+syntax = "proto3";
+
+package hibiki.pb.commands;
+
+option java_package = "hibiki.pb.commands";
+option java_outer_classname = "CommandsProto";
+option java_multiple_files = true;
+
+import "pb/core.proto";
+
+// ─── New Domain-Grouped Commands ────────────────────────────────────
+
+message TransportCmd {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_PLAY = 1;
+    ACTION_STOP = 2;
+    ACTION_SEEK = 3;
+  }
+  Action action = 1;
+  float seek_pos = 2;
+  uint32 scene_index = 3;
+}
+
+message TrackCmd {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_PLAY_SLOT = 1;
+    ACTION_STOP = 2;
+    ACTION_LOAD_CLIP = 3;
+    ACTION_DELETE_CLIP = 4;
+    ACTION_SET_CLIP_LOOP = 5;
+    ACTION_ADD_TIMELINE_CLIP = 6;
+    ACTION_REMOVE_TIMELINE_CLIP = 7;
+    ACTION_RESIZE_TIMELINE_CLIP = 8;
+  }
+  Action action = 1;
+  hibiki.pb.core.EntityRef target = 2;
+  hibiki.pb.core.Clip clip_data = 3;
+  float value = 4;
+  bool flag = 5;
+}
+
+message PluginCmd {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_LOAD = 1;
+    ACTION_REMOVE = 2;
+    ACTION_SHOW_GUI = 3;
+    ACTION_SET_PARAM = 4;
+    ACTION_LIST = 5;
+  }
+  Action action = 1;
+  hibiki.pb.core.EntityRef target = 2;
+  string path = 3;
+  uint32 param_id = 4;
+  float param_value = 5;
+}
+
+message AutomationCmd {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_ADD_LANE = 1;
+    ACTION_REMOVE_LANE = 2;
+    ACTION_UPDATE_POINTS = 3;
+    ACTION_GET_LANES = 4;
+  }
+  Action action = 1;
+  hibiki.pb.core.EntityRef target = 2;
+  uint32 param_id = 3;
+  repeated hibiki.pb.core.AutomationPoint points = 4;
+}
+
+message MidiCmd {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_GET = 1;
+    ACTION_UPDATE = 2;
+  }
+  Action action = 1;
+  hibiki.pb.core.EntityRef target = 2;
+  uint32 resolution = 3;
+  repeated hibiki.pb.core.MidiEvent events = 4;
+}
+
+message ProjectCmd {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_SAVE = 1;
+    ACTION_LOAD = 2;
+    ACTION_BOUNCE = 3;
+    ACTION_UNDO = 4;
+    ACTION_REDO = 5;
+    ACTION_QUIT = 6;
+    ACTION_SET_BPM = 7;
+  }
+  Action action = 1;
+  string path = 2;
+  float bpm = 3;
+}
+
+// ─── Request Envelope ───────────────────────────────────────────────
+
+// Contains the new domain-grouped commands.
+message Request {
+  oneof command {
+    TransportCmd transport = 40;
+    TrackCmd track = 41;
+    PluginCmd plugin = 42;
+    AutomationCmd automation = 43;
+    MidiCmd midi = 44;
+    ProjectCmd project = 45;
+  }
+}

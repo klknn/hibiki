@@ -35,6 +35,39 @@ This uses `src/main/clojure/hibiki/repl.clj` which starts a Socket REPL server a
 launches the GUI. Clojure source files are loaded directly from disk, so edits are
 picked up immediately on `:reload`.
 
+### Headless Mode (no GUI)
+
+Run Clojure scripts against the engine without any GUI — great for batch processing,
+automated testing, or generating/bouncing projects from the command line:
+
+```bash
+# Run a script
+clj -M:headless my-song.clj
+
+# Read from stdin (piping)
+echo '(hbk/set-bpm! 140) (hbk/play!) (Thread/sleep 5000)' | clj -M:headless -
+
+# No arguments — drops into an interactive headless REPL
+clj -M:headless
+```
+
+Example script (`my-song.clj`):
+
+```clojure
+;; hbk/* helpers are auto-available
+(hbk/set-bpm! 120)
+(hbk/load-plugin! 0 "testdata/Dexed.vst3")
+(hbk/load-clip! 0 0 "testdata/rickroll.mid")
+(hbk/play!)
+(Thread/sleep 10000)
+(hbk/stop!)
+(hbk/save! "/tmp/my-project.hbk")
+(System/exit 0)
+```
+
+> **Note**: If the script file doesn't exist, the headless runner prints a warning
+> and falls back to the interactive REPL.
+
 ### Alternative: Socket REPL via Deploy JAR
 
 You can also launch a Socket REPL using the Bazel-built deploy JAR:
@@ -64,35 +97,30 @@ This is prelude (i.e. preamble lines) in REPL:
 
 ```clojure
 ;; Echo frontend — dev utilities are auto-available
-(require '[hibiki.echo.dev :as dev])
-(import '[hibiki BackendManager]
-        '[hibiki.ui SessionView TimelineView PluginPane Theme])
-(def bm (BackendManager/getInstance))
+(require '[hibiki.echo.prelude :as hbk])
+(import '[hibiki.ui SessionView TimelineView PluginPane Theme])
 ```
 
 For starter, try copy-paste these lines and type Ctrl+Enter:
 
 ```clojure
-(dev/theme! :solarized-dark)    ; switch entire GUI theme live
+(hbk/theme! :solarized-dark)    ; switch entire GUI theme live
 
-(.addTimelineClip bm 0 "testdata/rickroll.mid" 0.0 4.0)
-(dev/load-plugin! 0 "testdata/Dexed.vst3")    ;; load plugin
+(hbk/add-timeline-clip! 0 "testdata/rickroll.mid" 0.0 4.0)
+(hbk/load-plugin! 0 "testdata/Dexed.vst3")
 
-(.startPlayback bm)             ; start playback
-
-;; Open the native plugin GUI window
-(dev/show-plugin-gui! 0 0)       ;; track 0, plugin 0
-
-;; (.stopPlayback bm)              ; stop
+(hbk/play!)                     ; start playback
+(hbk/show-plugin-gui! 0 0)      ; open plugin GUI
+;; (hbk/stop!)                   ; stop
 ```
 
 
 #### 🎨 Theme — instant visual feedback
 
 ```clojure
-(dev/theme! :solarized-dark)    ; switch entire GUI theme live
-(dev/theme! :win95)             ; retro mode
-(dev/theme! :ableton-dark)      ; back to default
+(hbk/theme! :solarized-dark)    ; switch entire GUI theme live
+(hbk/theme! :win95)             ; retro mode
+(hbk/theme! :ableton-dark)      ; back to default
 
 ;; Fine-tune: update with custom scaling and font size
 (.update (Theme/getInstance) Theme$Preset/ABLETON_DARK 1.5 14)
@@ -101,11 +129,11 @@ For starter, try copy-paste these lines and type Ctrl+Enter:
 #### 🎹 Transport — play, stop, seek
 
 ```clojure
-(.startPlayback bm)             ; start playback
-(.stopPlayback bm)              ; stop
-(.togglePlay bm)                ; Space key equivalent
-(.seek bm 0.0)                  ; jump to beginning
-(.seek bm 4.0)                  ; jump to beat 4
+(hbk/play!)                     ; start playback
+(hbk/stop!)                     ; stop
+(hbk/seek! 0.0)                 ; jump to beginning
+(hbk/seek! 4.0)                 ; jump to beat 4
+(hbk/set-bpm! 140)              ; change tempo
 ```
 
 #### 🎚️ Tracks & Clips — load, select, rename
@@ -115,43 +143,41 @@ For starter, try copy-paste these lines and type Ctrl+Enter:
 (.selectTrackByIdx (SessionView/getInstance) 2)
 (.setSelectedTrack (TimelineView/getInstance) 1)
 
-;; Rename a track
-(.renameTrack (SessionView/getInstance) 1)  ; shows rename dialog
+;; Load a clip into Session View (track 0, slot 0)
+(hbk/load-clip! 0 0 "/path/to/drums.mid")
+(hbk/load-clip! 0 0 "/path/to/loop.wav" :loop true)
 
-;; Load a clip into Session View (track 1, slot 0)
-(.sendLoadClip (SessionView/getInstance)
-               0 0 "/path/to/drums.mid" true)
+;; Play / stop / delete clips
+(hbk/play-clip! 0 0)            ; trigger session slot
+(hbk/stop-track! 0)
+(hbk/delete-clip! 0 0)
+(hbk/set-clip-loop! 0 0 true)   ; toggle looping
 
-;; Load a clip onto the Timeline (track 0 at beat 0, 4 beats long)
-(.addTimelineClip bm 0 "testdata/rickroll.mid" 0.0 4.0)
-
-;; Remove timeline clip (track 0, clip index 1)
-(.removeTimelineClip bm 0 1)
-
-;; Resize timeline clip (track 0, clip 0, new duration 8 beats)
-(.resizeTimelineClip bm 0 0 8.0)
+;; Timeline clips
+(hbk/add-timeline-clip! 0 "testdata/rickroll.mid" 0.0 4.0)
+(hbk/remove-timeline-clip! 0 1) ; remove clip index 1
 ```
 
 #### 🔌 Plugins — load, tweak, remove
 
 ```clojure
 ;; Load a VST3 plugin onto track 0
-(dev/load-plugin! 0 "/home/user/.vst3/Dexed.vst3")
+(hbk/load-plugin! 0 "/home/user/.vst3/Dexed.vst3")
 
 ;; Load a specific sub-plugin (index 1) from a multi-plugin bundle
-(dev/load-plugin! 0 "/home/user/.vst3/mda.vst3" 1)
+(hbk/load-plugin! 0 "/home/user/.vst3/mda.vst3" 1)
 
 ;; Open the native plugin GUI window
-(dev/show-plugin-gui! 0 0)       ;; track 0, plugin 0
+(hbk/show-plugin-gui! 0 0)       ;; track 0, plugin 0
 
 ;; Tweak a parameter (0.0–1.0)
-(dev/set-param! 0 0 42 0.75)     ;; track 0, plugin 0, param 42 = 75%
+(hbk/set-param! 0 0 42 0.75)     ;; track 0, plugin 0, param 42 = 75%
 
 ;; Remove a plugin
-(dev/remove-plugin! 0 0)         ;; track 0, plugin 0
+(hbk/remove-plugin! 0 0)         ;; track 0, plugin 0
 
 ;; Scan a VST3 bundle for available sub-plugins
-(dev/list-plugins! "/home/user/.vst3/Dexed.vst3")
+(hbk/list-plugins! "/home/user/.vst3/Dexed.vst3")
 
 ;; Switch plugin pane view to another track
 (.setSelectedTrack (PluginPane/getInstance) 1)
@@ -162,21 +188,21 @@ For starter, try copy-paste these lines and type Ctrl+Enter:
 
 ```clojure
 ;; Add an automation lane for a plugin parameter
-(dev/add-automation! 0 0 42)         ;; track 0, plugin 0, param 42
+(hbk/add-automation! 0 0 42)         ;; track 0, plugin 0, param 42
 
 ;; Draw a curve — points are [time-beats value tension]
 ;; tension: 0=linear, >0=ease-in, <0=ease-out
-(dev/set-automation! 0 0
+(hbk/set-automation! 0 0
   [[0 0.0 0]       ;; beat 0: value 0% (linear)
    [4 1.0 0.5]     ;; beat 4: value 100% (ease-in curve)
    [8 0.0 -0.5]    ;; beat 8: value 0% (ease-out curve)
    [12 0.7 0]])     ;; beat 12: value 70% (linear)
 
 ;; Request automation data for a track
-(dev/get-automation! 0)
+(hbk/get-automation! 0)
 
 ;; Remove an automation lane
-(dev/remove-automation! 0 0)         ;; track 0, lane 0
+(hbk/remove-automation! 0 0)         ;; track 0, lane 0
 ```
 
 #### 🔍 GUI Inspection — peek inside the running app
@@ -192,7 +218,7 @@ For starter, try copy-paste these lines and type Ctrl+Enter:
 (.getSelectedTrack (TimelineView/getInstance))   ;=> 0
 
 ;; Frame info
-(let [f (dev/frame)]
+(let [f (hbk/frame)]
   {:width (.getWidth f) :height (.getHeight f)
    :title (.getTitle f)})
 ```
@@ -208,73 +234,49 @@ For starter, try copy-paste these lines and type Ctrl+Enter:
      (.repaint)))
 
 ;; Reload a Clojure namespace after editing the source file
-(require '[hibiki.echo.dev :as dev] :reload)
+(require '[hibiki.echo.prelude :as hbk] :reload)
 
 ;; Hot-swap the entire MainView
-(dev/reload!)
+(hbk/reload!)
 ```
 
 #### 🎵 MIDI Composition — create clips programmatically
 
-The `updateClipMidi` method takes arrays of ticks, pitches, durations, and velocities.
+The `hbk/write-midi!` helper takes note maps of `{:tick :pitch :dur :vel}`.
 Resolution is in ticks per quarter note (480 is standard).
 
 ```clojure
-(def bm (hibiki.BackendManager/getInstance))
 (def PPQ 480)  ;; ticks per quarter note
 
 ;; --- 16th note chord arpeggio (Cmaj7: C E G B) ---
-;; Creates a rising arp pattern, each note is a 16th (PPQ/4 = 120 ticks)
-(let [chord  [60 64 67 71]            ;; MIDI pitches: C4 E4 G4 B4
-      sixteenth (/ PPQ 4)              ;; 120 ticks
-      notes  (for [bar  (range 4)      ;; 4 bars
-                   step (range 16)]    ;; 16 steps per bar
-               {:tick     (long (+ (* bar 4 PPQ) (* step sixteenth)))
-                :pitch    (nth chord (mod step (count chord)))
-                :duration (long sixteenth)
-                :velocity (if (zero? (mod step 4)) 100 70)})]  ;; accent downbeats
-  (.updateClipMidi bm
-    0 0 -1                             ;; track 0, slot 0, session clip
-    PPQ
-    (long-array   (map :tick notes))
-    (int-array    (map :pitch notes))
-    (long-array   (map :duration notes))
-    (int-array    (map :velocity notes))))
+(let [chord    [60 64 67 71]
+      sixteenth (/ PPQ 4)
+      notes    (for [bar (range 4) step (range 16)]
+                {:tick (long (+ (* bar 4 PPQ) (* step sixteenth)))
+                 :pitch (nth chord (mod step (count chord)))
+                 :dur  (long sixteenth)
+                 :vel  (if (zero? (mod step 4)) 100 70)})]
+  (hbk/write-midi! 0 0 PPQ notes))
 
 ;; --- Simple chord progression (Cm → Fm → G → Cm) ---
-(let [chords [[60 63 67]              ;; Cm
-              [65 68 72]              ;; Fm
-              [67 71 74]              ;; G
-              [60 63 67]]             ;; Cm
+(let [chords [[60 63 67] [65 68 72] [67 71 74] [60 63 67]]
       notes  (for [[i chord] (map-indexed vector chords)
                    pitch chord]
-               {:tick     (long (* i 4 PPQ))    ;; one chord per bar
-                :pitch    pitch
-                :duration (long (* 4 PPQ))      ;; whole note
-                :velocity 80})]
-  (.updateClipMidi bm 0 1 -1 PPQ
-    (long-array (map :tick notes))
-    (int-array  (map :pitch notes))
-    (long-array (map :duration notes))
-    (int-array  (map :velocity notes))))
+               {:tick (long (* i 4 PPQ)) :pitch pitch
+                :dur  (long (* 4 PPQ))   :vel 80})]
+  (hbk/write-midi! 0 1 PPQ notes))
 
 ;; --- Euclidean rhythm (5 hits in 8 steps, like Bossa Nova) ---
-(let [steps    8
-      hits     5
-      sixteenth (/ PPQ 4)
-      pattern  (for [i (range steps)]    ;; Euclidean distribution
-                 (< (* i hits) (* steps (inc (quot (* i hits) steps)))))
-      notes   (keep-indexed
-                (fn [i hit?]
-                  (when hit?
-                    {:tick (long (* i sixteenth)) :pitch 36  ;; kick drum
-                     :duration (long sixteenth) :velocity 90}))
-                pattern)]
-  (.updateClipMidi bm 1 0 -1 PPQ
-    (long-array (map :tick notes))
-    (int-array  (map :pitch notes))
-    (long-array (map :duration notes))
-    (int-array  (map :velocity notes))))
+(let [steps 8  hits 5  sixteenth (/ PPQ 4)
+      pattern (for [i (range steps)]
+                (< (* i hits) (* steps (inc (quot (* i hits) steps)))))
+      notes  (keep-indexed
+               (fn [i hit?]
+                 (when hit?
+                   {:tick (long (* i sixteenth)) :pitch 36
+                    :dur (long sixteenth) :vel 90}))
+               pattern)]
+  (hbk/write-midi! 1 0 PPQ notes))
 ```
 
 **Read → Transform → Write**: The coolest pattern — read an existing chord clip,
@@ -283,44 +285,37 @@ extract pitches, and rewrite it as a 16th note arpeggio:
 ```clojure
 ;; Step 1: Request MIDI data from an existing clip (track 0, slot 0)
 ;;         The response arrives asynchronously via a notification listener.
-(import '[hibiki.ipc ClipMidiData MidiEventData Response Notification])
+(import '[hibiki.pb.notifications Notification Notification$ResponseCase]
+        '[hibiki.pb.core ClipMidiData])
 
 (def midi-data (promise))
+(def bm (hibiki.BackendManager/getInstance))
 
 (def listener
   (reify java.util.function.Consumer
     (accept [_ notif]
       (let [^Notification n notif]
-        (when (= (.responseType n) Response/ClipMidiData)
-          (deliver midi-data (.response n (ClipMidiData.))))))))
+        (when (= (.getResponseCase n) Notification$ResponseCase/CLIP_MIDI_DATA)
+          (deliver midi-data (.getClipMidiData n)))))))
 
 (.addNotificationListener bm listener)
-(.requestClipMidi bm 0 0 -1)          ;; track 0, slot 0, session clip
+(hbk/get-midi! 0 0)              ;; request MIDI for track 0, slot 0
 
-;; Step 2: Wait for response and extract unique pitches
+;; Step 2: Wait for response and arpeggiate
 (let [^ClipMidiData data (deref midi-data 5000 nil)]
   (when data
     (.removeNotificationListener bm listener)
     (let [pitches (vec (distinct
-                         (for [i (range (.eventsLength data))]
-                           (.pitch (.events data i)))))
-          _       (println "Found pitches:" pitches "(chord size:" (count pitches) ")")
-
-          ;; Step 3: Arpeggiate! Cycle pitches as 16th notes over 4 bars
+                         (for [i (range (.getEventsCount data))]
+                           (.getPitch (.getEvents data i)))))
           sixteenth (/ PPQ 4)
-          notes (for [bar  (range 4)
-                      step (range 16)]
-                  {:tick     (long (+ (* bar 4 PPQ) (* step sixteenth)))
-                   :pitch    (nth pitches (mod step (count pitches)))
-                   :duration (long sixteenth)
-                   :velocity (if (zero? (mod step 4)) 100 70)})]
-
-      ;; Step 4: Write back to the same clip — instant arp!
-      (.updateClipMidi bm 0 0 -1 PPQ
-        (long-array (map :tick notes))
-        (int-array  (map :pitch notes))
-        (long-array (map :duration notes))
-        (int-array  (map :velocity notes)))
+          notes (for [bar (range 4) step (range 16)]
+                  {:tick  (long (+ (* bar 4 PPQ) (* step sixteenth)))
+                   :pitch (nth pitches (mod step (count pitches)))
+                   :dur   (long sixteenth)
+                   :vel   (if (zero? (mod step 4)) 100 70)})]
+      ;; Step 3: Write back — instant arp!
+      (hbk/write-midi! 0 0 PPQ notes)
       (println "✨ Arpeggiated" (count pitches) "pitches into"
                (count notes) "16th notes!"))))
 ```
@@ -714,37 +709,41 @@ and `when`/`case` patterns make complex notification handlers shorter.
 
 ## Where Java and Clojure Are Similar
 
-### IPC helpers — FlatBuffer boilerplate (comparable)
+### IPC helpers — Protobuf Builder boilerplate (comparable)
 
-Both need the same FlatBuffer builder ceremony — Clojure doesn't save much here:
+Both need the same Protobuf builder ceremony — Clojure doesn't save much here:
 
 ```java
-// PluginPane.java — 7 lines
-private void sendShowGui() {
-    FlatBufferBuilder builder = new FlatBufferBuilder(128);
-    int cmd = ShowPluginGui.createShowPluginGui(builder, trackIndex, pluginIndex);
-    int req = Request.createRequest(builder, Command.ShowPluginGui, cmd);
-    builder.finish(req);
-    BackendManager.getInstance().sendRequest(builder);
+// PluginPane.java
+private void sendShowGui(int trackIndex, int pluginIndex) {
+    Request req = Request.newBuilder()
+        .setPlugin(PluginCmd.newBuilder()
+            .setAction(PluginCmd.Action.ACTION_SHOW_GUI)
+            .setTarget(EntityRef.newBuilder()
+                .setTrackIndex(trackIndex)
+                .setPluginIndex(pluginIndex)))
+        .build();
+    BackendManager.getInstance().sendRequest(req);
 }
 ```
 
 ```clojure
-;; plugin.clj — 10 lines (type hints add verbosity)
+;; plugin.clj (type hints add verbosity but enable direct dispatch)
 (defn- send-show-gui
   [^BackendManager backend ^long track-idx ^long plugin-idx]
-  (let [^FlatBufferBuilder b (FlatBufferBuilder. 64)
-        cmd (do (ShowPluginGui/startShowPluginGui b)
-                (ShowPluginGui/addTrackIndex b track-idx)
-                (ShowPluginGui/addPluginIndex b plugin-idx)
-                (ShowPluginGui/endShowPluginGui b))
-        req (Request/createRequest b Command/ShowPluginGui cmd)]
-    (.finish b req)
-    (.sendRequest backend b)))
+  (.sendRequest backend
+    (-> (Request/newBuilder)
+        (.setPlugin (-> (PluginCmd/newBuilder)
+                        (.setAction PluginCmd$Action/ACTION_SHOW_GUI)
+                        (.setTarget (-> (EntityRef/newBuilder)
+                                        (.setTrackIndex (int track-idx))
+                                        (.setPluginIndex (int plugin-idx))))))
+        (.build))))
 ```
 
-**Similar**: FlatBuffer code is inherently imperative. Type hints make Clojure slightly
-more verbose than Java for this pattern.
+**Similar**: Protobuf Builder code is inherently imperative. Method chaining (`->`)
+makes Clojure look similar to Java's pattern, though type casing `(int ...)` can be slightly
+more verbose than Java's implicit primitive widening/narrowing.
 
 ## Java Design Patterns → Clojure
 

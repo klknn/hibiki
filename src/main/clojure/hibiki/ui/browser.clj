@@ -8,10 +8,10 @@
            [java.awt BorderLayout Dimension]
            [java.awt.event MouseAdapter MouseEvent]
            [java.io File]
-           [com.google.flatbuffers FlatBufferBuilder]
-           [hibiki.ipc Request Command LoadPlugin LoadClip ListPlugins
-                       PluginList PluginDescription Response Notification]
-           [hibiki BackendManager]))
+           [hibiki BackendManager]
+           [hibiki.pb.commands Request PluginCmd TrackCmd]
+           [hibiki.pb.notifications Notification Notification$ResponseCase]
+           [hibiki.pb.core EntityRef Clip]))
 
 (set! *warn-on-reflection* true)
 
@@ -31,42 +31,46 @@
    (->FileItem file type display-name vendor plugin-index)))
 
 ;; ---------------------------------------------------------------------------
-;; IPC helpers (type-annotated)
+;; IPC helpers (protobuf)
 ;; ---------------------------------------------------------------------------
 
 (defn- send-load-plugin
   "Send LoadPlugin IPC command."
   [^BackendManager backend ^String path ^long plugin-index]
-  (let [^FlatBufferBuilder b (FlatBufferBuilder. 1024)
-        po (.createString b path)
-        track-idx (int (session/get-selected-track))
-        cmd (LoadPlugin/createLoadPlugin b track-idx po plugin-index)
-        req (Request/createRequest b Command/LoadPlugin cmd)]
-    (.finish b req)
-    (.sendRequest backend b)))
+  (.sendRequest backend
+    (-> (Request/newBuilder)
+        (.setPlugin (-> (PluginCmd/newBuilder)
+                        (.setAction hibiki.pb.commands.PluginCmd$Action/ACTION_LOAD)
+                        (.setTarget (-> (EntityRef/newBuilder)
+                                        (.setTrackIndex (int (session/get-selected-track)))
+                                        (.setPluginIndex (int plugin-index))))
+                        (.setPath path)))
+        (.build))))
 
 (defn- send-load-clip
   "Send LoadClip IPC command."
   [^BackendManager backend ^String path loop?]
-  (let [^FlatBufferBuilder b (FlatBufferBuilder. 1024)
-        po (.createString b path)
-        track-idx (int (session/get-selected-track))
-        cmd (LoadClip/createLoadClip b track-idx (int 0) po loop?)
-        req (Request/createRequest b Command/LoadClip cmd)]
-    (.finish b req)
-    (.sendRequest backend b)))
+  (.sendRequest backend
+    (-> (Request/newBuilder)
+        (.setTrack (-> (TrackCmd/newBuilder)
+                       (.setAction hibiki.pb.commands.TrackCmd$Action/ACTION_LOAD_CLIP)
+                       (.setTarget (-> (EntityRef/newBuilder)
+                                       (.setTrackIndex (int (session/get-selected-track)))
+                                       (.setSessionSlot (int 0))))
+                       (.setClipData (-> (Clip/newBuilder)
+                                         (.setPath path)
+                                         (.setIsLoop (boolean loop?))))))
+        (.build))))
 
 (defn- send-list-plugins
   "Send ListPlugins IPC command to discover plugins in a VST3 bundle."
   [^BackendManager backend ^String path]
-  (let [^FlatBufferBuilder b (FlatBufferBuilder. 256)
-        po (.createString b path)
-        cmd (do (ListPlugins/startListPlugins b)
-                (ListPlugins/addPath b po)
-                (ListPlugins/endListPlugins b))
-        req (Request/createRequest b Command/ListPlugins cmd)]
-    (.finish b req)
-    (.sendRequest backend b)))
+  (.sendRequest backend
+    (-> (Request/newBuilder)
+        (.setPlugin (-> (PluginCmd/newBuilder)
+                        (.setAction hibiki.pb.commands.PluginCmd$Action/ACTION_LIST)
+                        (.setPath path)))
+        (.build))))
 
 ;; ---------------------------------------------------------------------------
 ;; File scanning
@@ -104,6 +108,15 @@
                                  (file-item f "audio" fname))))))))))
 
 ;; ---------------------------------------------------------------------------
+;; Module-level state for plugin discovery
+;; ---------------------------------------------------------------------------
+
+(defonce ^:private bundles-discovered (java.util.concurrent.ConcurrentHashMap.))
+(defonce ^:private refresh-timer (atom nil))
+(defonce ^:private plugins-node-ref (atom nil))
+(defonce ^:private model-ref (atom nil))
+
+;; ---------------------------------------------------------------------------
 ;; Browser pane
 ;; ---------------------------------------------------------------------------
 
@@ -118,6 +131,8 @@
                          (.add root midi-node)
                          (.add root audio-node))
         model  (DefaultTreeModel. root)
+        _      (do (reset! plugins-node-ref plugins-node)
+                   (reset! model-ref model))
 
         ;; Custom tree renderer
         renderer (doto (DefaultTreeCellRenderer.)
@@ -156,11 +171,7 @@
                  (.setPreferredSize (Dimension. (t/scale 220) 0))
                  (.setBorder (BorderFactory/createMatteBorder (int 0) (int 0) (int 0) (int 1) ^java.awt.Color (t/color :border)))
                  (.add header BorderLayout/NORTH)
-                 (.add scroll BorderLayout/CENTER))
-
-        ;; Mutable state for debounced plugin refresh
-        bundles-discovered (java.util.concurrent.ConcurrentHashMap.)
-        refresh-timer (atom nil)]
+                 (.add scroll BorderLayout/CENTER))]
 
     ;; Scan directories
     (let [testdata (File. "testdata")]
@@ -204,26 +215,28 @@
       (reify java.util.function.Consumer
         (accept [_ notif]
           (let [^Notification notif notif]
-            (when (= (.responseType notif) Response/PluginList)
-              (let [^PluginList pl (.response notif (PluginList.))
-                    ^String path (.path pl)
-                    plugins (vec (for [i (range (.pluginsLength pl))]
-                                   (let [^PluginDescription pd (.plugins pl i)]
+            (when (= (.getResponseCase notif)
+                     Notification$ResponseCase/PLUGIN_LIST)
+              (let [pl (.getPluginList notif)
+                    ^String path (.getPath pl)
+                    plugins (vec (for [i (range (.getPluginsCount pl))]
+                                   (let [pd (.getPlugins pl i)]
                                      (file-item (File. path) "vst"
-                                                (.name pd) (.vendor pd) (.index pd)))))]
-                (.put bundles-discovered path plugins)
+                                                (.getName pd) (.getVendor pd) (.getIndex pd)))))]
+                (.put ^java.util.concurrent.ConcurrentHashMap bundles-discovered path plugins)
                 (SwingUtilities/invokeLater
                   (fn []
                     (when-let [^Timer old @refresh-timer] (.stop old))
-                    (let [^Timer tm (Timer. 300
+                    (let [pn ^DefaultMutableTreeNode @plugins-node-ref
+                          m  ^DefaultTreeModel @model-ref
+                          ^Timer tm (Timer. 300
                                      (reify java.awt.event.ActionListener
                                        (actionPerformed [_ _]
-                                         (.removeAllChildren plugins-node)
+                                         (.removeAllChildren pn)
                                          (doseq [[_ items] bundles-discovered]
                                            (doseq [item items]
-                                             (.add plugins-node
-                                               (DefaultMutableTreeNode. item))))
-                                         (.reload model plugins-node))))]
+                                             (.add pn (DefaultMutableTreeNode. item))))
+                                         (.reload m pn))))]
                       (.setRepeats tm false)
                       (.start tm)
                       (reset! refresh-timer tm))))))))))

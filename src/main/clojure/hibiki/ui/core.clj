@@ -13,9 +13,8 @@
            [java.awt BorderLayout CardLayout Dimension FlowLayout Image]
            [java.awt.event KeyEvent]
            [com.formdev.flatlaf FlatDarkLaf]
-           [com.google.flatbuffers FlatBufferBuilder]
            [hibiki BackendManager]
-           [hibiki.ipc Request Command Undo Redo]))
+           [hibiki.pb.commands Request ProjectCmd]))
 
 (set! *warn-on-reflection* true)
 
@@ -109,24 +108,22 @@
       (.put im (KeyStroke/getKeyStroke "meta Z") "undo")
       (.put am "undo" (proxy [AbstractAction] []
                         (actionPerformed [_]
-                          (let [b (FlatBufferBuilder. 16)]
-                            (Undo/startUndo b)
-                            (let [uo (Undo/endUndo b)
-                                  ro (Request/createRequest b Command/Undo uo)]
-                              (.finish b ro)
-                              (.sendRequest backend b))))))
+                          (.sendRequest backend
+                            (-> (Request/newBuilder)
+                                (.setProject (-> (ProjectCmd/newBuilder)
+                                                 (.setAction hibiki.pb.commands.ProjectCmd$Action/ACTION_UNDO)))
+                                (.build))))))
       ;; Redo
       (.put im (KeyStroke/getKeyStroke "control shift Z") "redo")
       (.put im (KeyStroke/getKeyStroke "meta shift Z") "redo")
       (.put im (KeyStroke/getKeyStroke "control Y") "redo")
       (.put am "redo" (proxy [AbstractAction] []
                         (actionPerformed [_]
-                          (let [b (FlatBufferBuilder. 16)]
-                            (Redo/startRedo b)
-                            (let [ro (Redo/endRedo b)
-                                  rq (Request/createRequest b Command/Redo ro)]
-                              (.finish b rq)
-                              (.sendRequest backend b))))))
+                          (.sendRequest backend
+                            (-> (Request/newBuilder)
+                                (.setProject (-> (ProjectCmd/newBuilder)
+                                                 (.setAction hibiki.pb.commands.ProjectCmd$Action/ACTION_REDO)))
+                                (.build))))))
       ;; Space = Play/Stop
       (.put im (KeyStroke/getKeyStroke KeyEvent/VK_SPACE 0) "playStop")
       (.put am "playStop" (proxy [AbstractAction] []

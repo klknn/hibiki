@@ -4,10 +4,11 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import hibiki.BackendManager;
-import com.google.flatbuffers.FlatBufferBuilder;
-import hibiki.ipc.Request;
-import hibiki.ipc.Command;
-import hibiki.ipc.DeleteClip;
+import hibiki.pb.commands.*;
+import hibiki.pb.core.EntityRef;
+import hibiki.pb.core.Clip;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
 
 public class WaveformPanel extends JPanel {
     private float[] waveform;
@@ -68,14 +69,9 @@ public class WaveformPanel extends JPanel {
         if (trackIdx == -1 || slotIdx == -1)
             return;
 
-        FlatBufferBuilder builder = new FlatBufferBuilder(128);
-        DeleteClip.startDeleteClip(builder);
-        DeleteClip.addTrackIndex(builder, trackIdx);
-        DeleteClip.addSlotIndex(builder, slotIdx);
-        int deleteOff = DeleteClip.endDeleteClip(builder);
-        int requestOffset = Request.createRequest(builder, Command.DeleteClip, deleteOff);
-        builder.finish(requestOffset);
-        BackendManager.getInstance().sendRequest(builder);
+        BackendManager.getInstance().sendRequest(Request.newBuilder()
+                .setTrack(TrackCmd.newBuilder().setAction(TrackCmd.Action.ACTION_DELETE_CLIP).setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setSessionSlot(slotIdx)))
+                .build());
 
         // Clear view
         setWaveform(-1, -1, null);

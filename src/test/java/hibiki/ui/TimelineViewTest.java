@@ -1,14 +1,13 @@
 package hibiki.ui;
 
-import hibiki.ipc.Notification;
-import hibiki.ipc.TimelineClipInfo;
-import hibiki.ipc.Response;
-import com.google.flatbuffers.FlatBufferBuilder;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
+import hibiki.pb.notifications.Notification;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 import javax.swing.*;
-import java.nio.ByteBuffer;
 
 public class TimelineViewTest {
 
@@ -18,16 +17,16 @@ public class TimelineViewTest {
         assertEquals(8, view.tracks.size());
         assertEquals(0, view.tracks.get(0).clips.size());
 
-        FlatBufferBuilder builder = new FlatBufferBuilder(1024);
-        int nameOff = builder.createString("TestClip");
-        int pathOff = builder.createString("/path/to/test.wav");
-        float[] waveformData = {0.1f, 0.5f, 0.8f, 0.3f};
-        int wfOff = TimelineClipInfo.createWaveformVector(builder, waveformData);
-        int timelineOff = TimelineClipInfo.createTimelineClipInfo(builder, 0, 0, nameOff, pathOff, 10.0f, 5.0f, wfOff);
-        int nfOff = Notification.createNotification(builder, Response.TimelineClipInfo, timelineOff);
-        builder.finish(nfOff);
-        ByteBuffer bb = builder.dataBuffer();
-        Notification n = Notification.getRootAsNotification(bb);
+        Notification n = Notification.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
+                        .setTrackIndex(0)
+                        .setClipIndex(0)
+                        .setName("TestClip")
+                        .setPath("/path/to/test.wav")
+                        .setStartTime(10.0f)
+                        .setDuration(5.0f)
+                        .addWaveform(0.1f).addWaveform(0.5f).addWaveform(0.8f).addWaveform(0.3f))
+                .build();
 
         view.handleNotification(n);
         assertEquals(1, view.tracks.get(0).clips.size());
@@ -115,26 +114,24 @@ public class TimelineViewTest {
     @Test
     public void testMultipleClipsOnMultipleTracks() {
         TimelineView view = new TimelineView();
-        FlatBufferBuilder builder = new FlatBufferBuilder(1024);
 
         // Clip on track 0
-        int name0 = builder.createString("Clip0");
-        int path0 = builder.createString("a.mid");
-        int wf0 = TimelineClipInfo.createWaveformVector(builder, new float[0]);
-        int tc0 = TimelineClipInfo.createTimelineClipInfo(builder, 0, 0, name0, path0, 0.0f, 2.0f, wf0);
-        int n0 = Notification.createNotification(builder, Response.TimelineClipInfo, tc0);
-        builder.finish(n0);
-        view.handleNotification(Notification.getRootAsNotification(builder.dataBuffer()));
+        Notification n0 = Notification.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
+                        .setTrackIndex(0).setClipIndex(0)
+                        .setName("Clip0").setPath("a.mid")
+                        .setStartTime(0.0f).setDuration(2.0f))
+                .build();
+        view.handleNotification(n0);
 
         // Clip on track 2
-        builder = new FlatBufferBuilder(1024);
-        int name2 = builder.createString("Clip2");
-        int path2 = builder.createString("b.mid");
-        int wf2 = TimelineClipInfo.createWaveformVector(builder, new float[0]);
-        int tc2 = TimelineClipInfo.createTimelineClipInfo(builder, 2, 0, name2, path2, 5.0f, 3.0f, wf2);
-        int n2 = Notification.createNotification(builder, Response.TimelineClipInfo, tc2);
-        builder.finish(n2);
-        view.handleNotification(Notification.getRootAsNotification(builder.dataBuffer()));
+        Notification n2 = Notification.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
+                        .setTrackIndex(2).setClipIndex(0)
+                        .setName("Clip2").setPath("b.mid")
+                        .setStartTime(5.0f).setDuration(3.0f))
+                .build();
+        view.handleNotification(n2);
 
         assertEquals(1, view.tracks.get(0).clips.size());
         assertEquals(0, view.tracks.get(1).clips.size());
@@ -146,14 +143,13 @@ public class TimelineViewTest {
     @Test
     public void testEmptyClipPathIsMidi() {
         TimelineView view = new TimelineView();
-        FlatBufferBuilder builder = new FlatBufferBuilder(1024);
-        int name = builder.createString("New Clip");
-        int path = builder.createString("");
-        int wf = TimelineClipInfo.createWaveformVector(builder, new float[0]);
-        int tc = TimelineClipInfo.createTimelineClipInfo(builder, 0, 0, name, path, 0.0f, 2.0f, wf);
-        int nf = Notification.createNotification(builder, Response.TimelineClipInfo, tc);
-        builder.finish(nf);
-        view.handleNotification(Notification.getRootAsNotification(builder.dataBuffer()));
+        Notification n = Notification.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
+                        .setTrackIndex(0).setClipIndex(0)
+                        .setName("New Clip").setPath("")
+                        .setStartTime(0.0f).setDuration(2.0f))
+                .build();
+        view.handleNotification(n);
 
         TimelineView.ClipRect clip = view.tracks.get(0).clips.get(0);
         // Empty path should be treated as editable (MIDI)
@@ -302,27 +298,27 @@ public class TimelineViewTest {
     public void testClipUpdateByIndex() {
         TimelineView view = new TimelineView();
         // Add initial clip
-        FlatBufferBuilder builder = new FlatBufferBuilder(1024);
-        int name = builder.createString("Initial");
-        int path = builder.createString("test.mid");
-        int wf = TimelineClipInfo.createWaveformVector(builder, new float[] { 0.1f, 0.2f });
-        int tc = TimelineClipInfo.createTimelineClipInfo(builder, 0, 0, name, path, 1.0f, 2.0f, wf);
-        int nf = Notification.createNotification(builder, Response.TimelineClipInfo, tc);
-        builder.finish(nf);
-        view.handleNotification(Notification.getRootAsNotification(builder.dataBuffer()));
+        Notification n1 = Notification.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
+                        .setTrackIndex(0).setClipIndex(0)
+                        .setName("Initial").setPath("test.mid")
+                        .setStartTime(1.0f).setDuration(2.0f)
+                        .addWaveform(0.1f).addWaveform(0.2f))
+                .build();
+        view.handleNotification(n1);
 
         assertEquals(1, view.tracks.get(0).clips.size());
         assertEquals("Initial", view.tracks.get(0).clips.get(0).name);
 
         // Update same clip index 0 on same track
-        builder = new FlatBufferBuilder(1024);
-        name = builder.createString("Updated");
-        path = builder.createString("test2.mid");
-        wf = TimelineClipInfo.createWaveformVector(builder, new float[] { 0.5f });
-        tc = TimelineClipInfo.createTimelineClipInfo(builder, 0, 0, name, path, 3.0f, 4.0f, wf);
-        nf = Notification.createNotification(builder, Response.TimelineClipInfo, tc);
-        builder.finish(nf);
-        view.handleNotification(Notification.getRootAsNotification(builder.dataBuffer()));
+        Notification n2 = Notification.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
+                        .setTrackIndex(0).setClipIndex(0)
+                        .setName("Updated").setPath("test2.mid")
+                        .setStartTime(3.0f).setDuration(4.0f)
+                        .addWaveform(0.5f))
+                .build();
+        view.handleNotification(n2);
 
         // Should update existing clip at index 0
         assertEquals(1, view.tracks.get(0).clips.size());

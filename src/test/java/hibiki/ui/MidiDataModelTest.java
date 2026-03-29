@@ -1,14 +1,13 @@
 package hibiki.ui;
 
-import hibiki.ipc.ClipMidiData;
-import hibiki.ipc.MidiEventData;
-import com.google.flatbuffers.FlatBufferBuilder;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.AutomationPoint;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 import javax.sound.midi.*;
 import java.io.File;
-import java.nio.ByteBuffer;
 
 public class MidiDataModelTest {
 
@@ -199,26 +198,17 @@ public class MidiDataModelTest {
 
     @Test
     public void testLoadFromBackendData() {
-        // Build a FlatBuffer ClipMidiData with 2 notes
-        FlatBufferBuilder builder = new FlatBufferBuilder(512);
-        int[] eventOffsets = new int[2];
-        // Note 1: pitch=60, tick=0, durationTicks=96, velocity=100
-        eventOffsets[0] = MidiEventData.createMidiEventData(builder, 0, 60, 96, 100);
-        // Note 2: pitch=64, tick=96, durationTicks=48, velocity=80
-        eventOffsets[1] = MidiEventData.createMidiEventData(builder, 96, 64, 48, 80);
-
-        int eventsVec = ClipMidiData.createEventsVector(builder, eventOffsets);
-        ClipMidiData.startClipMidiData(builder);
-        ClipMidiData.addTrackIndex(builder, 0);
-        ClipMidiData.addSlotIndex(builder, -1);
-        ClipMidiData.addClipIndex(builder, 0);
-        ClipMidiData.addResolution(builder, 480);
-        ClipMidiData.addEvents(builder, eventsVec);
-        int dataOff = ClipMidiData.endClipMidiData(builder);
-        builder.finish(dataOff);
-
-        ByteBuffer buf = builder.dataBuffer();
-        ClipMidiData data = ClipMidiData.getRootAsClipMidiData(buf);
+        // Build a protobuf ClipMidiData with 2 notes
+        ClipMidiData data = ClipMidiData.newBuilder()
+                .setTrackIndex(0)
+                .setSlotIndex(-1)
+                .setClipIndex(0)
+                .setResolution(480)
+                .addEvents(hibiki.pb.core.MidiEvent.newBuilder()
+                        .setTick(0).setPitch(60).setDurationTicks(96).setVelocity(100))
+                .addEvents(hibiki.pb.core.MidiEvent.newBuilder()
+                        .setTick(96).setPitch(64).setDurationTicks(48).setVelocity(80))
+                .build();
 
         MidiDataModel model = new MidiDataModel();
         model.loadFromBackendData(data);
@@ -241,16 +231,11 @@ public class MidiDataModelTest {
 
     @Test
     public void testLoadFromBackendData_zeroResolution() {
-        FlatBufferBuilder builder = new FlatBufferBuilder(256);
-        int eventsVec = ClipMidiData.createEventsVector(builder, new int[0]);
-        ClipMidiData.startClipMidiData(builder);
-        ClipMidiData.addTrackIndex(builder, 0);
-        ClipMidiData.addResolution(builder, 0); // zero resolution
-        ClipMidiData.addEvents(builder, eventsVec);
-        int dataOff = ClipMidiData.endClipMidiData(builder);
-        builder.finish(dataOff);
+        ClipMidiData data = ClipMidiData.newBuilder()
+                .setTrackIndex(0)
+                .setResolution(0)
+                .build();
 
-        ClipMidiData data = ClipMidiData.getRootAsClipMidiData(builder.dataBuffer());
         MidiDataModel model = new MidiDataModel();
         model.loadFromBackendData(data);
 
@@ -266,16 +251,10 @@ public class MidiDataModelTest {
         assertEquals(1, model.notes.size());
 
         // Load empty data should clear
-        FlatBufferBuilder builder = new FlatBufferBuilder(256);
-        int eventsVec = ClipMidiData.createEventsVector(builder, new int[0]);
-        ClipMidiData.startClipMidiData(builder);
-        ClipMidiData.addTrackIndex(builder, 0);
-        ClipMidiData.addResolution(builder, 480);
-        ClipMidiData.addEvents(builder, eventsVec);
-        int dataOff = ClipMidiData.endClipMidiData(builder);
-        builder.finish(dataOff);
-
-        ClipMidiData data = ClipMidiData.getRootAsClipMidiData(builder.dataBuffer());
+        ClipMidiData data = ClipMidiData.newBuilder()
+                .setTrackIndex(0)
+                .setResolution(480)
+                .build();
         model.loadFromBackendData(data);
         assertTrue(model.notes.isEmpty());
     }

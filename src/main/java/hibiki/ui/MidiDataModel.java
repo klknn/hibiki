@@ -1,8 +1,8 @@
 package hibiki.ui;
 
 import hibiki.BackendManager;
-import hibiki.ipc.ClipMidiData;
-import hibiki.ipc.MidiEventData;
+import hibiki.pb.notifications.ClipMidiData;
+import hibiki.pb.core.MidiEvent;
 
 import javax.sound.midi.*;
 import javax.swing.*;
@@ -22,8 +22,8 @@ class MidiDataModel {
         long startTick;
         long durationTicks;
         int velocity;
-        MidiEvent onEvent;
-        MidiEvent offEvent;
+        javax.sound.midi.MidiEvent onEvent;
+        javax.sound.midi.MidiEvent offEvent;
 
         Note(int pitch, long startTick, long durationTicks, int velocity) {
             this.pitch = pitch;
@@ -89,7 +89,7 @@ class MidiDataModel {
         Note[] pendingNotes = new Note[128];
 
         for (int i = 0; i < track.size(); i++) {
-            MidiEvent event = track.get(i);
+            javax.sound.midi.MidiEvent event = track.get(i);
             MidiMessage msg = event.getMessage();
 
             if (msg instanceof ShortMessage) {
@@ -140,16 +140,16 @@ class MidiDataModel {
     /** Load notes from backend IPC data (replaces local notes). */
     void loadFromBackendData(ClipMidiData data) {
         notes.clear();
-        // Each MidiEventData is a complete note (tick, pitch, durationTicks, velocity)
-        for (int i = 0; i < data.eventsLength(); i++) {
-            MidiEventData ev = data.events(i);
-            notes.add(new Note(ev.pitch(), ev.tick(), ev.durationTicks(), ev.velocity()));
+        // Each MidiEvent is a complete note (tick, pitch, durationTicks, velocity)
+        for (int i = 0; i < data.getEventsCount(); i++) {
+            hibiki.pb.core.MidiEvent ev = data.getEvents(i);
+            notes.add(new Note(ev.getPitch(), ev.getTick(), ev.getDurationTicks(), ev.getVelocity()));
         }
 
         // Update sequence resolution if provided
-        if (data.resolution() > 0) {
+        if (data.getResolution() > 0) {
             try {
-                sequence = new Sequence(Sequence.PPQ, data.resolution());
+                sequence = new Sequence(Sequence.PPQ, data.getResolution());
                 midiTrack = sequence.createTrack();
             } catch (Exception e) {
                 e.printStackTrace();

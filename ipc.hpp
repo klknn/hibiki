@@ -27,5 +27,8 @@ void sendTrackInfo(int track_idx, const std::string& name);
 
 // Send clip MIDI data to GUI. Use slot_idx >= 0 for session clips, clip_idx >= 0 for timeline clips
 void sendClipMidiData(int track_idx, int slot_idx, int clip_idx, int resolution, const std::vector<hibiki::pb::core::MidiEvent>& notes);
+
+// Send live parameter value change to GUI
+void sendParamValueChange(int track_idx, int plugin_idx, uint32_t param_id, float value);
  
 } // namespace hibiki

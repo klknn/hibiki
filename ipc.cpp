@@ -186,4 +186,14 @@ void sendClipMidiData(int track_idx, int slot_idx, int clip_idx, int resolution,
     sendProto(notification);
 }
 
+void sendParamValueChange(int track_idx, int plugin_idx, uint32_t param_id, float value) {
+    hibiki::pb::notifications::Notification notification;
+    auto* pvc = notification.mutable_param_value_change();
+    pvc->set_track_index(track_idx);
+    pvc->set_plugin_index(plugin_idx);
+    pvc->set_param_id(param_id);
+    pvc->set_value(value);
+    sendProto(notification);
+}
+
 } // namespace hibiki

@@ -142,6 +142,14 @@ message AutomationLanesData {
   repeated AutomationLaneInfo lanes = 2;
 }
 
+// Live parameter value change (from automation playback or native plugin GUI).
+message ParamValueChange {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+  uint32 param_id = 3;
+  float value = 4;
+}
+
 // ─── Lifecycle ──────────────────────────────────────────────────────
 
 // Project cleared (before load or undo/redo).
@@ -189,6 +197,7 @@ message Notification {
     TrackInfo track_info = 10;
     ClipMidiData clip_midi_data = 11;
     AutomationLanesData automation_lanes_data = 12;
+    ParamValueChange param_value_change = 18;
 
     // Lifecycle
     ClearProject clear_project = 13;

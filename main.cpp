@@ -538,6 +538,7 @@ void run_ipc_loop(ProjectState& state) {
                         auto& plugins = state.tracks[tidx]->plugins;
                         if (pidx >= 0 && pidx < (int)plugins.size()) {
                             plugins[pidx]->setParameterValue(param_id, value);
+                            hibiki::sendParamValueChange(tidx, pidx, param_id, value);
                         }
                     }
                     break;

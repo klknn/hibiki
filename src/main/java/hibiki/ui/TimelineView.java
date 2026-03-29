@@ -93,6 +93,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     // GridMode is shared - see GridMode.java
 
     private GridMode gridMode = GridMode.AUTO;
+
+    GridMode getGridMode() {
+        return gridMode;
+    }
     volatile float bpm = 120.0f;
     volatile boolean isPlaying = false;
 
@@ -182,6 +186,11 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 if (e.getY() >= scaleTimeRuler) {
                     int trackIdx = getTrackIdxAtY(e.getY() - scaleTimeRuler);
                     if (trackIdx >= 0 && trackIdx < tracks.size()) {
+                        // Right-click: show track header context menu
+                        if (SwingUtilities.isRightMouseButton(e)) {
+                            showTrackHeaderContextMenu(trackIdx, e);
+                            return;
+                        }
                         // Check if click is in the automation toggle area
                         TrackTimeline track = tracks.get(trackIdx);
                         int trackTopY = Theme.getInstance().scale(getTrackY(trackIdx));
@@ -497,6 +506,64 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         }
 
         menu.show(contentPanel, x, y);
+    }
+
+    /** Show context menu when right-clicking a track header */
+    private void showTrackHeaderContextMenu(int trackIdx, MouseEvent e) {
+        JPopupMenu menu = new JPopupMenu();
+        TrackTimeline track = tracks.get(trackIdx);
+
+        // Rename track
+        JMenuItem renameItem = new JMenuItem("Rename Track");
+        renameItem.addActionListener(ev -> renameTrack(trackIdx));
+        menu.add(renameItem);
+
+        menu.addSeparator();
+
+        // Add Automation Lane (using last touched param if available)
+        PluginPane.LastTouchedParam ltp = PluginPane.getLastTouchedParam();
+        if (ltp != null && ltp.trackIndex == trackIdx) {
+            JMenuItem autoItem = new JMenuItem("Add Automation: " + ltp.paramName);
+            autoItem.addActionListener(ev -> {
+                BackendManager.getInstance().sendRequest(Request.newBuilder()
+                        .setAutomation(AutomationCmd.newBuilder()
+                                .setAction(AutomationCmd.Action.ACTION_ADD_LANE)
+                                .setTarget(EntityRef.newBuilder()
+                                        .setTrackIndex(trackIdx)
+                                        .setPluginIndex(ltp.pluginIndex))
+                                .setParamId((int) ltp.paramId))
+                        .build());
+            });
+            menu.add(autoItem);
+        }
+        if (track.pluginName != null) {
+            JMenuItem addAutoItem = new JMenuItem("Add Automation Lane...");
+            addAutoItem.addActionListener(ev -> showAddAutomationDialog(trackIdx));
+            menu.add(addAutoItem);
+        }
+
+        // Remove existing automation lanes
+        if (!track.automationLanes.isEmpty()) {
+            JMenu removeMenu = new JMenu("Remove Automation Lane");
+            for (int j = 0; j < track.automationLanes.size(); j++) {
+                AutomationLaneData lane = track.automationLanes.get(j);
+                final int laneIdx = j;
+                JMenuItem removeItem = new JMenuItem(lane.paramName);
+                removeItem.addActionListener(ev -> {
+                    BackendManager.getInstance().sendRequest(Request.newBuilder()
+                            .setAutomation(AutomationCmd.newBuilder()
+                                    .setAction(AutomationCmd.Action.ACTION_REMOVE_LANE)
+                                    .setTarget(EntityRef.newBuilder()
+                                            .setTrackIndex(trackIdx)
+                                            .setLaneIndex(laneIdx)))
+                            .build());
+                });
+                removeMenu.add(removeItem);
+            }
+            menu.add(removeMenu);
+        }
+
+        menu.show(rowHeader, e.getX(), e.getY());
     }
 
     /**

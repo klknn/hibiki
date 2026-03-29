@@ -84,6 +84,12 @@ public class PluginPane extends JPanel {
                     rebuildDeviceChain();
                     break;
                 }
+                case PARAM_VALUE_CHANGE: {
+                    var pvc = notification.getParamValueChange();
+                    handleParamValueChange(pvc.getTrackIndex(), pvc.getPluginIndex(),
+                            pvc.getParamId(), pvc.getValue());
+                    break;
+                }
                 default:
                     break;
             }
@@ -95,6 +101,19 @@ public class PluginPane extends JPanel {
             trackDevicePanels.clear();
             deviceChainContent.removeAll();
             rebuildDeviceChain();
+        });
+    }
+
+    /** Handle a live param value change notification from the backend. */
+    private void handleParamValueChange(int trackIdx, int pluginIdx, int paramId, float value) {
+        SwingUtilities.invokeLater(() -> {
+            Map<Integer, DevicePanel> panels = trackDevicePanels.get(trackIdx);
+            if (panels == null)
+                return;
+            DevicePanel dp = panels.get(pluginIdx);
+            if (dp == null)
+                return;
+            dp.updateSlider(paramId, value);
         });
     }
 
@@ -186,6 +205,8 @@ public class PluginPane extends JPanel {
         private final JPanel paramListPanel;
         private final JTextField searchField;
         private final List<ParamPanel> allParams = new ArrayList<>();
+        private final Map<Integer, JSlider> paramSliders = new TreeMap<>();
+        private boolean updatingFromBackend = false;
 
         DevicePanel(int trackIndex, int pluginIndex, String pluginName, boolean isInstrument) {
             this.trackIndex = trackIndex;
@@ -290,11 +311,23 @@ public class PluginPane extends JPanel {
         void setParams(ParamList paramList) {
             paramListPanel.removeAll();
             allParams.clear();
+            paramSliders.clear();
             for (int i = 0; i < paramList.getParamsCount(); i++) {
-                ParamPanel pp = new ParamPanel(trackIndex, pluginIndex, paramList.getParams(i));
+                ParamInfo info = paramList.getParams(i);
+                ParamPanel pp = new ParamPanel(trackIndex, pluginIndex, info);
                 allParams.add(pp);
+                paramSliders.put(info.getId(), pp.slider);
             }
             filterParams();
+        }
+
+        void updateSlider(int paramId, float value) {
+            JSlider slider = paramSliders.get(paramId);
+            if (slider != null) {
+                updatingFromBackend = true;
+                slider.setValue((int) (value * 1000));
+                updatingFromBackend = false;
+            }
         }
 
         private void filterParams() {
@@ -331,9 +364,12 @@ public class PluginPane extends JPanel {
 
     private class ParamPanel extends JPanel {
         final String name;
+        final int paramId;
+        final JSlider slider;
 
         ParamPanel(int trackIndex, int pluginIndex, ParamInfo info) {
             this.name = info.getName();
+            this.paramId = info.getId();
             setLayout(new BorderLayout());
             setBackground(Theme.getInstance().BG_MEDIUM);
             setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
@@ -344,16 +380,30 @@ public class PluginPane extends JPanel {
             label.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(10.0f)));
             add(label, BorderLayout.NORTH);
 
-            JSlider slider = new JSlider(0, 1000, (int) (info.getDefaultValue() * 1000));
+            slider = new JSlider(0, 1000, (int) (info.getDefaultValue() * 1000));
             slider.setBackground(Theme.getInstance().BG_MEDIUM);
             slider.setPreferredSize(new Dimension(Theme.getInstance().scale(150), Theme.getInstance().scale(20)));
             slider.addChangeListener(e -> {
                 if (!slider.getValueIsAdjusting()) {
+                    // Skip sending if this update came from the backend
+                    DevicePanel parent = findParentDevicePanel();
+                    if (parent != null && parent.updatingFromBackend)
+                        return;
                     float val = slider.getValue() / 1000.0f;
                     sendParamChange(trackIndex, pluginIndex, info.getId(), val);
                 }
             });
             add(slider, BorderLayout.CENTER);
+        }
+
+        private DevicePanel findParentDevicePanel() {
+            java.awt.Container c = getParent();
+            while (c != null) {
+                if (c instanceof DevicePanel)
+                    return (DevicePanel) c;
+                c = c.getParent();
+            }
+            return null;
         }
 
         private void sendParamChange(int trackIndex, int pluginIndex, int paramId, float value) {

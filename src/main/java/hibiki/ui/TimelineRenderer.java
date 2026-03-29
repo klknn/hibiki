@@ -255,6 +255,27 @@ class TimelineRenderer {
             g2.setColor(Theme.getInstance().ACCENT_ORANGE);
             g2.drawOval(px - 3, py - 3, 6, 6);
         }
+
+        // Draw tension handles (draggable midpoint circles)
+        if (points.size() >= 2) {
+            for (int i = 0; i < points.size() - 1; i++) {
+                AutomationEditor.AutoPoint p0 = points.get(i);
+                AutomationEditor.AutoPoint p1 = points.get(i + 1);
+                float x0sec = p0.timeBeats * secPerBeat;
+                float x1sec = p1.timeBeats * secPerBeat;
+                int midPx = xOff + (int) (((x0sec + x1sec) / 2f) * pps);
+                // Interpolate value at midpoint using tension
+                float t = 0.5f;
+                float exponent = (float) Math.pow(2.0, p0.tension);
+                float curvedT = (float) Math.pow(t, exponent);
+                float midVal = p0.value + (p1.value - p0.value) * curvedT;
+                int midPy = drawY + drawH - (int) (midVal * drawH);
+                g2.setColor(new Color(0, 200, 220, 180)); // cyan/teal
+                g2.fillOval(midPx - 3, midPy - 3, 6, 6);
+                g2.setColor(new Color(0, 220, 240));
+                g2.drawOval(midPx - 3, midPy - 3, 6, 6);
+            }
+        }
     }
 
     /** Find which track index corresponds to a given Y offset from time ruler. */

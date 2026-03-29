@@ -30,6 +30,10 @@ class TimelineMouseHandler {
     private int autoLaneIdx = -1;
     private int autoDragPointIdx = -1;
 
+    // Tension handle drag state (midpoint between two consecutive points)
+    private boolean draggingTensionHandle = false;
+    private int tensionHandleSegmentIdx = -1; // index of the FIRST point of the segment
+
     TimelineMouseHandler(TimelineView view) {
         this.view = view;
     }
@@ -100,6 +104,18 @@ class TimelineMouseHandler {
         return timeSec / secondsPerBeat;
     }
 
+    /** Snap automation beats to grid (unless shift is held). */
+    private float snapAutoBeats(float beats, boolean shiftHeld) {
+        if (shiftHeld)
+            return beats; // shift disables snap
+        float secondsPerBeat = 60.0f / view.bpm;
+        float gridSeconds = view.getGridSnapSeconds(view.getGridMode(), secondsPerBeat);
+        if (gridSeconds <= 0)
+            return beats;
+        float gridBeats = gridSeconds / secondsPerBeat;
+        return Math.round(beats / gridBeats) * gridBeats;
+    }
+
     /** Convert automation beats to screen X. */
     private float autoBeatsToX(float beats) {
         float secondsPerBeat = 60.0f / view.bpm;
@@ -133,6 +149,35 @@ class TimelineMouseHandler {
             float px = autoBeatsToX(p.timeBeats);
             float py = laneTopY + pad + drawH - (p.value * drawH);
             if (Math.abs(mx - px) < threshold && Math.abs(my - py) < threshold) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Find a tension handle (midpoint circle between two consecutive points).
+     * Returns the index of the FIRST point of the segment, or -1.
+     */
+    private int findTensionHandleAt(List<AutomationEditor.AutoPoint> points, int mx, int my,
+            int laneTopY, int laneHeight, int threshold) {
+        if (points.size() < 2)
+            return -1;
+        int pad = 4;
+        int drawH = laneHeight - 2 * pad;
+        for (int i = 0; i < points.size() - 1; i++) {
+            AutomationEditor.AutoPoint p0 = points.get(i);
+            AutomationEditor.AutoPoint p1 = points.get(i + 1);
+            float mx0 = autoBeatsToX(p0.timeBeats);
+            float mx1 = autoBeatsToX(p1.timeBeats);
+            float midX = (mx0 + mx1) / 2f;
+            // Interpolate value at midpoint using current tension
+            float t = 0.5f;
+            float exponent = (float) Math.pow(2.0, p0.tension);
+            float curvedT = (float) Math.pow(t, exponent);
+            float midVal = p0.value + (p1.value - p0.value) * curvedT;
+            float midY = laneTopY + pad + drawH - midVal * drawH;
+            if (Math.abs(mx - midX) < threshold && Math.abs(my - midY) < threshold) {
                 return i;
             }
         }
@@ -228,15 +273,39 @@ class TimelineMouseHandler {
         int laneTopY = getAutoLaneTopY(trackIdx, laneIdx);
 
         if (SwingUtilities.isRightMouseButton(e)) {
-            // Right-click: delete point or show tension menu
+            // Right-click: delete point, adjust tension, or open editor
             int idx = findAutoPointAt(lane.points, e.getX(), e.getY(), laneTopY, scaleAutoLane, 8);
             if (idx >= 0) {
                 showAutoPointContextMenu(e, trackIdx, laneIdx, idx);
+            } else {
+                // Show lane context menu with "Edit Automation..."
+                JPopupMenu menu = new JPopupMenu();
+                JMenuItem editItem = new JMenuItem("Edit Automation...");
+                editItem.addActionListener(ev -> {
+                    Frame frame = (Frame) SwingUtilities.getWindowAncestor(view.contentPanel);
+                    AutomationEditorDialog dialog = new AutomationEditorDialog(
+                            frame, trackIdx, laneIdx, lane.paramName, lane.points, view.bpm);
+                    dialog.setVisible(true);
+                });
+                menu.add(editItem);
+                menu.show(view.contentPanel, e.getX(), e.getY());
             }
             return;
         }
 
-        // Left-click: drag existing point or add new point
+        // Left-click: drag tension handle, existing point, or add new point
+        int handleIdx = findTensionHandleAt(lane.points, e.getX(), e.getY(), laneTopY, scaleAutoLane, 8);
+        if (handleIdx >= 0) {
+            // Start dragging a tension handle
+            editingAutomation = true;
+            draggingTensionHandle = true;
+            tensionHandleSegmentIdx = handleIdx;
+            autoTrackIdx = trackIdx;
+            autoLaneIdx = laneIdx;
+            autoDragPointIdx = -1;
+            return;
+        }
+
         int idx = findAutoPointAt(lane.points, e.getX(), e.getY(), laneTopY, scaleAutoLane, 8);
         if (idx >= 0) {
             // Start dragging existing point
@@ -245,8 +314,8 @@ class TimelineMouseHandler {
             autoLaneIdx = laneIdx;
             autoDragPointIdx = idx;
         } else {
-            // Add new point
-            float beat = Math.max(0, xToAutoBeats(e.getX()));
+            // Add new point (snapped to grid)
+            float beat = Math.max(0, snapAutoBeats(xToAutoBeats(e.getX()), e.isShiftDown()));
             float val = yToAutoValue(e.getY(), laneTopY, scaleAutoLane);
             AutomationEditor.AutoPoint np = new AutomationEditor.AutoPoint(beat, val, 0.0f);
             lane.points.add(np);
@@ -308,6 +377,8 @@ class TimelineMouseHandler {
                 view.contentPanel.repaint();
             }
             editingAutomation = false;
+            draggingTensionHandle = false;
+            tensionHandleSegmentIdx = -1;
             autoTrackIdx = -1;
             autoLaneIdx = -1;
             autoDragPointIdx = -1;
@@ -431,6 +502,27 @@ class TimelineMouseHandler {
     // ─── Mouse drag ─────────────────────────────────────────────────────
 
     private void handleMouseDragged(MouseEvent e) {
+        // Automation tension handle drag
+        if (editingAutomation && draggingTensionHandle && tensionHandleSegmentIdx >= 0) {
+            TimelineView.TrackTimeline track = view.tracks.get(autoTrackIdx);
+            TimelineView.AutomationLaneData lane = track.automationLanes.get(autoLaneIdx);
+            if (tensionHandleSegmentIdx < lane.points.size() - 1) {
+                int scaleAutoLane = Theme.getInstance().scale(view.getAutomationLaneHeight());
+                int laneTopY = getAutoLaneTopY(autoTrackIdx, autoLaneIdx);
+                AutomationEditor.AutoPoint p0 = lane.points.get(tensionHandleSegmentIdx);
+                AutomationEditor.AutoPoint p1 = lane.points.get(tensionHandleSegmentIdx + 1);
+                // Map vertical drag to tension: pull up = negative tension (ease-out), pull
+                // down = positive (ease-in)
+                float midVal = (p0.value + p1.value) / 2f;
+                float dragVal = yToAutoValue(e.getY(), laneTopY, scaleAutoLane);
+                float diff = midVal - dragVal; // positive = dragged below midpoint
+                float newTension = Math.max(-1f, Math.min(1f, diff * 4f));
+                p0.tension = newTension;
+                view.contentPanel.repaint();
+            }
+            return;
+        }
+
         // Automation point drag
         if (editingAutomation && autoDragPointIdx >= 0) {
             TimelineView.TrackTimeline track = view.tracks.get(autoTrackIdx);
@@ -439,7 +531,7 @@ class TimelineMouseHandler {
                 int scaleAutoLane = Theme.getInstance().scale(view.getAutomationLaneHeight());
                 int laneTopY = getAutoLaneTopY(autoTrackIdx, autoLaneIdx);
                 AutomationEditor.AutoPoint p = lane.points.get(autoDragPointIdx);
-                p.timeBeats = Math.max(0, xToAutoBeats(e.getX()));
+                p.timeBeats = Math.max(0, snapAutoBeats(xToAutoBeats(e.getX()), e.isShiftDown()));
                 p.value = yToAutoValue(e.getY(), laneTopY, scaleAutoLane);
                 view.contentPanel.repaint();
             }

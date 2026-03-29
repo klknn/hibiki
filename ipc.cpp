@@ -5,7 +5,9 @@
 #include <queue>
 #include <thread>
 #include <condition_variable>
-#include "hibiki.pb.h"
+#include "pb/core.pb.h"
+#include "pb/commands.pb.h"
+#include "pb/notifications.pb.h"
 
 namespace hibiki {
 
@@ -64,14 +66,14 @@ void sendNotification(const uint8_t* buf, size_t size) {
 }
 
 // Helper to serialize a Notification and send it
-static void sendProto(const hibiki::pb::Notification& notification) {
+static void sendProto(const hibiki::pb::notifications::Notification& notification) {
     std::string data;
     notification.SerializeToString(&data);
     sendNotification(reinterpret_cast<const uint8_t*>(data.data()), data.size());
 }
 
 void sendAck(const char* cmd_type, bool success) {
-    hibiki::pb::Notification notification;
+    hibiki::pb::notifications::Notification notification;
     auto* ack = notification.mutable_acknowledge();
     ack->set_command_type(cmd_type);
     ack->set_success(success);
@@ -79,7 +81,7 @@ void sendAck(const char* cmd_type, bool success) {
 }
 
 void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name, bool is_instrument, const std::vector<VstParamInfo>& params) {
-    hibiki::pb::Notification notification;
+    hibiki::pb::notifications::Notification notification;
     auto* list = notification.mutable_param_list();
     list->set_track_index(track_idx);
     list->set_plugin_index(plugin_idx);
@@ -95,13 +97,13 @@ void sendParamList(int track_idx, int plugin_idx, const std::string& plugin_name
 }
 
 void sendLog(const std::string& msg) {
-    hibiki::pb::Notification notification;
+    hibiki::pb::notifications::Notification notification;
     notification.mutable_log()->set_message(msg);
     sendProto(notification);
 }
 
 void sendClipInfo(int track_idx, int slot_index, const std::string& name, const std::string& path) {
-    hibiki::pb::Notification notification;
+    hibiki::pb::notifications::Notification notification;
     auto* ci = notification.mutable_clip_info();
     ci->set_track_index(track_idx);
     ci->set_slot_index(slot_index);
@@ -111,13 +113,13 @@ void sendClipInfo(int track_idx, int slot_index, const std::string& name, const 
 }
 
 void sendClearProject() {
-    hibiki::pb::Notification notification;
+    hibiki::pb::notifications::Notification notification;
     notification.mutable_clear_project(); // Just set the oneof variant
     sendProto(notification);
 }
 
 void sendPluginList(const std::string& path, const std::vector<PluginDescription>& plugins) {
-    hibiki::pb::Notification notification;
+    hibiki::pb::notifications::Notification notification;
     auto* list = notification.mutable_plugin_list();
     list->set_path(path);
     for (const auto& p : plugins) {
@@ -130,7 +132,7 @@ void sendPluginList(const std::string& path, const std::vector<PluginDescription
 }
 
 void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name, const std::string& path, float start_time, float duration, const std::vector<float>& waveform) {
-    hibiki::pb::Notification notification;
+    hibiki::pb::notifications::Notification notification;
     auto* tci = notification.mutable_timeline_clip_info();
     tci->set_track_index(track_idx);
     tci->set_clip_index(clip_idx);
@@ -145,16 +147,18 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name, 
 }
 
 void sendPlayheadInfo(float position_sec, float bpm, bool is_playing) {
-    hibiki::pb::Notification notification;
+    hibiki::pb::notifications::Notification notification;
     auto* phi = notification.mutable_playhead_info();
     phi->set_position_sec(position_sec);
     phi->set_bpm(bpm);
-    phi->set_is_playing(is_playing);
+    phi->set_transport_state(is_playing
+        ? hibiki::pb::core::TRANSPORT_STATE_PLAYING
+        : hibiki::pb::core::TRANSPORT_STATE_STOPPED);
     sendProto(notification);
 }
 
 void sendBounceFinished(const std::string& path, bool success) {
-    hibiki::pb::Notification notification;
+    hibiki::pb::notifications::Notification notification;
     auto* bf = notification.mutable_bounce_finished();
     bf->set_path(path);
     bf->set_success(success);
@@ -162,15 +166,15 @@ void sendBounceFinished(const std::string& path, bool success) {
 }
 
 void sendTrackInfo(int track_idx, const std::string& name) {
-    hibiki::pb::Notification notification;
+    hibiki::pb::notifications::Notification notification;
     auto* ti = notification.mutable_track_info();
     ti->set_track_index(track_idx);
     ti->set_name(name);
     sendProto(notification);
 }
 
-void sendClipMidiData(int track_idx, int slot_idx, int clip_idx, int resolution, const std::vector<hibiki::pb::MidiEvent>& notes) {
-    hibiki::pb::Notification notification;
+void sendClipMidiData(int track_idx, int slot_idx, int clip_idx, int resolution, const std::vector<hibiki::pb::core::MidiEvent>& notes) {
+    hibiki::pb::notifications::Notification notification;
     auto* cmd = notification.mutable_clip_midi_data();
     cmd->set_track_index(track_idx);
     cmd->set_slot_index(slot_idx);

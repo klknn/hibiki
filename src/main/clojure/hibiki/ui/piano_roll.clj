@@ -9,7 +9,7 @@
                            ActionListener WindowAdapter WindowEvent KeyEvent]
            [javax.sound.midi MidiSystem Sequence Track MidiEvent ShortMessage]
            [java.io File]
-           [hibiki.pb HibikiProto HibikiProto$Notification HibikiProto$Notification$ResponseCase]))
+           [hibiki.pb.notifications Notification Notification$ResponseCase]))
 
 (set! *warn-on-reflection* true)
 
@@ -142,9 +142,9 @@
           (.dispose dlg))))
     (let [listener (reify java.util.function.Consumer
                      (accept [_ notif]
-                       (let [^HibikiProto$Notification n notif]
+                       (let [^Notification n notif]
                          (case (.getResponseCase n)
-                           HibikiProto$Notification$ResponseCase/PLAYHEAD_INFO
+                           Notification$ResponseCase/PLAYHEAD_INFO
                            (let [phi (.getPlayheadInfo n)]
                              (reset! bpm-a (.getBpm phi))
                              (when (.getIsPlaying phi)
@@ -152,7 +152,7 @@
                                      tps (/ res (/ 60.0 (.getBpm phi)))]
                                  (reset! playhead (long (* sec tps)))
                                  (SwingUtilities/invokeLater #(.repaint gp)))))
-                           HibikiProto$Notification$ResponseCase/CLIP_MIDI_DATA
+                           Notification$ResponseCase/CLIP_MIDI_DATA
                            (let [cmd (.getClipMidiData n)]
                              (when (and (= (.getTrackIndex cmd) track-idx)
                                         (or (= (.getSlotIndex cmd) slot-idx)

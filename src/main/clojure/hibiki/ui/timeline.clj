@@ -11,7 +11,8 @@
                      RenderingHints BasicStroke Rectangle Cursor]
            [java.awt.event MouseAdapter MouseEvent MouseMotionAdapter
                            ActionListener ComponentAdapter]
-           [hibiki.pb HibikiProto HibikiProto$Request HibikiProto$Notification HibikiProto$Notification$ResponseCase HibikiProto$AddTimelineClip HibikiProto$RemoveTimelineClip HibikiProto$LoadClip]))
+           [hibiki.pb.commands Request AddTimelineClip RemoveTimelineClip LoadClip]
+           [hibiki.pb.notifications Notification Notification$ResponseCase]))
 
 (set! *warn-on-reflection* true)
 
@@ -88,8 +89,8 @@
   "Send AddTimelineClip to backend."
   [^hibiki.BackendManager backend track-idx path start-time duration-beats]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setAddTimelineClip (-> (HibikiProto$AddTimelineClip/newBuilder)
+    (-> (Request/newBuilder)
+        (.setAddTimelineClip (-> (AddTimelineClip/newBuilder)
                                  (.setTrackIndex (int track-idx))
                                  (.setPath (or path ""))
                                  (.setStartTime (float start-time))
@@ -100,8 +101,8 @@
   "Send RemoveTimelineClip to backend."
   [^hibiki.BackendManager backend ^long track-idx ^long clip-idx]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setRemoveTimelineClip (-> (HibikiProto$RemoveTimelineClip/newBuilder)
+    (-> (Request/newBuilder)
+        (.setRemoveTimelineClip (-> (RemoveTimelineClip/newBuilder)
                                     (.setTrackIndex (int track-idx))
                                     (.setClipIndex (int clip-idx))))
         (.build))))
@@ -110,8 +111,8 @@
   "Send LoadClip to backend for timeline."
   [^hibiki.BackendManager backend ^long track-idx ^String path ^double start-time]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setLoadClip (-> (HibikiProto$LoadClip/newBuilder)
+    (-> (Request/newBuilder)
+        (.setLoadClip (-> (LoadClip/newBuilder)
                           (.setTrackIndex (int track-idx))
                           (.setSlotIndex (int -1))
                           (.setPath path)))
@@ -443,9 +444,9 @@
     (.addNotificationListener backend
       (reify java.util.function.Consumer
         (accept [_ notif]
-          (let [^HibikiProto$Notification notification notif]
+          (let [^Notification notification notif]
           (case (.getResponseCase notification)
-            HibikiProto$Notification$ResponseCase/PLAYHEAD_INFO
+            Notification$ResponseCase/PLAYHEAD_INFO
             (let [phi (.getPlayheadInfo notification)]
               (swap! tl-state assoc
                      :playhead-sec (.getPositionSec phi)
@@ -453,7 +454,7 @@
                      :is-playing (.getIsPlaying phi))
               (SwingUtilities/invokeLater #(.repaint grid-panel)))
 
-            HibikiProto$Notification$ResponseCase/TIMELINE_CLIP_INFO
+            Notification$ResponseCase/TIMELINE_CLIP_INFO
             (let [ci (.getTimelineClipInfo notification)
                   ti (.getTrackIndex ci)]
               (when (and (>= ti 0) (< ti 4))

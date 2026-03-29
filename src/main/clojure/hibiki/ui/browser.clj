@@ -9,7 +9,8 @@
            [java.awt.event MouseAdapter MouseEvent]
            [java.io File]
            [hibiki BackendManager]
-           [hibiki.pb HibikiProto HibikiProto$Request HibikiProto$Notification HibikiProto$Notification$ResponseCase HibikiProto$LoadPlugin HibikiProto$LoadClip HibikiProto$ListPlugins]))
+           [hibiki.pb.commands Request LoadPlugin LoadClip ListPlugins]
+           [hibiki.pb.notifications Notification Notification$ResponseCase]))
 
 (set! *warn-on-reflection* true)
 
@@ -36,8 +37,8 @@
   "Send LoadPlugin IPC command."
   [^BackendManager backend ^String path ^long plugin-index]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setLoadPlugin (-> (HibikiProto$LoadPlugin/newBuilder)
+    (-> (Request/newBuilder)
+        (.setLoadPlugin (-> (LoadPlugin/newBuilder)
                             (.setTrackIndex (int (session/get-selected-track)))
                             (.setPath path)
                             (.setPluginIndex (int plugin-index))))
@@ -47,8 +48,8 @@
   "Send LoadClip IPC command."
   [^BackendManager backend ^String path loop?]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setLoadClip (-> (HibikiProto$LoadClip/newBuilder)
+    (-> (Request/newBuilder)
+        (.setLoadClip (-> (LoadClip/newBuilder)
                           (.setTrackIndex (int (session/get-selected-track)))
                           (.setSlotIndex (int 0))
                           (.setPath path)
@@ -59,8 +60,8 @@
   "Send ListPlugins IPC command to discover plugins in a VST3 bundle."
   [^BackendManager backend ^String path]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setListPlugins (-> (HibikiProto$ListPlugins/newBuilder)
+    (-> (Request/newBuilder)
+        (.setListPlugins (-> (ListPlugins/newBuilder)
                              (.setPath path)))
         (.build))))
 
@@ -206,9 +207,9 @@
     (.addNotificationListener backend
       (reify java.util.function.Consumer
         (accept [_ notif]
-          (let [^HibikiProto$Notification notif notif]
+          (let [^Notification notif notif]
             (when (= (.getResponseCase notif)
-                     HibikiProto$Notification$ResponseCase/PLUGIN_LIST)
+                     Notification$ResponseCase/PLUGIN_LIST)
               (let [pl (.getPluginList notif)
                     ^String path (.getPath pl)
                     plugins (vec (for [i (range (.getPluginsCount pl))]

@@ -1,0 +1,143 @@
+// Core data entities for Hibiki DAW.
+//
+// These messages define the canonical shape of each domain object.
+// They are the single source of truth — used for IPC responses,
+// project persistence (save/load), and state synchronization.
+//
+// Other proto files import these types:
+//   pb/commands.proto      — GUI→Engine requests
+//   pb/notifications.proto — Engine→GUI responses
+
+syntax = "proto3";
+
+package hibiki.pb.core;
+
+option java_package = "hibiki.pb.core";
+option java_outer_classname = "CoreProto";
+option java_multiple_files = true;
+
+// A single control point on an automation curve.
+// Points are ordered by time_beats ascending within a lane.
+// The engine interpolates between consecutive points using
+// a power-curve controlled by `tension`.
+message AutomationPoint {
+  float time_beats = 1; // Position in beats (quarter notes from song start)
+  float value = 2;      // Normalized parameter value, clamped to [0.0, 1.0]
+  float tension = 3;    // Curve shape between this point and the next:
+                         //   0 = linear
+                         //  >0 = ease-in  (slow departure, fast arrival)
+                         //  <0 = ease-out (fast departure, slow arrival)
+}
+
+// A single MIDI note-on/note-off event pair.
+// Tick values are absolute positions relative to clip start,
+// using the resolution defined by the containing Clip message.
+message MidiEvent {
+  int64 tick = 1;            // Absolute tick position (PPQ-based)
+  uint32 pitch = 2;          // MIDI note number [0, 127]
+  int64 duration_ticks = 3;  // Note length in ticks
+  uint32 velocity = 4;       // Note-on velocity [0, 127]
+}
+
+// An automation lane binding a plugin parameter to a curve.
+message AutomationLane {
+  uint32 lane_id = 1;
+  uint32 plugin_index = 2;
+  uint32 param_id = 3;
+  string param_name = 4; // Cached display name from the plugin
+  repeated AutomationPoint points = 5;
+}
+
+// Plugin parameter metadata.
+message ParamInfo {
+  uint32 id = 1;
+  string name = 2;
+  float default_value = 3;
+  float current_value = 4; // Current live value [0.0, 1.0]
+}
+
+// A loaded VST3 plugin instance on a track.
+message Plugin {
+  uint32 plugin_index = 1;     // Position in the track's plugin chain
+  string path = 2;             // Filesystem path to .vst3 bundle
+  uint32 sub_plugin_index = 3; // Index within multi-plugin bundle
+  string name = 4;
+  string vendor = 5;
+  bool is_instrument = 6;      // true = VSTi (generates audio)
+  repeated ParamInfo params = 7;
+}
+
+// Media type discriminator.
+enum ClipType {
+  CLIP_TYPE_UNSPECIFIED = 0;
+  CLIP_TYPE_MIDI = 1;
+  CLIP_TYPE_AUDIO = 2;
+}
+
+// A media clip (MIDI or audio).
+// Contains both metadata and optionally the full content data.
+message Clip {
+  ClipType type = 1;
+  string path = 2;           // Source file path
+  string name = 3;           // Display name
+  bool is_loop = 4;
+  uint32 resolution = 5;     // MIDI: ticks per quarter note (PPQ)
+  float duration_beats = 6;  // Content length in beats
+  float duration_sec = 7;    // Content length in seconds
+  repeated MidiEvent midi_events = 8;     // Present when type=MIDI (lazy-loaded)
+  repeated float waveform_summary = 9;    // Downsampled peaks for display
+}
+
+// A clip placed on the timeline at a specific position.
+message TimelineClip {
+  uint32 clip_index = 1;     // Index within the track's timeline
+  Clip clip = 2;             // Full clip data
+  float start_time_sec = 3;  // Position on timeline in seconds
+}
+
+// A session slot — one cell in the clip launcher grid.
+message SessionSlot {
+  uint32 slot_index = 1;
+  Clip clip = 2; // Absent if the slot is empty
+}
+
+// A mixer/instrument track containing everything.
+message Track {
+  uint32 track_index = 1;
+  string name = 2;
+  repeated Plugin plugins = 3;
+  repeated SessionSlot session_slots = 4;
+  repeated TimelineClip timeline_clips = 5;
+  repeated AutomationLane automation_lanes = 6;
+  float peak_l = 7; // Live meter: left channel peak [0.0, 1.0]
+  float peak_r = 8; // Live meter: right channel peak [0.0, 1.0]
+}
+
+// Transport state enum. Prefer enum over bool `is_playing`
+// to allow future states (e.g. recording, count-in).
+enum TransportState {
+  TRANSPORT_STATE_UNSPECIFIED = 0;
+  TRANSPORT_STATE_STOPPED = 1;
+  TRANSPORT_STATE_PLAYING = 2;
+}
+
+// Full project state.
+// Used for save/load (.hbk files) AND full-state sync after undo/redo.
+message Project {
+  float bpm = 1;
+  float playhead_sec = 2;
+  TransportState transport_state = 3;
+  repeated Track tracks = 4;
+}
+
+// Generic entity reference — replaces per-message track_index/slot_index.
+// The `target` oneof selects which sub-entity within the track.
+message EntityRef {
+  uint32 track_index = 1;
+  oneof target {
+    uint32 session_slot = 2;
+    uint32 timeline_clip = 3;
+    uint32 plugin_index = 4;
+    uint32 lane_index = 5;
+  }
+}

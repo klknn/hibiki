@@ -8,7 +8,9 @@ import java.util.*;
 import java.util.List;
 
 import hibiki.BackendManager;
-import hibiki.pb.HibikiProto;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
 
 /**
  * AutomationEditor — renders and edits automation curves for a single lane.
@@ -208,16 +210,16 @@ public class AutomationEditor extends JPanel {
 
     // --- Send data to backend ---
     private void sendUpdateToBackend() {
-        HibikiProto.UpdateAutomationLane.Builder cmdBuilder = HibikiProto.UpdateAutomationLane.newBuilder()
+        UpdateAutomationLane.Builder cmdBuilder = UpdateAutomationLane.newBuilder()
                 .setTrackIndex(trackIndex)
                 .setLaneIndex(laneIndex);
         for (AutoPoint p : points) {
-            cmdBuilder.addPoints(HibikiProto.AutomationPoint.newBuilder()
+            cmdBuilder.addPoints(AutomationPoint.newBuilder()
                     .setTimeBeats(p.timeBeats)
                     .setValue(p.value)
                     .setTension(p.tension));
         }
-        BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
+        BackendManager.getInstance().sendRequest(Request.newBuilder()
                 .setUpdateAutomationLane(cmdBuilder)
                 .build());
     }

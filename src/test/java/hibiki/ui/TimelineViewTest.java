@@ -1,7 +1,9 @@
 package hibiki.ui;
 
-import hibiki.pb.HibikiProto;
-import hibiki.pb.HibikiProto.Notification;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
+import hibiki.pb.notifications.Notification;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -16,7 +18,7 @@ public class TimelineViewTest {
         assertEquals(0, view.tracks.get(0).clips.size());
 
         Notification n = Notification.newBuilder()
-                .setTimelineClipInfo(HibikiProto.TimelineClipInfo.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
                         .setTrackIndex(0)
                         .setClipIndex(0)
                         .setName("TestClip")
@@ -115,7 +117,7 @@ public class TimelineViewTest {
 
         // Clip on track 0
         Notification n0 = Notification.newBuilder()
-                .setTimelineClipInfo(HibikiProto.TimelineClipInfo.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
                         .setTrackIndex(0).setClipIndex(0)
                         .setName("Clip0").setPath("a.mid")
                         .setStartTime(0.0f).setDuration(2.0f))
@@ -124,7 +126,7 @@ public class TimelineViewTest {
 
         // Clip on track 2
         Notification n2 = Notification.newBuilder()
-                .setTimelineClipInfo(HibikiProto.TimelineClipInfo.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
                         .setTrackIndex(2).setClipIndex(0)
                         .setName("Clip2").setPath("b.mid")
                         .setStartTime(5.0f).setDuration(3.0f))
@@ -142,7 +144,7 @@ public class TimelineViewTest {
     public void testEmptyClipPathIsMidi() {
         TimelineView view = new TimelineView();
         Notification n = Notification.newBuilder()
-                .setTimelineClipInfo(HibikiProto.TimelineClipInfo.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
                         .setTrackIndex(0).setClipIndex(0)
                         .setName("New Clip").setPath("")
                         .setStartTime(0.0f).setDuration(2.0f))
@@ -297,7 +299,7 @@ public class TimelineViewTest {
         TimelineView view = new TimelineView();
         // Add initial clip
         Notification n1 = Notification.newBuilder()
-                .setTimelineClipInfo(HibikiProto.TimelineClipInfo.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
                         .setTrackIndex(0).setClipIndex(0)
                         .setName("Initial").setPath("test.mid")
                         .setStartTime(1.0f).setDuration(2.0f)
@@ -310,7 +312,7 @@ public class TimelineViewTest {
 
         // Update same clip index 0 on same track
         Notification n2 = Notification.newBuilder()
-                .setTimelineClipInfo(HibikiProto.TimelineClipInfo.newBuilder()
+                .setTimelineClipInfo(TimelineClipInfo.newBuilder()
                         .setTrackIndex(0).setClipIndex(0)
                         .setName("Updated").setPath("test2.mid")
                         .setStartTime(3.0f).setDuration(4.0f)

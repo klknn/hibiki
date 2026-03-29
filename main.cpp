@@ -25,7 +25,9 @@
 #endif
 #include "vst3_host.hpp"
 
-#include "hibiki.pb.h"
+#include "pb/core.pb.h"
+#include "pb/commands.pb.h"
+#include "pb/notifications.pb.h"
 
 #include "ipc.hpp"
 #include "audio_file.hpp"
@@ -245,7 +247,7 @@ void notification_thread(ProjectState& state) {
 
         hibiki::sendPlayheadInfo((float)state.playhead_pos_sec, (float)state.bpm, state.is_timeline_playing);
 
-        hibiki::pb::Notification notification;
+        hibiki::pb::notifications::Notification notification;
         auto* tl = notification.mutable_track_levels();
         {
             std::lock_guard<std::mutex> llock(state.levels_mutex);
@@ -285,14 +287,14 @@ void run_ipc_loop(ProjectState& state) {
             break;
         }
 
-        hibiki::pb::Request request;
+        hibiki::pb::commands::Request request;
         if (!request.ParseFromArray(buffer.get(), msg_size)) {
             std::cerr << "BACKEND ERROR: Failed to parse protobuf request" << std::endl;
             continue;
         }
 
         switch (request.command_case()) {
-        case hibiki::pb::Request::kLoadPlugin: {
+        case hibiki::pb::commands::Request::kLoadPlugin: {
             const auto& cmd = request.load_plugin();
             int tidx = cmd.track_index();
             std::string vpath = cmd.path();
@@ -316,14 +318,14 @@ void run_ipc_loop(ProjectState& state) {
             }
             break;
         }
-        case hibiki::pb::Request::kSaveProject: {
+        case hibiki::pb::commands::Request::kSaveProject: {
             const auto& cmd = request.save_project();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             hibiki::SaveProject(state, cmd.path());
             hibiki::sendAck("SAVE_PROJECT", true);
             break;
         }
-        case hibiki::pb::Request::kLoadProject: {
+        case hibiki::pb::commands::Request::kLoadProject: {
             const auto& cmd = request.load_project();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
@@ -332,7 +334,7 @@ void run_ipc_loop(ProjectState& state) {
             hibiki::sendAck("LOAD_PROJECT", true);
             break;
         }
-        case hibiki::pb::Request::kLoadClip: {
+        case hibiki::pb::commands::Request::kLoadClip: {
             const auto& cmd = request.load_clip();
             int tidx = cmd.track_index();
             int sidx = cmd.slot_index();
@@ -354,7 +356,7 @@ void run_ipc_loop(ProjectState& state) {
             }
             break;
         }
-        case hibiki::pb::Request::kSetClipLoop: {
+        case hibiki::pb::commands::Request::kSetClipLoop: {
             const auto& cmd = request.set_clip_loop();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             history.pushState(CaptureProjectState(state));
@@ -362,11 +364,11 @@ void run_ipc_loop(ProjectState& state) {
             hibiki::sendAck("SET_CLIP_LOOP", true);
             break;
         }
-        case hibiki::pb::Request::kPlay:
+        case hibiki::pb::commands::Request::kPlay:
             state.is_timeline_playing = true;
             hibiki::sendAck("PLAY", true);
             break;
-        case hibiki::pb::Request::kStop: {
+        case hibiki::pb::commands::Request::kStop: {
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             state.is_timeline_playing = false;
             for (auto& pair : state.tracks) {
@@ -375,21 +377,21 @@ void run_ipc_loop(ProjectState& state) {
             hibiki::sendAck("STOP", true);
             break;
         }
-        case hibiki::pb::Request::kPlayClip: {
+        case hibiki::pb::commands::Request::kPlayClip: {
             const auto& cmd = request.play_clip();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             hibiki::GetOrCreateTrack(state, cmd.track_index())->PlayClip(cmd.slot_index());
             hibiki::sendAck("PLAY_CLIP", true);
             break;
         }
-        case hibiki::pb::Request::kStopTrack: {
+        case hibiki::pb::commands::Request::kStopTrack: {
             const auto& cmd = request.stop_track();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             hibiki::GetOrCreateTrack(state, cmd.track_index())->Stop();
             hibiki::sendAck("STOP_TRACK", true);
             break;
         }
-        case hibiki::pb::Request::kRemovePlugin: {
+        case hibiki::pb::commands::Request::kRemovePlugin: {
             const auto& cmd = request.remove_plugin();
             int tidx = cmd.track_index();
             int pidx = cmd.plugin_index();
@@ -399,7 +401,7 @@ void run_ipc_loop(ProjectState& state) {
             hibiki::sendAck("REMOVE_PLUGIN", track->RemovePlugin(pidx));
             break;
         }
-        case hibiki::pb::Request::kShowPluginGui: {
+        case hibiki::pb::commands::Request::kShowPluginGui: {
             const auto& cmd = request.show_plugin_gui();
             int track_idx = cmd.track_index();
             int plugin_idx = cmd.plugin_index();
@@ -418,7 +420,7 @@ void run_ipc_loop(ProjectState& state) {
             }
             break;
         }
-        case hibiki::pb::Request::kSetParamValue: {
+        case hibiki::pb::commands::Request::kSetParamValue: {
             const auto& cmd = request.set_param_value();
             int track_idx = cmd.track_index();
             int plugin_idx = cmd.plugin_index();
@@ -433,12 +435,12 @@ void run_ipc_loop(ProjectState& state) {
             }
             break;
         }
-        case hibiki::pb::Request::kSetBpm: {
+        case hibiki::pb::commands::Request::kSetBpm: {
             state.bpm = request.set_bpm().bpm();
             hibiki::sendAck("SET_BPM", true);
             break;
         }
-        case hibiki::pb::Request::kPlayScene: {
+        case hibiki::pb::commands::Request::kPlayScene: {
             const auto& cmd = request.play_scene();
             int sidx = cmd.slot_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
@@ -448,7 +450,7 @@ void run_ipc_loop(ProjectState& state) {
             hibiki::sendAck("PLAY_SCENE", true);
             break;
         }
-        case hibiki::pb::Request::kDeleteClip: {
+        case hibiki::pb::commands::Request::kDeleteClip: {
             const auto& cmd = request.delete_clip();
             int track_idx = cmd.track_index();
             int slot_index = cmd.slot_index();
@@ -462,12 +464,12 @@ void run_ipc_loop(ProjectState& state) {
             }
             break;
         }
-        case hibiki::pb::Request::kSeek: {
+        case hibiki::pb::commands::Request::kSeek: {
             state.playhead_pos_sec = request.seek().position();
             hibiki::sendAck("SEEK", true);
             break;
         }
-        case hibiki::pb::Request::kAddTimelineClip: {
+        case hibiki::pb::commands::Request::kAddTimelineClip: {
             const auto& cmd = request.add_timeline_clip();
             int tidx = cmd.track_index();
             std::string path = cmd.path();
@@ -479,7 +481,7 @@ void run_ipc_loop(ProjectState& state) {
             hibiki::sendAck("ADD_TIMELINE_CLIP", true);
             break;
         }
-        case hibiki::pb::Request::kRemoveTimelineClip: {
+        case hibiki::pb::commands::Request::kRemoveTimelineClip: {
             const auto& cmd = request.remove_timeline_clip();
             int tidx = cmd.track_index();
             int cidx = cmd.clip_index();
@@ -489,21 +491,21 @@ void run_ipc_loop(ProjectState& state) {
             hibiki::sendAck("REMOVE_TIMELINE_CLIP", true);
             break;
         }
-        case hibiki::pb::Request::kListPlugins: {
+        case hibiki::pb::commands::Request::kListPlugins: {
             std::string path = request.list_plugins().path();
             std::thread([path]() {
                 hibiki::sendPluginList(path, Vst3Plugin::listPluginsIsolated(path));
             }).detach();
             break;
         }
-        case hibiki::pb::Request::kBounceProject: {
+        case hibiki::pb::commands::Request::kBounceProject: {
             std::string path = request.bounce_project().path();
             std::thread([&state, path]() {
                 hibiki::BounceProject(state, path);
             }).detach();
             break;
         }
-        case hibiki::pb::Request::kUndo: {
+        case hibiki::pb::commands::Request::kUndo: {
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             std::vector<uint8_t> current = CaptureProjectState(state);
             std::vector<uint8_t> prev;
@@ -516,7 +518,7 @@ void run_ipc_loop(ProjectState& state) {
             }
             break;
         }
-        case hibiki::pb::Request::kRedo: {
+        case hibiki::pb::commands::Request::kRedo: {
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
             std::vector<uint8_t> current = CaptureProjectState(state);
             std::vector<uint8_t> next;
@@ -529,7 +531,7 @@ void run_ipc_loop(ProjectState& state) {
             }
             break;
         }
-        case hibiki::pb::Request::kGetClipMidi: {
+        case hibiki::pb::commands::Request::kGetClipMidi: {
             const auto& cmd = request.get_clip_midi();
             int tidx = cmd.track_index();
             int sidx = cmd.slot_index();
@@ -550,7 +552,7 @@ void run_ipc_loop(ProjectState& state) {
             
             if (clip && clip->type == Clip::Type::MIDI) {
                 int ppq = 480; // Standard MIDI resolution
-                std::vector<hibiki::pb::MidiEvent> notes;
+                std::vector<hibiki::pb::core::MidiEvent> notes;
                 // Convert internal midi_events to MidiEvent format
                 // Group NOTE_ON/OFF pairs into notes
                 std::map<int, std::pair<long, int>> active_notes; // note -> (tick, velocity)
@@ -561,7 +563,7 @@ void run_ipc_loop(ProjectState& state) {
                     } else if (isNoteOff(ev)) {
                         if (active_notes.count(ev.note)) {
                             auto [start_tick, vel] = active_notes[ev.note];
-                            hibiki::pb::MidiEvent me;
+                            hibiki::pb::core::MidiEvent me;
                             me.set_tick(start_tick);
                             me.set_pitch(ev.note);
                             me.set_duration_ticks(tick - start_tick);
@@ -580,7 +582,7 @@ void run_ipc_loop(ProjectState& state) {
             }
             break;
         }
-        case hibiki::pb::Request::kUpdateClipMidi: {
+        case hibiki::pb::commands::Request::kUpdateClipMidi: {
             const auto& cmd = request.update_clip_midi();
             int tidx = cmd.track_index();
             int sidx = cmd.slot_index();
@@ -677,7 +679,7 @@ void run_ipc_loop(ProjectState& state) {
             }
             break;
         }
-        case hibiki::pb::Request::kResizeTimelineClip: {
+        case hibiki::pb::commands::Request::kResizeTimelineClip: {
             const auto& cmd = request.resize_timeline_clip();
             int tidx = cmd.track_index();
             int cidx = cmd.clip_index();
@@ -702,7 +704,7 @@ void run_ipc_loop(ProjectState& state) {
             hibiki::sendAck("RESIZE_TIMELINE_CLIP", true);
             break;
         }
-        case hibiki::pb::Request::kAddAutomationLane: {
+        case hibiki::pb::commands::Request::kAddAutomationLane: {
             const auto& cmd = request.add_automation_lane();
             int tidx = cmd.track_index();
             int pidx = cmd.plugin_index();
@@ -715,7 +717,7 @@ void run_ipc_loop(ProjectState& state) {
             hibiki::sendAck("ADD_AUTOMATION_LANE", true);
             break;
         }
-        case hibiki::pb::Request::kRemoveAutomationLane: {
+        case hibiki::pb::commands::Request::kRemoveAutomationLane: {
             const auto& cmd = request.remove_automation_lane();
             int tidx = cmd.track_index();
             int lidx = cmd.lane_index();
@@ -727,7 +729,7 @@ void run_ipc_loop(ProjectState& state) {
             hibiki::sendAck("REMOVE_AUTOMATION_LANE", true);
             break;
         }
-        case hibiki::pb::Request::kUpdateAutomationLane: {
+        case hibiki::pb::commands::Request::kUpdateAutomationLane: {
             const auto& cmd = request.update_automation_lane();
             int tidx = cmd.track_index();
             int lidx = cmd.lane_index();
@@ -739,7 +741,7 @@ void run_ipc_loop(ProjectState& state) {
                     auto& lane = track->automation_lanes[lidx];
                     lane.points.clear();
                     for (const auto& pt : cmd.points()) {
-                        hibiki::pb::AutomationPoint p;
+                        hibiki::pb::core::AutomationPoint p;
                         p.set_time_beats(pt.time_beats());
                         p.set_value(std::max(0.0f, std::min(1.0f, pt.value())));
                         p.set_tension(std::max(-1.0f, std::min(1.0f, pt.tension())));
@@ -747,7 +749,7 @@ void run_ipc_loop(ProjectState& state) {
                     }
                     // Ensure sorted by time
                     std::sort(lane.points.begin(), lane.points.end(),
-                        [](const hibiki::pb::AutomationPoint& a, const hibiki::pb::AutomationPoint& b) {
+                        [](const hibiki::pb::core::AutomationPoint& a, const hibiki::pb::core::AutomationPoint& b) {
                             return a.time_beats() < b.time_beats();
                         });
                     hibiki::sendAutomationLanesData(tidx, track->automation_lanes, track->plugins);
@@ -760,7 +762,7 @@ void run_ipc_loop(ProjectState& state) {
             }
             break;
         }
-        case hibiki::pb::Request::kGetAutomationLanes: {
+        case hibiki::pb::commands::Request::kGetAutomationLanes: {
             const auto& cmd = request.get_automation_lanes();
             int tidx = cmd.track_index();
             std::lock_guard<std::mutex> lock(state.tracks_mutex);
@@ -773,7 +775,7 @@ void run_ipc_loop(ProjectState& state) {
             }
             break;
         }
-        case hibiki::pb::Request::kQuit:
+        case hibiki::pb::commands::Request::kQuit:
             state.quit = true;
             break;
         default:

@@ -10,7 +10,7 @@ import java.util.List;
 import javax.sound.midi.*;
 
 import hibiki.BackendManager;
-import hibiki.pb.HibikiProto.Notification;
+import hibiki.pb.notifications.Notification;
 import java.util.function.Consumer;
 
 public class PianoRoll extends JDialog {
@@ -135,7 +135,7 @@ public class PianoRoll extends JDialog {
                 playheadPos = info.getPositionSec();
                 bpm = info.getBpm();
                 boolean wasPlaying = isPlaying;
-                isPlaying = info.getIsPlaying();
+                isPlaying = info.getTransportState() == hibiki.pb.core.TransportState.TRANSPORT_STATE_PLAYING;
 
                 // Capture playhead screen position when playback starts
                 if (isPlaying && !wasPlaying && autoScroll) {
@@ -155,7 +155,7 @@ public class PianoRoll extends JDialog {
         }
     }
 
-    private void loadFromBackendData(hibiki.pb.HibikiProto.ClipMidiData data) {
+    private void loadFromBackendData(hibiki.pb.notifications.ClipMidiData data) {
         javax.swing.SwingUtilities.invokeLater(() -> {
             notes.clear();
             int resolution = data.getResolution();

@@ -8,7 +8,9 @@
 #include <string>
 #include "clip.hpp"
 #include "vst3_host.hpp"
-#include "hibiki.pb.h"
+#include "pb/core.pb.h"
+#include "pb/commands.pb.h"
+#include "pb/notifications.pb.h"
 
 namespace hibiki {
 
@@ -28,7 +30,7 @@ struct TimelineClip {
 struct AutomationLane {
     int plugin_idx = 0;
     uint32_t param_id = 0;
-    std::vector<hibiki::pb::AutomationPoint> points;
+    std::vector<hibiki::pb::core::AutomationPoint> points;
 };
 
 // Tension-based interpolation between two automation points

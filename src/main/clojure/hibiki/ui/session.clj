@@ -13,7 +13,8 @@
            [java.awt.dnd DropTarget DropTargetAdapter DropTargetDropEvent
                          DropTargetDragEvent DropTargetEvent DnDConstants]
            [java.io File]
-           [hibiki.pb HibikiProto HibikiProto$Request HibikiProto$Notification HibikiProto$Notification$ResponseCase HibikiProto$LoadClip HibikiProto$PlayClip HibikiProto$StopTrack HibikiProto$PlayScene HibikiProto$SetClipLoop HibikiProto$DeleteClip]))
+           [hibiki.pb.commands Request LoadClip PlayClip StopTrack PlayScene SetClipLoop DeleteClip]
+           [hibiki.pb.notifications Notification Notification$ResponseCase]))
 
 (set! *warn-on-reflection* true)
 
@@ -24,8 +25,8 @@
 (defn- send-load-clip
   [^hibiki.BackendManager backend track-idx slot-idx ^String path loop?]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setLoadClip (-> (HibikiProto$LoadClip/newBuilder)
+    (-> (Request/newBuilder)
+        (.setLoadClip (-> (LoadClip/newBuilder)
                           (.setTrackIndex (int track-idx))
                           (.setSlotIndex (int slot-idx))
                           (.setPath path)
@@ -35,30 +36,30 @@
 (defn- send-play-clip
   [^hibiki.BackendManager backend ^long track-idx ^long slot-idx]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setPlayClip (-> (HibikiProto$PlayClip/newBuilder)
+    (-> (Request/newBuilder)
+        (.setPlayClip (-> (PlayClip/newBuilder)
                           (.setTrackIndex (int track-idx))
                           (.setSlotIndex (int slot-idx))))
         (.build))))
 
 (defn- send-stop-track [^hibiki.BackendManager backend ^long track-idx]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setStopTrack (-> (HibikiProto$StopTrack/newBuilder)
+    (-> (Request/newBuilder)
+        (.setStopTrack (-> (StopTrack/newBuilder)
                            (.setTrackIndex (int track-idx))))
         (.build))))
 
 (defn- send-play-scene [^hibiki.BackendManager backend ^long slot-idx]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setPlayScene (-> (HibikiProto$PlayScene/newBuilder)
+    (-> (Request/newBuilder)
+        (.setPlayScene (-> (PlayScene/newBuilder)
                            (.setSlotIndex (int slot-idx))))
         (.build))))
 
 (defn- send-set-clip-loop [^hibiki.BackendManager backend ^long track-idx ^long slot-idx loop?]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setSetClipLoop (-> (HibikiProto$SetClipLoop/newBuilder)
+    (-> (Request/newBuilder)
+        (.setSetClipLoop (-> (SetClipLoop/newBuilder)
                              (.setTrackIndex (int track-idx))
                              (.setSlotIndex (int slot-idx))
                              (.setIsLoop (boolean loop?))))
@@ -66,8 +67,8 @@
 
 (defn- send-delete-clip [^hibiki.BackendManager backend ^long track-idx ^long slot-idx]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setDeleteClip (-> (HibikiProto$DeleteClip/newBuilder)
+    (-> (Request/newBuilder)
+        (.setDeleteClip (-> (DeleteClip/newBuilder)
                             (.setTrackIndex (int track-idx))
                             (.setSlotIndex (int slot-idx))))
         (.build))))
@@ -356,9 +357,9 @@
     (.addNotificationListener backend
       (reify java.util.function.Consumer
         (accept [_ notif]
-          (let [^HibikiProto$Notification notification notif]
+          (let [^Notification notification notif]
           (case (.getResponseCase notification)
-            HibikiProto$Notification$ResponseCase/CLIP_INFO
+            Notification$ResponseCase/CLIP_INFO
             (let [info (.getClipInfo notification)]
               (let [ti (.getTrackIndex info) si (.getSlotIndex info) nm (.getName info)]
                 (SwingUtilities/invokeLater
@@ -374,7 +375,7 @@
                                (.setBackground btn (t/color :clip-playing))
                                (.setForeground btn Color/BLACK)))))))))
 
-            HibikiProto$Notification$ResponseCase/TRACK_LEVELS
+            Notification$ResponseCase/TRACK_LEVELS
             (let [tl (.getTrackLevels notification)]
               (SwingUtilities/invokeLater
                 #(dotimes [i (.getLevelsCount tl)]
@@ -384,7 +385,7 @@
                         (when-let [meter (aget ^"[Ljava.lang.Object;" (:track-meters @session-state) ti)]
                          ((:set-levels! meter) (.getPeakL l) (.getPeakR l))))))))
 
-            HibikiProto$Notification$ResponseCase/CLEAR_PROJECT
+            Notification$ResponseCase/CLEAR_PROJECT
             (SwingUtilities/invokeLater
               #(doseq [ti (range 1 5) si (range 5)]
                  (let [^JButton btn (aget ^"[Ljavax.swing.JButton;"

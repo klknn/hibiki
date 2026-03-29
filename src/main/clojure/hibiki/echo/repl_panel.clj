@@ -162,7 +162,7 @@
         (eval '(do
                  (import '[hibiki BackendManager]
                          '[hibiki.ui SessionView TimelineView PluginPane Theme MainView]
-                         '[hibiki.pb HibikiProto HibikiProto$Request HibikiProto$Notification])
+                         '[hibiki.pb.commands Request] '[hibiki.pb.notifications Notification])
                  (require '[hibiki.echo.dev :as dev])
                  (def bm (BackendManager/getInstance))))
         (append! "Ready. `bm`, `dev/*`, and all protobuf classes are available.\n")

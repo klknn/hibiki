@@ -4,7 +4,9 @@ import javax.swing.*;
 import java.awt.*;
 import hibiki.BackendManager;
 import hibiki.SimpleLaf;
-import hibiki.pb.HibikiProto;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
 import java.io.File;
 
 public class TopBar extends JPanel {
@@ -191,22 +193,22 @@ public class TopBar extends JPanel {
     }
 
     private void sendSaveProject(String path) {
-        BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                .setSaveProject(HibikiProto.SaveProject.newBuilder().setPath(path))
+        BackendManager.getInstance().sendRequest(Request.newBuilder()
+                .setSaveProject(SaveProject.newBuilder().setPath(path))
                 .build());
     }
 
     private void sendLoadProject(String path) {
-        BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                .setLoadProject(HibikiProto.LoadProjectCmd.newBuilder().setPath(path))
+        BackendManager.getInstance().sendRequest(Request.newBuilder()
+                .setLoadProject(LoadProjectCmd.newBuilder().setPath(path))
                 .build());
     }
 
     private void sendSetBpm(String bpmStr) {
         try {
             float bpm = Float.parseFloat(bpmStr);
-            BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                    .setSetBpm(HibikiProto.SetBpm.newBuilder().setBpm(bpm))
+            BackendManager.getInstance().sendRequest(Request.newBuilder()
+                    .setSetBpm(SetBpm.newBuilder().setBpm(bpm))
                     .build());
         } catch (NumberFormatException ex) {
             // Revert or ignore

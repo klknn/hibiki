@@ -1,8 +1,10 @@
 package hibiki;
 
-import hibiki.pb.HibikiProto;
-import hibiki.pb.HibikiProto.Notification;
-import hibiki.pb.HibikiProto.Request;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
+import hibiki.pb.notifications.Notification;
+import hibiki.pb.commands.Request;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -182,14 +184,14 @@ public class BackendManager {
 
     public void startPlayback() {
         sendRequest(Request.newBuilder()
-                .setPlay(HibikiProto.Play.getDefaultInstance())
+                .setPlay(Play.getDefaultInstance())
                 .build());
         isPlaying = true;
     }
 
     public void stopPlayback() {
         sendRequest(Request.newBuilder()
-                .setStop(HibikiProto.Stop.getDefaultInstance())
+                .setStop(Stop.getDefaultInstance())
                 .build());
         isPlaying = false;
     }
@@ -205,13 +207,13 @@ public class BackendManager {
 
     public void seek(float position) {
         sendRequest(Request.newBuilder()
-                .setSeek(HibikiProto.Seek.newBuilder().setPosition(position))
+                .setSeek(Seek.newBuilder().setPosition(position))
                 .build());
     }
 
     public void addTimelineClip(int trackIndex, String path, float startTime, float durationBeats) {
         sendRequest(Request.newBuilder()
-                .setAddTimelineClip(HibikiProto.AddTimelineClip.newBuilder()
+                .setAddTimelineClip(AddTimelineClip.newBuilder()
                         .setTrackIndex(trackIndex)
                         .setPath(path)
                         .setStartTime(startTime)
@@ -221,7 +223,7 @@ public class BackendManager {
 
     public void removeTimelineClip(int trackIndex, int clipIndex) {
         sendRequest(Request.newBuilder()
-                .setRemoveTimelineClip(HibikiProto.RemoveTimelineClip.newBuilder()
+                .setRemoveTimelineClip(RemoveTimelineClip.newBuilder()
                         .setTrackIndex(trackIndex)
                         .setClipIndex(clipIndex))
                 .build());
@@ -229,7 +231,7 @@ public class BackendManager {
 
     public void resizeTimelineClip(int trackIndex, int clipIndex, float durationBeats) {
         sendRequest(Request.newBuilder()
-                .setResizeTimelineClip(HibikiProto.ResizeTimelineClip.newBuilder()
+                .setResizeTimelineClip(ResizeTimelineClip.newBuilder()
                         .setTrackIndex(trackIndex)
                         .setClipIndex(clipIndex)
                         .setDurationBeats(durationBeats))
@@ -242,7 +244,7 @@ public class BackendManager {
      */
     public void requestClipMidi(int trackIdx, int slotIdx, int clipIdx) {
         sendRequest(Request.newBuilder()
-                .setGetClipMidi(HibikiProto.GetClipMidi.newBuilder()
+                .setGetClipMidi(GetClipMidi.newBuilder()
                         .setTrackIndex(trackIdx)
                         .setSlotIndex(slotIdx)
                         .setClipIndex(clipIdx))
@@ -255,13 +257,13 @@ public class BackendManager {
      */
     public void updateClipMidi(int trackIdx, int slotIdx, int clipIdx, int resolution, long[] ticks, int[] pitches,
             long[] durationTicks, int[] velocities) {
-        HibikiProto.UpdateClipMidi.Builder cmdBuilder = HibikiProto.UpdateClipMidi.newBuilder()
+        UpdateClipMidi.Builder cmdBuilder = UpdateClipMidi.newBuilder()
                 .setTrackIndex(trackIdx)
                 .setSlotIndex(slotIdx)
                 .setClipIndex(clipIdx)
                 .setResolution(resolution);
         for (int i = 0; i < ticks.length; i++) {
-            cmdBuilder.addEvents(HibikiProto.MidiEvent.newBuilder()
+            cmdBuilder.addEvents(MidiEvent.newBuilder()
                     .setTick(ticks[i])
                     .setPitch(pitches[i])
                     .setDurationTicks(durationTicks[i])

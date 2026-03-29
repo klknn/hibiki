@@ -13,7 +13,7 @@ import java.awt.datatransfer.Transferable;
 import java.awt.dnd.*;
 import java.util.List;
 
-import hibiki.pb.HibikiProto.Notification;
+import hibiki.pb.notifications.Notification;
 
 public class SessionView extends JPanel {
     private static SessionView instance;

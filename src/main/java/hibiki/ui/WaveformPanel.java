@@ -4,7 +4,9 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import hibiki.BackendManager;
-import hibiki.pb.HibikiProto;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
 
 public class WaveformPanel extends JPanel {
     private float[] waveform;
@@ -65,8 +67,8 @@ public class WaveformPanel extends JPanel {
         if (trackIdx == -1 || slotIdx == -1)
             return;
 
-        BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                .setDeleteClip(HibikiProto.DeleteClip.newBuilder()
+        BackendManager.getInstance().sendRequest(Request.newBuilder()
+                .setDeleteClip(DeleteClip.newBuilder()
                         .setTrackIndex(trackIdx)
                         .setSlotIndex(slotIdx))
                 .build());

@@ -1,8 +1,8 @@
 package hibiki.ui;
 
 import hibiki.BackendManager;
-import hibiki.pb.HibikiProto.ClipMidiData;
-import hibiki.pb.HibikiProto.MidiEvent;
+import hibiki.pb.notifications.ClipMidiData;
+import hibiki.pb.core.MidiEvent;
 
 import javax.sound.midi.*;
 import javax.swing.*;
@@ -142,7 +142,7 @@ class MidiDataModel {
         notes.clear();
         // Each MidiEvent is a complete note (tick, pitch, durationTicks, velocity)
         for (int i = 0; i < data.getEventsCount(); i++) {
-            hibiki.pb.HibikiProto.MidiEvent ev = data.getEvents(i);
+            hibiki.pb.core.MidiEvent ev = data.getEvents(i);
             notes.add(new Note(ev.getPitch(), ev.getTick(), ev.getDurationTicks(), ev.getVelocity()));
         }
 

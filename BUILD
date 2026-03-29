@@ -107,7 +107,9 @@ cc_library(
     deps = [
         ":track",
         ":ipc",
-        ":hibiki_cc_proto",
+        "//pb:core_cc_proto",
+        "//pb:commands_cc_proto",
+        "//pb:notifications_cc_proto",
         ":audio_file",
     ],
 )
@@ -118,7 +120,9 @@ cc_library(
     hdrs = ["ipc.hpp"],
     deps = [
         ":vst3_host",
-        ":hibiki_cc_proto",
+        "//pb:core_cc_proto",
+        "//pb:commands_cc_proto",
+        "//pb:notifications_cc_proto",
     ],
 )
 
@@ -277,7 +281,9 @@ java_library(
     srcs = glob(["src/main/java/hibiki/**/*.java"], exclude = ["src/main/java/hibiki/ClojureMain.java", "src/main/java/hibiki/EchoMain.java"]),
     resources = glob(["src/main/resources/**/*"]),
     deps = [
-        ":hibiki_java_proto",
+        "//pb:core_java_proto",
+        "//pb:commands_java_proto",
+        "//pb:notifications_java_proto",
         "@maven//:com_google_protobuf_protobuf_java",
         "@maven//:com_formdev_flatlaf",
     ],
@@ -344,7 +350,9 @@ java_test(
     test_class = "hibiki.BackendManagerTest",
     deps = [
         ":hibiki-gui-lib",
-        ":hibiki_java_proto",
+        "//pb:core_java_proto",
+        "//pb:commands_java_proto",
+        "//pb:notifications_java_proto",
         "@maven//:junit_junit",
         "@maven//:com_google_protobuf_protobuf_java",
     ],
@@ -379,7 +387,9 @@ java_test(
     test_class = "hibiki.ui.TimelineViewTest",
     deps = [
         ":hibiki-gui-lib",
-        ":hibiki_java_proto",
+        "//pb:core_java_proto",
+        "//pb:commands_java_proto",
+        "//pb:notifications_java_proto",
         "@maven//:junit_junit",
         "@maven//:com_google_protobuf_protobuf_java",
     ],
@@ -412,7 +422,9 @@ java_test(
     data = ["//testdata"],
     deps = [
         ":hibiki-gui-lib",
-        ":hibiki_java_proto",
+        "//pb:core_java_proto",
+        "//pb:commands_java_proto",
+        "//pb:notifications_java_proto",
         "@maven//:junit_junit",
         "@maven//:com_google_protobuf_protobuf_java",
     ],
@@ -444,7 +456,9 @@ java_test(
     test_class = "hibiki.ui.SessionViewIpcTest",
     deps = [
         ":hibiki-gui-lib",
-        ":hibiki_java_proto",
+        "//pb:core_java_proto",
+        "//pb:commands_java_proto",
+        "//pb:notifications_java_proto",
         "@maven//:junit_junit",
         "@maven//:com_google_protobuf_protobuf_java",
     ],
@@ -469,7 +483,9 @@ java_test(
         ":hibiki-clj-sources",
         ":hibiki-clj-test-sources",
         ":hibiki-gui-lib",
-        ":hibiki_java_proto",
+        "//pb:core_java_proto",
+        "//pb:commands_java_proto",
+        "//pb:notifications_java_proto",
         "@clojure_jar//jar",
         "@clojure_spec_alpha_jar//jar",
         "@clojure_core_specs_alpha_jar//jar",

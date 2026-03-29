@@ -14,7 +14,7 @@
            [java.awt.event KeyEvent]
            [com.formdev.flatlaf FlatDarkLaf]
            [hibiki BackendManager]
-           [hibiki.pb HibikiProto HibikiProto$Request HibikiProto$Undo HibikiProto$Redo]))
+           [hibiki.pb.commands Request Undo Redo]))
 
 (set! *warn-on-reflection* true)
 
@@ -109,8 +109,8 @@
       (.put am "undo" (proxy [AbstractAction] []
                         (actionPerformed [_]
                           (.sendRequest backend
-                            (-> (HibikiProto$Request/newBuilder)
-                                (.setUndo (HibikiProto$Undo/newBuilder))
+                            (-> (Request/newBuilder)
+                                (.setUndo (Undo/newBuilder))
                                 (.build))))))
       ;; Redo
       (.put im (KeyStroke/getKeyStroke "control shift Z") "redo")
@@ -119,8 +119,8 @@
       (.put am "redo" (proxy [AbstractAction] []
                         (actionPerformed [_]
                           (.sendRequest backend
-                            (-> (HibikiProto$Request/newBuilder)
-                                (.setRedo (HibikiProto$Redo/newBuilder))
+                            (-> (Request/newBuilder)
+                                (.setRedo (Redo/newBuilder))
                                 (.build))))))
       ;; Space = Play/Stop
       (.put im (KeyStroke/getKeyStroke KeyEvent/VK_SPACE 0) "playStop")

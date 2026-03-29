@@ -7,8 +7,10 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.TreeMap;
-import hibiki.pb.HibikiProto;
-import hibiki.pb.HibikiProto.Notification;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.notifications.ParamInfo;
+import hibiki.pb.notifications.Notification;
 import hibiki.BackendManager;
 
 public class PluginPane extends JPanel {
@@ -94,7 +96,7 @@ public class PluginPane extends JPanel {
         });
     }
 
-    public void updateParams(HibikiProto.ParamList paramList) {
+    public void updateParams(ParamList paramList) {
         SwingUtilities.invokeLater(() -> {
             int trackIdx = paramList.getTrackIndex();
             int pIdx = paramList.getPluginIndex();
@@ -283,7 +285,7 @@ public class PluginPane extends JPanel {
             add(body, BorderLayout.CENTER);
         }
 
-        void setParams(HibikiProto.ParamList paramList) {
+        void setParams(ParamList paramList) {
             paramListPanel.removeAll();
             allParams.clear();
             for (int i = 0; i < paramList.getParamsCount(); i++) {
@@ -306,16 +308,16 @@ public class PluginPane extends JPanel {
         }
 
         private void sendShowGui() {
-            BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                    .setShowPluginGui(HibikiProto.ShowPluginGui.newBuilder()
+            BackendManager.getInstance().sendRequest(Request.newBuilder()
+                    .setShowPluginGui(ShowPluginGui.newBuilder()
                             .setTrackIndex(trackIndex)
                             .setPluginIndex(pluginIndex))
                     .build());
         }
 
         private void sendRemovePlugin() {
-            BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                    .setRemovePlugin(HibikiProto.RemovePlugin.newBuilder()
+            BackendManager.getInstance().sendRequest(Request.newBuilder()
+                    .setRemovePlugin(RemovePlugin.newBuilder()
                             .setTrackIndex(trackIndex)
                             .setPluginIndex(pluginIndex))
                     .build());
@@ -332,7 +334,7 @@ public class PluginPane extends JPanel {
     private class ParamPanel extends JPanel {
         final String name;
 
-        ParamPanel(int trackIndex, int pluginIndex, HibikiProto.ParamInfo info) {
+        ParamPanel(int trackIndex, int pluginIndex, ParamInfo info) {
             this.name = info.getName();
             setLayout(new BorderLayout());
             setBackground(Theme.getInstance().BG_MEDIUM);
@@ -358,8 +360,8 @@ public class PluginPane extends JPanel {
 
         private void sendParamChange(int trackIndex, int pluginIndex, int paramId, float value) {
             lastTouched = new LastTouchedParam(trackIndex, pluginIndex, paramId, name);
-            BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                    .setSetParamValue(HibikiProto.SetParamValue.newBuilder()
+            BackendManager.getInstance().sendRequest(Request.newBuilder()
+                    .setSetParamValue(SetParamValue.newBuilder()
                             .setTrackIndex(trackIndex)
                             .setPluginIndex(pluginIndex)
                             .setParamId(paramId)

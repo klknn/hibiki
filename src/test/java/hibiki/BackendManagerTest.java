@@ -1,6 +1,8 @@
 package hibiki;
 
-import hibiki.pb.HibikiProto;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
 import org.junit.Test;
 import static org.junit.Assert.*;
 import java.io.File;
@@ -25,7 +27,7 @@ public class BackendManagerTest {
         System.err.println("DEBUG_TEST: testdata does not exist at CWD");
     }
 
-    CompletableFuture<HibikiProto.ParamList> paramListFuture = new CompletableFuture<>();
+    CompletableFuture<ParamList> paramListFuture = new CompletableFuture<>();
     CompletableFuture<String> logFuture = new CompletableFuture<>();
 
     backend.addNotificationListener(notification -> {
@@ -55,8 +57,8 @@ public class BackendManagerTest {
     String vstPath = vstFile.getAbsolutePath();
 
     System.out.println("Sending LoadPlugin request for " + vstPath);
-    backend.sendRequest(HibikiProto.Request.newBuilder()
-        .setLoadPlugin(HibikiProto.LoadPlugin.newBuilder()
+    backend.sendRequest(Request.newBuilder()
+        .setLoadPlugin(LoadPlugin.newBuilder()
             .setTrackIndex(0)
             .setPath(vstPath)
             .setPluginIndex(0))
@@ -64,7 +66,7 @@ public class BackendManagerTest {
 
     try {
       // Verify receipt of ParamList
-      HibikiProto.ParamList params = paramListFuture.get(10, TimeUnit.SECONDS);
+      ParamList params = paramListFuture.get(10, TimeUnit.SECONDS);
       assertNotNull("Should receive ParamList notification", params);
       assertTrue("Should have at least one parameter", params.getParamsCount() > 0);
       assertEquals("Track index should match", 0, params.getTrackIndex());

@@ -1,7 +1,9 @@
 #include "track.hpp"
 #include "ipc.hpp"
 #include "audio_file.hpp"
-#include "hibiki.pb.h"
+#include "pb/core.pb.h"
+#include "pb/commands.pb.h"
+#include "pb/notifications.pb.h"
 #include <algorithm>
 #include <iostream>
 
@@ -93,7 +95,7 @@ bool Track::LoadClip(int slot, const std::string& path, bool is_loop) {
 
     // Send waveform to GUI if generated
     if (clip->type == Clip::Type::AUDIO && !clip->waveform_summary.empty()) {
-        hibiki::pb::Notification notification;
+        hibiki::pb::notifications::Notification notification;
         auto* wf = notification.mutable_clip_waveform();
         wf->set_track_index(index);
         wf->set_slot_index(slot);

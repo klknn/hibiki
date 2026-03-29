@@ -4,7 +4,9 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.KeyEvent;
 import hibiki.BackendManager;
-import hibiki.pb.HibikiProto;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
 
 public class MainView extends JPanel implements Theme.ThemeListener {
     private PluginPane pluginPane;
@@ -66,8 +68,8 @@ public class MainView extends JPanel implements Theme.ThemeListener {
         actionMap.put("undo", new AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
-                BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                        .setUndo(HibikiProto.Undo.getDefaultInstance())
+                BackendManager.getInstance().sendRequest(Request.newBuilder()
+                        .setUndo(Undo.getDefaultInstance())
                         .build());
             }
         });
@@ -79,8 +81,8 @@ public class MainView extends JPanel implements Theme.ThemeListener {
         actionMap.put("redo", new AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
-                BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                        .setRedo(HibikiProto.Redo.getDefaultInstance())
+                BackendManager.getInstance().sendRequest(Request.newBuilder()
+                        .setRedo(Redo.getDefaultInstance())
                         .build());
             }
         });

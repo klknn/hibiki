@@ -1,0 +1,199 @@
+// Notification messages pushed from the C++ engine to the GUI.
+//
+// Contains both legacy per-type notifications (for incremental migration)
+// and the new data-oriented StateUpdate pattern.
+
+syntax = "proto3";
+
+package hibiki.pb.notifications;
+
+option java_package = "hibiki.pb.notifications";
+option java_outer_classname = "NotificationsProto";
+option java_multiple_files = true;
+
+import "pb/core.proto";
+
+// ─── State Synchronization (new pattern) ────────────────────────────
+
+// Incremental state update carrying partial or full Track data.
+// Fields present are treated as updates; absent fields left unchanged.
+message StateUpdate {
+  repeated hibiki.pb.core.Track tracks = 1;
+  float bpm = 2;
+  float playhead_sec = 3;
+  hibiki.pb.core.TransportState transport_state = 4;
+}
+
+// Signals that an entity has been removed.
+message EntityRemoved {
+  hibiki.pb.core.EntityRef ref = 1;
+}
+
+// ─── Transport ──────────────────────────────────────────────────────
+
+// Transport state, sent periodically (~30Hz) during playback
+// and once after Seek/Play/Stop commands.
+message PlayheadInfo {
+  float position_sec = 1;
+  float bpm = 2;
+  hibiki.pb.core.TransportState transport_state = 3;
+}
+
+// ─── Plugin Discovery ───────────────────────────────────────────────
+
+// Result of scanning a .vst3 bundle for sub-plugins.
+message PluginListResponse {
+  string path = 1;
+  repeated PluginDescription plugins = 2;
+}
+
+// Description of a sub-plugin within a VST3 bundle.
+message PluginDescription {
+  int32 index = 1;
+  string name = 2;
+  string vendor = 3;
+}
+
+// ─── Legacy Notification Types ──────────────────────────────────────
+// These mirror the old hibiki.proto messages for incremental migration.
+// They will eventually be replaced by StateUpdate-based notifications.
+
+// Plugin parameter metadata.
+message ParamInfo {
+  uint32 id = 1;
+  string name = 2;
+  float default_value = 3;
+}
+
+// Full parameter list for a loaded plugin.
+message ParamList {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+  string plugin_name = 3;
+  bool is_instrument = 4;
+  repeated ParamInfo params = 5;
+}
+
+// Session clip metadata.
+message ClipInfo {
+  int32 track_index = 1;
+  int32 slot_index = 2;
+  string name = 3;
+  string path = 4;
+}
+
+// Per-track audio level metering data.
+message TrackLevel {
+  int32 track_index = 1;
+  float peak_l = 2;
+  float peak_r = 3;
+}
+
+// Batch of track levels.
+message TrackLevels {
+  repeated TrackLevel levels = 1;
+}
+
+// Downsampled waveform data for a session clip.
+message ClipWaveform {
+  int32 track_index = 1;
+  int32 slot_index = 2;
+  repeated float waveform = 3;
+}
+
+// Timeline clip metadata.
+message TimelineClipInfo {
+  int32 track_index = 1;
+  int32 clip_index = 2;
+  string name = 3;
+  string path = 4;
+  float start_time = 5;
+  float duration = 6;
+  repeated float waveform = 7;
+}
+
+// Track name metadata.
+message TrackInfo {
+  int32 track_index = 1;
+  string name = 2;
+}
+
+// MIDI event data for a clip (Piano Roll).
+message ClipMidiData {
+  int32 track_index = 1;
+  int32 slot_index = 2;
+  int32 clip_index = 3;
+  int32 resolution = 4;
+  repeated hibiki.pb.core.MidiEvent events = 5;
+}
+
+// Automation lanes for a track.
+message AutomationLaneInfo {
+  int32 track_index = 1;
+  int32 lane_index = 2;
+  int32 plugin_index = 3;
+  uint32 param_id = 4;
+  string param_name = 5;
+  repeated hibiki.pb.core.AutomationPoint points = 6;
+}
+
+message AutomationLanesData {
+  int32 track_index = 1;
+  repeated AutomationLaneInfo lanes = 2;
+}
+
+// ─── Lifecycle ──────────────────────────────────────────────────────
+
+// Project cleared (before load or undo/redo).
+message ClearProject {}
+
+// Offline bounce completion.
+message BounceFinished {
+  string path = 1;
+  bool success = 2;
+}
+
+// Engine log/debug message.
+message Log {
+  string message = 1;
+}
+
+// Generic command acknowledgement.
+message Acknowledge {
+  string command_type = 1;
+  bool success = 2;
+}
+
+// ─── Notification Envelope ──────────────────────────────────────────
+
+// Top-level notification wrapper.
+message Notification {
+  oneof response {
+    // New data-oriented pattern
+    StateUpdate state_update = 1;
+    EntityRemoved entity_removed = 2;
+    hibiki.pb.core.Project full_sync = 15;
+
+    // Transport
+    PlayheadInfo playhead_info = 3;
+
+    // Plugin discovery
+    PluginListResponse plugin_list = 4;
+
+    // Legacy per-type notifications
+    ParamList param_list = 5;
+    ClipInfo clip_info = 6;
+    TrackLevels track_levels = 7;
+    ClipWaveform clip_waveform = 8;
+    TimelineClipInfo timeline_clip_info = 9;
+    TrackInfo track_info = 10;
+    ClipMidiData clip_midi_data = 11;
+    AutomationLanesData automation_lanes_data = 12;
+
+    // Lifecycle
+    ClearProject clear_project = 13;
+    BounceFinished bounce_finished = 14;
+    Log log = 16;
+    Acknowledge acknowledge = 17;
+  }
+}

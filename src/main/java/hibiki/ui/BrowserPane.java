@@ -9,8 +9,10 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import hibiki.BackendManager;
-import hibiki.pb.HibikiProto;
-import hibiki.pb.HibikiProto.Notification;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
+import hibiki.pb.notifications.Notification;
 
 public class BrowserPane extends JPanel {
     private JTree tree;
@@ -270,8 +272,8 @@ public class BrowserPane extends JPanel {
 
     private void requestPluginsInBundle(File bundle) {
         String path = bundle.getAbsolutePath();
-        BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                .setListPlugins(HibikiProto.ListPlugins.newBuilder().setPath(path))
+        BackendManager.getInstance().sendRequest(Request.newBuilder()
+                .setListPlugins(ListPlugins.newBuilder().setPath(path))
                 .build());
     }
 
@@ -318,8 +320,8 @@ public class BrowserPane extends JPanel {
 
     private void sendLoadPlugin(String path, int pluginIndex) {
         int trackIndex = SessionView.getInstance() != null ? SessionView.getInstance().getSelectedTrack() : 0;
-        BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                .setLoadPlugin(HibikiProto.LoadPlugin.newBuilder()
+        BackendManager.getInstance().sendRequest(Request.newBuilder()
+                .setLoadPlugin(LoadPlugin.newBuilder()
                         .setTrackIndex(trackIndex)
                         .setPath(path)
                         .setPluginIndex(pluginIndex))
@@ -328,8 +330,8 @@ public class BrowserPane extends JPanel {
 
     private void sendLoadClip(String path, boolean isLoop) {
         int trackIndex = SessionView.getInstance() != null ? SessionView.getInstance().getSelectedTrack() : 0;
-        BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                .setLoadClip(HibikiProto.LoadClip.newBuilder()
+        BackendManager.getInstance().sendRequest(Request.newBuilder()
+                .setLoadClip(LoadClip.newBuilder()
                         .setTrackIndex(trackIndex)
                         .setSlotIndex(0)
                         .setPath(path)

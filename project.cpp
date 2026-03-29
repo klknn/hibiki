@@ -1,7 +1,9 @@
 #include "project.hpp"
 #include "ipc.hpp"
 #include "audio_file.hpp"
-#include "hibiki.pb.h"
+#include "pb/core.pb.h"
+#include "pb/commands.pb.h"
+#include "pb/notifications.pb.h"
 #include <fstream>
 #include <iostream>
 
@@ -15,48 +17,52 @@ Track* GetOrCreateTrack(ProjectState& state, int track_index) {
 }
 
 // Helper: populate a Project protobuf from a ProjectState
-static hibiki::pb::Project BuildProjectProto(const ProjectState& state) {
-    hibiki::pb::Project project;
+static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
+    hibiki::pb::core::Project project;
     project.set_bpm(state.bpm);
-    project.set_playhead_pos(state.playhead_pos_sec);
+    project.set_playhead_sec(state.playhead_pos_sec);
 
     for (const auto& [idx, track] : state.tracks) {
         auto* ts = project.add_tracks();
-        ts->set_index(idx);
+        ts->set_track_index(idx);
         ts->set_name(track->name);
 
         for (const auto& plugin : track->plugins) {
             auto* ps = ts->add_plugins();
             ps->set_path(plugin->getPath());
-            ps->set_index(plugin->getPluginIndex());
+            ps->set_plugin_index(plugin->getPluginIndex());
             int num_params = plugin->getParameterCount();
             for (int p = 0; p < num_params; ++p) {
                 VstParamInfo info;
                 if (plugin->getParameterInfo(p, info)) {
                     double val = plugin->getParameterValue(info.id);
                     if (val != info.defaultValue) {
-                        auto* param = ps->add_parameters();
+                        auto* param = ps->add_params();
                         param->set_id(info.id);
-                        param->set_value(val);
+                        param->set_current_value(val);
                     }
                 }
             }
         }
 
         for (const auto& [slot, clip] : track->clips) {
-            auto* cs = ts->add_clips();
-            cs->set_slot_index(slot);
+            auto* ss = ts->add_session_slots();
+            ss->set_slot_index(slot);
+            auto* cs = ss->mutable_clip();
             cs->set_path(clip->path);
             cs->set_is_loop(clip->is_loop);
-            cs->set_type(clip->type == Clip::Type::MIDI ? hibiki::pb::MIDI : hibiki::pb::AUDIO);
+            cs->set_type(clip->type == Clip::Type::MIDI
+                ? hibiki::pb::core::CLIP_TYPE_MIDI
+                : hibiki::pb::core::CLIP_TYPE_AUDIO);
         }
 
         for (const auto& tc : track->timeline_clips) {
             if (!tc->clip) continue;
             auto* tcs = ts->add_timeline_clips();
-            tcs->set_path(tc->clip->path);
-            tcs->set_start_time(tc->start_time_sec);
-            tcs->set_duration(tc->duration_sec);
+            auto* clip = tcs->mutable_clip();
+            clip->set_path(tc->clip->path);
+            tcs->set_start_time_sec(tc->start_time_sec);
+            clip->set_duration_sec(tc->duration_sec);
         }
 
         for (const auto& lane : track->automation_lanes) {
@@ -72,40 +78,40 @@ static hibiki::pb::Project BuildProjectProto(const ProjectState& state) {
 }
 
 // Helper: populate a ProjectState from a Project protobuf (no plugin loading)
-static void LoadTracksFromProto(ProjectState& state, const hibiki::pb::Project& project) {
+static void LoadTracksFromProto(ProjectState& state, const hibiki::pb::core::Project& project) {
     state.bpm = project.bpm();
-    state.playhead_pos_sec = project.playhead_pos();
+    state.playhead_pos_sec = project.playhead_sec();
     state.tracks.clear();
 
     for (const auto& track_data : project.tracks()) {
-        auto track = GetOrCreateTrack(state, track_data.index());
+        auto track = GetOrCreateTrack(state, track_data.track_index());
 
         if (!track_data.name().empty()) {
             track->name = track_data.name();
-            sendTrackInfo(track_data.index(), track->name);
+            sendTrackInfo(track_data.track_index(), track->name);
         }
 
         for (const auto& plugin_data : track_data.plugins()) {
             if (plugin_data.path().empty()) continue;
-            int pidx = track->LoadPlugin(plugin_data.path(), plugin_data.index(), state.sample_rate);
+            int pidx = track->LoadPlugin(plugin_data.path(), plugin_data.plugin_index(), state.sample_rate);
             if (pidx >= 0) {
-                for (const auto& param_data : plugin_data.parameters()) {
-                    track->plugins[pidx]->setParameterValue(param_data.id(), param_data.value());
+                for (const auto& param_data : plugin_data.params()) {
+                    track->plugins[pidx]->setParameterValue(param_data.id(), param_data.current_value());
                 }
             }
         }
 
-        for (const auto& clip_data : track_data.clips()) {
-            if (clip_data.path().empty()) continue;
-            track->LoadClip(clip_data.slot_index(), clip_data.path(), clip_data.is_loop());
+        for (const auto& slot_data : track_data.session_slots()) {
+            if (!slot_data.has_clip() || slot_data.clip().path().empty()) continue;
+            track->LoadClip(slot_data.slot_index(), slot_data.clip().path(), slot_data.clip().is_loop());
         }
 
         for (const auto& tc_data : track_data.timeline_clips()) {
-            if (tc_data.path().empty()) continue;
+            if (!tc_data.has_clip() || tc_data.clip().path().empty()) continue;
             auto tc = std::make_unique<TimelineClip>();
-            tc->clip = hibiki::LoadClip(tc_data.path());
-            tc->start_time_sec = tc_data.start_time();
-            tc->duration_sec = tc->clip ? tc->clip->duration_sec : tc_data.duration();
+            tc->clip = hibiki::LoadClip(tc_data.clip().path());
+            tc->start_time_sec = tc_data.start_time_sec();
+            tc->duration_sec = tc->clip ? tc->clip->duration_sec : tc_data.clip().duration_sec();
             tc->duration_beats = tc->clip ? tc->clip->duration_beats : 0.0;
             track->timeline_clips.push_back(std::move(tc));
         }
@@ -123,7 +129,7 @@ static void LoadTracksFromProto(ProjectState& state, const hibiki::pb::Project& 
 }
 
 bool SaveProject(const ProjectState& state, const std::string& path) {
-    hibiki::pb::Project project = BuildProjectProto(state);
+    hibiki::pb::core::Project project = BuildProjectProto(state);
 
     std::ofstream out(path, std::ios::binary);
     if (!out) {
@@ -140,7 +146,7 @@ bool LoadProject(ProjectState& state, const std::string& path) {
         return false;
     }
 
-    hibiki::pb::Project project;
+    hibiki::pb::core::Project project;
     if (!project.ParseFromIstream(&in)) {
         std::cerr << "Failed to parse project file: " << path << "\n";
         return false;
@@ -151,7 +157,7 @@ bool LoadProject(ProjectState& state, const std::string& path) {
 }
 
 std::vector<uint8_t> CaptureProjectState(const ProjectState& state) {
-    hibiki::pb::Project project = BuildProjectProto(state);
+    hibiki::pb::core::Project project = BuildProjectProto(state);
     std::string data;
     project.SerializeToString(&data);
     return std::vector<uint8_t>(data.begin(), data.end());
@@ -159,7 +165,7 @@ std::vector<uint8_t> CaptureProjectState(const ProjectState& state) {
 
 bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data) {
     if (data.empty()) return false;
-    hibiki::pb::Project project;
+    hibiki::pb::core::Project project;
     if (!project.ParseFromArray(data.data(), data.size())) return false;
     LoadTracksFromProto(state, project);
     return true;
@@ -360,7 +366,7 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
 
 void sendAutomationLanesData(int track_idx, const std::vector<AutomationLane>& lanes,
                              const std::vector<std::unique_ptr<Vst3Plugin>>& plugins) {
-    hibiki::pb::Notification notification;
+    hibiki::pb::notifications::Notification notification;
     auto* ald = notification.mutable_automation_lanes_data();
     ald->set_track_index(track_idx);
     for (int i = 0; i < (int)lanes.size(); ++i) {

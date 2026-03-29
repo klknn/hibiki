@@ -1,6 +1,6 @@
 package hibiki.ui;
 
-import hibiki.pb.HibikiProto.Notification;
+import hibiki.pb.notifications.Notification;
 
 import java.util.ArrayList;
 
@@ -46,7 +46,7 @@ class TimelineNotificationHandler {
         view.playheadPos = info.getPositionSec();
         view.bpm = info.getBpm();
         boolean wasPlaying = view.isPlaying;
-        view.isPlaying = info.getIsPlaying();
+        view.isPlaying = info.getTransportState() == hibiki.pb.core.TransportState.TRANSPORT_STATE_PLAYING;
 
         if (view.isPlaying && !wasPlaying && view.autoScroll) {
             int playheadX = (int) (view.playheadPos * view.getPixelsPerSecond());

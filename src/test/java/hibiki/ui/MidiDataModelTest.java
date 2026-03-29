@@ -1,6 +1,8 @@
 package hibiki.ui;
 
-import hibiki.pb.HibikiProto;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.AutomationPoint;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -197,14 +199,14 @@ public class MidiDataModelTest {
     @Test
     public void testLoadFromBackendData() {
         // Build a protobuf ClipMidiData with 2 notes
-        HibikiProto.ClipMidiData data = HibikiProto.ClipMidiData.newBuilder()
+        ClipMidiData data = ClipMidiData.newBuilder()
                 .setTrackIndex(0)
                 .setSlotIndex(-1)
                 .setClipIndex(0)
                 .setResolution(480)
-                .addEvents(HibikiProto.MidiEvent.newBuilder()
+                .addEvents(hibiki.pb.core.MidiEvent.newBuilder()
                         .setTick(0).setPitch(60).setDurationTicks(96).setVelocity(100))
-                .addEvents(HibikiProto.MidiEvent.newBuilder()
+                .addEvents(hibiki.pb.core.MidiEvent.newBuilder()
                         .setTick(96).setPitch(64).setDurationTicks(48).setVelocity(80))
                 .build();
 
@@ -229,7 +231,7 @@ public class MidiDataModelTest {
 
     @Test
     public void testLoadFromBackendData_zeroResolution() {
-        HibikiProto.ClipMidiData data = HibikiProto.ClipMidiData.newBuilder()
+        ClipMidiData data = ClipMidiData.newBuilder()
                 .setTrackIndex(0)
                 .setResolution(0)
                 .build();
@@ -249,7 +251,7 @@ public class MidiDataModelTest {
         assertEquals(1, model.notes.size());
 
         // Load empty data should clear
-        HibikiProto.ClipMidiData data = HibikiProto.ClipMidiData.newBuilder()
+        ClipMidiData data = ClipMidiData.newBuilder()
                 .setTrackIndex(0)
                 .setResolution(480)
                 .build();

@@ -1,7 +1,9 @@
 package hibiki.ui;
 
-import hibiki.pb.HibikiProto;
-import hibiki.pb.HibikiProto.Notification;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
+import hibiki.pb.notifications.Notification;
 
 import hibiki.BackendManager;
 
@@ -480,8 +482,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             menu.addSeparator();
             JMenuItem autoItem = new JMenuItem("Create Automation: " + ltp.paramName);
             autoItem.addActionListener(e -> {
-                BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                        .setAddAutomationLane(HibikiProto.AddAutomationLane.newBuilder()
+                BackendManager.getInstance().sendRequest(Request.newBuilder()
+                        .setAddAutomationLane(AddAutomationLane.newBuilder()
                                 .setTrackIndex(trackIdx)
                                 .setPluginIndex(ltp.pluginIndex)
                                 .setParamId((int) ltp.paramId))
@@ -512,8 +514,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             try {
                 int pluginIdx = Integer.parseInt(parts[0].trim());
                 int paramId = Integer.parseInt(parts[1].trim());
-                BackendManager.getInstance().sendRequest(HibikiProto.Request.newBuilder()
-                        .setAddAutomationLane(HibikiProto.AddAutomationLane.newBuilder()
+                BackendManager.getInstance().sendRequest(Request.newBuilder()
+                        .setAddAutomationLane(AddAutomationLane.newBuilder()
                                 .setTrackIndex(trackIdx)
                                 .setPluginIndex(pluginIdx)
                                 .setParamId(paramId))
@@ -580,7 +582,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             return "Track " + index;
         }
 
-        void addOrUpdateClip(HibikiProto.TimelineClipInfo info) {
+        void addOrUpdateClip(TimelineClipInfo info) {
             int cidx = info.getClipIndex();
             ClipRect cr = clipMap.get(cidx);
             if (cr == null) {

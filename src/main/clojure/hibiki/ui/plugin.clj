@@ -7,7 +7,8 @@
            [java.awt BorderLayout Dimension Font Color Graphics Graphics2D RenderingHints]
            [java.awt.event ActionListener FocusListener FocusEvent]
            [javax.swing.event DocumentListener ChangeListener]
-           [hibiki.pb HibikiProto HibikiProto$Request HibikiProto$Notification HibikiProto$Notification$ResponseCase HibikiProto$ShowPluginGui HibikiProto$RemovePlugin HibikiProto$SetParamValue HibikiProto$DeleteClip]))
+           [hibiki.pb.commands Request ShowPluginGui RemovePlugin SetParamValue DeleteClip]
+           [hibiki.pb.notifications Notification Notification$ResponseCase]))
 
 (set! *warn-on-reflection* true)
 
@@ -27,8 +28,8 @@
 (defn- send-show-gui
   [^hibiki.BackendManager backend ^long track-idx ^long plugin-idx]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setShowPluginGui (-> (HibikiProto$ShowPluginGui/newBuilder)
+    (-> (Request/newBuilder)
+        (.setShowPluginGui (-> (ShowPluginGui/newBuilder)
                                (.setTrackIndex (int track-idx))
                                (.setPluginIndex (int plugin-idx))))
         (.build))))
@@ -36,8 +37,8 @@
 (defn- send-remove-plugin
   [^hibiki.BackendManager backend ^long track-idx ^long plugin-idx]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setRemovePlugin (-> (HibikiProto$RemovePlugin/newBuilder)
+    (-> (Request/newBuilder)
+        (.setRemovePlugin (-> (RemovePlugin/newBuilder)
                               (.setTrackIndex (int track-idx))
                               (.setPluginIndex (int plugin-idx))))
         (.build))))
@@ -45,8 +46,8 @@
 (defn- send-param-change
   [^hibiki.BackendManager backend track-idx plugin-idx param-id value]
   (.sendRequest backend
-    (-> (HibikiProto$Request/newBuilder)
-        (.setSetParamValue (-> (HibikiProto$SetParamValue/newBuilder)
+    (-> (Request/newBuilder)
+        (.setSetParamValue (-> (SetParamValue/newBuilder)
                                (.setTrackIndex (int track-idx))
                                (.setPluginIndex (int plugin-idx))
                                (.setParamId (int param-id))
@@ -171,8 +172,8 @@
           (let [{:keys [track-idx slot-idx]} @wf-state]
             (when (>= track-idx 0)
               (.sendRequest backend
-                (-> (HibikiProto$Request/newBuilder)
-                    (.setDeleteClip (-> (HibikiProto$DeleteClip/newBuilder)
+                (-> (Request/newBuilder)
+                    (.setDeleteClip (-> (DeleteClip/newBuilder)
                                        (.setTrackIndex (int track-idx))
                                        (.setSlotIndex (int slot-idx))))
                     (.build)))
@@ -222,9 +223,9 @@
     (.addNotificationListener backend
       (reify java.util.function.Consumer
         (accept [_ notif]
-          (let [^HibikiProto$Notification notification notif]
+          (let [^Notification notification notif]
           (case (.getResponseCase notification)
-            HibikiProto$Notification$ResponseCase/PARAM_LIST
+            Notification$ResponseCase/PARAM_LIST
             (let [pl (.getParamList notification)
                   ti (.getTrackIndex pl)
                   pi (.getPluginIndex pl)
@@ -243,7 +244,7 @@
                          (.revalidate chain-content)
                          (.repaint chain-content)))))))
 
-            HibikiProto$Notification$ResponseCase/CLIP_WAVEFORM
+            Notification$ResponseCase/CLIP_WAVEFORM
             (let [cw (.getClipWaveform notification)
                   ti (.getTrackIndex cw)
                   si (.getSlotIndex cw)

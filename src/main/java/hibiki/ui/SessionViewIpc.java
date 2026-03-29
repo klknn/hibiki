@@ -1,8 +1,10 @@
 package hibiki.ui;
 
 import hibiki.BackendManager;
-import hibiki.pb.HibikiProto;
-import hibiki.pb.HibikiProto.Request;
+import hibiki.pb.commands.*;
+import hibiki.pb.notifications.*;
+import hibiki.pb.core.*;
+import hibiki.pb.commands.Request;
 
 /**
  * Encapsulates all IPC (Protobuf) request builders for SessionView operations.
@@ -18,7 +20,7 @@ class SessionViewIpc {
     void sendLoadClip(int trackIdx, int slotIdx, String path, boolean isLoop) {
         view.slotPaths[trackIdx][slotIdx] = path;
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setLoadClip(HibikiProto.LoadClip.newBuilder()
+                .setLoadClip(LoadClip.newBuilder()
                         .setTrackIndex(trackIdx)
                         .setSlotIndex(slotIdx)
                         .setPath(path)
@@ -28,7 +30,7 @@ class SessionViewIpc {
 
     void sendSetClipLoop(int trackIdx, int slotIdx, boolean isLoop) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setSetClipLoop(HibikiProto.SetClipLoop.newBuilder()
+                .setSetClipLoop(SetClipLoop.newBuilder()
                         .setTrackIndex(trackIdx)
                         .setSlotIndex(slotIdx)
                         .setIsLoop(isLoop))
@@ -37,7 +39,7 @@ class SessionViewIpc {
 
     void sendPlayClip(int trackIdx, int slotIdx) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setPlayClip(HibikiProto.PlayClip.newBuilder()
+                .setPlayClip(PlayClip.newBuilder()
                         .setTrackIndex(trackIdx)
                         .setSlotIndex(slotIdx))
                 .build());
@@ -45,21 +47,21 @@ class SessionViewIpc {
 
     void sendStopTrack(int trackIdx) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setStopTrack(HibikiProto.StopTrack.newBuilder()
+                .setStopTrack(StopTrack.newBuilder()
                         .setTrackIndex(trackIdx))
                 .build());
     }
 
     void sendPlayScene(int slotIdx) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setPlayScene(HibikiProto.PlayScene.newBuilder()
+                .setPlayScene(PlayScene.newBuilder()
                         .setSlotIndex(slotIdx))
                 .build());
     }
 
     void sendDeleteClip(int trackIdx, int slotIdx) {
         BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setDeleteClip(HibikiProto.DeleteClip.newBuilder()
+                .setDeleteClip(DeleteClip.newBuilder()
                         .setTrackIndex(trackIdx)
                         .setSlotIndex(slotIdx))
                 .build());

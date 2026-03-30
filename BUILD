@@ -141,6 +141,33 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "commands",
+    srcs = ["commands.cpp"],
+    hdrs = ["commands.hpp"],
+    deps = [
+        ":clip",
+        ":history",
+        ":ipc",
+        ":midi",
+        ":project",
+        ":track",
+        "//pb:commands_cc_proto",
+        "//pb:core_cc_proto",
+        "//pb:notifications_cc_proto",
+    ] + select({
+        "@platforms//os:windows": [
+            ":vst3_host_win32",
+        ],
+        "@platforms//os:macos": [
+            ":vst3_host_mac",
+        ],
+        "//conditions:default": [
+            ":vst3_host_x11",
+        ],
+    }),
+)
+
 cc_binary(
     name = "hbk-play",
     srcs = [
@@ -151,6 +178,7 @@ cc_binary(
         ":clip",
         ":history",
         ":ipc",
+        ":commands",
         ":midi",
         ":project",
         ":track",

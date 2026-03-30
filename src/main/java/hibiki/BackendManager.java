@@ -229,6 +229,36 @@ public class BackendManager {
                 .build());
     }
 
+    public void moveAutomationClip(int trackIndex, int laneIndex, int clipIndex, float startTimeSec) {
+        sendRequest(Request.newBuilder()
+                .setAutomation(AutomationCmd.newBuilder()
+                        .setAction(AutomationCmd.Action.ACTION_MOVE_CLIP)
+                        .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex).setLaneIndex(laneIndex))
+                        .setClipIndex(clipIndex)
+                        .setStartTimeSec(startTimeSec))
+                .build());
+    }
+
+    public void resizeAutomationClip(int trackIndex, int laneIndex, int clipIndex, float durationBeats) {
+        sendRequest(Request.newBuilder()
+                .setAutomation(AutomationCmd.newBuilder()
+                        .setAction(AutomationCmd.Action.ACTION_RESIZE_CLIP)
+                        .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex).setLaneIndex(laneIndex))
+                        .setClipIndex(clipIndex)
+                        .setDurationBeats(durationBeats))
+                .build());
+    }
+
+    public void renameAutomationClip(int trackIndex, int laneIndex, int clipIndex, String name) {
+        sendRequest(Request.newBuilder()
+                .setAutomation(AutomationCmd.newBuilder()
+                        .setAction(AutomationCmd.Action.ACTION_RENAME_CLIP)
+                        .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex).setLaneIndex(laneIndex))
+                        .setClipIndex(clipIndex)
+                        .setClipName(name))
+                .build());
+    }
+
     /**
      * Request MIDI data for a clip (for Piano Roll editing)
      * Use slotIdx >= 0 for session clips, clipIdx >= 0 for timeline clips

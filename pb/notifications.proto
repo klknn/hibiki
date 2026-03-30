@@ -134,7 +134,7 @@ message AutomationLaneInfo {
   int32 plugin_index = 3;
   uint32 param_id = 4;
   string param_name = 5;
-  repeated hibiki.pb.core.AutomationPoint points = 6;
+  repeated hibiki.pb.core.TimelineClip clips = 6;
 }
 
 message AutomationLanesData {

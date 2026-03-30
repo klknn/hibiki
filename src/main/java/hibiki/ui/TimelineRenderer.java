@@ -1,6 +1,7 @@
 package hibiki.ui;
 
 import java.awt.*;
+import java.awt.geom.*;
 import javax.swing.JPanel;
 import java.util.List;
 
@@ -96,7 +97,7 @@ class TimelineRenderer {
                       float playheadPos, boolean isDragging, TimelineView.ClipRect draggingClip,
                       int dragSourceTrack, float dragOriginalStartTime, int dragCurrentY,
                       boolean creatingClip, int creatingTrackIdx, TimelineView.ClipRect creatingClipRect,
-                      int trackHeight, int timeRulerHeight) {
+                      int creatingAutoLaneIdx, int trackHeight, int timeRulerHeight) {
         Graphics2D g2 = (Graphics2D) g;
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
@@ -175,18 +176,29 @@ class TimelineRenderer {
 
         // Draw clip being created
         if (creatingClip && creatingClipRect != null && creatingClipRect.duration > 0) {
-            int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(creatingTrackIdx)) + 5;
             int x = scaleLabelWidth + (int) (creatingClipRect.startTime * pps);
             int w = (int) (creatingClipRect.duration * pps);
-            int h = scaleBaseTrack - 10;
-            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.6f));
-            g2.setColor(new Color(100, 200, 100));
-            g2.fillRoundRect(x, y, w, h, 8, 8);
-            g2.setColor(new Color(150, 255, 150));
-            g2.drawRoundRect(x, y, w, h, 8, 8);
-            g2.setColor(Color.WHITE);
-            g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
-            g2.drawString("New Clip", x + 5, y + 15);
+            if (creatingAutoLaneIdx >= 0) {
+                int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(creatingTrackIdx)) 
+                        + scaleBaseTrack + creatingAutoLaneIdx * scaleAutoLane + 4;
+                int h = scaleAutoLane - 8;
+                g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.6f));
+                g2.setColor(Theme.getInstance().ACCENT_ORANGE.brighter());
+                g2.fillRect(x, y, w, h);
+                g2.setColor(Color.WHITE);
+                g2.drawRect(x, y, w, h);
+            } else {
+                int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(creatingTrackIdx)) + 5;
+                int h = scaleBaseTrack - 10;
+                g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.6f));
+                g2.setColor(new Color(100, 200, 100));
+                g2.fillRoundRect(x, y, w, h, 8, 8);
+                g2.setColor(new Color(150, 255, 150));
+                g2.drawRoundRect(x, y, w, h, 8, 8);
+                g2.setColor(Color.WHITE);
+                g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
+                g2.drawString("New Clip", x + 5, y + 15);
+            }
             g2.setComposite(AlphaComposite.SrcOver);
         }
 
@@ -200,80 +212,126 @@ class TimelineRenderer {
         g2.drawLine(px, 0, px, contentPanel.getHeight());
     }
 
-    /** Draw an automation curve inside its lane sub-row. */
+    /** Draw an automation curve inside its lane sub-row based on individual clips. */
     private void drawAutomationCurve(Graphics2D g2, TimelineView.AutomationLaneData lane,
             int y, int h, int xOff, float pps, float secPerBeat) {
-        List<AutomationEditor.AutoPoint> points = lane.points;
         int pad = 4;
-        int drawH = h - pad * 2;
-        int drawY = y + pad;
+        int headerH = 15;
+        int drawH = h - pad * 2 - headerH;
+        int drawY = y + pad + headerH;
 
-        // Draw 0.0 and 1.0 reference lines
+        // Draw 0.0 and 1.0 reference lines (below header)
         g2.setColor(new Color(255, 255, 255, 20));
         g2.drawLine(0, drawY, (int) (600 * pps), drawY); // 1.0
         g2.drawLine(0, drawY + drawH, (int) (600 * pps), drawY + drawH); // 0.0
         g2.setColor(new Color(255, 255, 255, 12));
         g2.drawLine(0, drawY + drawH / 2, (int) (600 * pps), drawY + drawH / 2); // 0.5
 
-        if (points.isEmpty())
+        if (lane.clips == null || lane.clips.isEmpty())
             return;
 
-        // Draw curve segments between points using tension interpolation
-        g2.setColor(Theme.getInstance().ACCENT_ORANGE);
-        g2.setStroke(new BasicStroke(1.5f));
-        for (int i = 0; i < points.size() - 1; i++) {
-            AutomationEditor.AutoPoint p0 = points.get(i);
-            AutomationEditor.AutoPoint p1 = points.get(i + 1);
-            float x0sec = p0.timeBeats * secPerBeat;
-            float x1sec = p1.timeBeats * secPerBeat;
-            int px0 = xOff + (int) (x0sec * pps);
-            int px1 = xOff + (int) (x1sec * pps);
-            int py0 = drawY + drawH - (int) (p0.value * drawH);
-            int py1 = drawY + drawH - (int) (p1.value * drawH);
-            int steps = Math.max(4, Math.abs(px1 - px0) / 2);
-            int prevX = px0, prevPY = py0;
-            for (int s = 1; s <= steps; s++) {
-                float t = (float) s / steps;
-                float ct = (float) Math.pow(t, Math.pow(2, p0.tension));
-                float val = p0.value + (p1.value - p0.value) * ct;
-                int cx = px0 + (int) ((px1 - px0) * t);
-                int cy = drawY + drawH - (int) (val * drawH);
-                g2.drawLine(prevX, prevPY, cx, cy);
-                prevX = cx;
-                prevPY = cy;
-            }
-        }
+        Color accentOrange = Theme.getInstance().ACCENT_ORANGE;
+        Color topColor = new Color(accentOrange.getRed(), accentOrange.getGreen(), accentOrange.getBlue(), 100);
+        Color bottomColor = new Color(accentOrange.getRed() / 3, accentOrange.getGreen() / 3, accentOrange.getBlue() / 3, 100);
 
-        // Draw control points
-        g2.setStroke(new BasicStroke(1.0f));
-        for (AutomationEditor.AutoPoint pt : points) {
-            float xSec = pt.timeBeats * secPerBeat;
-            int px = xOff + (int) (xSec * pps);
-            int py = drawY + drawH - (int) (pt.value * drawH);
+        for (TimelineView.ClipRect cr : lane.clips) {
+            int startPx = xOff + (int) (cr.startTime * pps);
+            float durationSec = cr.duration * secPerBeat;
+            int widthPx = (int) (durationSec * pps);
+            int endPx = startPx + widthPx;
+
+            int clipTopY = drawY - headerH;
+
+            // Draw clip background area (faint orange, transparent content)
+            g2.setColor(new Color(accentOrange.getRed(), accentOrange.getGreen(), accentOrange.getBlue(), 20));
+            g2.fillRect(startPx, clipTopY, widthPx, drawH + headerH);
+            g2.setColor(new Color(accentOrange.getRed(), accentOrange.getGreen(), accentOrange.getBlue(), 60));
+            g2.drawRect(startPx, clipTopY, widthPx, drawH + headerH);
+
+            // Draw clip header
+            g2.setColor(new Color(accentOrange.getRed(), accentOrange.getGreen(), accentOrange.getBlue(), 120));
+            g2.fillRect(startPx, clipTopY, widthPx, headerH);
+
+            // Draw clip name
             g2.setColor(Color.WHITE);
-            g2.fillOval(px - 3, py - 3, 6, 6);
-            g2.setColor(Theme.getInstance().ACCENT_ORANGE);
-            g2.drawOval(px - 3, py - 3, 6, 6);
-        }
+            g2.setFont(new Font("SansSerif", Font.PLAIN, 10));
+            String displayName = (cr.name != null && !cr.name.isEmpty()) ? cr.name : "Automation";
+            if (widthPx > 20) {
+                Shape oldClip = g2.getClip();
+                g2.clipRect(startPx, clipTopY, widthPx, headerH);
+                g2.drawString(displayName, startPx + 4, clipTopY + 11);
+                g2.setClip(oldClip);
+            }
 
-        // Draw tension handles (draggable midpoint circles)
-        if (points.size() >= 2) {
+            List<AutomationEditor.AutoPoint> points = cr.automationPoints;
+            if (points == null || points.isEmpty()) continue;
+
+            GeneralPath curvePath = new GeneralPath();
+            GeneralPath fillPath = new GeneralPath();
+            int bottomY = drawY + drawH;
+
+            // First point position (relative to clip start)
+            AutomationEditor.AutoPoint firstPt = points.get(0);
+            float firstXsec = cr.startTime + (firstPt.timeBeats * secPerBeat);
+            int firstPx = xOff + (int) (firstXsec * pps);
+            int firstPy = drawY + drawH - (int) (firstPt.value * drawH);
+
+            // Last point position
+            AutomationEditor.AutoPoint lastPt = points.get(points.size() - 1);
+            float lastXsec = cr.startTime + (lastPt.timeBeats * secPerBeat);
+            int lastPx = xOff + (int) (lastXsec * pps);
+            int lastPy = drawY + drawH - (int) (lastPt.value * drawH);
+
+            fillPath.moveTo(startPx, bottomY);
+            fillPath.lineTo(startPx, firstPy);
+            if (firstPx > startPx) {
+                fillPath.lineTo(firstPx, firstPy);
+            }
+
+            curvePath.moveTo(firstPx, firstPy);
+
             for (int i = 0; i < points.size() - 1; i++) {
                 AutomationEditor.AutoPoint p0 = points.get(i);
                 AutomationEditor.AutoPoint p1 = points.get(i + 1);
-                float x0sec = p0.timeBeats * secPerBeat;
-                float x1sec = p1.timeBeats * secPerBeat;
-                int midPx = xOff + (int) (((x0sec + x1sec) / 2f) * pps);
-                // Interpolate value at midpoint using tension
-                float t = 0.5f;
-                float exponent = (float) Math.pow(2.0, p0.tension);
-                float curvedT = (float) Math.pow(t, exponent);
-                float midVal = p0.value + (p1.value - p0.value) * curvedT;
-                int midPy = drawY + drawH - (int) (midVal * drawH);
-                g2.setColor(new Color(0, 200, 220, 180)); // cyan/teal
-                g2.fillOval(midPx - 3, midPy - 3, 6, 6);
-                g2.setColor(new Color(0, 220, 240));
-                g2.drawOval(midPx - 3, midPy - 3, 6, 6);
+                float x0sec = cr.startTime + (p0.timeBeats * secPerBeat);
+                float x1sec = cr.startTime + (p1.timeBeats * secPerBeat);
+                int px0 = xOff + (int) (x0sec * pps);
+                int px1 = xOff + (int) (x1sec * pps);
+                int steps = Math.max(4, Math.abs(px1 - px0) / 2);
+                for (int s = 1; s <= steps; s++) {
+                    float t = (float) s / steps;
+                    float ct = (float) Math.pow(t, Math.pow(2, p0.tension));
+                    float val = p0.value + (p1.value - p0.value) * ct;
+                    int cx = px0 + (int) ((px1 - px0) * t);
+                    int cy = drawY + drawH - (int) (val * drawH);
+                    curvePath.lineTo(cx, cy);
+                    fillPath.lineTo(cx, cy);
+                }
+            }
+
+            if (lastPx < endPx) {
+                fillPath.lineTo(endPx, lastPy);
+            }
+            fillPath.lineTo(endPx, bottomY);
+            fillPath.closePath();
+
+            g2.setPaint(new GradientPaint(0, drawY, topColor, 0, bottomY, bottomColor));
+            g2.fill(fillPath);
+
+            g2.setColor(accentOrange);
+            g2.setStroke(new BasicStroke(1.5f));
+            g2.draw(curvePath);
+
+            // Draw points
+            g2.setStroke(new BasicStroke(1.0f));
+            for (AutomationEditor.AutoPoint p : points) {
+                float pxSec = cr.startTime + (p.timeBeats * secPerBeat);
+                int ptX = xOff + (int) (pxSec * pps);
+                int ptY = drawY + drawH - (int) (p.value * drawH);
+                g2.setColor(Color.WHITE);
+                g2.fillOval(ptX - 3, ptY - 3, 6, 6);
+                g2.setColor(accentOrange);
+                g2.drawOval(ptX - 3, ptY - 3, 6, 6);
             }
         }
     }
@@ -342,9 +400,12 @@ class TimelineRenderer {
         g2.setStroke(oldStroke);
     }
 
+    private static final int CLIP_HEADER_H = 15;
+
     private void drawClips(Graphics2D g2, List<TimelineView.TrackTimeline> tracks,
             int scaleTimeRuler, int scaleBaseTrack, int scaleLabelWidth,
                            float pps, boolean isDragging, TimelineView.ClipRect draggingClip) {
+        Color accentBlue = Theme.getInstance().ACCENT_BLUE;
         for (int i = 0; i < tracks.size(); i++) {
             int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i)) + 5;
             for (TimelineView.ClipRect clip : tracks.get(i).clips) {
@@ -353,24 +414,44 @@ class TimelineRenderer {
                 int w = (int) (clip.duration * pps);
                 int h = scaleBaseTrack - 10;
 
-                g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
+                // Transparent content background
+                g2.setColor(new Color(accentBlue.getRed(), accentBlue.getGreen(), accentBlue.getBlue(), 30));
                 g2.fillRoundRect(x, y, w, h, 8, 8);
+
+                // Clip header
+                Shape oldClip = g2.getClip();
+                g2.clipRect(x, y, w, h);
+                g2.setColor(new Color(accentBlue.getRed(), accentBlue.getGreen(), accentBlue.getBlue(), 140));
+                g2.fillRect(x, y, w, CLIP_HEADER_H);
+                g2.setClip(oldClip);
+
+                // Clip name in header
+                if (w > 20) {
+                    oldClip = g2.getClip();
+                    g2.clipRect(x, y, w, CLIP_HEADER_H);
+                    g2.setColor(Color.WHITE);
+                    g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
+                    g2.drawString(clip.name != null ? clip.name : "", x + 5, y + 11);
+                    g2.setClip(oldClip);
+                }
+
+                // Content area (below header)
+                int contentY = y + CLIP_HEADER_H;
+                int contentH = h - CLIP_HEADER_H;
 
                 boolean isMidi = clip.path == null || clip.path.isEmpty()
                         || clip.path.toLowerCase().endsWith(".mid")
                         || clip.path.toLowerCase().endsWith(".midi");
 
                 if (isMidi) {
-                    drawMidiPreview(g2, clip, x, y, w, h);
+                    drawMidiPreview(g2, clip, x, contentY, w, contentH);
                 } else {
-                    drawAudioWaveform(g2, clip, x, y, w, h);
+                    drawAudioWaveform(g2, clip, x, contentY, w, contentH);
                 }
 
-                g2.setColor(Theme.getInstance().ACCENT_BLUE);
+                // Border
+                g2.setColor(accentBlue);
                 g2.drawRoundRect(x, y, w, h, 8, 8);
-                g2.setColor(Color.WHITE);
-                g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
-                g2.drawString(clip.name, x + 5, y + 15);
             }
         }
     }
@@ -378,6 +459,8 @@ class TimelineRenderer {
     private void drawMidiPreview(Graphics2D g2, TimelineView.ClipRect clip, int x, int y, int w, int h) {
         if (clip.waveform == null || clip.waveform.length == 0) return;
         g2.setColor(new Color(255, 255, 255, 200));
+        Shape oldClip = g2.getClip();
+        g2.clipRect(x, y, w, h);
         for (int nIdx = 0; nIdx + 2 < clip.waveform.length; nIdx += 3) {
             float startRatio = clip.waveform[nIdx];
             float pitch = clip.waveform[nIdx + 1];
@@ -396,20 +479,24 @@ class TimelineRenderer {
                 g2.fillRect(drawX, ny, drawW, nh);
             }
         }
+        g2.setClip(oldClip);
     }
 
     private void drawAudioWaveform(Graphics2D g2, TimelineView.ClipRect clip, int x, int y, int w, int h) {
         if (clip.waveform == null || clip.waveform.length == 0) return;
         g2.setColor(new Color(255, 255, 255, 120));
+        Shape oldClip = g2.getClip();
+        g2.clipRect(x, y, w, h);
         int midY = y + h / 2;
         int halfH = h / 2 - 4;
-        for (int px = 0; px < w && px < clip.waveform.length; px++) {
+        for (int px = 0; px < w; px++) {
             int wfIdx = (int) ((float) px / w * clip.waveform.length);
             if (wfIdx >= clip.waveform.length) wfIdx = clip.waveform.length - 1;
             float amp = clip.waveform[wfIdx];
             int barH = (int) (amp * halfH);
             g2.drawLine(x + px, midY - barH, x + px, midY + barH);
         }
+        g2.setClip(oldClip);
     }
 
     private void drawClipAt(Graphics2D g2, TimelineView.ClipRect clip, int y, int scaleLabelWidth,
@@ -417,14 +504,33 @@ class TimelineRenderer {
         int x = scaleLabelWidth + (int) (clip.startTime * pps);
         int w = (int) (clip.duration * pps);
         int h = scaleTrackHeight - 10;
+        Color accentBlue = Theme.getInstance().ACCENT_BLUE;
         g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
-        g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
+
+        // Transparent body
+        g2.setColor(new Color(accentBlue.getRed(), accentBlue.getGreen(), accentBlue.getBlue(), 30));
         g2.fillRoundRect(x, y, w, h, 8, 8);
+
+        // Header
+        Shape oldClip = g2.getClip();
+        g2.clipRect(x, y, w, h);
+        g2.setColor(new Color(accentBlue.getRed(), accentBlue.getGreen(), accentBlue.getBlue(), 140));
+        g2.fillRect(x, y, w, CLIP_HEADER_H);
+        g2.setClip(oldClip);
+
+        // Name
+        if (w > 20) {
+            oldClip = g2.getClip();
+            g2.clipRect(x, y, w, CLIP_HEADER_H);
+            g2.setColor(Color.WHITE);
+            g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
+            g2.drawString(clip.name != null ? clip.name : "", x + 5, y + 11);
+            g2.setClip(oldClip);
+        }
+
+        // Border
         g2.setColor(borderColor);
         g2.drawRoundRect(x, y, w, h, 8, 8);
-        g2.setColor(Color.WHITE);
-        g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
-        g2.drawString(clip.name, x + 5, y + 15);
         g2.setComposite(AlphaComposite.SrcOver);
     }
 

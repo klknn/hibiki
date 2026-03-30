@@ -45,7 +45,7 @@ message AutomationLane {
   uint32 plugin_index = 2;
   uint32 param_id = 3;
   string param_name = 4; // Cached display name from the plugin
-  repeated AutomationPoint points = 5;
+  repeated TimelineClip clips = 5;
 }
 
 // Plugin parameter metadata.
@@ -72,6 +72,7 @@ enum ClipType {
   CLIP_TYPE_UNSPECIFIED = 0;
   CLIP_TYPE_MIDI = 1;
   CLIP_TYPE_AUDIO = 2;
+  CLIP_TYPE_AUTOMATION = 3;
 }
 
 // A media clip (MIDI or audio).
@@ -86,6 +87,7 @@ message Clip {
   float duration_sec = 7;    // Content length in seconds
   repeated MidiEvent midi_events = 8;     // Present when type=MIDI (lazy-loaded)
   repeated float waveform_summary = 9;    // Downsampled peaks for display
+  repeated AutomationPoint automation_points = 10; // Present when type=AUTOMATION
 }
 
 // A clip placed on the timeline at a specific position.

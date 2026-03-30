@@ -69,8 +69,16 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
             auto* als = ts->add_automation_lanes();
             als->set_plugin_index(lane.plugin_idx);
             als->set_param_id(lane.param_id);
-            for (const auto& pt : lane.points) {
-                *als->add_points() = pt;
+            for (const auto& tc : lane.clips) {
+                if (!tc || !tc->clip) continue;
+                auto* tcs = als->add_clips();
+                auto* clip = tcs->mutable_clip();
+                clip->set_type(hibiki::pb::core::CLIP_TYPE_AUTOMATION);
+                clip->set_duration_beats(tc->duration_beats);
+                tcs->set_start_time_sec(tc->start_time_sec);
+                for (const auto& pt : tc->clip->automation_points) {
+                    *clip->add_automation_points() = pt;
+                }
             }
         }
     }
@@ -120,8 +128,17 @@ static void LoadTracksFromProto(ProjectState& state, const hibiki::pb::core::Pro
             AutomationLane lane;
             lane.plugin_idx = lane_data.plugin_index();
             lane.param_id = lane_data.param_id();
-            for (const auto& pt : lane_data.points()) {
-                lane.points.push_back(pt);
+            for (const auto& tc_data : lane_data.clips()) {
+                if (!tc_data.has_clip()) continue;
+                auto tc = std::make_unique<TimelineClip>();
+                tc->clip = std::make_unique<Clip>();
+                tc->clip->type = Clip::Type::AUTOMATION;
+                for (const auto& pt : tc_data.clip().automation_points()) {
+                    tc->clip->automation_points.push_back(pt);
+                }
+                tc->start_time_sec = tc_data.start_time_sec();
+                tc->duration_beats = tc_data.clip().duration_beats();
+                lane.clips.push_back(std::move(tc));
             }
             track->automation_lanes.push_back(std::move(lane));
         }
@@ -332,9 +349,9 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
             // Apply automation during bounce
             double current_beats = state.playhead_pos_sec * (state.bpm / 60.0);
             for (const auto& lane : track->automation_lanes) {
-                if (!lane.points.empty() &&
+                if (!lane.clips.empty() &&
                     lane.plugin_idx >= 0 && lane.plugin_idx < (int)track->plugins.size()) {
-                    float val = GetAutomationValue(lane, current_beats);
+                    float val = GetAutomationValue(lane, current_beats, state.bpm);
                     track->plugins[lane.plugin_idx]->setParameterValue(lane.param_id, val);
                 }
             }
@@ -388,8 +405,17 @@ void sendAutomationLanesData(int track_idx, const std::vector<AutomationLane>& l
             }
         }
         li->set_param_name(param_name);
-        for (const auto& pt : lane.points) {
-            *li->add_points() = pt;
+        for (const auto& tc : lane.clips) {
+            if (!tc || !tc->clip) continue;
+            auto* tcs = li->add_clips();
+            auto* clip = tcs->mutable_clip();
+            clip->set_type(hibiki::pb::core::CLIP_TYPE_AUTOMATION);
+            clip->set_name(tc->clip->name);
+            tcs->set_start_time_sec(tc->start_time_sec);
+            clip->set_duration_beats(tc->duration_beats);
+            for (const auto& pt : tc->clip->automation_points) {
+                *clip->add_automation_points() = pt;
+            }
         }
     }
     std::string data;

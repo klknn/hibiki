@@ -73,11 +73,20 @@ message AutomationCmd {
     ACTION_REMOVE_LANE = 2;
     ACTION_UPDATE_POINTS = 3;
     ACTION_GET_LANES = 4;
+    ACTION_ADD_CLIP = 5;
+    ACTION_REMOVE_CLIP = 6;
+    ACTION_MOVE_CLIP = 7;
+    ACTION_RESIZE_CLIP = 8;
+    ACTION_RENAME_CLIP = 9;
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
   uint32 param_id = 3;
   repeated hibiki.pb.core.AutomationPoint points = 4;
+  uint32 clip_index = 5;
+  float start_time_sec = 6;
+  float duration_beats = 7;
+  string clip_name = 8;
 }
 
 message MidiCmd {

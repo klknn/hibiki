@@ -30,7 +30,7 @@ struct TimelineClip {
 struct AutomationLane {
     int plugin_idx = 0;
     uint32_t param_id = 0;
-    std::vector<hibiki::pb::core::AutomationPoint> points;
+    std::vector<std::unique_ptr<TimelineClip>> clips;
 };
 
 // Tension-based interpolation between two automation points
@@ -46,25 +46,65 @@ inline float InterpolateAutomation(float v0, float v1, float t, float tension) {
 }
 
 // Get the automation value at a given time in beats
-inline float GetAutomationValue(const AutomationLane& lane, double time_beats) {
-    const auto& points = lane.points;
-    if (points.empty()) return 0.0f;
+inline float GetAutomationValue(const AutomationLane& lane, double time_beats, double bpm) {
+    if (lane.clips.empty()) return 0.0f;
 
-    if (points.size() == 1) return points[0].value();
-    if (time_beats <= points.front().time_beats()) return points.front().value();
-    if (time_beats >= points.back().time_beats()) return points.back().value();
+    const TimelineClip* prev_clip = nullptr;
+    const TimelineClip* active_clip = nullptr;
 
-    // Binary search for the segment containing time_beats
-    size_t lo = 0, hi = points.size() - 1;
-    while (lo + 1 < hi) {
-        size_t mid = (lo + hi) / 2;
-        if (points[mid].time_beats() <= time_beats) lo = mid;
-        else hi = mid;
+    for (const auto& tc : lane.clips) {
+        if (!tc || !tc->clip || tc->clip->type != Clip::AUTOMATION) continue;
+
+        double clip_start_beats = tc->start_time_sec * (bpm / 60.0);
+        double clip_end_beats = clip_start_beats + tc->duration_beats;
+
+        if (time_beats >= clip_start_beats && time_beats < clip_end_beats) {
+            active_clip = tc.get();
+            break;
+        } else if (time_beats >= clip_end_beats) {
+            if (!prev_clip || tc->start_time_sec > prev_clip->start_time_sec) {
+                prev_clip = tc.get();
+            }
+        }
     }
-    const auto& p0 = points[lo];
-    const auto& p1 = points[hi];
-    float segment_t = (float)((time_beats - p0.time_beats()) / (p1.time_beats() - p0.time_beats()));
-    return InterpolateAutomation(p0.value(), p1.value(), segment_t, p0.tension());
+
+    if (active_clip) {
+        const auto& points = active_clip->clip->automation_points;
+        if (points.empty()) return 0.0f;
+        double local_beats = time_beats - (active_clip->start_time_sec * (bpm / 60.0));
+
+        if (points.size() == 1) return points[0].value();
+        if (local_beats <= points.front().time_beats()) return points.front().value();
+        if (local_beats >= points.back().time_beats()) return points.back().value();
+
+        // Binary search for the segment containing local_beats
+        size_t lo = 0, hi = points.size() - 1;
+        while (lo + 1 < hi) {
+            size_t mid = (lo + hi) / 2;
+            if (points[mid].time_beats() <= local_beats) lo = mid;
+            else hi = mid;
+        }
+        const auto& p0 = points[lo];
+        const auto& p1 = points[hi];
+        float segment_t = (float)((local_beats - p0.time_beats()) / (p1.time_beats() - p0.time_beats()));
+        return InterpolateAutomation(p0.value(), p1.value(), segment_t, p0.tension());
+    } else if (prev_clip) {
+        const auto& points = prev_clip->clip->automation_points;
+        if (points.empty()) return 0.0f;
+        return points.back().value();
+    } else {
+        // Find the earliest clip's first point
+        float first_val = 0.0f;
+        double min_start = 1e9;
+        for (const auto& tc : lane.clips) {
+            if (!tc || !tc->clip || tc->clip->type != Clip::AUTOMATION) continue;
+            if (!tc->clip->automation_points.empty() && tc->start_time_sec < min_start) {
+                min_start = tc->start_time_sec;
+                first_val = tc->clip->automation_points.front().value();
+            }
+        }
+        return first_val;
+    }
 }
 
 class Track {

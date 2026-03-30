@@ -213,6 +213,7 @@ cc_library(
     deps = [
         ":audio_file",
         ":midi",
+        "//pb:core_cc_proto",
     ],
 )
 

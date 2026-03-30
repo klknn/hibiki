@@ -45,7 +45,8 @@ public class AutomationEditor extends JPanel {
     private static final Color BG_COLOR = new Color(28, 28, 32);
     private static final Color GRID_COLOR = new Color(50, 50, 55);
     private static final Color CURVE_COLOR = new Color(0, 180, 255);
-    private static final Color CURVE_FILL_COLOR = new Color(0, 180, 255, 30);
+    private static final Color CURVE_FILL_TOP = new Color(0, 180, 255, 100);
+    private static final Color CURVE_FILL_BOTTOM = new Color(0, 60, 120, 100);
     private static final Color POINT_COLOR = new Color(255, 200, 60);
     private static final Color POINT_HOVER_COLOR = new Color(255, 255, 120);
     private static final Color HEADER_BG = new Color(38, 38, 45);
@@ -272,17 +273,27 @@ public class AutomationEditor extends JPanel {
 
         // Draw curve
         if (points.size() >= 2) {
-            // Fill area under curve
+            // Fill area under curve (spans full visible width)
             GeneralPath fill = new GeneralPath();
-            float firstX = Math.max(headerWidth, beatToX(points.get(0).timeBeats));
-            fill.moveTo(firstX, h);
+            float firstPtY = valueToY(points.get(0).value);
+            float lastPtY = valueToY(points.get(points.size() - 1).value);
+            float firstPtX = beatToX(points.get(0).timeBeats);
+            float lastPtX = beatToX(points.get(points.size() - 1).timeBeats);
+
+            // Start at bottom-left, go up to the flat extension level
+            fill.moveTo(headerWidth, h);
+            fill.lineTo(headerWidth, firstPtY);
+
+            // Flat extension before first point
+            if (firstPtX > headerWidth) {
+                fill.lineTo(firstPtX, firstPtY);
+            }
 
             // Curve path
             GeneralPath curve = new GeneralPath();
-            float prevX = beatToX(points.get(0).timeBeats);
-            float prevY = valueToY(points.get(0).value);
+            float prevX = firstPtX;
+            float prevY = firstPtY;
             curve.moveTo(prevX, prevY);
-            fill.lineTo(prevX, prevY);
 
             for (int i = 1; i < points.size(); i++) {
                 AutoPoint p0 = points.get(i - 1);
@@ -299,12 +310,17 @@ public class AutomationEditor extends JPanel {
                     fill.lineTo(x, y);
                 }
             }
-            float lastX = beatToX(points.get(points.size() - 1).timeBeats);
-            fill.lineTo(lastX, h);
+
+            // Flat extension after last point
+            if (lastPtX < w) {
+                fill.lineTo(w, lastPtY);
+            }
+            // Close along bottom edge
+            fill.lineTo(w, h);
             fill.closePath();
 
             g2.setClip(headerWidth, 0, w - headerWidth, h);
-            g2.setColor(CURVE_FILL_COLOR);
+            g2.setPaint(new GradientPaint(0, 0, CURVE_FILL_TOP, 0, h, CURVE_FILL_BOTTOM));
             g2.fill(fill);
             g2.setColor(CURVE_COLOR);
             g2.setStroke(new BasicStroke(1.5f));
@@ -316,9 +332,8 @@ public class AutomationEditor extends JPanel {
             if (prevX > headerWidth) {
                 g2.drawLine(headerWidth, (int) prevY, (int) prevX, (int) prevY);
             }
-            float lastY = valueToY(points.get(points.size()-1).value);
-            if (lastX < w) {
-                g2.drawLine((int) lastX, (int) lastY, w, (int) lastY);
+            if (lastPtX < w) {
+                g2.drawLine((int) lastPtX, (int) lastPtY, w, (int) lastPtY);
             }
         } else if (points.size() == 1) {
             float y = valueToY(points.get(0).value);

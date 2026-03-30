@@ -123,10 +123,19 @@ class TimelineNotificationHandler {
             laneData.pluginIndex = laneInfo.getPluginIndex();
             laneData.paramId = laneInfo.getParamId();
             laneData.paramName = laneInfo.getParamName();
-            for (int j = 0; j < laneInfo.getPointsCount(); j++) {
-                var pt = laneInfo.getPoints(j);
-                laneData.points.add(new AutomationEditor.AutoPoint(
-                        pt.getTimeBeats(), pt.getValue(), pt.getTension()));
+            for (int j = 0; j < laneInfo.getClipsCount(); j++) {
+                var clipInfo = laneInfo.getClips(j);
+                TimelineView.ClipRect cr = new TimelineView.ClipRect();
+                cr.startTime = (float) clipInfo.getStartTimeSec();
+                cr.duration = (float) clipInfo.getClip().getDurationBeats();
+                cr.name = clipInfo.getClip().getName();
+                cr.isAutomation = true;
+                for (int k = 0; k < clipInfo.getClip().getAutomationPointsCount(); k++) {
+                    var pt = clipInfo.getClip().getAutomationPoints(k);
+                    cr.automationPoints.add(new AutomationEditor.AutoPoint(
+                            pt.getTimeBeats(), pt.getValue(), pt.getTension()));
+                }
+                laneData.clips.add(cr);
             }
             track.automationLanes.add(laneData);
         }

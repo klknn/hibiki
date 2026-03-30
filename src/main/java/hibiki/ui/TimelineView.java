@@ -128,6 +128,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     int creatingTrackIdx = -1;
     float creatingStartTime = 0;
     ClipRect creatingClipRect = null;
+    int creatingAutoLaneIdx = -1;
 
     // Clip resize state
     boolean resizingClip = false;
@@ -610,7 +611,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         renderer.drawTimeline(g, contentPanel, tracks, selectedTrack, bpm, gridMode,
                 playheadPos, isDragging, draggingClip, dragSourceTrack, dragOriginalStartTime,
                 dragCurrentY, creatingClip, creatingTrackIdx, creatingClipRect,
-                getTrackHeight(), TIME_RULER_HEIGHT);
+                creatingAutoLaneIdx, getTrackHeight(), TIME_RULER_HEIGHT);
     }
 
 
@@ -674,15 +675,17 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         int pluginIndex;
         long paramId;
         String paramName = "Parameter";
-        List<AutomationEditor.AutoPoint> points = new ArrayList<>();
+        List<ClipRect> clips = new ArrayList<>();
     }
 
     static class ClipRect {
         String name;
         String path;
         float startTime;
-        float duration;
+        float duration; // In seconds for audio, beats for MIDI and Automation
         float[] waveform;
+        boolean isAutomation = false;
+        List<AutomationEditor.AutoPoint> automationPoints = new ArrayList<>();
     }
 
     /**

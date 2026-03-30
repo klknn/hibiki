@@ -283,8 +283,32 @@ cc_test(
     linkstatic = True,
 )
 
+cc_test(
+    name = "commands_test",
+    size = "small",
+    srcs = ["commands_test.cc"],
+    deps = [
+        ":commands",
+        ":ipc",
+        ":track",
+        "@googletest//:gtest_main",
+    ],
+    linkstatic = True,
+)
 
-
+cc_test(
+    name = "ipc_test",
+    size = "small",
+    timeout = "moderate",
+    srcs = ["ipc_test.cc"],
+    deps = [
+        ":ipc",
+        "//pb:core_cc_proto",
+        "//pb:notifications_cc_proto",
+        "@googletest//:gtest",
+    ],
+    linkstatic = True,
+)
 
 
 

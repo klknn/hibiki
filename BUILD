@@ -3,6 +3,14 @@ load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_test")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@protobuf//bazel:java_proto_library.bzl", "java_proto_library")
+load("@rules_jvm_external//:defs.bzl", "pom_file")
+
+
+pom_file(
+    name = "pom",
+    pom_template = "//third_party:pom_template.xml",
+    target = "//:hibiki-gui-java",
+)
 
 cc_library(
     name = "alsa_out",
@@ -333,6 +341,7 @@ java_library(
 )
 
 java_binary(
+    tags = ["maven_coordinates=com.hibiki:hibiki-gui-java:0.1.0"],
     name = "hibiki-gui-java",
     main_class = "hibiki.GuiMain",
     runtime_deps = [":hibiki-gui-lib", ":hibiki-clj-sources"],

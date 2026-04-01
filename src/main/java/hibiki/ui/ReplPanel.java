@@ -1,19 +1,18 @@
 package hibiki.ui;
 
-import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.*;
 
 /**
- * Embedded Clojure REPL panel for the Java frontend.
- * Provides a Swing-based REPL with input history, Ctrl+Enter eval,
- * selected-region eval, and stdout/stderr capture.
+ * Embedded Clojure REPL panel for the Java frontend. Provides a Swing-based REPL with input
+ * history, Ctrl+Enter eval, selected-region eval, and stdout/stderr capture.
  *
- * Mirrors the Clojure repl_panel.clj implementation.
+ * <p>Mirrors the Clojure repl_panel.clj implementation.
  */
 public class ReplPanel extends JPanel {
   private final JTextArea output;
@@ -84,69 +83,79 @@ public class ReplPanel extends JPanel {
     output.append("Ctrl+Enter to evaluate. Select text for partial eval.\n");
 
     // Auto-import common classes on a background thread
-    new Thread(() -> {
-      try {
-        // Bootstrap Clojure runtime
-        Class.forName("clojure.lang.RT");
+    new Thread(
+            () -> {
+              try {
+                // Bootstrap Clojure runtime
+                Class.forName("clojure.lang.RT");
 
-        // require clojure.main so read-string and eval are available
-        Object requireFn = clojureVar("clojure.core", "require");
-        clojureInvoke(requireFn, clojureRead("'clojure.main"));
+                // require clojure.main so read-string and eval are available
+                Object requireFn = clojureVar("clojure.core", "require");
+                clojureInvoke(requireFn, clojureRead("'clojure.main"));
 
-        // Auto-import DAW classes
-        String importExpr = "(do "
-            + "(import '[hibiki BackendManager]"
-            + "        '[hibiki.ui SessionView TimelineView PluginPane Theme MainView]"
-            + "        '[hibiki.pb.commands Request]"
-            + "        '[hibiki.pb.notifications Notification])"
-            + "(def bm (hibiki.BackendManager/getInstance)))";
-        clojureEval(importExpr);
-        appendOutput("Ready. `bm` and all protobuf classes are available.\n");
-        appendOutput("Try: (+ 1 2)\n\n");
-      } catch (Throwable t) {
-        appendOutput("Auto-import warning: " + t.getMessage() + "\n\n");
-      }
-    }, "repl-init").start();
+                // Auto-import DAW classes
+                String importExpr =
+                    "(do "
+                        + "(import '[hibiki BackendManager]"
+                        + "        '[hibiki.ui SessionView TimelineView PluginPane Theme MainView]"
+                        + "        '[hibiki.pb.commands Request]"
+                        + "        '[hibiki.pb.notifications Notification])"
+                        + "(def bm (hibiki.BackendManager/getInstance)))";
+                clojureEval(importExpr);
+                appendOutput("Ready. `bm` and all protobuf classes are available.\n");
+                appendOutput("Try: (+ 1 2)\n\n");
+              } catch (Throwable t) {
+                appendOutput("Auto-import warning: " + t.getMessage() + "\n\n");
+              }
+            },
+            "repl-init")
+        .start();
 
     // Ctrl+Enter to evaluate
     InputMap im = input.getInputMap(JComponent.WHEN_FOCUSED);
     ActionMap am = input.getActionMap();
     im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, KeyEvent.CTRL_DOWN_MASK), "eval");
     im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, KeyEvent.META_DOWN_MASK), "eval");
-    am.put("eval", new AbstractAction() {
-      @Override
-      public void actionPerformed(ActionEvent e) {
-        doEval();
-      }
-    });
+    am.put(
+        "eval",
+        new AbstractAction() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            doEval();
+          }
+        });
 
     // Ctrl+Up for history
     im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, KeyEvent.CTRL_DOWN_MASK), "histUp");
-    am.put("histUp", new AbstractAction() {
-      @Override
-      public void actionPerformed(ActionEvent e) {
-        if (!history.isEmpty()) {
-          historyIndex = Math.min(historyIndex + 1, history.size() - 1);
-          input.setText(history.get(history.size() - 1 - historyIndex));
-        }
-      }
-    });
+    am.put(
+        "histUp",
+        new AbstractAction() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            if (!history.isEmpty()) {
+              historyIndex = Math.min(historyIndex + 1, history.size() - 1);
+              input.setText(history.get(history.size() - 1 - historyIndex));
+            }
+          }
+        });
 
     // Ctrl+Down for history
     im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, KeyEvent.CTRL_DOWN_MASK), "histDown");
-    am.put("histDown", new AbstractAction() {
-      @Override
-      public void actionPerformed(ActionEvent e) {
-        if (!history.isEmpty()) {
-          historyIndex = Math.max(historyIndex - 1, -1);
-          if (historyIndex < 0) {
-            input.setText("");
-          } else {
-            input.setText(history.get(history.size() - 1 - historyIndex));
+    am.put(
+        "histDown",
+        new AbstractAction() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            if (!history.isEmpty()) {
+              historyIndex = Math.max(historyIndex - 1, -1);
+              if (historyIndex < 0) {
+                input.setText("");
+              } else {
+                input.setText(history.get(history.size() - 1 - historyIndex));
+              }
+            }
           }
-        }
-      }
-    });
+        });
 
     // Consume keys that MainView's WHEN_IN_FOCUSED_WINDOW bindings would steal
     consumeKey(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0));
@@ -164,10 +173,11 @@ public class ReplPanel extends JPanel {
   }
 
   private void appendOutput(String text) {
-    SwingUtilities.invokeLater(() -> {
-      output.append(text);
-      output.setCaretPosition(output.getDocument().getLength());
-    });
+    SwingUtilities.invokeLater(
+        () -> {
+          output.append(text);
+          output.setCaretPosition(output.getDocument().getLength());
+        });
   }
 
   private void doEval() {
@@ -178,8 +188,7 @@ public class ReplPanel extends JPanel {
     } else {
       text = input.getText().trim();
     }
-    if (text.isEmpty())
-      return;
+    if (text.isEmpty()) return;
 
     // Only clear input if evaluating the full text (not a selection)
     if (sel == null || sel.trim().isEmpty()) {
@@ -192,75 +201,82 @@ public class ReplPanel extends JPanel {
 
     // Evaluate on background thread
     final String expr = text;
-    new Thread(() -> {
-      try {
-        // Redirect stdout/stderr to capture output
-        PrintStream oldOut = System.out;
-        PrintStream oldErr = System.err;
-        PrintStream captureStream = new PrintStream(new OutputStream() {
-          private final StringBuilder buf = new StringBuilder();
+    new Thread(
+            () -> {
+              try {
+                // Redirect stdout/stderr to capture output
+                PrintStream oldOut = System.out;
+                PrintStream oldErr = System.err;
+                PrintStream captureStream =
+                    new PrintStream(
+                        new OutputStream() {
+                          private final StringBuilder buf = new StringBuilder();
 
-          @Override
-          public void write(int b) {
-            buf.append((char) b);
-            if (b == '\n') {
-              String line = buf.toString();
-              buf.setLength(0);
-              appendOutput(line);
-            }
-          }
+                          @Override
+                          public void write(int b) {
+                            buf.append((char) b);
+                            if (b == '\n') {
+                              String line = buf.toString();
+                              buf.setLength(0);
+                              appendOutput(line);
+                            }
+                          }
 
-          @Override
-          public void flush() {
-            if (buf.length() > 0) {
-              String remaining = buf.toString();
-              buf.setLength(0);
-              appendOutput(remaining);
-            }
-          }
-        }, true);
+                          @Override
+                          public void flush() {
+                            if (buf.length() > 0) {
+                              String remaining = buf.toString();
+                              buf.setLength(0);
+                              appendOutput(remaining);
+                            }
+                          }
+                        },
+                        true);
 
-        System.setOut(captureStream);
-        System.setErr(captureStream);
-        try {
-          Object result = clojureEval(expr);
-          captureStream.flush();
-          // pr-str the result
-          Object prStr = clojureVar("clojure.core", "pr-str");
-          String resultStr = (String) clojureInvoke(prStr, result);
-          appendOutput(resultStr + "\n");
-        } catch (Throwable t) {
-          captureStream.flush();
-          String msg = t.getMessage();
-          if (t.getCause() != null) {
-            msg = t.getCause().getMessage();
-          }
-          appendOutput("ERROR: " + msg + "\n");
-        } finally {
-          System.setOut(oldOut);
-          System.setErr(oldErr);
-        }
-      } catch (Throwable t) {
-        appendOutput("ERROR: " + t.getMessage() + "\n");
-      }
-    }, "repl-eval").start();
+                System.setOut(captureStream);
+                System.setErr(captureStream);
+                try {
+                  Object result = clojureEval(expr);
+                  captureStream.flush();
+                  // pr-str the result
+                  Object prStr = clojureVar("clojure.core", "pr-str");
+                  String resultStr = (String) clojureInvoke(prStr, result);
+                  appendOutput(resultStr + "\n");
+                } catch (Throwable t) {
+                  captureStream.flush();
+                  String msg = t.getMessage();
+                  if (t.getCause() != null) {
+                    msg = t.getCause().getMessage();
+                  }
+                  appendOutput("ERROR: " + msg + "\n");
+                } finally {
+                  System.setOut(oldOut);
+                  System.setErr(oldErr);
+                }
+              } catch (Throwable t) {
+                appendOutput("ERROR: " + t.getMessage() + "\n");
+              }
+            },
+            "repl-eval")
+        .start();
   }
 
   /**
-   * Register a no-op action on this panel for a keystroke at
-   * WHEN_ANCESTOR_OF_FOCUSED_COMPONENT level, preventing propagation
-   * to WHEN_IN_FOCUSED_WINDOW bindings on parent panels.
+   * Register a no-op action on this panel for a keystroke at WHEN_ANCESTOR_OF_FOCUSED_COMPONENT
+   * level, preventing propagation to WHEN_IN_FOCUSED_WINDOW bindings on parent panels.
    */
   private void consumeKey(KeyStroke ks) {
     InputMap im = getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
     ActionMap am = getActionMap();
     im.put(ks, "consumed");
-    am.put("consumed", new AbstractAction() {
-      @Override
-      public void actionPerformed(ActionEvent e) {
-        // no-op — consume the key
-      }
-    });
+    am.put(
+        "consumed",
+        new AbstractAction() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            // no-op — consume the key
+          }
+        });
   }
 
   // --- Clojure interop via reflection ---

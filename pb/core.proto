@@ -21,9 +21,9 @@ option java_multiple_files = true;
 // The engine interpolates between consecutive points using
 // a power-curve controlled by `tension`.
 message AutomationPoint {
-  float time_beats = 1; // Position in beats (quarter notes from song start)
-  float value = 2;      // Normalized parameter value, clamped to [0.0, 1.0]
-  float tension = 3;    // Curve shape between this point and the next:
+  float time_beats = 1;  // Position in beats (quarter notes from song start)
+  float value = 2;       // Normalized parameter value, clamped to [0.0, 1.0]
+  float tension = 3;     // Curve shape between this point and the next:
                          //   0 = linear
                          //  >0 = ease-in  (slow departure, fast arrival)
                          //  <0 = ease-out (fast departure, slow arrival)
@@ -44,7 +44,7 @@ message AutomationLane {
   uint32 lane_id = 1;
   uint32 plugin_index = 2;
   uint32 param_id = 3;
-  string param_name = 4; // Cached display name from the plugin
+  string param_name = 4;  // Cached display name from the plugin
   repeated TimelineClip clips = 5;
 }
 
@@ -53,17 +53,17 @@ message ParamInfo {
   uint32 id = 1;
   string name = 2;
   float default_value = 3;
-  float current_value = 4; // Current live value [0.0, 1.0]
+  float current_value = 4;  // Current live value [0.0, 1.0]
 }
 
 // A loaded VST3 plugin instance on a track.
 message Plugin {
-  uint32 plugin_index = 1;     // Position in the track's plugin chain
-  string path = 2;             // Filesystem path to .vst3 bundle
-  uint32 sub_plugin_index = 3; // Index within multi-plugin bundle
+  uint32 plugin_index = 1;      // Position in the track's plugin chain
+  string path = 2;              // Filesystem path to .vst3 bundle
+  uint32 sub_plugin_index = 3;  // Index within multi-plugin bundle
   string name = 4;
   string vendor = 5;
-  bool is_instrument = 6;      // true = VSTi (generates audio)
+  bool is_instrument = 6;  // true = VSTi (generates audio)
   repeated ParamInfo params = 7;
 }
 
@@ -79,15 +79,16 @@ enum ClipType {
 // Contains both metadata and optionally the full content data.
 message Clip {
   ClipType type = 1;
-  string path = 2;           // Source file path
-  string name = 3;           // Display name
+  string path = 2;  // Source file path
+  string name = 3;  // Display name
   bool is_loop = 4;
-  uint32 resolution = 5;     // MIDI: ticks per quarter note (PPQ)
-  float duration_beats = 6;  // Content length in beats
-  float duration_sec = 7;    // Content length in seconds
-  repeated MidiEvent midi_events = 8;     // Present when type=MIDI (lazy-loaded)
-  repeated float waveform_summary = 9;    // Downsampled peaks for display
-  repeated AutomationPoint automation_points = 10; // Present when type=AUTOMATION
+  uint32 resolution = 5;                // MIDI: ticks per quarter note (PPQ)
+  float duration_beats = 6;             // Content length in beats
+  float duration_sec = 7;               // Content length in seconds
+  repeated MidiEvent midi_events = 8;   // Present when type=MIDI (lazy-loaded)
+  repeated float waveform_summary = 9;  // Downsampled peaks for display
+  repeated AutomationPoint automation_points =
+      10;  // Present when type=AUTOMATION
 }
 
 // A clip placed on the timeline at a specific position.
@@ -100,7 +101,7 @@ message TimelineClip {
 // A session slot — one cell in the clip launcher grid.
 message SessionSlot {
   uint32 slot_index = 1;
-  Clip clip = 2; // Absent if the slot is empty
+  Clip clip = 2;  // Absent if the slot is empty
 }
 
 // A mixer/instrument track containing everything.
@@ -111,8 +112,8 @@ message Track {
   repeated SessionSlot session_slots = 4;
   repeated TimelineClip timeline_clips = 5;
   repeated AutomationLane automation_lanes = 6;
-  float peak_l = 7; // Live meter: left channel peak [0.0, 1.0]
-  float peak_r = 8; // Live meter: right channel peak [0.0, 1.0]
+  float peak_l = 7;  // Live meter: left channel peak [0.0, 1.0]
+  float peak_r = 8;  // Live meter: right channel peak [0.0, 1.0]
 }
 
 // Transport state enum. Prefer enum over bool `is_playing`

@@ -1,15 +1,16 @@
 #include "win32_out.hpp"
+
 #include <audioclient.h>
-#include <iostream>
 #include <mmdeviceapi.h>
 #include <windows.h>
-#include <thread>
-#include <chrono>
 
+#include <chrono>
+#include <iostream>
+#include <thread>
 
 struct Win32Playback::Impl {
-  IAudioClient *pAudioClient = nullptr;
-  IAudioRenderClient *pRenderClient = nullptr;
+  IAudioClient* pAudioClient = nullptr;
+  IAudioRenderClient* pRenderClient = nullptr;
   UINT32 bufferFrameCount = 0;
   HANDLE hEvent = nullptr;
 };
@@ -24,15 +25,15 @@ Win32Playback::Win32Playback(int rate, int ch)
     return;
   }
 
-  IMMDeviceEnumerator *pEnumerator = nullptr;
+  IMMDeviceEnumerator* pEnumerator = nullptr;
   hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
-                        __uuidof(IMMDeviceEnumerator), (void **)&pEnumerator);
+                        __uuidof(IMMDeviceEnumerator), (void**)&pEnumerator);
   if (FAILED(hr)) {
     std::cerr << "CoCreateInstance(MMDeviceEnumerator) failed" << std::endl;
     return;
   }
 
-  IMMDevice *pDevice = nullptr;
+  IMMDevice* pDevice = nullptr;
   hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
   pEnumerator->Release();
   if (FAILED(hr)) {
@@ -41,14 +42,14 @@ Win32Playback::Win32Playback(int rate, int ch)
   }
 
   hr = pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL,
-                         (void **)&impl->pAudioClient);
+                         (void**)&impl->pAudioClient);
   pDevice->Release();
   if (FAILED(hr)) {
     std::cerr << "IAudioClient Activation failed" << std::endl;
     return;
   }
 
-  WAVEFORMATEX *pwfx = nullptr;
+  WAVEFORMATEX* pwfx = nullptr;
   hr = impl->pAudioClient->GetMixFormat(&pwfx);
   if (FAILED(hr)) {
     std::cerr << "GetMixFormat failed" << std::endl;
@@ -63,7 +64,7 @@ Win32Playback::Win32Playback(int rate, int ch)
 
   // Ensure we are using float format for our internal processing
   if (pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
-    WAVEFORMATEXTENSIBLE *pEx = (WAVEFORMATEXTENSIBLE *)pwfx;
+    WAVEFORMATEXTENSIBLE* pEx = (WAVEFORMATEXTENSIBLE*)pwfx;
     if (pEx->SubFormat != KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) {
       std::cerr << "[Win32Playback] Warning: Mix format is not IEEE Float. "
                    "Audio might be distorted."
@@ -74,10 +75,9 @@ Win32Playback::Win32Playback(int rate, int ch)
               << std::endl;
   }
 
-  REFERENCE_TIME hnsRequestedDuration = 500000; // 50ms
+  REFERENCE_TIME hnsRequestedDuration = 500000;  // 50ms
   hr = impl->pAudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, 0,
-                                       hnsRequestedDuration, 0,
-                                       pwfx, NULL);
+                                      hnsRequestedDuration, 0, pwfx, NULL);
   if (FAILED(hr)) {
     std::cerr << "IAudioClient::Initialize failed: " << std::hex << hr
               << std::endl;
@@ -88,7 +88,7 @@ Win32Playback::Win32Playback(int rate, int ch)
 
   hr = impl->pAudioClient->GetBufferSize(&impl->bufferFrameCount);
   hr = impl->pAudioClient->GetService(__uuidof(IAudioRenderClient),
-                                      (void **)&impl->pRenderClient);
+                                      (void**)&impl->pRenderClient);
   if (FAILED(hr)) {
     std::cerr << "GetService(IAudioRenderClient) failed" << std::endl;
     return;
@@ -102,41 +102,39 @@ Win32Playback::~Win32Playback() {
     impl->pAudioClient->Stop();
     impl->pAudioClient->Release();
   }
-  if (impl->pRenderClient)
-    impl->pRenderClient->Release();
+  if (impl->pRenderClient) impl->pRenderClient->Release();
   delete impl;
   CoUninitialize();
 }
 
 bool Win32Playback::is_ready() const { return impl->pRenderClient != nullptr; }
 
-
-void Win32Playback::write(const std::vector<float> &interleaved_data,
+void Win32Playback::write(const std::vector<float>& interleaved_data,
                           int num_frames) {
-  if (!impl->pRenderClient)
-    return;
+  if (!impl->pRenderClient) return;
 
   // Simple back-pressure: if the buffer is too full, wait a bit
   UINT32 padding = 0;
   int retry = 0;
-  while (SUCCEEDED(impl->pAudioClient->GetCurrentPadding(&padding)) && retry < 100) {
-      if (impl->bufferFrameCount - padding >= (UINT32)num_frames) {
-          break;
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      retry++;
+  while (SUCCEEDED(impl->pAudioClient->GetCurrentPadding(&padding)) &&
+         retry < 100) {
+    if (impl->bufferFrameCount - padding >= (UINT32)num_frames) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    retry++;
   }
 
-  BYTE *pData;
+  BYTE* pData;
   HRESULT hr = impl->pRenderClient->GetBuffer(num_frames, &pData);
   if (SUCCEEDED(hr)) {
     float* floatData = (float*)pData;
     for (size_t i = 0; i < interleaved_data.size(); ++i) {
-        float sample = interleaved_data[i];
-        if (!std::isfinite(sample)) sample = 0.0f;
-        if (sample > 1.0f) sample = 1.0f;
-        if (sample < -1.0f) sample = -1.0f;
-        floatData[i] = sample;
+      float sample = interleaved_data[i];
+      if (!std::isfinite(sample)) sample = 0.0f;
+      if (sample > 1.0f) sample = 1.0f;
+      if (sample < -1.0f) sample = -1.0f;
+      floatData[i] = sample;
     }
     impl->pRenderClient->ReleaseBuffer(num_frames, 0);
   } else if (hr == AUDCLNT_E_BUFFER_TOO_LARGE) {

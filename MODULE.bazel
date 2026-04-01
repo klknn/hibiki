@@ -9,7 +9,6 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_java", version = "9.0.3")
 bazel_dep(name = "rules_jvm_external", version = "6.7")
 bazel_dep(name = "googletest", version = "1.17.0.bcr.2")
-
 bazel_dep(name = "protobuf", version = "29.3")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 
@@ -30,28 +29,28 @@ http_jar = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_j
 
 http_jar(
     name = "clojure_jar",
-    url = "https://repo1.maven.org/maven2/org/clojure/clojure/1.12.0/clojure-1.12.0.jar",
     integrity = "sha256-xFMzAGRBoFnqn9sTQfxsH0C5IaENzNgmZTEeSKA4R2M=",
+    url = "https://repo1.maven.org/maven2/org/clojure/clojure/1.12.0/clojure-1.12.0.jar",
 )
 
 http_jar(
     name = "clojure_spec_alpha_jar",
-    url = "https://repo1.maven.org/maven2/org/clojure/spec.alpha/0.5.238/spec.alpha-0.5.238.jar",
     integrity = "sha256-lM2ZtupjlkHzevSGCmQ7btOZ7lqL5dcXz/C2Y8jXUHc=",
+    url = "https://repo1.maven.org/maven2/org/clojure/spec.alpha/0.5.238/spec.alpha-0.5.238.jar",
 )
 
 http_jar(
     name = "clojure_core_specs_alpha_jar",
-    url = "https://repo1.maven.org/maven2/org/clojure/core.specs.alpha/0.4.74/core.specs.alpha-0.4.74.jar",
     integrity = "sha256-63OsCM9JuoQMiLpnvu8RM2ylVDM9lAiAjXiUbg/rnds=",
+    url = "https://repo1.maven.org/maven2/org/clojure/core.specs.alpha/0.4.74/core.specs.alpha-0.4.74.jar",
 )
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "vst3sdk",
-    url = "https://download.steinberg.net/sdk_downloads/vst-sdk_3.8.0_build-66_2025-10-20.zip",
-    strip_prefix = "VST_SDK/vst3sdk",
-    integrity = "sha256-ectJXl7G+94lct9qOP1bL3U1KNSzS5vtf+rlW+O2IcM=",
     build_file = "//third_party:vst3sdk.BUILD",
+    integrity = "sha256-ectJXl7G+94lct9qOP1bL3U1KNSzS5vtf+rlW+O2IcM=",
+    strip_prefix = "VST_SDK/vst3sdk",
+    url = "https://download.steinberg.net/sdk_downloads/vst-sdk_3.8.0_build-66_2025-10-20.zip",
 )

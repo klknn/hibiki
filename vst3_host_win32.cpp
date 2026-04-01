@@ -1,22 +1,21 @@
+#include <windows.h>
+
 #include <atomic>
 #include <iostream>
 #include <thread>
-#include <windows.h>
-
 
 #include "pluginterfaces/gui/iplugview.h"
 #include "vst3_host.hpp"
 #include "vst3_host_impl.hpp"
 
-
 static LRESULT CALLBACK VstWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam,
                                       LPARAM lParam) {
   switch (uMsg) {
-  case WM_CLOSE:
-    PostQuitMessage(0);
-    return 0;
-  case WM_DESTROY:
-    return 0;
+    case WM_CLOSE:
+      PostQuitMessage(0);
+      return 0;
+    case WM_DESTROY:
+      return 0;
   }
   return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
@@ -27,8 +26,7 @@ void Vst3Plugin::showEditor() {
     return;
   }
 
-  if (impl->editorRunning)
-    return;
+  if (impl->editorRunning) return;
   stopEditor();
 
   impl->editorRunning = true;
@@ -67,7 +65,7 @@ void Vst3Plugin::showEditor() {
     impl->editorWindow = (uint64_t)hwnd;
     ShowWindow(hwnd, SW_SHOW);
 
-    if (view->attached((void *)hwnd, Steinberg::kPlatformTypeHWND) !=
+    if (view->attached((void*)hwnd, Steinberg::kPlatformTypeHWND) !=
         Steinberg::kResultTrue) {
       std::cerr << "Failed to attach view to HWND" << std::endl;
       DestroyWindow(hwnd);
@@ -85,8 +83,7 @@ void Vst3Plugin::showEditor() {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
       }
-      if (!impl->editorRunning)
-        break;
+      if (!impl->editorRunning) break;
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 

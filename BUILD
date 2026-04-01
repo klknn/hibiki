@@ -438,6 +438,26 @@ java_test(
 )
 
 java_test(
+    name = "automation_mouse_handler_test",
+    srcs = ["src/test/java/hibiki/ui/AutomationMouseHandlerTest.java"],
+    test_class = "hibiki.ui.AutomationMouseHandlerTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "timeline_mouse_handler_test",
+    srcs = ["src/test/java/hibiki/ui/TimelineMouseHandlerTest.java"],
+    test_class = "hibiki.ui.TimelineMouseHandlerTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
     name = "piano_roll_test",
     srcs = ["src/test/java/hibiki/ui/PianoRollTest.java"],
     test_class = "hibiki.ui.PianoRollTest",

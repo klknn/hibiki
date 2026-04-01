@@ -114,6 +114,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     // Renderer delegate
     private final TimelineRenderer renderer = new TimelineRenderer(this);
 
+    // Drag interaction mode (replaces isDragging / creatingClip / resizingClip booleans)
+    enum DragMode { NONE, MOVE_CLIP, CREATE_CLIP, RESIZE_CLIP }
+    DragMode dragMode = DragMode.NONE;
+
     // Clip drag-and-drop state
     ClipRect draggingClip = null;
     int dragSourceTrack = -1;
@@ -121,17 +125,14 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     int dragStartY = 0;
     int dragCurrentY = 0; // Current Y position for rendering during cross-track drag
     float dragOriginalStartTime = 0;
-    boolean isDragging = false;
 
     // Clip creation state (like Piano Roll note creation)
-    boolean creatingClip = false;
     int creatingTrackIdx = -1;
     float creatingStartTime = 0;
     ClipRect creatingClipRect = null;
     int creatingAutoLaneIdx = -1;
 
     // Clip resize state
-    boolean resizingClip = false;
     ClipRect resizeClip = null;
     int resizeTrackIdx = -1;
     float resizeOriginalDuration = 0;
@@ -415,10 +416,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         return null;
     }
 
-    /** Check if x position is near the right edge of a clip (within 8px) */
+    /** Check if x position is near the right edge of a clip */
     boolean isNearRightEdge(ClipRect clip, int x) {
         int rightEdgeX = (int) ((clip.startTime + clip.duration) * getPixelsPerSecond());
-        return Math.abs(x - rightEdgeX) <= 8;
+        return Math.abs(x - rightEdgeX) <= TimelineConstants.RESIZE_EDGE_PX;
     }
 
     /** Show context menu for a timeline clip */
@@ -609,8 +610,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
     private void drawTimeline(Graphics g) {
         renderer.drawTimeline(g, contentPanel, tracks, selectedTrack, bpm, gridMode,
-                playheadPos, isDragging, draggingClip, dragSourceTrack, dragOriginalStartTime,
-                dragCurrentY, creatingClip, creatingTrackIdx, creatingClipRect,
+                playheadPos, dragMode, draggingClip, dragSourceTrack, dragOriginalStartTime,
+                dragCurrentY, creatingTrackIdx, creatingClipRect,
                 creatingAutoLaneIdx, getTrackHeight(), TIME_RULER_HEIGHT);
     }
 

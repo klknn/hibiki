@@ -3,13 +3,9 @@ package hibiki.ui;
 import hibiki.BackendManager;
 import hibiki.pb.commands.*;
 import hibiki.pb.core.EntityRef;
-import hibiki.pb.core.AutomationPoint;
 
 import javax.swing.*;
-import java.awt.*;
 import java.awt.event.*;
-import java.util.Comparator;
-import java.util.List;
 
 /**
  * Handles mouse interactions on the Timeline content panel:
@@ -19,24 +15,16 @@ import java.util.List;
  * - Left-click drag on empty area to create new clips
  * - Drag clip right edge to resize
  * - Hover near right edge shows resize cursor
- * - Click/drag automation points in expanded automation lanes
+ *
+ * Automation lane interactions are delegated to AutomationMouseHandler.
  */
 class TimelineMouseHandler {
     private final TimelineView view;
-
-    // Automation editing state
-    private boolean editingAutomation = false;
-    private int autoTrackIdx = -1;
-    private int autoLaneIdx = -1;
-    private int autoClipIdx = -1;
-    private int autoDragPointIdx = -1;
-
-    // Tension handle drag state (midpoint between two consecutive points)
-    private boolean draggingTensionHandle = false;
-    private int tensionHandleSegmentIdx = -1; // index of the FIRST point of the segment
+    private final AutomationMouseHandler autoHandler;
 
     TimelineMouseHandler(TimelineView view) {
         this.view = view;
+        this.autoHandler = new AutomationMouseHandler(view);
     }
 
     /** Wire up mouse listeners on the content panel. */
@@ -66,149 +54,6 @@ class TimelineMouseHandler {
         });
     }
 
-    // ─── Automation lane coordinate helpers ─────────────────────────────
-
-    /**
-     * Check if a Y position falls within an automation lane sub-row.
-     * If so, returns the lane index (0-based). Otherwise returns -1.
-     * Also sets autoTrackIdx as a side effect.
-     */
-    private int findAutomationLaneAtY(int trackIdx, int mouseY) {
-        if (trackIdx < 0 || trackIdx >= view.tracks.size())
-            return -1;
-        TimelineView.TrackTimeline track = view.tracks.get(trackIdx);
-        if (!track.automationExpanded || track.automationLanes.isEmpty())
-            return -1;
-
-        int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
-        int trackTopY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(trackIdx));
-        int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight());
-        int scaleAutoLane = Theme.getInstance().scale(view.getAutomationLaneHeight());
-
-        int yInTrack = mouseY - trackTopY;
-        if (yInTrack < scaleBaseTrack)
-            return -1; // In clip area, not automation
-
-        int yInAutoArea = yInTrack - scaleBaseTrack;
-        int laneIdx = yInAutoArea / scaleAutoLane;
-        if (laneIdx >= 0 && laneIdx < track.automationLanes.size()) {
-            return laneIdx;
-        }
-        return -1;
-    }
-
-    /** Convert screen X to automation time in beats. */
-    private float xToAutoBeats(int x) {
-        float pps = view.getPixelsPerSecond();
-        float timeSec = x / pps;
-        float secondsPerBeat = 60.0f / view.bpm;
-        return timeSec / secondsPerBeat;
-    }
-
-    /** Snap automation beats to grid (unless shift is held). */
-    private float snapAutoBeats(float beats, boolean shiftHeld) {
-        if (shiftHeld)
-            return beats; // shift disables snap
-        float secondsPerBeat = 60.0f / view.bpm;
-        float gridSeconds = view.getGridSnapSeconds(view.getGridMode(), secondsPerBeat);
-        if (gridSeconds <= 0)
-            return beats;
-        float gridBeats = gridSeconds / secondsPerBeat;
-        return Math.round(beats / gridBeats) * gridBeats;
-    }
-
-    /** Convert automation beats to screen X. */
-    private float autoBeatsToX(float beats) {
-        float secondsPerBeat = 60.0f / view.bpm;
-        return beats * secondsPerBeat * view.getPixelsPerSecond();
-    }
-
-    /** Convert screen Y to automation value (0..1) within a lane. */
-    private float yToAutoValue(int mouseY, int laneTopY, int laneHeight) {
-        int pad = 4;
-        int drawH = laneHeight - 2 * pad;
-        float val = 1.0f - (float) (mouseY - laneTopY - pad) / drawH;
-        return Math.max(0, Math.min(1, val));
-    }
-
-    /** Get the screen Y of the top of a specific automation lane. */
-    private int getAutoLaneTopY(int trackIdx, int laneIdx) {
-        int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
-        int trackTopY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(trackIdx));
-        int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight());
-        int scaleAutoLane = Theme.getInstance().scale(view.getAutomationLaneHeight());
-        return trackTopY + scaleBaseTrack + laneIdx * scaleAutoLane;
-    }
-
-    /** Find the nearest automation point, returns {clipIdx, pointIdx} or null. */
-    private int[] findAutoPointAt(List<TimelineView.ClipRect> clips, int mx, int my,
-            int laneTopY, int laneHeight, int threshold) {
-        int pad = 4;
-        int drawH = laneHeight - 2 * pad;
-        float secondsPerBeat = 60.0f / view.bpm;
-        for (int c = 0; c < clips.size(); c++) {
-            TimelineView.ClipRect clip = clips.get(c);
-            for (int i = 0; i < clip.automationPoints.size(); i++) {
-                AutomationEditor.AutoPoint p = clip.automationPoints.get(i);
-                float px = autoBeatsToX(clip.startTime / secondsPerBeat + p.timeBeats);
-                float py = laneTopY + pad + drawH - (p.value * drawH);
-                if (Math.abs(mx - px) < threshold && Math.abs(my - py) < threshold) {
-                    return new int[]{c, i};
-                }
-            }
-        }
-        return null;
-    }
-
-    /** Find a tension handle, returns {clipIdx, firstPointIdx} or null. */
-    private int[] findTensionHandleAt(List<TimelineView.ClipRect> clips, int mx, int my,
-            int laneTopY, int laneHeight, int threshold) {
-        int pad = 4;
-        int drawH = laneHeight - 2 * pad;
-        float secondsPerBeat = 60.0f / view.bpm;
-        for (int c = 0; c < clips.size(); c++) {
-            TimelineView.ClipRect clip = clips.get(c);
-            if (clip.automationPoints.size() < 2) continue;
-            for (int i = 0; i < clip.automationPoints.size() - 1; i++) {
-                AutomationEditor.AutoPoint p0 = clip.automationPoints.get(i);
-                AutomationEditor.AutoPoint p1 = clip.automationPoints.get(i + 1);
-                float mx0 = autoBeatsToX(clip.startTime / secondsPerBeat + p0.timeBeats);
-                float mx1 = autoBeatsToX(clip.startTime / secondsPerBeat + p1.timeBeats);
-                float midX = (mx0 + mx1) / 2f;
-                float t = 0.5f;
-                float exponent = (float) Math.pow(2.0, p0.tension);
-                float curvedT = (float) Math.pow(t, exponent);
-                float midVal = p0.value + (p1.value - p0.value) * curvedT;
-                float midY = laneTopY + pad + drawH - midVal * drawH;
-                if (Math.abs(mx - midX) < threshold && Math.abs(my - midY) < threshold) {
-                    return new int[]{c, i};
-                }
-            }
-        }
-        return null;
-    }
-
-    /** Send updated automation points to the backend. */
-    private void sendAutoUpdate(int trackIdx, int laneIdx, int clipIdx, List<AutomationEditor.AutoPoint> points) {
-        TimelineView.TrackTimeline track = view.tracks.get(trackIdx);
-        TimelineView.AutomationLaneData lane = track.automationLanes.get(laneIdx);
-        AutomationCmd.Builder cmdBuilder = AutomationCmd.newBuilder()
-                .setAction(AutomationCmd.Action.ACTION_UPDATE_POINTS)
-                .setClipIndex(clipIdx)
-                .setTarget(EntityRef.newBuilder()
-                        .setTrackIndex(trackIdx)
-                        .setLaneIndex(laneIdx));
-        for (AutomationEditor.AutoPoint p : points) {
-            cmdBuilder.addPoints(AutomationPoint.newBuilder()
-                    .setTimeBeats(p.timeBeats)
-                    .setValue(p.value)
-                    .setTension(p.tension));
-        }
-        BackendManager.getInstance().sendRequest(Request.newBuilder()
-                .setAutomation(cmdBuilder)
-                .build());
-    }
-
     // ─── Mouse press ────────────────────────────────────────────────────
 
     private void handleMousePressed(MouseEvent e) {
@@ -222,14 +67,14 @@ class TimelineMouseHandler {
         if (trackIdx < 0 || trackIdx >= view.tracks.size())
             return;
 
-        // --- Check if click is in an automation lane ---
-        int laneIdx = findAutomationLaneAtY(trackIdx, e.getY());
+        // Check if click is in an automation lane
+        int laneIdx = autoHandler.findAutomationLaneAtY(trackIdx, e.getY());
         if (laneIdx >= 0) {
-            handleAutomationPress(e, trackIdx, laneIdx);
+            autoHandler.handlePress(e, trackIdx, laneIdx);
             return;
         }
 
-        // --- Normal clip/track handling ---
+        // Normal clip/track handling
         view.setSelectedTrack(trackIdx);
 
         if (SwingUtilities.isRightMouseButton(e)) {
@@ -243,7 +88,7 @@ class TimelineMouseHandler {
         } else if (SwingUtilities.isLeftMouseButton(e)) {
             TimelineView.ClipRect clip = view.findClipAtPosition(trackIdx, e.getX());
             if (clip != null && view.isNearRightEdge(clip, e.getX())) {
-                view.resizingClip = true;
+                view.dragMode = TimelineView.DragMode.RESIZE_CLIP;
                 view.resizeClip = clip;
                 view.resizeTrackIdx = trackIdx;
                 view.resizeOriginalDuration = clip.duration;
@@ -253,10 +98,10 @@ class TimelineMouseHandler {
                 view.dragStartX = e.getX();
                 view.dragStartY = e.getY();
                 view.dragOriginalStartTime = clip.startTime;
-                view.isDragging = false;
+                view.dragMode = TimelineView.DragMode.NONE;
             } else {
                 // Start creating a new clip in empty area
-                view.creatingClip = true;
+                view.dragMode = TimelineView.DragMode.CREATE_CLIP;
                 view.creatingTrackIdx = trackIdx;
                 float startTime = e.getX() / view.getPixelsPerSecond();
                 if (!e.isShiftDown()) {
@@ -271,279 +116,37 @@ class TimelineMouseHandler {
         }
     }
 
-    private void handleAutomationPress(MouseEvent e, int trackIdx, int laneIdx) {
-        TimelineView.TrackTimeline track = view.tracks.get(trackIdx);
-        TimelineView.AutomationLaneData lane = track.automationLanes.get(laneIdx);
-        int scaleAutoLane = Theme.getInstance().scale(view.getAutomationLaneHeight());
-        int laneTopY = getAutoLaneTopY(trackIdx, laneIdx);
-        float secondsPerBeat = 60.0f / view.bpm;
-
-        if (SwingUtilities.isRightMouseButton(e)) {
-            // Right-click: point context menu, or lane context menu
-            int[] ptInfo = findAutoPointAt(lane.clips, e.getX(), e.getY(), laneTopY, scaleAutoLane, 8);
-            if (ptInfo != null) {
-                showAutoPointContextMenu(e, trackIdx, laneIdx, ptInfo[0], ptInfo[1]);
-            } else {
-                JPopupMenu menu = new JPopupMenu();
-
-                // Find if right-clicked inside a clip
-                float clickTimeSec = e.getX() / view.getPixelsPerSecond();
-                int clickedClipIdx = -1;
-                for (int i = 0; i < lane.clips.size(); i++) {
-                    TimelineView.ClipRect c = lane.clips.get(i);
-                    float endSec = c.startTime + c.duration * secondsPerBeat;
-                    if (clickTimeSec >= c.startTime && clickTimeSec <= endSec) {
-                        clickedClipIdx = i;
-                        break;
-                    }
-                }
-
-                if (clickedClipIdx >= 0) {
-                    TimelineView.ClipRect clickedClip = lane.clips.get(clickedClipIdx);
-                    JMenuItem editorItem = new JMenuItem("Open Automation Editor");
-                    editorItem.addActionListener(ev -> {
-                        Frame frame = (Frame) SwingUtilities.getWindowAncestor(view);
-                        AutomationEditorDialog dlg = new AutomationEditorDialog(
-                                frame, trackIdx, laneIdx, lane.paramName,
-                                clickedClip.automationPoints, view.bpm);
-                        dlg.setVisible(true);
-                    });
-                    menu.add(editorItem);
-                    menu.addSeparator();
-                }
-
-                JMenuItem addItem = new JMenuItem("Add Automation Clip");
-                addItem.addActionListener(ev -> {
-                    float startTime = xToAutoBeats(e.getX()) * (60.0f / view.bpm);
-                    float durationBeats = 4.0f;
-                    BackendManager.getInstance().sendRequest(Request.newBuilder()
-                            .setAutomation(AutomationCmd.newBuilder()
-                                    .setAction(AutomationCmd.Action.ACTION_ADD_CLIP)
-                                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIdx).setLaneIndex(laneIdx))
-                                    .setStartTimeSec(startTime)
-                                    .setDurationBeats(durationBeats))
-                            .build());
-                });
-                menu.add(addItem);
-                menu.show(view.contentPanel, e.getX(), e.getY());
-            }
-            return;
-        }
-
-        if (e.getClickCount() == 2) {
-            // Double click: add/remove point or rename clip
-            int[] ptInfo = findAutoPointAt(lane.clips, e.getX(), e.getY(), laneTopY, scaleAutoLane, 8);
-            if (ptInfo != null) {
-                // Double clicked on a point -> delete it
-                TimelineView.ClipRect clip = lane.clips.get(ptInfo[0]);
-                clip.automationPoints.remove(ptInfo[1]);
-                sendAutoUpdate(trackIdx, laneIdx, ptInfo[0], clip.automationPoints);
-                view.contentPanel.repaint();
-                return;
-            }
-
-            // Find if clicked inside a clip
-            float clickTimeSec = e.getX() / view.getPixelsPerSecond();
-            for (int i = 0; i < lane.clips.size(); i++) {
-                TimelineView.ClipRect c = lane.clips.get(i);
-                float endSec = c.startTime + c.duration * secondsPerBeat;
-                if (clickTimeSec >= c.startTime && clickTimeSec <= endSec) {
-                    // Check if clicked in header
-                    int pad = 4;
-                    int drawY = laneTopY + pad;
-                    if (e.getY() >= drawY && e.getY() <= drawY + 15) {
-                        // Rename clip dialog
-                        String newName = JOptionPane.showInputDialog(view.contentPanel,
-                                "Enter automation clip name:", c.name != null ? c.name : "Automation");
-                        if (newName != null) {
-                            c.name = newName;
-                            BackendManager.getInstance().renameAutomationClip(trackIdx, laneIdx, i, newName);
-                            view.contentPanel.repaint();
-                        }
-                        return;
-                    }
-
-                    // Not header, add new point
-                    float localBeat = xToAutoBeats(e.getX()) - (c.startTime / secondsPerBeat);
-                    localBeat = Math.max(0, snapAutoBeats(localBeat, e.isShiftDown()));
-                    float val = yToAutoValue(e.getY(), laneTopY, scaleAutoLane);
-                    AutomationEditor.AutoPoint np = new AutomationEditor.AutoPoint(localBeat, val, 0.0f);
-                    c.automationPoints.add(np);
-                    c.automationPoints.sort(Comparator.comparingDouble(a -> a.timeBeats));
-                    sendAutoUpdate(trackIdx, laneIdx, i, c.automationPoints);
-                    view.contentPanel.repaint();
-                    return;
-                }
-            }
-            return;
-        }
-
-        // Single Click: drag tension handle, point drag, or select/resize/drag clip
-        int[] handleInfo = findTensionHandleAt(lane.clips, e.getX(), e.getY(), laneTopY, scaleAutoLane, 8);
-        if (handleInfo != null) {
-            editingAutomation = true;
-            draggingTensionHandle = true;
-            autoTrackIdx = trackIdx;
-            autoLaneIdx = laneIdx;
-            autoClipIdx = handleInfo[0];
-            tensionHandleSegmentIdx = handleInfo[1];
-            autoDragPointIdx = -1;
-            return;
-        }
-
-        int[] ptInfo = findAutoPointAt(lane.clips, e.getX(), e.getY(), laneTopY, scaleAutoLane, 8);
-        if (ptInfo != null) {
-            editingAutomation = true;
-            autoTrackIdx = trackIdx;
-            autoLaneIdx = laneIdx;
-            autoClipIdx = ptInfo[0];
-            autoDragPointIdx = ptInfo[1];
-            return;
-        }
-
-        // Check if hitting a clip edge for resize, or clip body for move
-        float clickTimeSec = e.getX() / view.getPixelsPerSecond();
-        float edgeThresholdSec = 5.0f / view.getPixelsPerSecond(); // 5 pixels
-        for (int i = 0; i < lane.clips.size(); i++) {
-            TimelineView.ClipRect c = lane.clips.get(i);
-            float endSec = c.startTime + c.duration * secondsPerBeat;
-            if (clickTimeSec >= c.startTime - edgeThresholdSec && clickTimeSec <= endSec + edgeThresholdSec) {
-                // near right edge -> resize
-                if (Math.abs(clickTimeSec - endSec) < edgeThresholdSec) {
-                    view.resizingClip = true;
-                    view.resizeClip = c;
-                    view.resizeTrackIdx = trackIdx;
-                    view.resizeOriginalDuration = c.duration;
-                    
-                    autoTrackIdx = trackIdx;
-                    autoLaneIdx = laneIdx;
-                    autoClipIdx = i;
-                    return;
-                }
-                
-                // inside bounds -> move/copy
-                if (clickTimeSec >= c.startTime && clickTimeSec <= endSec) {
-                    view.isDragging = true;
-                    view.draggingClip = c;
-                    view.dragSourceTrack = trackIdx;
-                    view.dragStartX = e.getX();
-                    view.dragStartY = e.getY();
-                    view.dragCurrentY = e.getY();
-                    view.dragOriginalStartTime = c.startTime;
-                    
-                    autoTrackIdx = trackIdx;
-                    autoLaneIdx = laneIdx;
-                    autoClipIdx = i;
-                    return;
-                }
-            }
-        }
-
-        // Clicked empty lane -> create clip
-        view.creatingClip = true;
-        view.creatingTrackIdx = trackIdx;
-        view.creatingAutoLaneIdx = laneIdx;
-        float snapTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
-        if (!e.isShiftDown()) snapTime = view.snapToBar(snapTime);
-        view.creatingStartTime = snapTime;
-        view.creatingClipRect = new TimelineView.ClipRect();
-        view.creatingClipRect.startTime = snapTime;
-        view.creatingClipRect.duration = 0;
-        view.creatingClipRect.isAutomation = true;
-    }
-
-    private void showAutoPointContextMenu(MouseEvent e, int trackIdx, int laneIdx, int clipIdx, int pointIdx) {
-        TimelineView.TrackTimeline track = view.tracks.get(trackIdx);
-        TimelineView.AutomationLaneData lane = track.automationLanes.get(laneIdx);
-        TimelineView.ClipRect clip = lane.clips.get(clipIdx);
-
-        JPopupMenu menu = new JPopupMenu();
-
-        JMenuItem deleteItem = new JMenuItem("Delete Point");
-        deleteItem.addActionListener(ev -> {
-            clip.automationPoints.remove(pointIdx);
-            sendAutoUpdate(trackIdx, laneIdx, clipIdx, clip.automationPoints);
-            view.contentPanel.repaint();
-        });
-        menu.add(deleteItem);
-
-        // Tension submenu
-        JMenu tensionMenu = new JMenu("Tension");
-        float[] tensions = { -0.8f, -0.5f, -0.2f, 0.0f, 0.2f, 0.5f, 0.8f };
-        String[] labels = { "Ease Out (strong)", "Ease Out", "Ease Out (light)",
-                "Linear", "Ease In (light)", "Ease In", "Ease In (strong)" };
-        for (int i = 0; i < tensions.length; i++) {
-            float t = tensions[i];
-            JMenuItem item = new JMenuItem(labels[i] + " (" + t + ")");
-            item.addActionListener(ev -> {
-                if (pointIdx < clip.automationPoints.size()) {
-                    clip.automationPoints.get(pointIdx).tension = t;
-                    sendAutoUpdate(trackIdx, laneIdx, clipIdx, clip.automationPoints);
-                    view.contentPanel.repaint();
-                }
-            });
-            tensionMenu.add(item);
-        }
-        menu.add(tensionMenu);
-
-        menu.show(view.contentPanel, e.getX(), e.getY());
-    }
-
     // ─── Mouse release ──────────────────────────────────────────────────
 
     private void handleMouseReleased(MouseEvent e) {
-        // Automation editing release
-        if (editingAutomation) {
-            if (autoTrackIdx >= 0 && autoLaneIdx >= 0 && autoClipIdx >= 0) {
-                TimelineView.TrackTimeline track = view.tracks.get(autoTrackIdx);
-                TimelineView.AutomationLaneData lane = track.automationLanes.get(autoLaneIdx);
-                if (autoClipIdx < lane.clips.size()) {
-                    TimelineView.ClipRect clip = lane.clips.get(autoClipIdx);
-                    clip.automationPoints.sort(Comparator.comparingDouble(a -> a.timeBeats));
-                    sendAutoUpdate(autoTrackIdx, autoLaneIdx, autoClipIdx, clip.automationPoints);
-                }
-                view.contentPanel.repaint();
-            }
-            editingAutomation = false;
-            draggingTensionHandle = false;
-            tensionHandleSegmentIdx = -1;
-            autoTrackIdx = -1;
-            autoLaneIdx = -1;
-            autoClipIdx = -1;
-            autoDragPointIdx = -1;
-            return;
-        }
+        // Delegate automation point/tension release
+        if (autoHandler.handleRelease(e)) return;
 
-        if (view.draggingClip != null && view.isDragging) {
+        // Handle clip move completion
+        if (view.draggingClip != null && view.dragMode == TimelineView.DragMode.MOVE_CLIP) {
             if (view.draggingClip.isAutomation) {
-                BackendManager.getInstance().moveAutomationClip(autoTrackIdx, autoLaneIdx, autoClipIdx, view.draggingClip.startTime);
+                BackendManager.getInstance().moveAutomationClip(
+                        autoHandler.autoTrackIdx, autoHandler.autoLaneIdx,
+                        autoHandler.autoClipIdx, view.draggingClip.startTime);
             } else {
                 completeDrag(e);
             }
         }
 
-        // Reset drag state
-        view.draggingClip = null;
-        view.dragSourceTrack = -1;
-        view.isDragging = false;
-
         // Handle clip resize completion
-        if (view.resizingClip && view.resizeClip != null) {
+        if (view.dragMode == TimelineView.DragMode.RESIZE_CLIP && view.resizeClip != null) {
             if (view.resizeClip.isAutomation) {
                 float durationBeats = view.resizeClip.duration * (view.bpm / 60.0f);
-                BackendManager.getInstance().resizeAutomationClip(autoTrackIdx, autoLaneIdx, autoClipIdx, durationBeats);
+                BackendManager.getInstance().resizeAutomationClip(
+                        autoHandler.autoTrackIdx, autoHandler.autoLaneIdx,
+                        autoHandler.autoClipIdx, durationBeats);
             } else {
                 completeResize(e);
             }
         }
 
-        // Reset resize state
-        view.resizingClip = false;
-        view.resizeClip = null;
-        view.resizeTrackIdx = -1;
-
         // Handle clip creation completion
-        if (view.creatingClip && view.creatingClipRect != null) {
+        if (view.dragMode == TimelineView.DragMode.CREATE_CLIP && view.creatingClipRect != null) {
             if (view.creatingAutoLaneIdx >= 0) {
                 float duration = view.creatingClipRect.duration;
                 if (duration > 0.1f) {
@@ -551,7 +154,9 @@ class TimelineMouseHandler {
                     BackendManager.getInstance().sendRequest(Request.newBuilder()
                             .setAutomation(AutomationCmd.newBuilder()
                                     .setAction(AutomationCmd.Action.ACTION_ADD_CLIP)
-                                    .setTarget(EntityRef.newBuilder().setTrackIndex(view.creatingTrackIdx).setLaneIndex(view.creatingAutoLaneIdx))
+                                    .setTarget(EntityRef.newBuilder()
+                                            .setTrackIndex(view.creatingTrackIdx)
+                                            .setLaneIndex(view.creatingAutoLaneIdx))
                                     .setStartTimeSec(view.creatingClipRect.startTime)
                                     .setDurationBeats(durationBeats))
                             .build());
@@ -561,8 +166,12 @@ class TimelineMouseHandler {
             }
         }
 
-        // Reset creation state
-        view.creatingClip = false;
+        // Reset all drag state
+        view.dragMode = TimelineView.DragMode.NONE;
+        view.draggingClip = null;
+        view.dragSourceTrack = -1;
+        view.resizeClip = null;
+        view.resizeTrackIdx = -1;
         view.creatingTrackIdx = -1;
         view.creatingAutoLaneIdx = -1;
         view.creatingClipRect = null;
@@ -655,56 +264,20 @@ class TimelineMouseHandler {
     // ─── Mouse drag ─────────────────────────────────────────────────────
 
     private void handleMouseDragged(MouseEvent e) {
-        // Automation tension handle drag
-        if (editingAutomation && draggingTensionHandle && tensionHandleSegmentIdx >= 0) {
-            TimelineView.TrackTimeline track = view.tracks.get(autoTrackIdx);
-            TimelineView.AutomationLaneData lane = track.automationLanes.get(autoLaneIdx);
-            TimelineView.ClipRect clip = lane.clips.get(autoClipIdx);
-            if (tensionHandleSegmentIdx < clip.automationPoints.size() - 1) {
-                int scaleAutoLane = Theme.getInstance().scale(view.getAutomationLaneHeight());
-                int laneTopY = getAutoLaneTopY(autoTrackIdx, autoLaneIdx);
-                AutomationEditor.AutoPoint p0 = clip.automationPoints.get(tensionHandleSegmentIdx);
-                AutomationEditor.AutoPoint p1 = clip.automationPoints.get(tensionHandleSegmentIdx + 1);
-                // Map vertical drag to tension: pull up = negative tension (ease-out), pull
-                // down = positive (ease-in)
-                float midVal = (p0.value + p1.value) / 2f;
-                float dragVal = yToAutoValue(e.getY(), laneTopY, scaleAutoLane);
-                float diff = midVal - dragVal; // positive = dragged below midpoint
-                float newTension = Math.max(-1f, Math.min(1f, diff * 4f));
-                p0.tension = newTension;
-                view.contentPanel.repaint();
-            }
-            return;
-        }
-
-        // Automation point drag
-        if (editingAutomation && autoDragPointIdx >= 0) {
-            TimelineView.TrackTimeline track = view.tracks.get(autoTrackIdx);
-            TimelineView.AutomationLaneData lane = track.automationLanes.get(autoLaneIdx);
-            TimelineView.ClipRect clip = lane.clips.get(autoClipIdx);
-            if (autoDragPointIdx < clip.automationPoints.size()) {
-                int scaleAutoLane = Theme.getInstance().scale(view.getAutomationLaneHeight());
-                int laneTopY = getAutoLaneTopY(autoTrackIdx, autoLaneIdx);
-                AutomationEditor.AutoPoint p = clip.automationPoints.get(autoDragPointIdx);
-                float secondsPerBeat = 60.0f / view.bpm;
-                float localBeat = xToAutoBeats(e.getX()) - (clip.startTime / secondsPerBeat);
-                p.timeBeats = Math.max(0, snapAutoBeats(localBeat, e.isShiftDown()));
-                p.value = yToAutoValue(e.getY(), laneTopY, scaleAutoLane);
-                view.contentPanel.repaint();
-            }
-            return;
-        }
+        // Delegate automation drags
+        if (autoHandler.handleDrag(e)) return;
 
         int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
         if (e.getY() < scaleTimeRuler && view.draggingClip == null
-                && !view.creatingClip && !view.resizingClip) {
+                && view.dragMode != TimelineView.DragMode.CREATE_CLIP
+                && view.dragMode != TimelineView.DragMode.RESIZE_CLIP) {
             view.updatePlayhead(e.getX());
-        } else if (view.resizingClip && view.resizeClip != null) {
+        } else if (view.dragMode == TimelineView.DragMode.RESIZE_CLIP && view.resizeClip != null) {
             float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
             float newDuration = Math.max(60.0f / view.bpm, mouseTime - view.resizeClip.startTime);
             view.resizeClip.duration = newDuration;
             view.contentPanel.repaint();
-        } else if (view.creatingClip && view.creatingClipRect != null) {
+        } else if (view.dragMode == TimelineView.DragMode.CREATE_CLIP && view.creatingClipRect != null) {
             float endTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
             if (!e.isShiftDown()) {
                 endTime = view.snapToBar(endTime);
@@ -712,15 +285,15 @@ class TimelineMouseHandler {
             view.creatingClipRect.duration = Math.max(0, endTime - view.creatingStartTime);
             view.contentPanel.repaint();
         } else if (view.draggingClip != null) {
-            if (!view.isDragging) {
+            if (view.dragMode != TimelineView.DragMode.MOVE_CLIP) {
                 int dx = e.getX() - view.dragStartX;
                 int dy = e.getY() - view.dragStartY;
                 if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-                    view.isDragging = true;
+                    view.dragMode = TimelineView.DragMode.MOVE_CLIP;
                 }
             }
 
-            if (view.isDragging) {
+            if (view.dragMode == TimelineView.DragMode.MOVE_CLIP) {
                 float newStartTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
                 if (!e.isShiftDown()) {
                     newStartTime = view.snapToBar(newStartTime);
@@ -732,27 +305,22 @@ class TimelineMouseHandler {
         }
     }
 
-    // ─── Mouse move (cursor) ────────────────────────────────────────────
+    // ─── Mouse move (cursor changes) ────────────────────────────────────
 
     private void handleMouseMoved(MouseEvent e) {
         int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
-        int trackIdx = view.getTrackIdxAtY(e.getY() - scaleTimeRuler);
-        if (trackIdx >= 0 && trackIdx < view.tracks.size()) {
-            // Check if hovering over automation area
-            int laneIdx = findAutomationLaneAtY(trackIdx, e.getY());
-            if (laneIdx >= 0) {
-                view.contentPanel.setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
-                return;
-            }
+        if (e.getY() < scaleTimeRuler)
+            return;
 
-            TimelineView.ClipRect clip = view.findClipAtPosition(trackIdx, e.getX());
-            if (clip != null && view.isNearRightEdge(clip, e.getX())) {
-                view.contentPanel.setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
-            } else {
-                view.contentPanel.setCursor(Cursor.getDefaultCursor());
-            }
+        int trackIdx = view.getTrackIdxAtY(e.getY() - scaleTimeRuler);
+        if (trackIdx < 0 || trackIdx >= view.tracks.size())
+            return;
+
+        TimelineView.ClipRect clip = view.findClipAtPosition(trackIdx, e.getX());
+        if (clip != null && view.isNearRightEdge(clip, e.getX())) {
+            view.contentPanel.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.E_RESIZE_CURSOR));
         } else {
-            view.contentPanel.setCursor(Cursor.getDefaultCursor());
+            view.contentPanel.setCursor(java.awt.Cursor.getDefaultCursor());
         }
     }
 }

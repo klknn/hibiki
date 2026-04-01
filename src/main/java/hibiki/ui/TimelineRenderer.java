@@ -94,9 +94,9 @@ class TimelineRenderer {
 
     void drawTimeline(Graphics g, JPanel contentPanel, List<TimelineView.TrackTimeline> tracks,
                       int selectedTrack, float bpm, GridMode gridMode,
-                      float playheadPos, boolean isDragging, TimelineView.ClipRect draggingClip,
+                      float playheadPos, TimelineView.DragMode dragMode, TimelineView.ClipRect draggingClip,
                       int dragSourceTrack, float dragOriginalStartTime, int dragCurrentY,
-                      boolean creatingClip, int creatingTrackIdx, TimelineView.ClipRect creatingClipRect,
+                      int creatingTrackIdx, TimelineView.ClipRect creatingClipRect,
                       int creatingAutoLaneIdx, int trackHeight, int timeRulerHeight) {
         Graphics2D g2 = (Graphics2D) g;
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -141,6 +141,9 @@ class TimelineRenderer {
 
         drawGridLines(g2, contentPanel, scaleTimeRuler, trackAreaBottom, scaleLabelWidth,
                 pps, gridSeconds, secondsPerBeat, secondsPerBar);
+
+        boolean isDragging = (dragMode == TimelineView.DragMode.MOVE_CLIP);
+        boolean creatingClip = (dragMode == TimelineView.DragMode.CREATE_CLIP);
 
         // Draw ghost shadow of dragged clip
         if (isDragging && draggingClip != null && dragSourceTrack >= 0) {
@@ -282,7 +285,7 @@ class TimelineRenderer {
         g2.setStroke(oldStroke);
     }
 
-    private static final int CLIP_HEADER_H = 15;
+    private static final int CLIP_HEADER_H = TimelineConstants.CLIP_HEADER_HEIGHT;
 
     private void drawClips(Graphics2D g2, List<TimelineView.TrackTimeline> tracks,
             int scaleTimeRuler, int scaleBaseTrack, int scaleLabelWidth,

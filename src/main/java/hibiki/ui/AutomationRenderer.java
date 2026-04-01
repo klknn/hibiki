@@ -13,8 +13,8 @@ class AutomationRenderer {
     /** Draw an automation curve inside its lane sub-row based on individual clips. */
     static void drawAutomationCurve(Graphics2D g2, TimelineView.AutomationLaneData lane,
             int y, int h, int xOff, float pps, float secPerBeat) {
-        int pad = 4;
-        int headerH = 15;
+        int pad = TimelineConstants.AUTOMATION_PAD;
+        int headerH = TimelineConstants.CLIP_HEADER_HEIGHT;
         int drawH = h - pad * 2 - headerH;
         int drawY = y + pad + headerH;
 
@@ -29,8 +29,8 @@ class AutomationRenderer {
             return;
 
         Color accentOrange = Theme.getInstance().ACCENT_ORANGE;
-        Color topColor = new Color(accentOrange.getRed(), accentOrange.getGreen(), accentOrange.getBlue(), 100);
-        Color bottomColor = new Color(accentOrange.getRed() / 3, accentOrange.getGreen() / 3, accentOrange.getBlue() / 3, 100);
+        Color topColor = TimelineConstants.withAlpha(accentOrange, 100);
+        Color bottomColor = TimelineConstants.darkened(accentOrange, 100);
 
         for (TimelineView.ClipRect cr : lane.clips) {
             int startPx = xOff + (int) (cr.startTime * pps);
@@ -41,13 +41,13 @@ class AutomationRenderer {
             int clipTopY = drawY - headerH;
 
             // Draw clip background area (faint orange, transparent content)
-            g2.setColor(new Color(accentOrange.getRed(), accentOrange.getGreen(), accentOrange.getBlue(), 20));
+            g2.setColor(TimelineConstants.withAlpha(accentOrange, 20));
             g2.fillRect(startPx, clipTopY, widthPx, drawH + headerH);
-            g2.setColor(new Color(accentOrange.getRed(), accentOrange.getGreen(), accentOrange.getBlue(), 60));
+            g2.setColor(TimelineConstants.withAlpha(accentOrange, 60));
             g2.drawRect(startPx, clipTopY, widthPx, drawH + headerH);
 
             // Draw clip header
-            g2.setColor(new Color(accentOrange.getRed(), accentOrange.getGreen(), accentOrange.getBlue(), 120));
+            g2.setColor(TimelineConstants.withAlpha(accentOrange, 120));
             g2.fillRect(startPx, clipTopY, widthPx, headerH);
 
             // Draw clip name

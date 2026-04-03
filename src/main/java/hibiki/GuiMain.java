@@ -2,6 +2,9 @@ package hibiki;
 
 import com.formdev.flatlaf.FlatDarkLaf;
 import hibiki.ui.MainView;
+import hibiki.ui.MenuBarFactory;
+import hibiki.ui.TimelineView;
+import hibiki.ui.SessionView;
 import java.awt.*;
 import java.net.URL;
 import javax.imageio.ImageIO;
@@ -75,6 +78,47 @@ public class GuiMain {
 
           MainView mainView = new MainView();
           frame.add(mainView);
+
+          // Build and attach the menu bar
+          frame.setJMenuBar(
+              MenuBarFactory.createMenuBar(
+                  frame,
+                  new MenuBarFactory.MenuActions() {
+                    @Override
+                    public void showSaveDialog() {
+                      mainView.getTopBar().showSaveDialog();
+                    }
+
+                    @Override
+                    public void showLoadDialog() {
+                      mainView.getTopBar().showLoadDialog();
+                    }
+
+                    @Override
+                    public void showSettings() {
+                      mainView.getTopBar().showSettings();
+                    }
+
+                    @Override
+                    public void toggleRepl() {
+                      mainView.toggleRepl();
+                    }
+
+                    @Override
+                    public void switchToView(boolean isTimeline) {
+                      mainView.switchToView(isTimeline);
+                    }
+
+                    @Override
+                    public void selectTrack(int trackIdx) {
+                      if (TimelineView.getInstance() != null) {
+                        TimelineView.getInstance().setSelectedTrack(trackIdx);
+                      }
+                      if (SessionView.getInstance() != null) {
+                        SessionView.getInstance().selectTrackByIdx(trackIdx + 1);
+                      }
+                    }
+                  }));
 
           frame.setLocationRelativeTo(null);
           frame.setVisible(true);

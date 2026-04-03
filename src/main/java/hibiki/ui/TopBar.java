@@ -142,7 +142,7 @@ public class TopBar extends JPanel {
     add(rightPanel, BorderLayout.EAST);
   }
 
-  private void showSettings() {
+  public void showSettings() {
     SettingsDialog dialog = new SettingsDialog((Frame) SwingUtilities.getWindowAncestor(this));
     dialog.setVisible(true);
   }
@@ -188,7 +188,7 @@ public class TopBar extends JPanel {
     // TODO: Send loop state to backend when implemented
   }
 
-  private void showSaveDialog() {
+  public void showSaveDialog() {
     if (UIManager.getLookAndFeel() instanceof SimpleLaf) {
       Frame frame = (Frame) SwingUtilities.getWindowAncestor(this);
       FileDialog dialog = new FileDialog(frame, "Save Project", FileDialog.SAVE);
@@ -206,7 +206,7 @@ public class TopBar extends JPanel {
     }
   }
 
-  private void showLoadDialog() {
+  public void showLoadDialog() {
     if (UIManager.getLookAndFeel() instanceof SimpleLaf) {
       Frame frame = (Frame) SwingUtilities.getWindowAncestor(this);
       FileDialog dialog = new FileDialog(frame, "Load Project", FileDialog.LOAD);

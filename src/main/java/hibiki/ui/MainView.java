@@ -15,6 +15,9 @@ public class MainView extends JPanel implements Theme.ThemeListener {
   private JSplitPane replSplit;
   private JPanel mainContent;
   private boolean replVisible = false;
+  private TopBar topBar;
+  private JPanel centerContainer;
+  private boolean isTimelineView = false;
 
   public MainView() {
     Theme.getInstance().addListener(this);
@@ -26,9 +29,9 @@ public class MainView extends JPanel implements Theme.ThemeListener {
     setLayout(new BorderLayout());
     setBackground(Theme.getInstance().BG_DARK);
 
-    TopBar topBar = new TopBar();
+    topBar = new TopBar();
 
-    JPanel centerContainer = new JPanel(new CardLayout());
+    centerContainer = new JPanel(new CardLayout());
     SessionView sessionView = new SessionView();
     TimelineView timelineView = new TimelineView();
     centerContainer.add(sessionView, "SESSION");
@@ -151,15 +154,12 @@ public class MainView extends JPanel implements Theme.ThemeListener {
 
     // Tab = Toggle between Session and Timeline view (like Ableton Live)
     inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_TAB, 0), "toggleView");
-    final boolean[] isTimelineView = {false};
     actionMap.put(
         "toggleView",
         new AbstractAction() {
           @Override
           public void actionPerformed(java.awt.event.ActionEvent e) {
-            isTimelineView[0] = !isTimelineView[0];
-            CardLayout cl = (CardLayout) centerContainer.getLayout();
-            cl.show(centerContainer, isTimelineView[0] ? "TIMELINE" : "SESSION");
+            switchToView(!isTimelineView);
           }
         });
 
@@ -208,7 +208,7 @@ public class MainView extends JPanel implements Theme.ThemeListener {
     repaint();
   }
 
-  private void toggleRepl() {
+  public void toggleRepl() {
     replVisible = !replVisible;
     removeAll();
 
@@ -233,6 +233,18 @@ public class MainView extends JPanel implements Theme.ThemeListener {
     add(footer, BorderLayout.SOUTH);
     revalidate();
     repaint();
+  }
+
+  /** Switch between Session and Timeline views. */
+  public void switchToView(boolean isTimeline) {
+    isTimelineView = isTimeline;
+    CardLayout cl = (CardLayout) centerContainer.getLayout();
+    cl.show(centerContainer, isTimeline ? "TIMELINE" : "SESSION");
+  }
+
+  /** Get the TopBar instance for menu bar delegation. */
+  public TopBar getTopBar() {
+    return topBar;
   }
 
   @Override

@@ -16,7 +16,7 @@ class IPlugin {
  public:
   virtual ~IPlugin() = default;
 
-  virtual bool load(const char* path, int plugin_index = 0,
+  virtual bool load(const std::string& path, int plugin_index = 0,
                     double sample_rate = 44100.0) = 0;
   virtual void showEditor() = 0;
   virtual void stopEditor() = 0;

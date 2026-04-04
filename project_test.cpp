@@ -9,6 +9,7 @@
 #include "ipc.hpp"
 #include "test_utils.hpp"
 
+void Vst3Plugin::showEditor() {}  // Stub for test linking.
 void Vst3Plugin::stopEditor() {}  // Stub for test linking.
 
 class ProjectTest : public ::testing::Test {

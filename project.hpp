@@ -43,6 +43,6 @@ double GetProjectDuration(const ProjectState& state);
 void BounceProject(ProjectState& live_state, const std::string& path);
 void sendAutomationLanesData(
     int track_idx, const std::vector<AutomationLane>& lanes,
-    const std::vector<std::unique_ptr<Vst3Plugin>>& plugins);
+    const std::vector<std::unique_ptr<IPlugin>>& plugins);
 
 }  // namespace hibiki

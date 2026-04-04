@@ -31,6 +31,7 @@ cc_library(
     name = "vst3_host",
     srcs = ["vst3_host.cpp"],
     hdrs = [
+        "iplugin.hpp",
         "vst3_host.hpp",
         "vst3_host_impl.hpp",
     ],
@@ -100,6 +101,66 @@ cc_library(
     name = "midi",
     srcs = ["midi.cpp"],
     hdrs = ["midi.hpp"],
+)
+
+cc_library(
+    name = "worker_channel",
+    srcs = ["worker_channel_unix.cpp"],
+    hdrs = [
+        "worker_channel.hpp",
+        "worker_channel_unix.hpp",
+    ],
+    linkopts = ["-lrt"],  # POSIX shared memory
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_library(
+    name = "plugin_proxy",
+    srcs = ["plugin_proxy.cpp"],
+    hdrs = ["plugin_proxy.hpp"],
+    deps = [
+        ":vst3_host",
+        ":worker_channel",
+        "//pb:plugin_worker_cc_proto",
+    ],
+)
+
+cc_binary(
+    name = "hbk-plugin-worker",
+    srcs = ["plugin_worker_main.cpp"],
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "-lpthread",
+            "-ldl",
+        ],
+    }),
+    deps = [
+        ":vst3_host",
+        ":worker_channel",
+        "//pb:plugin_worker_cc_proto",
+    ] + select({
+        "@platforms//os:macos": [
+            ":vst3_host_mac",
+        ],
+        "//conditions:default": [
+            ":vst3_host_x11",
+        ],
+    }),
+)
+
+cc_test(
+    name = "worker_channel_test",
+    size = "small",
+    srcs = ["worker_channel_test.cc"],
+    linkopts = ["-lrt"],
+    deps = [
+        ":worker_channel",
+        "@googletest//:gtest_main",
+    ],
 )
 
 cc_library(

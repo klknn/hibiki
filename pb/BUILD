@@ -59,3 +59,15 @@ java_proto_library(
     visibility = ["//visibility:public"],
     deps = [":notifications_proto"],
 )
+
+proto_library(
+    name = "plugin_worker_proto",
+    srcs = ["plugin_worker.proto"],
+    visibility = ["//visibility:public"],
+)
+
+cc_proto_library(
+    name = "plugin_worker_cc_proto",
+    visibility = ["//visibility:public"],
+    deps = [":plugin_worker_proto"],
+)

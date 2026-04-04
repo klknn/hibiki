@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "iplugin.hpp"
+
 struct HostProcessContext {
   double sampleRate;
   double tempo;
@@ -36,27 +38,27 @@ struct PluginDescription {
 
 struct Vst3PluginImpl;
 
-class Vst3Plugin {
+class Vst3Plugin : public IPlugin {
  public:
   Vst3Plugin();
-  ~Vst3Plugin();
+  ~Vst3Plugin() override;
 
   bool load(const std::string& path, int plugin_index = 0,
-            double sample_rate = 44100.0);
-  void showEditor();
-  void stopEditor();
+            double sample_rate = 44100.0) override;
+  void showEditor() override;
+  void stopEditor() override;
   void process(float** inputs, float** outputs, int num_samples,
                const HostProcessContext& context,
-               const std::vector<MidiNoteEvent>& events);
+               const std::vector<MidiNoteEvent>& events) override;
 
-  int getParameterCount() const;
-  bool getParameterInfo(int index, VstParamInfo& info) const;
-  void setParameterValue(uint32_t id, double valueNormalized);
-  double getParameterValue(uint32_t id) const;
-  const std::string& getName() const;
-  const std::string& getPath() const;
-  int getPluginIndex() const;
-  bool isInstrument() const;
+  int getParameterCount() const override;
+  bool getParameterInfo(int index, VstParamInfo& info) const override;
+  void setParameterValue(uint32_t id, double valueNormalized) override;
+  double getParameterValue(uint32_t id) const override;
+  const std::string& getName() const override;
+  const std::string& getPath() const override;
+  int getPluginIndex() const override;
+  bool isInstrument() const override;
 
   static std::vector<PluginDescription> listPlugins(const std::string& path);
   static std::vector<PluginDescription> listPluginsIsolated(

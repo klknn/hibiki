@@ -407,7 +407,7 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
 
 void sendAutomationLanesData(
     int track_idx, const std::vector<AutomationLane>& lanes,
-    const std::vector<std::unique_ptr<Vst3Plugin>>& plugins) {
+    const std::vector<std::unique_ptr<IPlugin>>& plugins) {
   hibiki::pb::notifications::Notification notification;
   auto* ald = notification.mutable_automation_lanes_data();
   ald->set_track_index(track_idx);

@@ -1,0 +1,122 @@
+// Worker process protocol for out-of-process VST3 plugin hosting.
+//
+// These messages are exchanged between the host (PluginProxy) and
+// the worker process (hbk-plugin-worker) via Unix domain socket.
+
+syntax = "proto3";
+
+package hibiki.pb.worker;
+
+option java_package = "hibiki.pb.worker";
+option java_outer_classname = "WorkerProto";
+option java_multiple_files = true;
+
+// ─── Host → Worker ──────────────────────────────────────────────────
+
+message LoadPlugin {
+  string path = 1;         // Filesystem path to .vst3 bundle
+  int32 plugin_index = 2;  // Index within multi-plugin bundle
+  double sample_rate = 3;
+}
+
+message ProcessAudio {
+  int32 num_samples = 1;
+  // Audio data is in shared memory, not in the proto.
+  // MIDI events are inline since they are small.
+  repeated MidiEvent midi_events = 2;
+
+  // Process context
+  double sample_rate = 3;
+  double tempo = 4;
+  int32 time_sig_numerator = 5;
+  int32 time_sig_denominator = 6;
+  int64 continuous_time_samples = 7;
+  double project_time_music = 8;
+  bool has_inputs = 9;  // false = instrument (no input audio)
+}
+
+message MidiEvent {
+  int32 sample_offset = 1;
+  uint32 channel = 2;
+  uint32 pitch = 3;
+  float velocity = 4;
+  bool is_note_on = 5;
+}
+
+message SetParam {
+  uint32 param_id = 1;
+  double value = 2;
+}
+
+message GetParam {
+  uint32 param_id = 1;
+}
+
+message GetParamCount {}
+
+message GetParamInfo {
+  int32 index = 1;
+}
+
+message GetPluginInfo {}
+
+message Shutdown {}
+
+message WorkerRequest {
+  oneof command {
+    LoadPlugin load = 1;
+    ProcessAudio process = 2;
+    SetParam set_param = 3;
+    GetParam get_param = 4;
+    GetParamCount get_param_count = 5;
+    GetParamInfo get_param_info = 6;
+    GetPluginInfo get_plugin_info = 7;
+    Shutdown shutdown = 8;
+  }
+}
+
+// ─── Worker → Host ──────────────────────────────────────────────────
+
+message LoadResult {
+  bool success = 1;
+  string name = 2;
+  bool is_instrument = 3;
+  string error = 4;
+}
+
+message ProcessDone {
+  // Audio output is in shared memory, not in the proto.
+}
+
+message ParamValue {
+  double value = 1;
+}
+
+message ParamCountResult {
+  int32 count = 1;
+}
+
+message ParamInfoResult {
+  bool found = 1;
+  uint32 id = 2;
+  string name = 3;
+  double default_value = 4;
+}
+
+message PluginInfoResult {
+  string name = 1;
+  string path = 2;
+  int32 plugin_index = 3;
+  bool is_instrument = 4;
+}
+
+message WorkerResponse {
+  oneof result {
+    LoadResult load_result = 1;
+    ProcessDone process_done = 2;
+    ParamValue param_value = 3;
+    ParamCountResult param_count = 4;
+    ParamInfoResult param_info = 5;
+    PluginInfoResult plugin_info = 6;
+  }
+}

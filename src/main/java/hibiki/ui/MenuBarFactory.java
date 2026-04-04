@@ -3,7 +3,6 @@ package hibiki.ui;
 import hibiki.BackendManager;
 import hibiki.pb.commands.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import javax.swing.*;
@@ -33,7 +32,8 @@ public class MenuBarFactory {
   public static JMenuBar createMenuBar(JFrame frame, MenuActions actions) {
     // Use platform-native modifier (Cmd on macOS, Ctrl elsewhere)
     int mod =
-        Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx(); // Java 10+: getMenuShortcutKeyMaskEx
+        Toolkit.getDefaultToolkit()
+            .getMenuShortcutKeyMaskEx(); // Java 10+: getMenuShortcutKeyMaskEx
 
     JMenuBar menuBar = new JMenuBar();
     menuBar.add(createFileMenu(frame, actions, mod));
@@ -129,8 +129,7 @@ public class MenuBarFactory {
           BackendManager.getInstance()
               .sendRequest(
                   Request.newBuilder()
-                      .setProject(
-                          ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_QUIT))
+                      .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_QUIT))
                       .build());
           frame.dispose();
           System.exit(0);
@@ -254,12 +253,14 @@ public class MenuBarFactory {
 
     // Session / Timeline
     JMenuItem sessionItem = new JMenuItem("Session View");
-    sessionItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_1, mod | InputEvent.ALT_DOWN_MASK));
+    sessionItem.setAccelerator(
+        KeyStroke.getKeyStroke(KeyEvent.VK_1, mod | InputEvent.ALT_DOWN_MASK));
     sessionItem.addActionListener(e -> actions.switchToView(false));
     menu.add(sessionItem);
 
     JMenuItem timelineItem = new JMenuItem("Timeline View");
-    timelineItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_2, mod | InputEvent.ALT_DOWN_MASK));
+    timelineItem.setAccelerator(
+        KeyStroke.getKeyStroke(KeyEvent.VK_2, mod | InputEvent.ALT_DOWN_MASK));
     timelineItem.addActionListener(e -> actions.switchToView(true));
     menu.add(timelineItem);
 

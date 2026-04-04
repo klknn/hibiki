@@ -120,7 +120,7 @@ public class TopBar extends JPanel {
     rateLabel.setForeground(Color.LIGHT_GRAY);
     rateLabel.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(10)));
 
-    cpuLabel = createDisplayLabel("CPU: 0%", Theme.getInstance().scale(70));
+    cpuLabel = createDisplayLabel("CPU: 0.0%", Theme.getInstance().scale(90));
 
     replBtn =
         Theme.getInstance()
@@ -140,6 +140,18 @@ public class TopBar extends JPanel {
     rightPanel.add(replBtn);
     rightPanel.add(settingsBtn);
     add(rightPanel, BorderLayout.EAST);
+
+    // Poll process CPU load via MXBean (~1Hz)
+    com.sun.management.OperatingSystemMXBean osBean =
+        (com.sun.management.OperatingSystemMXBean)
+            java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+    new javax.swing.Timer(
+            1000,
+            e -> {
+              double load = osBean.getCpuLoad() * 100.0;
+              cpuLabel.setText(String.format("CPU: %.1f%%", load));
+            })
+        .start();
   }
 
   public void showSettings() {

@@ -96,8 +96,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
   /** Set the grid mode (used by MenuBarFactory). */
   public void setGridMode(GridMode mode) {
-      this.gridMode = mode;
-      repaint();
+    this.gridMode = mode;
+    repaint();
   }
 
   volatile float bpm = 120.0f;

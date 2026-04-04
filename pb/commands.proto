@@ -117,6 +117,19 @@ message ProjectCmd {
   float bpm = 3;
 }
 
+// ─── Settings ───────────────────────────────────────────────────────
+
+enum PluginHostMode {
+  PLUGIN_HOST_IN_PROCESS = 0;
+  PLUGIN_HOST_LOCAL_SANDBOX = 1;
+  PLUGIN_HOST_REMOTE = 2;
+}
+
+message SetPluginHostMode {
+  PluginHostMode mode = 1;
+  string remote_host = 2;  // "host:port" for REMOTE mode
+}
+
 // ─── Request Envelope ───────────────────────────────────────────────
 
 // Contains the new domain-grouped commands.
@@ -128,5 +141,6 @@ message Request {
     AutomationCmd automation = 43;
     MidiCmd midi = 44;
     ProjectCmd project = 45;
+    SetPluginHostMode set_plugin_host_mode = 46;
   }
 }

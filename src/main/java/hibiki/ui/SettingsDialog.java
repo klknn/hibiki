@@ -4,14 +4,19 @@ import java.awt.*;
 import javax.swing.*;
 
 public class SettingsDialog extends JDialog {
+  private static final String[] HOST_MODES = {
+      "In-Process", "Local Sandbox (Unix)", "Remote (TCP)"
+  };
+
   public SettingsDialog(Frame owner) {
     super(owner, "Settings", true);
     setLayout(new BorderLayout());
-    setSize(Theme.getInstance().scale(400), Theme.getInstance().scale(300));
+    setSize(Theme.getInstance().scale(400), Theme.getInstance().scale(350));
     setLocationRelativeTo(owner);
 
     JTabbedPane tabs = new JTabbedPane();
     tabs.addTab("Audio", createAudioPanel());
+    tabs.addTab("Plugins", createPluginsPanel());
     tabs.addTab("Appearance", createAppearancePanel());
 
     add(tabs, BorderLayout.CENTER);
@@ -31,6 +36,93 @@ public class SettingsDialog extends JDialog {
     JLabel deviceLabel = new JLabel("Audio Engine: ALSA (alsa_playback.hbk-play)");
     deviceLabel.setFont(Theme.getInstance().FONT_UI);
     p.add(deviceLabel, BorderLayout.NORTH);
+
+    return p;
+  }
+
+  private JPanel createPluginsPanel() {
+    JPanel p = new JPanel(new GridBagLayout());
+    p.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+    GridBagConstraints gbc = new GridBagConstraints();
+    gbc.fill = GridBagConstraints.HORIZONTAL;
+    gbc.insets = new Insets(5, 5, 5, 5);
+    int row = 0;
+
+    // Hosting Mode
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    p.add(new JLabel("Hosting Mode:"), gbc);
+    gbc.gridx = 1;
+    JComboBox<String> modeCombo = new JComboBox<>(HOST_MODES);
+    p.add(modeCombo, gbc);
+
+    // Remote Host
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    JLabel hostLabel = new JLabel("Remote Host:");
+    p.add(hostLabel, gbc);
+    gbc.gridx = 1;
+    JTextField hostField = new JTextField("localhost:9100");
+    hostField.setEnabled(false);
+    p.add(hostField, gbc);
+
+    // Enable/disable host field based on mode
+    modeCombo.addActionListener(e -> {
+      boolean isRemote = modeCombo.getSelectedIndex() == 2;
+      hostField.setEnabled(isRemote);
+      hostLabel.setEnabled(isRemote);
+    });
+
+    // Description
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    gbc.gridwidth = 2;
+    JLabel desc = new JLabel("<html><small>"
+        + "In-Process: plugins run in the audio engine (lowest latency)<br>"
+        + "Local Sandbox: isolated process per plugin (crash protection)<br>"
+        + "Remote: plugin on another machine via TCP (cross-OS)"
+        + "</small></html>");
+    desc.setFont(Theme.getInstance().FONT_UI.deriveFont(11.0f));
+    p.add(desc, gbc);
+    gbc.gridwidth = 1;
+
+    // Apply
+    row++;
+    gbc.gridx = 1;
+    gbc.gridy = row;
+    JButton applyBtn = new JButton("Apply");
+    applyBtn.addActionListener(e -> {
+      int idx = modeCombo.getSelectedIndex();
+      hibiki.pb.commands.PluginHostMode mode;
+      switch (idx) {
+        case 1:
+          mode = hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX;
+          break;
+        case 2:
+          mode = hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_REMOTE;
+          break;
+        default:
+          mode = hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_IN_PROCESS;
+          break;
+      }
+
+      hibiki.pb.commands.SetPluginHostMode.Builder builder = hibiki.pb.commands.SetPluginHostMode.newBuilder()
+          .setMode(mode);
+      if (idx == 2) {
+        builder.setRemoteHost(hostField.getText());
+      }
+
+      hibiki.pb.commands.Request request = hibiki.pb.commands.Request.newBuilder()
+          .setSetPluginHostMode(builder.build())
+          .build();
+      hibiki.BackendManager.getInstance().sendRequest(request);
+
+      JOptionPane.showMessageDialog(this,
+          "Plugin hosting mode set to: " + HOST_MODES[idx]);
+    });
+    p.add(applyBtn, gbc);
 
     return p;
   }

@@ -21,8 +21,9 @@ message LoadPlugin {
 
 message ProcessAudio {
   int32 num_samples = 1;
-  // Audio data is in shared memory, not in the proto.
-  // MIDI events are inline since they are small.
+  // Audio data is in shared memory for local mode.
+  // For remote mode, audio is sent inline as bytes.
+  // MIDI events are always inline since they are small.
   repeated MidiEvent midi_events = 2;
 
   // Process context
@@ -33,6 +34,10 @@ message ProcessAudio {
   int64 continuous_time_samples = 7;
   double project_time_music = 8;
   bool has_inputs = 9;  // false = instrument (no input audio)
+
+  // Inline audio for remote mode (interleaved float32, little-endian).
+  // Empty when using shared memory (local mode).
+  bytes input_audio = 10;
 }
 
 message MidiEvent {
@@ -60,7 +65,18 @@ message GetParamInfo {
 
 message GetPluginInfo {}
 
+message ListPlugins {
+  string search_path = 1;  // Directory to scan for .vst3 bundles
+}
+
 message Shutdown {}
+
+// Connection handshake (sent once after connect).
+message WorkerConfig {
+  int32 block_size = 1;
+  int32 num_channels = 2;
+  bool use_shared_memory = 3;  // false = inline audio in protos
+}
 
 message WorkerRequest {
   oneof command {
@@ -72,6 +88,8 @@ message WorkerRequest {
     GetParamInfo get_param_info = 6;
     GetPluginInfo get_plugin_info = 7;
     Shutdown shutdown = 8;
+    ListPlugins list_plugins = 9;
+    WorkerConfig config = 10;
   }
 }
 
@@ -85,7 +103,9 @@ message LoadResult {
 }
 
 message ProcessDone {
-  // Audio output is in shared memory, not in the proto.
+  // Audio output in shared memory for local mode.
+  // For remote mode, output is sent inline as bytes.
+  bytes output_audio = 1;
 }
 
 message ParamValue {
@@ -110,6 +130,12 @@ message PluginInfoResult {
   bool is_instrument = 4;
 }
 
+message ListPluginsResult {
+  repeated PluginInfoResult plugins = 1;
+}
+
+message ConfigAck {}
+
 message WorkerResponse {
   oneof result {
     LoadResult load_result = 1;
@@ -118,5 +144,7 @@ message WorkerResponse {
     ParamCountResult param_count = 4;
     ParamInfoResult param_info = 5;
     PluginInfoResult plugin_info = 6;
+    ListPluginsResult list_plugins_result = 7;
+    ConfigAck config_ack = 8;
   }
 }

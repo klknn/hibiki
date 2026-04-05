@@ -5,6 +5,9 @@
 #include "ipc.hpp"
 #include "test_utils.hpp"
 
+
+namespace hibiki {
+
 void Vst3Plugin::stopEditor() {}  // for test
 
 TEST(TrackTest, AddAndRemoveClips) {
@@ -69,3 +72,5 @@ TEST(TrackTest, TimelineMidiPlaybackCrash) {
     }
   }
 }
+
+}  // namespace hibiki

@@ -4,6 +4,8 @@
 
 typedef struct _snd_pcm snd_pcm_t;
 
+namespace hibiki {
+
 class AlsaPlayback {
   snd_pcm_t* pcm_handle = nullptr;
   int sample_rate;
@@ -16,3 +18,5 @@ class AlsaPlayback {
   bool is_ready() const;
   void write(const std::vector<float>& interleaved_data, int num_frames);
 };
+
+}  // namespace hibiki

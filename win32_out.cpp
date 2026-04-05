@@ -8,6 +8,9 @@
 #include <iostream>
 #include <thread>
 
+
+namespace hibiki {
+
 struct Win32Playback::Impl {
   IAudioClient* pAudioClient = nullptr;
   IAudioRenderClient* pRenderClient = nullptr;
@@ -141,3 +144,5 @@ void Win32Playback::write(const std::vector<float>& interleaved_data,
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 }
+
+}  // namespace hibiki

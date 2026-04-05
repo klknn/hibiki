@@ -9,6 +9,9 @@
 
 #include "tcp.hpp"
 
+
+namespace hibiki {
+
 WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
                                                  int port, int block_size,
                                                  int num_channels) {
@@ -166,3 +169,5 @@ float* WorkerChannelTcp::outputBuffer(int channel) {
   }
   return output_bufs_[channel].data();
 }
+
+}  // namespace hibiki

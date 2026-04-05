@@ -5,6 +5,9 @@
 #include <string>
 #include <thread>
 
+
+namespace hibiki {
+
 class WorkerChannelTcpTest : public ::testing::Test {
  protected:
   int test_port_ = 0;  // Will use a dynamic port
@@ -109,3 +112,5 @@ TEST_F(WorkerChannelTcpTest, HeapAudioBuffers) {
   delete c;
   delete server;
 }
+
+}  // namespace hibiki

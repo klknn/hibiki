@@ -4,6 +4,9 @@
 
 #include <iostream>
 
+
+namespace hibiki {
+
 AlsaPlayback::AlsaPlayback(int rate, int ch) : sample_rate(rate), channels(ch) {
   if (snd_pcm_open(&pcm_handle, "default", SND_PCM_STREAM_PLAYBACK, 0) < 0) {
     std::cerr << "Cannot open ALSA audio device" << std::endl;
@@ -50,3 +53,5 @@ void AlsaPlayback::write(const std::vector<float>& interleaved_data,
     }
   }
 }
+
+}  // namespace hibiki

@@ -10,6 +10,9 @@
 #include <cstring>
 #include <iostream>
 
+
+namespace hibiki {
+
 // Platform-specific state for Windows.
 struct WorkerChannelLocal::Impl {
   HANDLE pipe_handle = INVALID_HANDLE_VALUE;
@@ -226,3 +229,5 @@ float* WorkerChannelLocal::outputBuffer(int channel) {
 }
 
 #endif  // _WIN32
+
+}  // namespace hibiki

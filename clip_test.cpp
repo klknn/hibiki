@@ -4,6 +4,9 @@
 
 #include "test_utils.hpp"
 
+
+namespace hibiki {
+
 TEST(ClipTest, LoadAudioClip) {
   auto clip =
       hibiki::LoadClip(hibiki::find_test_file("testdata/loop140.wav"), true);
@@ -23,3 +26,5 @@ TEST(ClipTest, LoadMidiClip) {
   EXPECT_GT(clip->duration_beats,
             0.0);  // MIDI clips use duration_beats, not duration_sec
 }
+
+}  // namespace hibiki

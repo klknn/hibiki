@@ -19,7 +19,13 @@
 #include "vst3_host.hpp"
 #include "worker_channel_local.hpp"
 
+
+namespace hibiki {
+
+}  // namespace hibiki
+
 int main(int argc, char** argv) {
+  using namespace hibiki;
   if (argc < 3) {
     std::cerr << "Usage: hbk-plugin-worker <socket_path> <shm_name>\n";
     return 1;

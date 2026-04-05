@@ -11,6 +11,9 @@
 #include <cerrno>
 #include <cstring>
 
+
+namespace hibiki {
+
 void tcp_init() {}  // no-op on POSIX
 
 int tcp_close(socket_t s) { return ::close(s); }
@@ -28,3 +31,5 @@ void tcp_setsockopt(socket_t s, int level, int optname, int val) {
 }
 
 const char* tcp_strerror() { return strerror(errno); }
+
+}  // namespace hibiki

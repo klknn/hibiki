@@ -7,6 +7,9 @@
 #include <iostream>
 #include <thread>
 
+
+namespace hibiki {
+
 struct CoreAudioPlayback::Impl {
   AudioUnit audioUnit;
   int sampleRate;
@@ -167,3 +170,5 @@ void CoreAudioPlayback::write(const std::vector<float>& interleaved_data,
 
   impl->writeData(interleaved_data.data(), count);
 }
+
+}  // namespace hibiki

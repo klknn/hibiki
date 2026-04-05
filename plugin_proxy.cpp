@@ -13,6 +13,9 @@
 #include "worker_channel_local.hpp"
 #include "worker_channel_tcp.hpp"
 
+
+namespace hibiki {
+
 namespace {
 
 std::string generateUniqueId() {
@@ -315,3 +318,5 @@ int PluginProxy::getPluginIndex() const { return plugin_index_; }
 bool PluginProxy::isInstrument() const { return is_instrument_; }
 void PluginProxy::showEditor() {}
 void PluginProxy::stopEditor() {}
+
+}  // namespace hibiki

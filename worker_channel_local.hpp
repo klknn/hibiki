@@ -5,6 +5,9 @@
 
 #include "worker_channel.hpp"
 
+
+namespace hibiki {
+
 // Local IPC implementation of WorkerChannel.
 // - POSIX: Unix domain sockets + POSIX shared memory (shm_open/mmap)
 // - Windows: Named Pipes + File Mapping (CreateFileMapping/MapViewOfFile)
@@ -79,3 +82,5 @@ class WorkerChannelLocal : public WorkerChannel {
   std::string shm_name_;
   bool is_server_ = false;
 };
+
+}  // namespace hibiki

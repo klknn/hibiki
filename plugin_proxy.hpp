@@ -6,6 +6,9 @@
 
 #include "iplugin.hpp"
 
+
+namespace hibiki {
+
 class WorkerChannel;
 
 // Plugin hosting mode — determines how PluginProxy communicates.
@@ -70,3 +73,5 @@ class PluginProxy : public IPlugin {
   double sample_rate_ = 44100.0;
   bool is_instrument_ = false;
 };
+
+}  // namespace hibiki

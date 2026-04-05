@@ -5,6 +5,9 @@
 #include "ipc.hpp"
 #include "track.hpp"
 
+
+namespace hibiki {
+
 class CommandsTest : public ::testing::Test {
  protected:
   hibiki::ProjectState state;
@@ -314,3 +317,5 @@ TEST_F(CommandsTest, StopTrack) {
 
   EXPECT_NO_FATAL_FAILURE(hibiki::handleTrackCmd(cmd, state, history));
 }
+
+}  // namespace hibiki

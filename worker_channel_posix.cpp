@@ -9,6 +9,9 @@
 #include <cstring>
 #include <iostream>
 
+
+namespace hibiki {
+
 // Platform-specific state for POSIX.
 struct WorkerChannelLocal::Impl {
   int listen_fd = -1;
@@ -232,3 +235,5 @@ float* WorkerChannelLocal::outputBuffer(int channel) {
       base + sizeof(SharedMemHeader) +
       (size_t)(num_channels_ + channel) * block_size_ * sizeof(float));
 }
+
+}  // namespace hibiki

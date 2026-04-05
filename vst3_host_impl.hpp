@@ -11,6 +11,9 @@
 #include "pluginterfaces/vst/ivsthostapplication.h"
 #include "public.sdk/source/vst/hosting/module.h"
 
+
+namespace hibiki {
+
 struct Vst3PluginImpl {
   VST3::Hosting::Module::Ptr module;
   Steinberg::IPtr<Steinberg::Vst::IComponent> component;
@@ -28,3 +31,5 @@ struct Vst3PluginImpl {
   std::atomic<uint64_t> editorWindow{0};
   void* windowDelegate = nullptr;
 };
+
+}  // namespace hibiki

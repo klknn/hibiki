@@ -348,8 +348,8 @@ void run_ipc_loop(ProjectState& state) {
 }  // namespace hibiki
 
 int main(int argc, char** argv) {
+  using namespace hibiki;
   if (argc >= 2 && std::string(argv[1]) == "--list") {
-    if (argc < 3) return 1;
     auto plugins = Vst3Plugin::listPlugins(argv[2]);
     for (const auto& p : plugins) {
       std::cout << p.index << ":" << p.name << ":" << p.vendor << "\n";

@@ -6,6 +6,9 @@
 #include "tcp.hpp"
 #include "worker_channel.hpp"
 
+
+namespace hibiki {
+
 // TCP implementation of WorkerChannel for remote workers.
 // Uses TCP sockets for both commands AND audio data (no shared memory).
 // Audio buffers are heap-allocated locally and serialized into protobuf
@@ -51,3 +54,5 @@ class WorkerChannelTcp : public WorkerChannel {
   std::vector<std::vector<float>> input_bufs_;
   std::vector<std::vector<float>> output_bufs_;
 };
+
+}  // namespace hibiki

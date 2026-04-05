@@ -14,6 +14,9 @@
 
 #include "test_utils.hpp"
 
+
+namespace hibiki {
+
 TEST(MidiTest, ParseTestMid) {
   std::cout << "Testing parseMidi with test.mid..." << std::endl;
   auto events = hibiki::parseMidi(hibiki::find_test_file("testdata/test.mid"));
@@ -53,3 +56,5 @@ TEST(MidiTest, ParseRickrollMid) {
             << " events. First type=" << (int)first.type
             << " Last beat=" << last.beats << " - PASSED" << std::endl;
 }
+
+}  // namespace hibiki

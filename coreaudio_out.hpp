@@ -4,6 +4,9 @@
 #include <memory>
 #include <vector>
 
+
+namespace hibiki {
+
 class CoreAudioPlayback {
  public:
   struct Impl;
@@ -15,3 +18,5 @@ class CoreAudioPlayback {
 
   std::unique_ptr<Impl> impl;
 };
+
+}  // namespace hibiki

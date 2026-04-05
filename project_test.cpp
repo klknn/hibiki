@@ -9,6 +9,9 @@
 #include "ipc.hpp"
 #include "test_utils.hpp"
 
+
+namespace hibiki {
+
 void Vst3Plugin::showEditor() {}  // Stub for test linking.
 void Vst3Plugin::stopEditor() {}  // Stub for test linking.
 
@@ -271,3 +274,5 @@ TEST_F(ProjectTest, DeletePluginThenLoadNew) {
   // Clean up
   state.tracks.clear();
 }
+
+}  // namespace hibiki

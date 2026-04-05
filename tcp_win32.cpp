@@ -7,6 +7,9 @@
 
 #include <cstdio>
 
+
+namespace hibiki {
+
 void tcp_init() {
   static bool initialized = false;
   if (!initialized) {
@@ -36,3 +39,5 @@ const char* tcp_strerror() {
   snprintf(buf, sizeof(buf), "WSA error %d", WSAGetLastError());
   return buf;
 }
+
+}  // namespace hibiki

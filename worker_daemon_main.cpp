@@ -25,6 +25,9 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
+
+namespace hibiki {
+
 static constexpr int DEFAULT_PORT = 9100;
 
 // Handle a single client connection — run a Vst3Plugin directly in-process
@@ -270,7 +273,10 @@ void handleClient(int conn_fd) {
   close(conn_fd);
 }
 
+}  // namespace hibiki
+
 int main(int argc, char** argv) {
+  using namespace hibiki;
   int port = DEFAULT_PORT;
 
   // Parse --port flag

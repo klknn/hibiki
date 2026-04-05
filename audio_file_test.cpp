@@ -8,6 +8,9 @@
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 
+
+namespace hibiki {
+
 TEST(AudioFileTest, LoadWav) {
   std::vector<float> data;
   int channels;
@@ -52,3 +55,5 @@ TEST(AudioFileTest, SaveAndLoadWav) {
 
   std::remove(tmp_file.c_str());
 }
+
+}  // namespace hibiki

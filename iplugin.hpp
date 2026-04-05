@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 
+
+namespace hibiki {
+
 // Forward-declare types defined in vst3_host.hpp to avoid circular includes.
 struct HostProcessContext;
 struct MidiNoteEvent;
@@ -33,3 +36,5 @@ class IPlugin {
   virtual int getPluginIndex() const = 0;
   virtual bool isInstrument() const = 0;
 };
+
+}  // namespace hibiki

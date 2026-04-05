@@ -24,6 +24,9 @@
 #include "public.sdk/source/vst/hosting/plugprovider.h"
 #include "vst3_host_impl.hpp"
 
+
+namespace hibiki {
+
 namespace {
 
 class VstEventList : public Steinberg::Vst::IEventList {
@@ -534,3 +537,5 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(
   std::remove(tmp_file.c_str());
   return plugins;
 }
+
+}  // namespace hibiki

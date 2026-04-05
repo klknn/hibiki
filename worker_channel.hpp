@@ -3,6 +3,9 @@
 #include <cstddef>
 #include <string>
 
+
+namespace hibiki {
+
 // Abstract channel for host ↔ worker communication.
 // Implementations provide both a command channel (send/recv serialized protos)
 // and shared memory audio buffers (zero-copy).
@@ -25,3 +28,5 @@ class WorkerChannel {
   virtual float* inputBuffer(int channel) = 0;
   virtual float* outputBuffer(int channel) = 0;
 };
+
+}  // namespace hibiki

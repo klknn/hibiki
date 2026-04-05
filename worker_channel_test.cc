@@ -7,6 +7,9 @@
 
 #include "worker_channel_local.hpp"
 
+
+namespace hibiki {
+
 class WorkerChannelTest : public ::testing::Test {
  protected:
   std::string socket_path_;
@@ -149,3 +152,5 @@ TEST_F(WorkerChannelTest, InvalidChannel) {
   EXPECT_EQ(server->outputBuffer(5), nullptr);
   delete server;
 }
+
+}  // namespace hibiki

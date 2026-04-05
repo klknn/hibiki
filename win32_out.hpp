@@ -2,6 +2,9 @@
 
 #include <vector>
 
+
+namespace hibiki {
+
 class Win32Playback {
   struct Impl;
   Impl* impl;
@@ -17,3 +20,5 @@ class Win32Playback {
   bool is_ready() const;
   void write(const std::vector<float>& interleaved_data, int num_frames);
 };
+
+}  // namespace hibiki

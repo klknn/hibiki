@@ -11,6 +11,9 @@
 #include "vst3_host.hpp"
 #include "vst3_host_impl.hpp"
 
+
+namespace hibiki {
+
 void Vst3Plugin::showEditor() {
   if (!impl->controller) {
     std::cerr << "No controller available for showing editor" << std::endl;
@@ -128,3 +131,5 @@ void Vst3Plugin::stopEditor() {
     impl->editorRunning = false;
   }
 }
+
+}  // namespace hibiki

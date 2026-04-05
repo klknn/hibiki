@@ -7,6 +7,9 @@
 
 #include "iplugin.hpp"
 
+
+namespace hibiki {
+
 struct HostProcessContext {
   double sampleRate;
   double tempo;
@@ -69,3 +72,5 @@ class Vst3Plugin : public IPlugin {
  private:
   std::unique_ptr<Vst3PluginImpl> impl;
 };
+
+}  // namespace hibiki

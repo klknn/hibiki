@@ -4,6 +4,9 @@
 
 #include <vector>
 
+
+namespace hibiki {
+
 TEST(HistoryTest, BasicUndoRedo) {
   hibiki::HistoryManager history;
   std::vector<uint8_t> s1 = {1, 2, 3};
@@ -59,3 +62,5 @@ TEST(HistoryTest, RedoStackClearedOnPush) {
   // Redo should be impossible
   EXPECT_FALSE(history.redo(s3, out));
 }
+
+}  // namespace hibiki

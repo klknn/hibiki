@@ -22,6 +22,9 @@ using socket_t = int;
 constexpr socket_t INVALID_SOCK = -1;
 #endif
 
+
+namespace hibiki {
+
 // Called once before any socket operations (no-op on POSIX, WSAStartup on
 // Windows).
 void tcp_init();
@@ -40,3 +43,5 @@ void tcp_setsockopt(socket_t s, int level, int optname, int val);
 
 // Return a human-readable error string for the last socket error.
 const char* tcp_strerror();
+
+}  // namespace hibiki

@@ -3,25 +3,15 @@
 #include <string>
 #include <vector>
 
+#include "tcp.hpp"
 #include "worker_channel.hpp"
-
-// Platform socket type abstraction
-#ifdef _WIN32
-#include <winsock2.h>
-using socket_t = SOCKET;
-constexpr socket_t INVALID_SOCK = INVALID_SOCKET;
-#else
-using socket_t = int;
-constexpr socket_t INVALID_SOCK = -1;
-#endif
 
 // TCP implementation of WorkerChannel for remote workers.
 // Uses TCP sockets for both commands AND audio data (no shared memory).
 // Audio buffers are heap-allocated locally and serialized into protobuf
 // messages during process().
 //
-// Cross-platform: implemented in worker_channel_tcp_posix.cpp (Linux/macOS)
-// and worker_channel_tcp_win32.cpp (Windows). BUILD selects the right one.
+// Cross-platform via tcp.hpp shim (tcp_posix.cpp / tcp_win32.cpp).
 class WorkerChannelTcp : public WorkerChannel {
  public:
   // Connect to a remote worker daemon (client mode).

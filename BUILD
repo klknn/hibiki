@@ -130,15 +130,6 @@ cc_library(
         "@platforms//os:windows": ["-lws2_32"],
         "//conditions:default": [],
     }),
-    deps = [":worker_channel_tcp_header"],
-)
-
-cc_library(
-    name = "worker_channel_tcp_header",
-    hdrs = [
-        "worker_channel.hpp",
-        "worker_channel_tcp.hpp",
-    ],
 )
 
 cc_library(

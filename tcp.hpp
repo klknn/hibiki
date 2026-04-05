@@ -3,20 +3,24 @@
 // Platform-agnostic TCP socket shim.
 // Implemented in tcp_posix.cpp (Linux/macOS) and tcp_win32.cpp (Windows).
 // BUILD selects the right one.
+//
+// Defines socket_t, INVALID_SOCK, and cross-platform socket includes.
 
 #include <cstddef>
 
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+using socket_t = SOCKET;
+constexpr socket_t INVALID_SOCK = INVALID_SOCKET;
 #else
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+using socket_t = int;
+constexpr socket_t INVALID_SOCK = -1;
 #endif
-
-#include "worker_channel_tcp.hpp"  // for socket_t, INVALID_SOCK
 
 // Called once before any socket operations (no-op on POSIX, WSAStartup on
 // Windows).

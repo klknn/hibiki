@@ -442,7 +442,7 @@ cc_test(
         ":ipc",
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",
-        "@googletest//:gtest_main",
+        "@googletest//:gtest",
     ],
 )
 

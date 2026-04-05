@@ -22,18 +22,14 @@ typedef intptr_t ssize_t;
 #include <cstring>
 #include <thread>
 
-namespace hibiki {
-
 // The detached IPC sender thread blocks on a condition variable at process
 // exit. Use a custom main that calls _exit() to avoid hanging.
-}  // namespace hibiki
-
-// int main(int argc, char** argv) {
-//   using namespace hibiki;
-//   ::testing::InitGoogleTest(&argc, argv);
-//   int result = RUN_ALL_TESTS();
-//   _exit(result);
-// }
+int main(int argc, char** argv) {
+  using namespace hibiki;
+  ::testing::InitGoogleTest(&argc, argv);
+  int result = RUN_ALL_TESTS();
+  _exit(result);
+}
 
 namespace {
 using namespace hibiki;

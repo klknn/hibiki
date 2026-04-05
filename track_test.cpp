@@ -4,10 +4,12 @@
 
 #include "ipc.hpp"
 #include "test_utils.hpp"
+#include "vst3_host.hpp"
 
 
 namespace hibiki {
 
+void Vst3Plugin::showEditor() {}  // for test
 void Vst3Plugin::stopEditor() {}  // for test
 
 TEST(TrackTest, AddAndRemoveClips) {

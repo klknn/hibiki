@@ -1,7 +1,21 @@
 #include "ipc.hpp"
 
 #include <gtest/gtest.h>
+
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#include <cstdint>
+#define pipe(pfds) _pipe(pfds, 4096, _O_BINARY)
+#define dup _dup
+#define dup2 _dup2
+#define read _read
+#define STDOUT_FILENO 1
+#define close _close
+typedef intptr_t ssize_t;
+#else
 #include <unistd.h>
+#endif
 
 #include <chrono>
 #include <cstdlib>
@@ -14,12 +28,12 @@ namespace hibiki {
 // exit. Use a custom main that calls _exit() to avoid hanging.
 }  // namespace hibiki
 
-int main(int argc, char** argv) {
-  using namespace hibiki;
-  ::testing::InitGoogleTest(&argc, argv);
-  int result = RUN_ALL_TESTS();
-  _exit(result);
-}
+// int main(int argc, char** argv) {
+//   using namespace hibiki;
+//   ::testing::InitGoogleTest(&argc, argv);
+//   int result = RUN_ALL_TESTS();
+//   _exit(result);
+// }
 
 namespace {
 using namespace hibiki;

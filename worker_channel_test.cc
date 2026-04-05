@@ -1,12 +1,20 @@
 #include <gtest/gtest.h>
+
+#ifdef _WIN32
+#include <process.h>
+#include <io.h>
+#define getpid _getpid
+#define unlink _unlink
+#else
 #include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 #include <cstring>
 #include <string>
 #include <thread>
 
 #include "worker_channel_local.hpp"
-
 
 namespace hibiki {
 

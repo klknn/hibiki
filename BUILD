@@ -142,17 +142,17 @@ cc_library(
     deps = [":tcp"],
 )
 
-cc_library(
-    name = "plugin_proxy",
-    srcs = ["plugin_proxy.cpp"],
-    hdrs = ["plugin_proxy.hpp"],
-    deps = [
-        ":vst3_host",
-        ":worker_channel",
-        ":worker_channel_tcp",
-        "//pb:plugin_worker_cc_proto",
-    ],
-)
+# cc_library(
+#     name = "plugin_proxy",
+#     srcs = ["plugin_proxy.cpp"],
+#     hdrs = ["plugin_proxy.hpp"],
+#     deps = [
+#         ":vst3_host",
+#         ":worker_channel",
+#         ":worker_channel_tcp",
+#         "//pb:plugin_worker_cc_proto",
+#     ],
+# )
 
 cc_binary(
     name = "hbk-plugin-worker",
@@ -205,7 +205,10 @@ cc_test(
     name = "worker_channel_test",
     size = "small",
     srcs = ["worker_channel_test.cc"],
-    linkopts = ["-lrt"],
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-lrt"],
+    }),
     deps = [
         ":worker_channel",
         "@googletest//:gtest_main",
@@ -439,7 +442,7 @@ cc_test(
         ":ipc",
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",
-        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 

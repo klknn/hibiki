@@ -1,4 +1,4 @@
-#include "worker_channel_posix.hpp"
+#include "worker_channel_local.hpp"
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -16,11 +16,11 @@ static size_t computeShmSize(int block_size, int num_channels) {
          (size_t)block_size * sizeof(float) * num_channels * 2;
 }
 
-WorkerChannelPosix* WorkerChannelPosix::createServer(
+WorkerChannelLocal* WorkerChannelLocal::createServer(
     const std::string& socket_path, const std::string& shm_name,
     int block_size, int num_channels) {
-  auto* ch = new WorkerChannelPosix();
-  ch->socket_path_ = socket_path;
+  auto* ch = new WorkerChannelLocal();
+  ch->path_or_name_ = socket_path;
   ch->shm_name_ = shm_name;
   ch->block_size_ = block_size;
   ch->num_channels_ = num_channels;
@@ -91,10 +91,10 @@ WorkerChannelPosix* WorkerChannelPosix::createServer(
   return ch;
 }
 
-WorkerChannelPosix* WorkerChannelPosix::createClient(
+WorkerChannelLocal* WorkerChannelLocal::createClient(
     const std::string& socket_path, const std::string& shm_name) {
-  auto* ch = new WorkerChannelPosix();
-  ch->socket_path_ = socket_path;
+  auto* ch = new WorkerChannelLocal();
+  ch->path_or_name_ = socket_path;
   ch->shm_name_ = shm_name;
   ch->is_server_ = false;
 
@@ -149,7 +149,7 @@ WorkerChannelPosix* WorkerChannelPosix::createClient(
   return ch;
 }
 
-bool WorkerChannelPosix::accept() {
+bool WorkerChannelLocal::accept() {
   if (listen_fd_ < 0) return false;
   conn_fd_ = ::accept(listen_fd_, nullptr, nullptr);
   if (conn_fd_ < 0) {
@@ -159,7 +159,7 @@ bool WorkerChannelPosix::accept() {
   return true;
 }
 
-WorkerChannelPosix::~WorkerChannelPosix() {
+WorkerChannelLocal::~WorkerChannelLocal() {
   if (shm_ptr_ && shm_ptr_ != MAP_FAILED) {
     munmap(shm_ptr_, shm_size_);
   }
@@ -169,13 +169,13 @@ WorkerChannelPosix::~WorkerChannelPosix() {
 
   // Server cleans up resources
   if (is_server_) {
-    if (!socket_path_.empty()) unlink(socket_path_.c_str());
+    if (!path_or_name_.empty()) unlink(path_or_name_.c_str());
     if (!shm_name_.empty()) shm_unlink(shm_name_.c_str());
   }
 }
 
 // Low-level send/recv — read/write exact byte count
-bool WorkerChannelPosix::send(const void* data, size_t len) {
+bool WorkerChannelLocal::send(const void* data, size_t len) {
   if (conn_fd_ < 0) return false;
   const uint8_t* p = reinterpret_cast<const uint8_t*>(data);
   size_t remaining = len;
@@ -188,7 +188,7 @@ bool WorkerChannelPosix::send(const void* data, size_t len) {
   return true;
 }
 
-bool WorkerChannelPosix::recv(void* buf, size_t len) {
+bool WorkerChannelLocal::recv(void* buf, size_t len) {
   if (conn_fd_ < 0) return false;
   uint8_t* p = reinterpret_cast<uint8_t*>(buf);
   size_t remaining = len;
@@ -202,13 +202,13 @@ bool WorkerChannelPosix::recv(void* buf, size_t len) {
 }
 
 // Length-prefixed message send/recv
-bool WorkerChannelPosix::sendMessage(const void* data, size_t len) {
+bool WorkerChannelLocal::sendMessage(const void* data, size_t len) {
   uint32_t size = static_cast<uint32_t>(len);
   if (!send(&size, sizeof(size))) return false;
   return send(data, len);
 }
 
-int WorkerChannelPosix::recvMessage(std::string& out) {
+int WorkerChannelLocal::recvMessage(std::string& out) {
   uint32_t size = 0;
   if (!recv(&size, sizeof(size))) return -1;
   if (size > 1024 * 1024) return -1;  // 1MB safety limit
@@ -218,14 +218,14 @@ int WorkerChannelPosix::recvMessage(std::string& out) {
 }
 
 // Audio buffer accessors
-float* WorkerChannelPosix::inputBuffer(int channel) {
+float* WorkerChannelLocal::inputBuffer(int channel) {
   if (!shm_ptr_ || channel < 0 || channel >= num_channels_) return nullptr;
   auto* base = reinterpret_cast<uint8_t*>(shm_ptr_);
   return reinterpret_cast<float*>(base + sizeof(SharedMemHeader) +
                                   (size_t)channel * block_size_ * sizeof(float));
 }
 
-float* WorkerChannelPosix::outputBuffer(int channel) {
+float* WorkerChannelLocal::outputBuffer(int channel) {
   if (!shm_ptr_ || channel < 0 || channel >= num_channels_) return nullptr;
   auto* base = reinterpret_cast<uint8_t*>(shm_ptr_);
   return reinterpret_cast<float*>(

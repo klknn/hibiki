@@ -5,7 +5,7 @@
 #include <string>
 #include <thread>
 
-#include "worker_channel_posix.hpp"
+#include "worker_channel_local.hpp"
 
 class WorkerChannelTest : public ::testing::Test {
  protected:
@@ -27,13 +27,13 @@ class WorkerChannelTest : public ::testing::Test {
 
 TEST_F(WorkerChannelTest, ServerClientConnect) {
   auto* server =
-      WorkerChannelPosix::createServer(socket_path_, shm_name_, 512, 2);
+      WorkerChannelLocal::createServer(socket_path_, shm_name_, 512, 2);
   ASSERT_NE(server, nullptr);
 
   // Connect client in a thread
-  WorkerChannelPosix* client = nullptr;
+  WorkerChannelLocal* client = nullptr;
   std::thread t([&]() {
-    client = WorkerChannelPosix::createClient(socket_path_, shm_name_);
+    client = WorkerChannelLocal::createClient(socket_path_, shm_name_);
   });
 
   ASSERT_TRUE(server->accept());
@@ -46,12 +46,12 @@ TEST_F(WorkerChannelTest, ServerClientConnect) {
 
 TEST_F(WorkerChannelTest, SendRecvMessage) {
   auto* server =
-      WorkerChannelPosix::createServer(socket_path_, shm_name_, 512, 2);
+      WorkerChannelLocal::createServer(socket_path_, shm_name_, 512, 2);
   ASSERT_NE(server, nullptr);
 
-  WorkerChannelPosix* client = nullptr;
+  WorkerChannelLocal* client = nullptr;
   std::thread t([&]() {
-    client = WorkerChannelPosix::createClient(socket_path_, shm_name_);
+    client = WorkerChannelLocal::createClient(socket_path_, shm_name_);
   });
   ASSERT_TRUE(server->accept());
   t.join();
@@ -79,12 +79,12 @@ TEST_F(WorkerChannelTest, SendRecvMessage) {
 
 TEST_F(WorkerChannelTest, SharedMemoryBuffers) {
   auto* server =
-      WorkerChannelPosix::createServer(socket_path_, shm_name_, 256, 2);
+      WorkerChannelLocal::createServer(socket_path_, shm_name_, 256, 2);
   ASSERT_NE(server, nullptr);
 
-  WorkerChannelPosix* client = nullptr;
+  WorkerChannelLocal* client = nullptr;
   std::thread t([&]() {
-    client = WorkerChannelPosix::createClient(socket_path_, shm_name_);
+    client = WorkerChannelLocal::createClient(socket_path_, shm_name_);
   });
   ASSERT_TRUE(server->accept());
   t.join();
@@ -141,7 +141,7 @@ TEST_F(WorkerChannelTest, SharedMemoryBuffers) {
 
 TEST_F(WorkerChannelTest, InvalidChannel) {
   auto* server =
-      WorkerChannelPosix::createServer(socket_path_, shm_name_, 512, 2);
+      WorkerChannelLocal::createServer(socket_path_, shm_name_, 512, 2);
   ASSERT_NE(server, nullptr);
   EXPECT_EQ(server->inputBuffer(-1), nullptr);
   EXPECT_EQ(server->inputBuffer(5), nullptr);

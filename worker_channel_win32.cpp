@@ -1,17 +1,17 @@
 #ifdef _WIN32
 
-#include "worker_channel_win32.hpp"
+#include "worker_channel_local.hpp"
 
 #include <iostream>
 
 // Named pipe path format: \\.\pipe\hbk-plugin-XXXX
 // Shared memory name format: Local\hbk-plugin-XXXX
 
-WorkerChannelWin32* WorkerChannelWin32::createServer(
+WorkerChannelLocal* WorkerChannelLocal::createServer(
     const std::string& pipe_name, const std::string& shm_name,
     int block_size, int num_channels) {
-  auto* ch = new WorkerChannelWin32();
-  ch->pipe_name_ = pipe_name;
+  auto* ch = new WorkerChannelLocal();
+  ch->path_or_name_ = pipe_name;
   ch->shm_name_ = shm_name;
   ch->block_size_ = block_size;
   ch->num_channels_ = num_channels;
@@ -22,7 +22,7 @@ WorkerChannelWin32* WorkerChannelWin32::createServer(
   // PIPE_TYPE_BYTE | PIPE_READMODE_BYTE: raw byte stream (like Unix socket)
   // PIPE_WAIT: blocking mode
   std::string full_pipe = "\\\\.\\pipe\\" + pipe_name;
-  ch->pipe_handle_ = CreateNamedPipeA(
+  ch->(HANDLE)pipe_handle_ = CreateNamedPipeA(
       full_pipe.c_str(),
       PIPE_ACCESS_DUPLEX,
       PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
@@ -32,8 +32,8 @@ WorkerChannelWin32* WorkerChannelWin32::createServer(
       0,       // default timeout
       NULL);   // default security
 
-  if (ch->pipe_handle_ == INVALID_HANDLE_VALUE) {
-    std::cerr << "WorkerChannelWin32: CreateNamedPipe failed: "
+  if (ch->(HANDLE)pipe_handle_ == INVALID_HANDLE_VALUE) {
+    std::cerr << "WorkerChannelLocal: CreateNamedPipe failed: "
               << GetLastError() << "\n";
     delete ch;
     return nullptr;
@@ -55,9 +55,9 @@ WorkerChannelWin32* WorkerChannelWin32::createServer(
       full_shm.c_str());
 
   if (ch->shm_handle_ == NULL) {
-    std::cerr << "WorkerChannelWin32: CreateFileMapping failed: "
+    std::cerr << "WorkerChannelLocal: CreateFileMapping failed: "
               << GetLastError() << "\n";
-    CloseHandle(ch->pipe_handle_);
+    CloseHandle(ch->(HANDLE)pipe_handle_);
     delete ch;
     return nullptr;
   }
@@ -70,10 +70,10 @@ WorkerChannelWin32* WorkerChannelWin32::createServer(
       ch->shm_size_);
 
   if (ch->shm_ptr_ == nullptr) {
-    std::cerr << "WorkerChannelWin32: MapViewOfFile failed: "
+    std::cerr << "WorkerChannelLocal: MapViewOfFile failed: "
               << GetLastError() << "\n";
     CloseHandle(ch->shm_handle_);
-    CloseHandle(ch->pipe_handle_);
+    CloseHandle(ch->(HANDLE)pipe_handle_);
     delete ch;
     return nullptr;
   }
@@ -87,10 +87,10 @@ WorkerChannelWin32* WorkerChannelWin32::createServer(
   return ch;
 }
 
-WorkerChannelWin32* WorkerChannelWin32::createClient(
+WorkerChannelLocal* WorkerChannelLocal::createClient(
     const std::string& pipe_name, const std::string& shm_name) {
-  auto* ch = new WorkerChannelWin32();
-  ch->pipe_name_ = pipe_name;
+  auto* ch = new WorkerChannelLocal();
+  ch->path_or_name_ = pipe_name;
   ch->shm_name_ = shm_name;
   ch->is_server_ = false;
 
@@ -100,12 +100,12 @@ WorkerChannelWin32* WorkerChannelWin32::createClient(
   // Wait for the pipe to become available (server may not have called
   // ConnectNamedPipe yet)
   if (!WaitNamedPipeA(full_pipe.c_str(), 5000)) {
-    std::cerr << "WorkerChannelWin32: WaitNamedPipe timeout\n";
+    std::cerr << "WorkerChannelLocal: WaitNamedPipe timeout\n";
     delete ch;
     return nullptr;
   }
 
-  ch->pipe_handle_ = CreateFileA(
+  ch->(HANDLE)pipe_handle_ = CreateFileA(
       full_pipe.c_str(),
       GENERIC_READ | GENERIC_WRITE,
       0,       // no sharing
@@ -114,8 +114,8 @@ WorkerChannelWin32* WorkerChannelWin32::createClient(
       0,       // default attributes
       NULL);
 
-  if (ch->pipe_handle_ == INVALID_HANDLE_VALUE) {
-    std::cerr << "WorkerChannelWin32: CreateFile for pipe failed: "
+  if (ch->(HANDLE)pipe_handle_ == INVALID_HANDLE_VALUE) {
+    std::cerr << "WorkerChannelLocal: CreateFile for pipe failed: "
               << GetLastError() << "\n";
     delete ch;
     return nullptr;
@@ -123,7 +123,7 @@ WorkerChannelWin32* WorkerChannelWin32::createClient(
 
   // Set pipe to byte mode
   DWORD mode = PIPE_READMODE_BYTE;
-  SetNamedPipeHandleState(ch->pipe_handle_, &mode, NULL, NULL);
+  SetNamedPipeHandleState(ch->(HANDLE)pipe_handle_, &mode, NULL, NULL);
 
   // Open existing File Mapping (shared memory)
   std::string full_shm = "Local\\" + shm_name;
@@ -133,9 +133,9 @@ WorkerChannelWin32* WorkerChannelWin32::createClient(
       full_shm.c_str());
 
   if (ch->shm_handle_ == NULL) {
-    std::cerr << "WorkerChannelWin32: OpenFileMapping failed: "
+    std::cerr << "WorkerChannelLocal: OpenFileMapping failed: "
               << GetLastError() << "\n";
-    CloseHandle(ch->pipe_handle_);
+    CloseHandle(ch->(HANDLE)pipe_handle_);
     delete ch;
     return nullptr;
   }
@@ -148,10 +148,10 @@ WorkerChannelWin32* WorkerChannelWin32::createClient(
       0, 0, 0);  // 0 = map entire object
 
   if (ch->shm_ptr_ == nullptr) {
-    std::cerr << "WorkerChannelWin32: MapViewOfFile failed: "
+    std::cerr << "WorkerChannelLocal: MapViewOfFile failed: "
               << GetLastError() << "\n";
     CloseHandle(ch->shm_handle_);
-    CloseHandle(ch->pipe_handle_);
+    CloseHandle(ch->(HANDLE)pipe_handle_);
     delete ch;
     return nullptr;
   }
@@ -163,14 +163,14 @@ WorkerChannelWin32* WorkerChannelWin32::createClient(
   return ch;
 }
 
-bool WorkerChannelWin32::accept() {
-  if (!is_server_ || pipe_handle_ == INVALID_HANDLE_VALUE) return false;
+bool WorkerChannelLocal::accept() {
+  if (!is_server_ || (HANDLE)pipe_handle_ == INVALID_HANDLE_VALUE) return false;
 
   // Block until a client connects
-  if (!ConnectNamedPipe(pipe_handle_, NULL)) {
+  if (!ConnectNamedPipe((HANDLE)pipe_handle_, NULL)) {
     DWORD err = GetLastError();
     if (err != ERROR_PIPE_CONNECTED) {
-      std::cerr << "WorkerChannelWin32: ConnectNamedPipe failed: "
+      std::cerr << "WorkerChannelLocal: ConnectNamedPipe failed: "
                 << err << "\n";
       return false;
     }
@@ -180,25 +180,25 @@ bool WorkerChannelWin32::accept() {
   return true;
 }
 
-WorkerChannelWin32::~WorkerChannelWin32() {
+WorkerChannelLocal::~WorkerChannelLocal() {
   if (shm_ptr_) UnmapViewOfFile(shm_ptr_);
   if (shm_handle_) CloseHandle(shm_handle_);
 
-  if (pipe_handle_ != INVALID_HANDLE_VALUE) {
-    if (is_server_) DisconnectNamedPipe(pipe_handle_);
-    CloseHandle(pipe_handle_);
+  if ((HANDLE)pipe_handle_ != INVALID_HANDLE_VALUE) {
+    if (is_server_) DisconnectNamedPipe((HANDLE)pipe_handle_);
+    CloseHandle((HANDLE)pipe_handle_);
   }
   // Note: shared memory is automatically freed when all handles are closed
   // (no equivalent of shm_unlink needed on Windows)
 }
 
-bool WorkerChannelWin32::send(const void* data, size_t len) {
-  if (pipe_handle_ == INVALID_HANDLE_VALUE) return false;
+bool WorkerChannelLocal::send(const void* data, size_t len) {
+  if ((HANDLE)pipe_handle_ == INVALID_HANDLE_VALUE) return false;
   const uint8_t* p = reinterpret_cast<const uint8_t*>(data);
   size_t remaining = len;
   while (remaining > 0) {
     DWORD written = 0;
-    if (!WriteFile(pipe_handle_, p, (DWORD)remaining, &written, NULL))
+    if (!WriteFile((HANDLE)pipe_handle_, p, (DWORD)remaining, &written, NULL))
       return false;
     if (written == 0) return false;
     p += written;
@@ -207,13 +207,13 @@ bool WorkerChannelWin32::send(const void* data, size_t len) {
   return true;
 }
 
-bool WorkerChannelWin32::recv(void* buf, size_t len) {
-  if (pipe_handle_ == INVALID_HANDLE_VALUE) return false;
+bool WorkerChannelLocal::recv(void* buf, size_t len) {
+  if ((HANDLE)pipe_handle_ == INVALID_HANDLE_VALUE) return false;
   uint8_t* p = reinterpret_cast<uint8_t*>(buf);
   size_t remaining = len;
   while (remaining > 0) {
     DWORD nread = 0;
-    if (!ReadFile(pipe_handle_, p, (DWORD)remaining, &nread, NULL))
+    if (!ReadFile((HANDLE)pipe_handle_, p, (DWORD)remaining, &nread, NULL))
       return false;
     if (nread == 0) return false;
     p += nread;
@@ -222,13 +222,13 @@ bool WorkerChannelWin32::recv(void* buf, size_t len) {
   return true;
 }
 
-bool WorkerChannelWin32::sendMessage(const void* data, size_t len) {
+bool WorkerChannelLocal::sendMessage(const void* data, size_t len) {
   uint32_t size = static_cast<uint32_t>(len);
   if (!send(&size, sizeof(size))) return false;
   return send(data, len);
 }
 
-int WorkerChannelWin32::recvMessage(std::string& out) {
+int WorkerChannelLocal::recvMessage(std::string& out) {
   uint32_t size = 0;
   if (!recv(&size, sizeof(size))) return -1;
   if (size > 4 * 1024 * 1024) return -1;  // 4MB safety limit
@@ -237,7 +237,7 @@ int WorkerChannelWin32::recvMessage(std::string& out) {
   return (int)size;
 }
 
-float* WorkerChannelWin32::inputBuffer(int channel) {
+float* WorkerChannelLocal::inputBuffer(int channel) {
   if (channel < 0 || channel >= num_channels_ || !shm_ptr_) return nullptr;
   uint8_t* base = reinterpret_cast<uint8_t*>(shm_ptr_);
   base += sizeof(SharedMemHeader);  // Skip header
@@ -245,7 +245,7 @@ float* WorkerChannelWin32::inputBuffer(int channel) {
   return reinterpret_cast<float*>(base);
 }
 
-float* WorkerChannelWin32::outputBuffer(int channel) {
+float* WorkerChannelLocal::outputBuffer(int channel) {
   if (channel < 0 || channel >= num_channels_ || !shm_ptr_) return nullptr;
   uint8_t* base = reinterpret_cast<uint8_t*>(shm_ptr_);
   base += sizeof(SharedMemHeader);

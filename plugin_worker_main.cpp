@@ -17,7 +17,7 @@
 
 #include "pb/plugin_worker.pb.h"
 #include "vst3_host.hpp"
-#include "worker_channel_posix.hpp"
+#include "worker_channel_local.hpp"
 
 int main(int argc, char** argv) {
   if (argc < 3) {
@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
   std::string shm_name = argv[2];
 
   // Connect to host
-  auto* channel = WorkerChannelPosix::createClient(socket_path, shm_name);
+  auto* channel = WorkerChannelLocal::createClient(socket_path, shm_name);
   if (!channel) {
     std::cerr << "Worker: failed to connect to host\n";
     return 1;

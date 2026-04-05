@@ -20,14 +20,15 @@ constexpr socket_t INVALID_SOCK = -1;
 // Audio buffers are heap-allocated locally and serialized into protobuf
 // messages during process().
 //
-// Cross-platform: uses Winsock2 on Windows, BSD sockets on POSIX.
+// Cross-platform: implemented in worker_channel_tcp_posix.cpp (Linux/macOS)
+// and worker_channel_tcp_win32.cpp (Windows). BUILD selects the right one.
 class WorkerChannelTcp : public WorkerChannel {
  public:
   // Connect to a remote worker daemon (client mode).
   static WorkerChannelTcp* createClient(const std::string& host, int port,
                                         int block_size, int num_channels);
 
-  // Accept a connection on a listening socket (server mode, for daemon).
+  // Create a listening socket (server mode, for daemon).
   static WorkerChannelTcp* createServer(int listen_port);
 
   ~WorkerChannelTcp() override;

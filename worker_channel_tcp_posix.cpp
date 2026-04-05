@@ -1,37 +1,9 @@
+// POSIX implementation of WorkerChannelTcp.
+// Uses BSD sockets (sys/socket.h, arpa/inet.h, netdb.h).
+// See worker_channel_tcp_win32.cpp for the Windows equivalent.
+
 #include "worker_channel_tcp.hpp"
 
-#ifdef _WIN32
-#include <ws2tcpip.h>
-#pragma comment(lib, "ws2_32.lib")
-
-// Windows socket compatibility layer
-static void initWinsock() {
-  static bool initialized = false;
-  if (!initialized) {
-    WSADATA wsa;
-    WSAStartup(MAKEWORD(2, 2), &wsa);
-    initialized = true;
-  }
-}
-
-static int tcp_close(socket_t s) { return closesocket(s); }
-static int tcp_send(socket_t s, const void* buf, size_t len) {
-  return ::send(s, reinterpret_cast<const char*>(buf), (int)len, 0);
-}
-static int tcp_recv(socket_t s, void* buf, size_t len) {
-  return ::recv(s, reinterpret_cast<char*>(buf), (int)len, 0);
-}
-static void tcp_setsockopt(socket_t s, int level, int optname, int val) {
-  ::setsockopt(s, level, optname, reinterpret_cast<const char*>(&val),
-               sizeof(val));
-}
-static const char* tcp_strerror() {
-  static thread_local char buf[64];
-  snprintf(buf, sizeof(buf), "WSA error %d", WSAGetLastError());
-  return buf;
-}
-
-#else  // POSIX
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
@@ -40,38 +12,38 @@ static const char* tcp_strerror() {
 
 #include <cerrno>
 #include <cstring>
+#include <iostream>
 
-static void initWinsock() {}  // no-op on POSIX
+// --- Platform shim (POSIX) ------------------------------------------------
 
 static int tcp_close(socket_t s) { return ::close(s); }
+
 static int tcp_send(socket_t s, const void* buf, size_t len) {
   return (int)::write(s, buf, len);
 }
+
 static int tcp_recv(socket_t s, void* buf, size_t len) {
   return (int)::read(s, buf, len);
 }
+
 static void tcp_setsockopt(socket_t s, int level, int optname, int val) {
   ::setsockopt(s, level, optname, &val, sizeof(val));
 }
-static const char* tcp_strerror() { return strerror(errno); }
-#endif
 
-#include <cstring>
-#include <iostream>
+static const char* tcp_strerror() { return strerror(errno); }
+
+// --- Shared implementation ------------------------------------------------
 
 WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
                                                   int port, int block_size,
                                                   int num_channels) {
-  initWinsock();
   auto* ch = new WorkerChannelTcp();
   ch->block_size_ = block_size;
   ch->num_channels_ = num_channels;
 
-  // Allocate audio buffers
   ch->input_bufs_.resize(num_channels, std::vector<float>(block_size, 0.0f));
   ch->output_bufs_.resize(num_channels, std::vector<float>(block_size, 0.0f));
 
-  // Resolve host
   struct addrinfo hints, *res;
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
@@ -94,7 +66,6 @@ WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
     return nullptr;
   }
 
-  // Disable Nagle's algorithm for low-latency
   tcp_setsockopt(ch->conn_fd_, IPPROTO_TCP, TCP_NODELAY, 1);
 
   if (connect(ch->conn_fd_, res->ai_addr, (int)res->ai_addrlen) != 0) {
@@ -110,7 +81,6 @@ WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
 }
 
 WorkerChannelTcp* WorkerChannelTcp::createServer(int listen_port) {
-  initWinsock();
   auto* ch = new WorkerChannelTcp();
   ch->listen_port_ = listen_port;
 
@@ -154,10 +124,7 @@ bool WorkerChannelTcp::accept() {
               << "\n";
     return false;
   }
-
-  // Disable Nagle's algorithm
   tcp_setsockopt(conn_fd_, IPPROTO_TCP, TCP_NODELAY, 1);
-
   return true;
 }
 
@@ -201,7 +168,7 @@ bool WorkerChannelTcp::sendMessage(const void* data, size_t len) {
 int WorkerChannelTcp::recvMessage(std::string& out) {
   uint32_t size = 0;
   if (!recv(&size, sizeof(size))) return -1;
-  if (size > 4 * 1024 * 1024) return -1;  // 4MB safety limit
+  if (size > 4 * 1024 * 1024) return -1;
   out.resize(size);
   if (!recv(out.data(), size)) return -1;
   return (int)size;

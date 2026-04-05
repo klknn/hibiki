@@ -105,38 +105,34 @@ cc_library(
 
 cc_library(
     name = "worker_channel",
-    srcs = ["worker_channel_posix.cpp"],
-    hdrs = [
-        "worker_channel.hpp",
-        "worker_channel_posix.hpp",
-    ],
-    linkopts = ["-lrt"],  # POSIX shared memory
-    target_compatible_with = select({
-        "@platforms//os:windows": ["@platforms//:incompatible"],
-        "//conditions:default": [],
+    srcs = select({
+        "@platforms//os:windows": ["worker_channel_win32.cpp"],
+        "//conditions:default": ["worker_channel_posix.cpp"],
     }),
-)
-
-cc_library(
-    name = "worker_channel_win32",
-    srcs = ["worker_channel_win32.cpp"],
     hdrs = [
         "worker_channel.hpp",
-        "worker_channel_win32.hpp",
+        "worker_channel_local.hpp",
     ],
-    target_compatible_with = select({
+    linkopts = select({
         "@platforms//os:windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
+        "//conditions:default": ["-lrt"],  # POSIX shared memory
     }),
 )
 
 cc_library(
     name = "worker_channel_tcp",
-    srcs = ["worker_channel_tcp.cpp"],
+    srcs = select({
+        "@platforms//os:windows": ["worker_channel_tcp_win32.cpp"],
+        "//conditions:default": ["worker_channel_tcp_posix.cpp"],
+    }),
     hdrs = [
         "worker_channel.hpp",
         "worker_channel_tcp.hpp",
     ],
+    linkopts = select({
+        "@platforms//os:windows": ["-lws2_32"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(

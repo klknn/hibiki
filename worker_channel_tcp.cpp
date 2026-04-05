@@ -1,42 +1,18 @@
-// POSIX implementation of WorkerChannelTcp.
-// Uses BSD sockets (sys/socket.h, arpa/inet.h, netdb.h).
-// See worker_channel_tcp_win32.cpp for the Windows equivalent.
+// Shared implementation of WorkerChannelTcp.
+// Platform-specific socket operations come from tcp.hpp
+// (implemented in tcp_posix.cpp or tcp_win32.cpp).
 
 #include "worker_channel_tcp.hpp"
 
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include <cerrno>
 #include <cstring>
 #include <iostream>
 
-// --- Platform shim (POSIX) ------------------------------------------------
-
-static int tcp_close(socket_t s) { return ::close(s); }
-
-static int tcp_send(socket_t s, const void* buf, size_t len) {
-  return (int)::write(s, buf, len);
-}
-
-static int tcp_recv(socket_t s, void* buf, size_t len) {
-  return (int)::read(s, buf, len);
-}
-
-static void tcp_setsockopt(socket_t s, int level, int optname, int val) {
-  ::setsockopt(s, level, optname, &val, sizeof(val));
-}
-
-static const char* tcp_strerror() { return strerror(errno); }
-
-// --- Shared implementation ------------------------------------------------
+#include "tcp.hpp"
 
 WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
-                                                  int port, int block_size,
-                                                  int num_channels) {
+                                                 int port, int block_size,
+                                                 int num_channels) {
+  tcp_init();
   auto* ch = new WorkerChannelTcp();
   ch->block_size_ = block_size;
   ch->num_channels_ = num_channels;
@@ -81,6 +57,7 @@ WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
 }
 
 WorkerChannelTcp* WorkerChannelTcp::createServer(int listen_port) {
+  tcp_init();
   auto* ch = new WorkerChannelTcp();
   ch->listen_port_ = listen_port;
 
@@ -177,8 +154,7 @@ int WorkerChannelTcp::recvMessage(std::string& out) {
 float* WorkerChannelTcp::inputBuffer(int channel) {
   if (channel < 0 || channel >= num_channels_) return nullptr;
   if (input_bufs_.empty()) {
-    input_bufs_.resize(num_channels_,
-                       std::vector<float>(block_size_, 0.0f));
+    input_bufs_.resize(num_channels_, std::vector<float>(block_size_, 0.0f));
   }
   return input_bufs_[channel].data();
 }
@@ -186,8 +162,7 @@ float* WorkerChannelTcp::inputBuffer(int channel) {
 float* WorkerChannelTcp::outputBuffer(int channel) {
   if (channel < 0 || channel >= num_channels_) return nullptr;
   if (output_bufs_.empty()) {
-    output_bufs_.resize(num_channels_,
-                        std::vector<float>(block_size_, 0.0f));
+    output_bufs_.resize(num_channels_, std::vector<float>(block_size_, 0.0f));
   }
   return output_bufs_[channel].data();
 }

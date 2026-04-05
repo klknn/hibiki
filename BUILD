@@ -120,19 +120,35 @@ cc_library(
 )
 
 cc_library(
-    name = "worker_channel_tcp",
+    name = "tcp",
     srcs = select({
-        "@platforms//os:windows": ["worker_channel_tcp_win32.cpp"],
-        "//conditions:default": ["worker_channel_tcp_posix.cpp"],
+        "@platforms//os:windows": ["tcp_win32.cpp"],
+        "//conditions:default": ["tcp_posix.cpp"],
     }),
-    hdrs = [
-        "worker_channel.hpp",
-        "worker_channel_tcp.hpp",
-    ],
+    hdrs = ["tcp.hpp"],
     linkopts = select({
         "@platforms//os:windows": ["-lws2_32"],
         "//conditions:default": [],
     }),
+    deps = [":worker_channel_tcp_header"],
+)
+
+cc_library(
+    name = "worker_channel_tcp_header",
+    hdrs = [
+        "worker_channel.hpp",
+        "worker_channel_tcp.hpp",
+    ],
+)
+
+cc_library(
+    name = "worker_channel_tcp",
+    srcs = ["worker_channel_tcp.cpp"],
+    hdrs = [
+        "worker_channel.hpp",
+        "worker_channel_tcp.hpp",
+    ],
+    deps = [":tcp"],
 )
 
 cc_library(

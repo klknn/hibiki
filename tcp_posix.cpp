@@ -1,7 +1,5 @@
 // POSIX implementation of TCP socket shim (tcp.hpp).
 
-#include "tcp.hpp"
-
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
@@ -11,6 +9,7 @@
 #include <cerrno>
 #include <cstring>
 
+#include "tcp.hpp"
 
 namespace hibiki {
 

@@ -5,7 +5,6 @@
 #include <string>
 #include <thread>
 
-
 namespace hibiki {
 
 class WorkerChannelTcpTest : public ::testing::Test {
@@ -24,8 +23,7 @@ TEST_F(WorkerChannelTcpTest, ServerClientConnect) {
 
   WorkerChannelTcp* client = nullptr;
   std::thread t([&]() {
-    client =
-        WorkerChannelTcp::createClient("127.0.0.1", test_port_, 512, 2);
+    client = WorkerChannelTcp::createClient("127.0.0.1", test_port_, 512, 2);
   });
 
   ASSERT_TRUE(server->accept());
@@ -42,8 +40,7 @@ TEST_F(WorkerChannelTcpTest, SendRecvMessage) {
 
   WorkerChannelTcp* client = nullptr;
   std::thread t([&]() {
-    client =
-        WorkerChannelTcp::createClient("127.0.0.1", test_port_, 512, 2);
+    client = WorkerChannelTcp::createClient("127.0.0.1", test_port_, 512, 2);
   });
   ASSERT_TRUE(server->accept());
   t.join();
@@ -70,8 +67,7 @@ TEST_F(WorkerChannelTcpTest, SendRecvMessage) {
 }
 
 TEST_F(WorkerChannelTcpTest, HeapAudioBuffers) {
-  auto* client =
-      WorkerChannelTcp::createClient("127.0.0.1", 1, 256, 2);
+  auto* client = WorkerChannelTcp::createClient("127.0.0.1", 1, 256, 2);
   // Connection will fail, but we can still test buffer allocation
   // from a standalone instance. Let's test via a connected pair instead.
 

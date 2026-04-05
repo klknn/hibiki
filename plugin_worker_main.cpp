@@ -19,10 +19,7 @@
 #include "vst3_host.hpp"
 #include "worker_channel_local.hpp"
 
-
-namespace hibiki {
-
-}  // namespace hibiki
+namespace hibiki {}  // namespace hibiki
 
 int main(int argc, char** argv) {
   using namespace hibiki;

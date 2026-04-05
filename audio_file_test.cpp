@@ -8,7 +8,6 @@
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 
-
 namespace hibiki {
 
 TEST(AudioFileTest, LoadWav) {

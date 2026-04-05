@@ -1,5 +1,3 @@
-#include "worker_channel_local.hpp"
-
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
@@ -9,6 +7,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "worker_channel_local.hpp"
 
 namespace hibiki {
 
@@ -25,8 +24,8 @@ static size_t computeShmSize(int block_size, int num_channels) {
 }
 
 WorkerChannelLocal* WorkerChannelLocal::createServer(
-    const std::string& socket_path, const std::string& shm_name,
-    int block_size, int num_channels) {
+    const std::string& socket_path, const std::string& shm_name, int block_size,
+    int num_channels) {
   auto* ch = new WorkerChannelLocal();
   ch->impl_ = std::make_unique<Impl>();
   ch->path_or_name_ = socket_path;
@@ -119,8 +118,7 @@ WorkerChannelLocal* WorkerChannelLocal::createClient(
   strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
 
   if (connect(ch->impl_->conn_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-    std::cerr << "WorkerChannel: connect() failed: " << strerror(errno)
-              << "\n";
+    std::cerr << "WorkerChannel: connect() failed: " << strerror(errno) << "\n";
     delete ch;
     return nullptr;
   }
@@ -225,15 +223,16 @@ float* WorkerChannelLocal::inputBuffer(int channel) {
   if (!shm_ptr_ || channel < 0 || channel >= num_channels_) return nullptr;
   auto* base = reinterpret_cast<uint8_t*>(shm_ptr_);
   return reinterpret_cast<float*>(base + sizeof(SharedMemHeader) +
-                                  (size_t)channel * block_size_ * sizeof(float));
+                                  (size_t)channel * block_size_ *
+                                      sizeof(float));
 }
 
 float* WorkerChannelLocal::outputBuffer(int channel) {
   if (!shm_ptr_ || channel < 0 || channel >= num_channels_) return nullptr;
   auto* base = reinterpret_cast<uint8_t*>(shm_ptr_);
-  return reinterpret_cast<float*>(
-      base + sizeof(SharedMemHeader) +
-      (size_t)(num_channels_ + channel) * block_size_ * sizeof(float));
+  return reinterpret_cast<float*>(base + sizeof(SharedMemHeader) +
+                                  (size_t)(num_channels_ + channel) *
+                                      block_size_ * sizeof(float));
 }
 
 }  // namespace hibiki

@@ -12,19 +12,22 @@ pom_file(
 )
 
 cc_library(
-    name = "alsa_out",
-    srcs = ["alsa_out.cpp"],
-    hdrs = ["alsa_out.hpp"],
-    linkopts = ["-lasound"],
-    target_compatible_with = ["@platforms//os:linux"],
-)
-
-cc_library(
-    name = "win32_out",
-    srcs = ["win32_out.cpp"],
-    hdrs = ["win32_out.hpp"],
-    linkopts = ["-DEFAULTLIB:ole32"],
-    target_compatible_with = ["@platforms//os:windows"],
+    name = "sound",
+    srcs = select({
+        "@platforms//os:windows": ["sound_win32.cpp"],
+        "@platforms//os:macos": ["sound_coreaudio.cpp"],
+        "//conditions:default": ["sound_alsa.cpp"],
+    }),
+    hdrs = ["sound.hpp"],
+    linkopts = select({
+        "@platforms//os:windows": ["-DEFAULTLIB:ole32"],
+        "@platforms//os:macos": [
+            "-framework CoreAudio",
+            "-framework AudioUnit",
+            "-framework AudioToolbox",
+        ],
+        "//conditions:default": ["-lasound"],
+    }),
 )
 
 cc_library(
@@ -72,18 +75,6 @@ cc_library(
         "@vst3sdk",
     ],
     alwayslink = True,
-)
-
-cc_library(
-    name = "coreaudio_out",
-    srcs = ["coreaudio_out.cpp"],
-    hdrs = ["coreaudio_out.hpp"],
-    linkopts = [
-        "-framework CoreAudio",
-        "-framework AudioUnit",
-        "-framework AudioToolbox",
-    ],
-    target_compatible_with = ["@platforms//os:macos"],
 )
 
 objc_library(
@@ -192,6 +183,9 @@ cc_binary(
         ":vst3_host",
         "//pb:plugin_worker_cc_proto",
     ] + select({
+        "@platforms//os:windows": [
+            ":vst3_host_win32",
+        ],
         "@platforms//os:macos": [
             ":vst3_host_mac",
         ],
@@ -318,18 +312,16 @@ cc_binary(
         ":ipc",
         ":midi",
         ":project",
+        ":sound",
         ":track",
     ] + select({
         "@platforms//os:windows": [
             ":vst3_host_win32",
-            ":win32_out",
         ],
         "@platforms//os:macos": [
-            ":coreaudio_out",
             ":vst3_host_mac",
         ],
         "//conditions:default": [
-            ":alsa_out",
             ":vst3_host_x11",
         ],
     }),

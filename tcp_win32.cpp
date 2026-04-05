@@ -1,12 +1,11 @@
 // Windows (Winsock2) implementation of TCP socket shim (tcp.hpp).
 
-#include "tcp.hpp"
-
 #include <ws2tcpip.h>
+
+#include "tcp.hpp"
 #pragma comment(lib, "ws2_32.lib")
 
 #include <cstdio>
-
 
 namespace hibiki {
 

@@ -9,7 +9,6 @@
 #include "ipc.hpp"
 #include "test_utils.hpp"
 
-
 namespace hibiki {
 
 void Vst3Plugin::showEditor() {}  // Stub for test linking.

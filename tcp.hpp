@@ -22,7 +22,6 @@ using socket_t = int;
 constexpr socket_t INVALID_SOCK = -1;
 #endif
 
-
 namespace hibiki {
 
 // Called once before any socket operations (no-op on POSIX, WSAStartup on

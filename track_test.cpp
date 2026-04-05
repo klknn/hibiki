@@ -6,7 +6,6 @@
 #include "test_utils.hpp"
 #include "vst3_host.hpp"
 
-
 namespace hibiki {
 
 void Vst3Plugin::showEditor() {}  // for test

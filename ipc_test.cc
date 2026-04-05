@@ -3,8 +3,9 @@
 #include <gtest/gtest.h>
 
 #ifdef _WIN32
-#include <io.h>
 #include <fcntl.h>
+#include <io.h>
+
 #include <cstdint>
 #define pipe(pfds) _pipe(pfds, 4096, _O_BINARY)
 #define dup _dup

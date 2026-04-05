@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
 #ifdef _WIN32
-#include <process.h>
 #include <io.h>
+#include <process.h>
 #define getpid _getpid
 #define unlink _unlink
 #else

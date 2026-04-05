@@ -5,7 +5,6 @@
 
 #include "worker_channel.hpp"
 
-
 namespace hibiki {
 
 // Local IPC implementation of WorkerChannel.
@@ -26,7 +25,7 @@ namespace hibiki {
 struct SharedMemHeader {
   int32_t block_size;
   int32_t num_channels;
-  int32_t flags;  // IDLE=0, READY=1, DONE=2
+  int32_t flags;         // IDLE=0, READY=1, DONE=2
   int32_t reserved[13];  // Pad to 64 bytes
 };
 

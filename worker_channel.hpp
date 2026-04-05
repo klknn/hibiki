@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <string>
 
-
 namespace hibiki {
 
 // Abstract channel for host ↔ worker communication.

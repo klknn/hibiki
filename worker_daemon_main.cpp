@@ -10,7 +10,10 @@
 // This enables cross-OS plugin hosting: run this daemon on a Mac
 // to serve macOS-only plugins to a Linux host, or vice versa.
 
+#include <arpa/inet.h>
+#include <netinet/tcp.h>
 #include <signal.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -21,10 +24,6 @@
 
 #include "pb/plugin_worker.pb.h"
 #include "vst3_host.hpp"
-#include <arpa/inet.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-
 
 namespace hibiki {
 
@@ -102,10 +101,8 @@ void handleClient(int conn_fd) {
       case hibiki::pb::worker::WorkerRequest::kConfig: {
         block_size = req.config().block_size();
         num_channels = req.config().num_channels();
-        input_bufs.resize(num_channels,
-                          std::vector<float>(block_size, 0.0f));
-        output_bufs.resize(num_channels,
-                           std::vector<float>(block_size, 0.0f));
+        input_bufs.resize(num_channels, std::vector<float>(block_size, 0.0f));
+        output_bufs.resize(num_channels, std::vector<float>(block_size, 0.0f));
         resp.mutable_config_ack();
         break;
       }
@@ -201,8 +198,7 @@ void handleClient(int conn_fd) {
       case hibiki::pb::worker::WorkerRequest::kGetParam: {
         auto* val = resp.mutable_param_value();
         if (plugin)
-          val->set_value(
-              plugin->getParameterValue(req.get_param().param_id()));
+          val->set_value(plugin->getParameterValue(req.get_param().param_id()));
         break;
       }
 

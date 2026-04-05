@@ -11,7 +11,6 @@
 #include "pluginterfaces/vst/ivsthostapplication.h"
 #include "public.sdk/source/vst/hosting/module.h"
 
-
 namespace hibiki {
 
 struct Vst3PluginImpl {

@@ -9,7 +9,6 @@
 
 #include "tcp.hpp"
 
-
 namespace hibiki {
 
 WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,

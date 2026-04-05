@@ -4,7 +4,6 @@
 
 #include <vector>
 
-
 namespace hibiki {
 
 TEST(HistoryTest, BasicUndoRedo) {

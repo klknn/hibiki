@@ -11,7 +11,6 @@
 #include "vst3_host.hpp"
 #include "vst3_host_impl.hpp"
 
-
 namespace hibiki {
 
 void Vst3Plugin::showEditor() {

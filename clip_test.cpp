@@ -4,7 +4,6 @@
 
 #include "test_utils.hpp"
 
-
 namespace hibiki {
 
 TEST(ClipTest, LoadAudioClip) {

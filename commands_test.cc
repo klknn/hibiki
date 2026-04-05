@@ -5,7 +5,6 @@
 #include "ipc.hpp"
 #include "track.hpp"
 
-
 namespace hibiki {
 
 class CommandsTest : public ::testing::Test {

@@ -24,7 +24,6 @@
 #include "public.sdk/source/vst/hosting/plugprovider.h"
 #include "vst3_host_impl.hpp"
 
-
 namespace hibiki {
 
 namespace {

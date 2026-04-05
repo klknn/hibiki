@@ -6,7 +6,6 @@
 #include "tcp.hpp"
 #include "worker_channel.hpp"
 
-
 namespace hibiki {
 
 // TCP implementation of WorkerChannel for remote workers.

@@ -10,7 +10,6 @@
 #include <cstring>
 #include <iostream>
 
-
 namespace hibiki {
 
 // Platform-specific state for Windows.
@@ -20,8 +19,8 @@ struct WorkerChannelLocal::Impl {
 };
 
 WorkerChannelLocal* WorkerChannelLocal::createServer(
-    const std::string& pipe_name, const std::string& shm_name,
-    int block_size, int num_channels) {
+    const std::string& pipe_name, const std::string& shm_name, int block_size,
+    int num_channels) {
   auto* ch = new WorkerChannelLocal();
   ch->impl_ = std::make_unique<Impl>();
   ch->path_or_name_ = pipe_name;
@@ -66,8 +65,8 @@ WorkerChannelLocal* WorkerChannelLocal::createServer(
                                ch->shm_size_);
 
   if (ch->shm_ptr_ == nullptr) {
-    std::cerr << "WorkerChannelLocal: MapViewOfFile failed: "
-              << GetLastError() << "\n";
+    std::cerr << "WorkerChannelLocal: MapViewOfFile failed: " << GetLastError()
+              << "\n";
     CloseHandle(ch->impl_->shm_handle);
     CloseHandle(ch->impl_->pipe_handle);
     delete ch;
@@ -127,8 +126,8 @@ WorkerChannelLocal* WorkerChannelLocal::createClient(
       MapViewOfFile(ch->impl_->shm_handle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
 
   if (ch->shm_ptr_ == nullptr) {
-    std::cerr << "WorkerChannelLocal: MapViewOfFile failed: "
-              << GetLastError() << "\n";
+    std::cerr << "WorkerChannelLocal: MapViewOfFile failed: " << GetLastError()
+              << "\n";
     CloseHandle(ch->impl_->shm_handle);
     CloseHandle(ch->impl_->pipe_handle);
     delete ch;
@@ -147,8 +146,8 @@ bool WorkerChannelLocal::accept() {
   if (!ConnectNamedPipe(impl_->pipe_handle, NULL)) {
     DWORD err = GetLastError();
     if (err != ERROR_PIPE_CONNECTED) {
-      std::cerr << "WorkerChannelLocal: ConnectNamedPipe failed: "
-                << err << "\n";
+      std::cerr << "WorkerChannelLocal: ConnectNamedPipe failed: " << err
+                << "\n";
       return false;
     }
   }

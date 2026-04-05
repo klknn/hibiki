@@ -13,7 +13,6 @@
 #include "worker_channel_local.hpp"
 #include "worker_channel_tcp.hpp"
 
-
 namespace hibiki {
 
 namespace {
@@ -171,7 +170,7 @@ bool PluginProxy::load(const std::string& path, int plugin_index,
   if (!resp.has_load_result() || !resp.load_result().success()) {
     std::cerr << "PluginProxy: load failed: "
               << (resp.has_load_result() ? resp.load_result().error()
-                                        : "no response")
+                                         : "no response")
               << "\n";
     return false;
   }

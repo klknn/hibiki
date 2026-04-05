@@ -4,13 +4,36 @@
 #include <string>
 #include <vector>
 
-
 namespace hibiki {
 
-// Forward-declare types defined in vst3_host.hpp to avoid circular includes.
-struct HostProcessContext;
-struct MidiNoteEvent;
-struct VstParamInfo;
+struct HostProcessContext {
+  double sampleRate;
+  double tempo;
+  int32_t timeSigNumerator;
+  int32_t timeSigDenominator;
+  int64_t continuousTimeSamples;
+  double projectTimeMusic;
+};
+
+struct MidiNoteEvent {
+  int32_t sampleOffset;
+  uint8_t channel;
+  uint8_t pitch;
+  float velocity;  // 0.0 - 1.0
+  bool isNoteOn;
+};
+
+struct VstParamInfo {
+  uint32_t id;
+  std::string name;
+  double defaultValue;
+};
+
+struct PluginDescription {
+  int index;
+  std::string name;
+  std::string vendor;
+};
 
 // Abstract interface for audio plugins.
 // Implemented by Vst3Plugin (in-process) and PluginProxy (out-of-process).

@@ -8,7 +8,6 @@
 #include "vst3_host.hpp"
 #include "vst3_host_impl.hpp"
 
-
 namespace hibiki {
 
 static LRESULT CALLBACK VstWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam,

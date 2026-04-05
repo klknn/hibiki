@@ -11,48 +11,33 @@
 #include <thread>
 #include <vector>
 
-#include "history.hpp"
-
-#if defined(__APPLE__)
-#include "coreaudio_out.hpp"
-#elif !defined(_WIN32)
-#include "alsa_out.hpp"
-#else
+#ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
-
-#include "win32_out.hpp"
 #endif
+
 #include "audio_file.hpp"
 #include "clip.hpp"
 #include "commands.hpp"
+#include "history.hpp"
 #include "ipc.hpp"
 #include "midi.hpp"
 #include "pb/commands.pb.h"
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
 #include "project.hpp"
+#include "sound.hpp"
 #include "track.hpp"
 #include "vst3_host.hpp"
 
 namespace hibiki {
 
 void playback_thread(ProjectState& state) {
-#if defined(__APPLE__)
-  CoreAudioPlayback alsa(44100, 2);
-  float sample_rate = 44100.0f;
-  int actual_channels = 2;
-#elif !defined(_WIN32)
-  AlsaPlayback alsa(44100, 2);
-  float sample_rate = 44100.0f;
-  int actual_channels = 2;
-#else
-  Win32Playback alsa(44100, 2);
-  float sample_rate = (float)alsa.get_sample_rate();
-  int actual_channels = alsa.get_channels();
-#endif
+  auto audio = SoundDevice::create(44100, 2);
+  float sample_rate = (float)audio->get_sample_rate();
+  int actual_channels = audio->get_channels();
   state.sample_rate = (double)sample_rate;
-  if (!alsa.is_ready()) return;
+  if (!audio->is_ready()) return;
 
   int block_size = 512;
 
@@ -251,7 +236,7 @@ void playback_thread(ProjectState& state) {
       interleaved[i * actual_channels] = mixBufferL[i];
       interleaved[i * actual_channels + 1] = mixBufferR[i];
     }
-    alsa.write(interleaved, block_size);
+    audio->write(interleaved, block_size);
 
     if (state.is_timeline_playing) {
       state.playhead_pos_sec += time_per_block;

@@ -180,6 +180,7 @@ cc_binary(
         ],
     }),
     deps = [
+        ":worker_channel_tcp",
         ":vst3_host",
         "//pb:plugin_worker_cc_proto",
     ] + select({

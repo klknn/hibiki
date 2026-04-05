@@ -57,7 +57,7 @@ public:
 };
 ```
 
-### Linux / macOS
+### Local Sandbox (Linux / macOS)
 
 | Component | Implementation |
 |-----------|---------------|
@@ -67,7 +67,7 @@ public:
 | Parent death signal | `prctl(PR_SET_PDEATHSIG)` (Linux), `kqueue` (macOS) |
 | Crash detection | `waitpid(WNOHANG)` |
 
-### Windows
+### Local Sandbox (Windows)
 
 | Component | Implementation |
 |-----------|---------------|
@@ -76,6 +76,42 @@ public:
 | Worker spawn | `CreateProcess()` |
 | Parent death signal | Job object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` |
 | Crash detection | `WaitForSingleObject(hProcess, 0)` |
+
+### Remote Daemon (Cross-OS via TCP)
+
+The IPC layer can also operate completely over the network without shared memory logic.
+
+| Component | Implementation |
+|-----------|---------------|
+| Command channel | TCP socket (e.g. port 9100) |
+| Audio buffers | Embedded directly in Protobuf messages (`WorkerChannelTcp`) |
+| Worker spawn | Supervised by `hbk-worker-daemon` accepting connections. |
+| Crash detection | Network link closure or socket timeouts |
+
+## Remote Worker Deployment
+
+This infrastructure enables **Cross-OS VST hosting**. For example, you can host Windows-exclusive VST3 plugins inside a macOS DAW by letting `PluginProxy` pipe audio through a TCP stream to `hbk-worker-daemon` running on a networked PC.
+
+### 1. Launch the Remote Worker (Host)
+Execute the `hbk-worker-daemon` binary on the target machine where the plugins reside natively:
+
+```bash
+# Starts listening on TCP port 9100 synchronously
+./hbk-worker-daemon --port 9100
+```
+
+### 2. Configure the Local Client (DAW)
+On the local workstation running Hibiki, you can assign `PluginProxy` to connect out to that IP instead of spawning a local subprocess. 
+
+At the GUI level, this is configured in Settings → Audio → Plugin Hosting Mode → Remote TCP.
+
+At the C++ level, this is configured during initialization by using the overloaded constructor:
+
+```cpp
+// Initialize proxy to fetch and process plugin data via the networked PC
+auto remote_plugin = std::make_unique<PluginProxy>("192.168.1.100", 9100);
+remote_plugin->load("C:\\Program Files\\Common Files\\VST3\\Synth.vst3");
+```
 
 ## Shared Memory Layout
 
@@ -110,9 +146,10 @@ The `flags` field in the header is used for lock-free synchronization:
 
 Configured in Settings → Audio:
 
-### Plugin Hosting
+### Plugin Hosting Modes
 - **In-Process (Default)**: Uses `Vst3Plugin` directly. Lowest latency, no isolation.
-- **Sandboxed (Out-of-Process)**: Uses `PluginProxy` → `hbk-plugin-worker`. Crash isolation at the cost of ~50μs IPC overhead per block.
+- **Sandboxed (Local)**: Uses `PluginProxy()` to silently spawn an `hbk-plugin-worker` background process. Isolates plugin crashes via local shared memory bridging.
+- **Network Daemon (Remote)**: Configures `PluginProxy(host, port)` to utilize `WorkerChannelTcp`, pushing all buffer and state modifications across the network to a standalone `hbk-worker-daemon` node.
 
 ### Audio Buffer Size
 - **Options**: 64, 128, 256, **512** (default), 1024, 2048, 4096 samples

@@ -10,12 +10,11 @@
 // This enables cross-OS plugin hosting: run this daemon on a Mac
 // to serve macOS-only plugins to a Linux host, or vice versa.
 
-#include <arpa/inet.h>
-#include <netinet/tcp.h>
+#ifndef _WIN32
 #include <signal.h>
-#include <sys/socket.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#endif
+
+#include "tcp.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -31,7 +30,7 @@ static constexpr int DEFAULT_PORT = 9100;
 
 // Handle a single client connection — run a Vst3Plugin directly in-process
 // (simpler than proxying to a separate hbk-plugin-worker).
-void handleClient(int conn_fd) {
+void handleClient(socket_t conn_fd) {
   // Wrap in a WorkerChannelTcp for message framing
   // We'll use raw send/recv on conn_fd since we already accepted.
   auto sendMsg = [&](const void* data, size_t len) -> bool {
@@ -42,7 +41,7 @@ void handleClient(int conn_fd) {
     p = reinterpret_cast<const uint8_t*>(&size);
     remaining = sizeof(size);
     while (remaining > 0) {
-      ssize_t n = ::write(conn_fd, p, remaining);
+      int n = tcp_send(conn_fd, p, remaining);
       if (n <= 0) return false;
       p += n;
       remaining -= n;
@@ -51,7 +50,7 @@ void handleClient(int conn_fd) {
     p = reinterpret_cast<const uint8_t*>(data);
     remaining = len;
     while (remaining > 0) {
-      ssize_t n = ::write(conn_fd, p, remaining);
+      int n = tcp_send(conn_fd, p, remaining);
       if (n <= 0) return false;
       p += n;
       remaining -= n;
@@ -64,7 +63,7 @@ void handleClient(int conn_fd) {
     uint8_t* p = reinterpret_cast<uint8_t*>(&size);
     size_t remaining = sizeof(size);
     while (remaining > 0) {
-      ssize_t n = ::read(conn_fd, p, remaining);
+      int n = tcp_recv(conn_fd, p, remaining);
       if (n <= 0) return -1;
       p += n;
       remaining -= n;
@@ -74,7 +73,7 @@ void handleClient(int conn_fd) {
     p = reinterpret_cast<uint8_t*>(out.data());
     remaining = size;
     while (remaining > 0) {
-      ssize_t n = ::read(conn_fd, p, remaining);
+      int n = tcp_recv(conn_fd, p, remaining);
       if (n <= 0) return -1;
       p += n;
       remaining -= n;
@@ -253,7 +252,7 @@ void handleClient(int conn_fd) {
         resp.mutable_process_done();
         resp.SerializeToString(&resp_data);
         sendMsg(resp_data.data(), resp_data.size());
-        close(conn_fd);
+        tcp_close(conn_fd);
         return;
       }
 
@@ -266,7 +265,7 @@ void handleClient(int conn_fd) {
     if (!sendMsg(resp_data.data(), resp_data.size())) break;
   }
 
-  close(conn_fd);
+  tcp_close(conn_fd);
 }
 
 }  // namespace hibiki
@@ -282,15 +281,16 @@ int main(int argc, char** argv) {
     }
   }
 
+  tcp_init();
+
   // Create listening socket
-  int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (listen_fd < 0) {
-    std::cerr << "Failed to create socket: " << strerror(errno) << "\n";
+  socket_t listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (listen_fd == INVALID_SOCK) {
+    std::cerr << "Failed to create socket: " << tcp_strerror() << "\n";
     return 1;
   }
 
-  int opt = 1;
-  setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  tcp_setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, 1);
 
   struct sockaddr_in addr;
   memset(&addr, 0, sizeof(addr));
@@ -299,34 +299,35 @@ int main(int argc, char** argv) {
   addr.sin_port = htons(port);
 
   if (bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-    std::cerr << "Failed to bind port " << port << ": " << strerror(errno)
+    std::cerr << "Failed to bind port " << port << ": " << tcp_strerror()
               << "\n";
-    close(listen_fd);
+    tcp_close(listen_fd);
     return 1;
   }
 
   if (listen(listen_fd, 8) < 0) {
-    std::cerr << "Failed to listen: " << strerror(errno) << "\n";
-    close(listen_fd);
+    std::cerr << "Failed to listen: " << tcp_strerror() << "\n";
+    tcp_close(listen_fd);
     return 1;
   }
 
   std::cerr << "hbk-worker-daemon listening on port " << port << "\n";
 
   // Ignore SIGPIPE
+#ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
+#endif
 
   while (true) {
-    int conn_fd = ::accept(listen_fd, nullptr, nullptr);
-    if (conn_fd < 0) {
-      if (errno == EINTR) continue;
-      std::cerr << "accept() failed: " << strerror(errno) << "\n";
+    socket_t conn_fd = ::accept(listen_fd, nullptr, nullptr);
+    if (conn_fd == INVALID_SOCK) {
+      // Note: On Windows WSAEINTR corresponds to EINTR. For simplicity we can just log all failures.
+      std::cerr << "accept() failed: " << tcp_strerror() << "\n";
       continue;
     }
 
     // Disable Nagle's algorithm
-    int flag = 1;
-    setsockopt(conn_fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+    tcp_setsockopt(conn_fd, IPPROTO_TCP, TCP_NODELAY, 1);
 
     std::cerr << "Accepted connection (fd=" << conn_fd << ")\n";
 
@@ -334,6 +335,6 @@ int main(int argc, char** argv) {
     std::thread(handleClient, conn_fd).detach();
   }
 
-  close(listen_fd);
+  tcp_close(listen_fd);
   return 0;
 }

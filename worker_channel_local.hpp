@@ -1,10 +1,11 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
 #include "worker_channel.hpp"
 
-// Local IPC implementation of WorkerChannel using:
+// Local IPC implementation of WorkerChannel.
 // - POSIX: Unix domain sockets + POSIX shared memory (shm_open/mmap)
 // - Windows: Named Pipes + File Mapping (CreateFileMapping/MapViewOfFile)
 //
@@ -38,7 +39,6 @@ class WorkerChannelLocal : public WorkerChannel {
  public:
   // Create the server side (host): creates IPC channel + shared memory.
   // path_or_name: socket path (POSIX) or pipe name (Windows).
-  // Call accept() after spawning the worker.
   static WorkerChannelLocal* createServer(const std::string& path_or_name,
                                           const std::string& shm_name,
                                           int block_size, int num_channels);
@@ -66,16 +66,9 @@ class WorkerChannelLocal : public WorkerChannel {
  private:
   WorkerChannelLocal() = default;
 
-#ifdef _WIN32
-  // Windows: Named Pipes + File Mapping
-  void* pipe_handle_ = (void*)-1;  // INVALID_HANDLE_VALUE
-  void* shm_handle_ = nullptr;
-#else
-  // POSIX: Unix domain sockets + shm_open/mmap
-  int listen_fd_ = -1;
-  int conn_fd_ = -1;
-  int shm_fd_ = -1;
-#endif
+  // Platform-specific state (defined in posix.cpp / win32.cpp).
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 
   void* shm_ptr_ = nullptr;
   size_t shm_size_ = 0;

@@ -118,6 +118,19 @@ cc_library(
 )
 
 cc_library(
+    name = "worker_channel_win32",
+    srcs = ["worker_channel_win32.cpp"],
+    hdrs = [
+        "worker_channel.hpp",
+        "worker_channel_win32.hpp",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_library(
     name = "worker_channel_tcp",
     srcs = ["worker_channel_tcp.cpp"],
     hdrs = [

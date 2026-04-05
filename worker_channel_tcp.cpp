@@ -1,10 +1,60 @@
 #include "worker_channel_tcp.hpp"
 
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+
+// Windows socket compatibility layer
+static void initWinsock() {
+  static bool initialized = false;
+  if (!initialized) {
+    WSADATA wsa;
+    WSAStartup(MAKEWORD(2, 2), &wsa);
+    initialized = true;
+  }
+}
+
+static int tcp_close(socket_t s) { return closesocket(s); }
+static int tcp_send(socket_t s, const void* buf, size_t len) {
+  return ::send(s, reinterpret_cast<const char*>(buf), (int)len, 0);
+}
+static int tcp_recv(socket_t s, void* buf, size_t len) {
+  return ::recv(s, reinterpret_cast<char*>(buf), (int)len, 0);
+}
+static void tcp_setsockopt(socket_t s, int level, int optname, int val) {
+  ::setsockopt(s, level, optname, reinterpret_cast<const char*>(&val),
+               sizeof(val));
+}
+static const char* tcp_strerror() {
+  static thread_local char buf[64];
+  snprintf(buf, sizeof(buf), "WSA error %d", WSAGetLastError());
+  return buf;
+}
+
+#else  // POSIX
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include <cerrno>
+#include <cstring>
+
+static void initWinsock() {}  // no-op on POSIX
+
+static int tcp_close(socket_t s) { return ::close(s); }
+static int tcp_send(socket_t s, const void* buf, size_t len) {
+  return (int)::write(s, buf, len);
+}
+static int tcp_recv(socket_t s, void* buf, size_t len) {
+  return (int)::read(s, buf, len);
+}
+static void tcp_setsockopt(socket_t s, int level, int optname, int val) {
+  ::setsockopt(s, level, optname, &val, sizeof(val));
+}
+static const char* tcp_strerror() { return strerror(errno); }
+#endif
 
 #include <cstring>
 #include <iostream>
@@ -12,6 +62,7 @@
 WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
                                                   int port, int block_size,
                                                   int num_channels) {
+  initWinsock();
   auto* ch = new WorkerChannelTcp();
   ch->block_size_ = block_size;
   ch->num_channels_ = num_channels;
@@ -35,8 +86,8 @@ WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
   }
 
   ch->conn_fd_ = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-  if (ch->conn_fd_ < 0) {
-    std::cerr << "WorkerChannelTcp: socket() failed: " << strerror(errno)
+  if (ch->conn_fd_ == INVALID_SOCK) {
+    std::cerr << "WorkerChannelTcp: socket() failed: " << tcp_strerror()
               << "\n";
     freeaddrinfo(res);
     delete ch;
@@ -44,11 +95,10 @@ WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
   }
 
   // Disable Nagle's algorithm for low-latency
-  int flag = 1;
-  setsockopt(ch->conn_fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+  tcp_setsockopt(ch->conn_fd_, IPPROTO_TCP, TCP_NODELAY, 1);
 
-  if (connect(ch->conn_fd_, res->ai_addr, res->ai_addrlen) < 0) {
-    std::cerr << "WorkerChannelTcp: connect() failed: " << strerror(errno)
+  if (connect(ch->conn_fd_, res->ai_addr, (int)res->ai_addrlen) != 0) {
+    std::cerr << "WorkerChannelTcp: connect() failed: " << tcp_strerror()
               << "\n";
     freeaddrinfo(res);
     delete ch;
@@ -60,19 +110,19 @@ WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
 }
 
 WorkerChannelTcp* WorkerChannelTcp::createServer(int listen_port) {
+  initWinsock();
   auto* ch = new WorkerChannelTcp();
   ch->listen_port_ = listen_port;
 
   ch->listen_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-  if (ch->listen_fd_ < 0) {
-    std::cerr << "WorkerChannelTcp: socket() failed: " << strerror(errno)
+  if (ch->listen_fd_ == INVALID_SOCK) {
+    std::cerr << "WorkerChannelTcp: socket() failed: " << tcp_strerror()
               << "\n";
     delete ch;
     return nullptr;
   }
 
-  int opt = 1;
-  setsockopt(ch->listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  tcp_setsockopt(ch->listen_fd_, SOL_SOCKET, SO_REUSEADDR, 1);
 
   struct sockaddr_in addr;
   memset(&addr, 0, sizeof(addr));
@@ -80,15 +130,14 @@ WorkerChannelTcp* WorkerChannelTcp::createServer(int listen_port) {
   addr.sin_addr.s_addr = INADDR_ANY;
   addr.sin_port = htons(listen_port);
 
-  if (bind(ch->listen_fd_, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-    std::cerr << "WorkerChannelTcp: bind() failed: " << strerror(errno)
-              << "\n";
+  if (bind(ch->listen_fd_, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+    std::cerr << "WorkerChannelTcp: bind() failed: " << tcp_strerror() << "\n";
     delete ch;
     return nullptr;
   }
 
-  if (listen(ch->listen_fd_, 8) < 0) {
-    std::cerr << "WorkerChannelTcp: listen() failed: " << strerror(errno)
+  if (listen(ch->listen_fd_, 8) != 0) {
+    std::cerr << "WorkerChannelTcp: listen() failed: " << tcp_strerror()
               << "\n";
     delete ch;
     return nullptr;
@@ -98,32 +147,31 @@ WorkerChannelTcp* WorkerChannelTcp::createServer(int listen_port) {
 }
 
 bool WorkerChannelTcp::accept() {
-  if (listen_fd_ < 0) return false;
+  if (listen_fd_ == INVALID_SOCK) return false;
   conn_fd_ = ::accept(listen_fd_, nullptr, nullptr);
-  if (conn_fd_ < 0) {
-    std::cerr << "WorkerChannelTcp: accept() failed: " << strerror(errno)
+  if (conn_fd_ == INVALID_SOCK) {
+    std::cerr << "WorkerChannelTcp: accept() failed: " << tcp_strerror()
               << "\n";
     return false;
   }
 
   // Disable Nagle's algorithm
-  int flag = 1;
-  setsockopt(conn_fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+  tcp_setsockopt(conn_fd_, IPPROTO_TCP, TCP_NODELAY, 1);
 
   return true;
 }
 
 WorkerChannelTcp::~WorkerChannelTcp() {
-  if (conn_fd_ >= 0) close(conn_fd_);
-  if (listen_fd_ >= 0) close(listen_fd_);
+  if (conn_fd_ != INVALID_SOCK) tcp_close(conn_fd_);
+  if (listen_fd_ != INVALID_SOCK) tcp_close(listen_fd_);
 }
 
 bool WorkerChannelTcp::send(const void* data, size_t len) {
-  if (conn_fd_ < 0) return false;
+  if (conn_fd_ == INVALID_SOCK) return false;
   const uint8_t* p = reinterpret_cast<const uint8_t*>(data);
   size_t remaining = len;
   while (remaining > 0) {
-    ssize_t n = ::write(conn_fd_, p, remaining);
+    int n = tcp_send(conn_fd_, p, remaining);
     if (n <= 0) return false;
     p += n;
     remaining -= n;
@@ -132,11 +180,11 @@ bool WorkerChannelTcp::send(const void* data, size_t len) {
 }
 
 bool WorkerChannelTcp::recv(void* buf, size_t len) {
-  if (conn_fd_ < 0) return false;
+  if (conn_fd_ == INVALID_SOCK) return false;
   uint8_t* p = reinterpret_cast<uint8_t*>(buf);
   size_t remaining = len;
   while (remaining > 0) {
-    ssize_t n = ::read(conn_fd_, p, remaining);
+    int n = tcp_recv(conn_fd_, p, remaining);
     if (n <= 0) return false;
     p += n;
     remaining -= n;

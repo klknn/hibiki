@@ -10,8 +10,8 @@
 
 #include "pb/plugin_worker.pb.h"
 #include "vst3_host.hpp"
+#include "worker_channel_posix.hpp"
 #include "worker_channel_tcp.hpp"
-#include "worker_channel_unix.hpp"
 
 namespace {
 
@@ -84,7 +84,7 @@ bool PluginProxy::spawnLocalWorker() {
   socket_path_ = "/tmp/hbk-plugin-" + uid + ".sock";
   shm_name_ = "/hbk-plugin-" + uid;
 
-  auto* ch = WorkerChannelUnix::createServer(socket_path_, shm_name_, 512, 2);
+  auto* ch = WorkerChannelPosix::createServer(socket_path_, shm_name_, 512, 2);
   if (!ch) return false;
   channel_.reset(ch);
 
@@ -103,7 +103,7 @@ bool PluginProxy::spawnLocalWorker() {
     _exit(1);
   }
 
-  if (!static_cast<WorkerChannelUnix*>(channel_.get())->accept()) {
+  if (!static_cast<WorkerChannelPosix*>(channel_.get())->accept()) {
     std::cerr << "PluginProxy: accept() failed\n";
     kill(worker_pid_, SIGTERM);
     waitpid(worker_pid_, nullptr, 0);

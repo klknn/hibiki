@@ -105,10 +105,10 @@ cc_library(
 
 cc_library(
     name = "worker_channel",
-    srcs = ["worker_channel_unix.cpp"],
+    srcs = ["worker_channel_posix.cpp"],
     hdrs = [
         "worker_channel.hpp",
-        "worker_channel_unix.hpp",
+        "worker_channel_posix.hpp",
     ],
     linkopts = ["-lrt"],  # POSIX shared memory
     target_compatible_with = select({

@@ -31,19 +31,19 @@ enum SharedMemFlags {
   SHM_FLAG_DONE = 2,
 };
 
-class WorkerChannelUnix : public WorkerChannel {
+class WorkerChannelPosix : public WorkerChannel {
  public:
   // Create the server side (host): creates socket, binds, listens.
   // Call accept() after spawning the worker.
-  static WorkerChannelUnix* createServer(const std::string& socket_path,
+  static WorkerChannelPosix* createServer(const std::string& socket_path,
                                          const std::string& shm_name,
                                          int block_size, int num_channels);
 
   // Create the client side (worker): connects to existing socket and shm.
-  static WorkerChannelUnix* createClient(const std::string& socket_path,
+  static WorkerChannelPosix* createClient(const std::string& socket_path,
                                          const std::string& shm_name);
 
-  ~WorkerChannelUnix() override;
+  ~WorkerChannelPosix() override;
 
   // Accept a client connection (server side only).
   bool accept();
@@ -60,7 +60,7 @@ class WorkerChannelUnix : public WorkerChannel {
   SharedMemHeader* header() const { return header_; }
 
  private:
-  WorkerChannelUnix() = default;
+  WorkerChannelPosix() = default;
 
   int listen_fd_ = -1;  // Server listen socket
   int conn_fd_ = -1;    // Connected socket (both sides)

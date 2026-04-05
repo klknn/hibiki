@@ -97,7 +97,7 @@ Where N = `block_size` (default 512 samples).
 
 ## POSIX → Windows API Mapping
 
-The following table maps each POSIX API used in `worker_channel_unix.cpp`
+The following table maps each POSIX API used in `worker_channel_posix.cpp`
 to its Windows equivalent, for implementing `worker_channel_win32.cpp`:
 
 ### Command Channel (Unix socket → Named Pipe or TCP)

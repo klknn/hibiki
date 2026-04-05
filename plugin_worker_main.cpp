@@ -7,8 +7,8 @@
 // and enters a command loop receiving WorkerRequests and sending
 // WorkerResponses.
 
-#include <sys/prctl.h>
 #include <signal.h>
+#include <sys/prctl.h>
 
 #include <cstring>
 #include <iostream>
@@ -17,7 +17,7 @@
 
 #include "pb/plugin_worker.pb.h"
 #include "vst3_host.hpp"
-#include "worker_channel_unix.hpp"
+#include "worker_channel_posix.hpp"
 
 int main(int argc, char** argv) {
   if (argc < 3) {
@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
   std::string shm_name = argv[2];
 
   // Connect to host
-  auto* channel = WorkerChannelUnix::createClient(socket_path, shm_name);
+  auto* channel = WorkerChannelPosix::createClient(socket_path, shm_name);
   if (!channel) {
     std::cerr << "Worker: failed to connect to host\n";
     return 1;

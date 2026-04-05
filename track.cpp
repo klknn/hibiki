@@ -12,9 +12,31 @@
 namespace hibiki {
 
 int Track::LoadPlugin(const std::string& path, int plugin_index,
-                      double sample_rate) {
+                      double sample_rate, PluginHostMode host_mode,
+                      const std::string& remote_host) {
   std::lock_guard<DummyMutex> lock(mutex);
-  auto plugin = std::make_unique<Vst3Plugin>();
+  std::unique_ptr<IPlugin> plugin;
+  switch (host_mode) {
+    case PluginHostMode::LOCAL_SANDBOX:
+      plugin = std::make_unique<PluginProxy>();
+      break;
+    case PluginHostMode::REMOTE: {
+      // Parse "host:port" from remote_host
+      std::string host = remote_host;
+      int port = 9100;
+      auto colon = remote_host.rfind(':');
+      if (colon != std::string::npos) {
+        host = remote_host.substr(0, colon);
+        port = std::stoi(remote_host.substr(colon + 1));
+      }
+      plugin = std::make_unique<PluginProxy>(host, port);
+      break;
+    }
+    case PluginHostMode::IN_PROCESS:
+    default:
+      plugin = std::make_unique<Vst3Plugin>();
+      break;
+  }
   if (!plugin->load(path, plugin_index, sample_rate)) {
     return -1;
   }

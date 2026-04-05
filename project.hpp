@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "plugin_proxy.hpp"
 #include "track.hpp"
 #include "vst3_host.hpp"
 
@@ -28,6 +29,10 @@ struct ProjectState {
   std::mutex tracks_mutex;
   std::mutex levels_mutex;
   bool quit = false;
+
+  // Plugin hosting mode (set via SetPluginHostMode command)
+  PluginHostMode plugin_host_mode = PluginHostMode::IN_PROCESS;
+  std::string remote_host;  // "host:port" when plugin_host_mode == REMOTE
 };
 
 // Returns a pointer to the track, creating it if it doesn't exist

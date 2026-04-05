@@ -217,6 +217,77 @@ Edits are synced to the backend in real-time via IPC — no manual save step req
 
 ---
 
+## Plugin Hosting Modes
+
+Hibiki supports three modes for running VST3 plugins, selectable in
+**Settings → Plugins**:
+
+### In-Process (Default)
+
+Plugins run directly in the audio engine process.
+
+| Pro | Con |
+|-----|-----|
+| Lowest latency | Plugin crash kills Hibiki |
+| Zero overhead | No isolation |
+| Simplest setup | — |
+
+Best for: trusted, stable plugins during production work.
+
+### Local Sandbox
+
+Each plugin runs in its own child process (`hbk-plugin-worker`),
+communicating via Unix socket + shared memory.
+
+| Pro | Con |
+|-----|-----|
+| Crash isolation | ~1ms overhead per block |
+| Parallel execution | Slightly higher memory usage |
+| Debuggable per-plugin | Linux/macOS only |
+
+**Setup**: Select **Local Sandbox** in Settings → Plugins. No further
+configuration needed — worker processes are spawned automatically.
+
+Best for: development, testing untrusted plugins.
+
+### Remote (TCP)
+
+Plugins run on a different machine via `hbk-worker-daemon`, enabling
+cross-platform plugin hosting (e.g., run Windows VST3 from Linux).
+
+| Pro | Con |
+|-----|-----|
+| Cross-machine | ~1-5ms LAN latency |
+| Cross-platform | Requires network |
+| CPU offloading | ~180 KB/s per plugin |
+
+**Setup on the remote machine:**
+```bash
+bazel build -c opt //:hbk-worker-daemon
+./bazel-bin/hbk-worker-daemon --port 9100
+```
+
+**Setup in Hibiki:**
+1. Open **Settings → Plugins**
+2. Set **Hosting Mode** to `Remote (TCP)`
+3. Enter **Remote Host**: `192.168.1.50:9100`
+4. Click **Apply**
+
+**Network requirements:**
+
+| Parameter | Value |
+|-----------|-------|
+| Protocol | TCP |
+| Default port | 9100 |
+| Bandwidth | ~180 KB/s per plugin (44.1kHz/512) |
+| Latency | ~1-5ms LAN |
+| Security | None (LAN-only) |
+
+Best for: running macOS/Windows-only plugins from Linux, or
+distributing CPU load across machines.
+
+---
+
 ## Playing MIDI
 
 ### With a Software Synth

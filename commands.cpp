@@ -229,7 +229,9 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       history.pushState(CaptureProjectState(state));
       auto track = GetOrCreateTrack(state, tidx);
-      int target_idx = track->LoadPlugin(vpath, pidx, state.sample_rate);
+      int target_idx =
+          track->LoadPlugin(vpath, pidx, state.sample_rate,
+                            state.plugin_host_mode, state.remote_host);
       if (target_idx != -1) {
         std::vector<VstParamInfo> params;
         auto& plugin = track->plugins[target_idx];
@@ -638,6 +640,24 @@ void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
     default:
       break;
   }
+}
+
+void handleSetPluginHostMode(const pb::commands::SetPluginHostMode& cmd,
+                             ProjectState& state) {
+  switch (cmd.mode()) {
+    case pb::commands::PLUGIN_HOST_LOCAL_SANDBOX:
+      state.plugin_host_mode = PluginHostMode::LOCAL_SANDBOX;
+      break;
+    case pb::commands::PLUGIN_HOST_REMOTE:
+      state.plugin_host_mode = PluginHostMode::REMOTE;
+      state.remote_host = cmd.remote_host();
+      break;
+    case pb::commands::PLUGIN_HOST_IN_PROCESS:
+    default:
+      state.plugin_host_mode = PluginHostMode::IN_PROCESS;
+      break;
+  }
+  sendAck("SET_PLUGIN_HOST_MODE", true);
 }
 
 }  // namespace hibiki

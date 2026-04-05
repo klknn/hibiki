@@ -18,5 +18,7 @@ void handleAutomationCmd(const pb::commands::AutomationCmd& cmd,
                          ProjectState& state, HistoryManager& history);
 void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
                    HistoryManager& history);
+void handleSetPluginHostMode(const pb::commands::SetPluginHostMode& cmd,
+                             ProjectState& state);
 
 }  // namespace hibiki

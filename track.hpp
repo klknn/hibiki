@@ -12,6 +12,7 @@
 #include "pb/commands.pb.h"
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
+#include "plugin_proxy.hpp"
 #include "vst3_host.hpp"
 
 namespace hibiki {
@@ -134,7 +135,9 @@ class Track {
 
   Track(int idx) : index(idx) {}
 
-  int LoadPlugin(const std::string& path, int plugin_index, double sample_rate);
+  int LoadPlugin(const std::string& path, int plugin_index, double sample_rate,
+                 PluginHostMode host_mode = PluginHostMode::IN_PROCESS,
+                 const std::string& remote_host = "");
   bool DeleteClip(int slot);
   bool LoadClip(int slot, const std::string& path, bool is_loop = false);
   void SetClipLoop(int slot, bool is_loop);

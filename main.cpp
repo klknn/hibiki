@@ -325,6 +325,9 @@ void run_ipc_loop(ProjectState& state) {
       case hibiki::pb::commands::Request::kMidi:
         handleMidiCmd(request.midi(), state, history);
         break;
+      case hibiki::pb::commands::Request::kSetPluginHostMode:
+        handleSetPluginHostMode(request.set_plugin_host_mode(), state);
+        break;
     }
     if (state.quit) break;
   }

@@ -133,17 +133,23 @@ cc_library(
     deps = [":tcp"],
 )
 
-# cc_library(
-#     name = "plugin_proxy",
-#     srcs = ["plugin_proxy.cpp"],
-#     hdrs = ["plugin_proxy.hpp"],
-#     deps = [
-#         ":vst3_host",
-#         ":worker_channel",
-#         ":worker_channel_tcp",
-#         "//pb:plugin_worker_cc_proto",
-#     ],
-# )
+cc_library(
+    name = "plugin_proxy",
+    srcs = ["plugin_proxy.cpp"],
+    hdrs = ["plugin_proxy.hpp"],
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "-lpthread",
+        ],
+    }),
+    deps = [
+        ":vst3_host",
+        ":worker_channel",
+        ":worker_channel_tcp",
+        "//pb:plugin_worker_cc_proto",
+    ],
+)
 
 cc_binary(
     name = "hbk-plugin-worker",
@@ -227,6 +233,7 @@ cc_library(
     deps = [
         ":clip",
         ":ipc",
+        ":plugin_proxy",
         ":vst3_host",
     ],
 )
@@ -238,6 +245,7 @@ cc_library(
     deps = [
         ":audio_file",
         ":ipc",
+        ":plugin_proxy",
         ":track",
         "//pb:commands_cc_proto",
         "//pb:core_cc_proto",
@@ -399,6 +407,28 @@ cc_test(
 )
 
 cc_test(
+    name = "worker_daemon_test",
+    size = "large",
+    srcs = ["worker_daemon_test.cpp"],
+    data = [
+        ":hbk-worker-daemon",
+        "//testdata",
+    ],
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "-lpthread",
+        ],
+    }),
+    linkstatic = True,
+    deps = [
+        ":tcp",
+        "//pb:plugin_worker_cc_proto",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "project_test",
     size = "small",
     srcs = ["project_test.cpp"],
@@ -537,6 +567,25 @@ java_test(
         "//testdata",
     ],
     test_class = "hibiki.BackendManagerTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "//pb:commands_java_proto",
+        "//pb:core_java_proto",
+        "//pb:notifications_java_proto",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "plugin_worker_test",
+    srcs = ["src/test/java/hibiki/PluginWorkerTest.java"],
+    data = [
+        ":hbk-play",
+        ":hbk-plugin-worker",
+        "//testdata",
+    ],
+    test_class = "hibiki.PluginWorkerTest",
     deps = [
         ":hibiki-gui-lib",
         "//pb:commands_java_proto",

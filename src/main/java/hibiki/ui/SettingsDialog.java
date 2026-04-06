@@ -53,45 +53,85 @@ public class SettingsDialog extends JDialog {
     gbc.gridy = row;
     p.add(new JLabel("Hosting Mode:"), gbc);
     gbc.gridx = 1;
+    gbc.gridwidth = 2;
     JComboBox<String> modeCombo = new JComboBox<>(HOST_MODES);
     p.add(modeCombo, gbc);
+    gbc.gridwidth = 1;
 
-    // Remote Host
+    // Remote Hosts list
     row++;
     gbc.gridx = 0;
     gbc.gridy = row;
-    JLabel hostLabel = new JLabel("Remote Host:");
-    p.add(hostLabel, gbc);
-    gbc.gridx = 1;
-    JTextField hostField = new JTextField("localhost:9100");
-    hostField.setEnabled(false);
-    p.add(hostField, gbc);
+    gbc.anchor = GridBagConstraints.NORTH;
+    JLabel hostsLabel = new JLabel("Remote Hosts:");
+    hostsLabel.setEnabled(false);
+    p.add(hostsLabel, gbc);
 
-    // Enable/disable host field based on mode
+    DefaultListModel<String> hostListModel = new DefaultListModel<>();
+    hostListModel.addElement("localhost:9100");
+    JList<String> hostList = new JList<>(hostListModel);
+    hostList.setVisibleRowCount(4);
+    hostList.setEnabled(false);
+    JScrollPane hostScroll = new JScrollPane(hostList);
+    hostScroll.setPreferredSize(new java.awt.Dimension(200, 80));
+    gbc.gridx = 1;
+    gbc.gridwidth = 2;
+    p.add(hostScroll, gbc);
+    gbc.gridwidth = 1;
+    gbc.anchor = GridBagConstraints.CENTER;
+
+    // Add/Remove buttons
+    row++;
+    gbc.gridx = 1;
+    gbc.gridy = row;
+    JPanel hostBtnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+    JButton addBtn = new JButton("+");
+    addBtn.setEnabled(false);
+    addBtn.addActionListener(e -> {
+      String host = JOptionPane.showInputDialog(this, "Enter host:port", "localhost:9100");
+      if (host != null && !host.isEmpty()) {
+        hostListModel.addElement(host);
+      }
+    });
+    JButton removeBtn = new JButton("−");
+    removeBtn.setEnabled(false);
+    removeBtn.addActionListener(e -> {
+      int sel = hostList.getSelectedIndex();
+      if (sel >= 0)
+        hostListModel.remove(sel);
+    });
+    hostBtnPanel.add(addBtn);
+    hostBtnPanel.add(removeBtn);
+    p.add(hostBtnPanel, gbc);
+
+    // Enable/disable remote fields based on mode
     modeCombo.addActionListener(e -> {
       boolean isRemote = modeCombo.getSelectedIndex() == 2;
-      hostField.setEnabled(isRemote);
-      hostLabel.setEnabled(isRemote);
+      hostsLabel.setEnabled(isRemote);
+      hostList.setEnabled(isRemote);
+      addBtn.setEnabled(isRemote);
+      removeBtn.setEnabled(isRemote);
     });
 
     // Description
     row++;
     gbc.gridx = 0;
     gbc.gridy = row;
-    gbc.gridwidth = 2;
+    gbc.gridwidth = 3;
     JLabel desc = new JLabel("<html><small>"
         + "In-Process: plugins run in the audio engine (lowest latency)<br>"
         + "Local Sandbox: isolated process per plugin (crash protection)<br>"
-        + "Remote: plugin on another machine via TCP (cross-OS)"
+        + "Remote: plugins on other machines via TCP (cross-OS, multi-server)"
         + "</small></html>");
     desc.setFont(Theme.getInstance().FONT_UI.deriveFont(11.0f));
     p.add(desc, gbc);
     gbc.gridwidth = 1;
 
-    // Apply
+    // Apply + Scan buttons
     row++;
     gbc.gridx = 1;
     gbc.gridy = row;
+    JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
     JButton applyBtn = new JButton("Apply");
     applyBtn.addActionListener(e -> {
       int idx = modeCombo.getSelectedIndex();
@@ -111,7 +151,9 @@ public class SettingsDialog extends JDialog {
       hibiki.pb.commands.SetPluginHostMode.Builder builder = hibiki.pb.commands.SetPluginHostMode.newBuilder()
           .setMode(mode);
       if (idx == 2) {
-        builder.setRemoteHost(hostField.getText());
+        for (int i = 0; i < hostListModel.size(); i++) {
+          builder.addRemoteHosts(hostListModel.get(i));
+        }
       }
 
       hibiki.pb.commands.Request request = hibiki.pb.commands.Request.newBuilder()
@@ -122,7 +164,21 @@ public class SettingsDialog extends JDialog {
       JOptionPane.showMessageDialog(this,
           "Plugin hosting mode set to: " + HOST_MODES[idx]);
     });
-    p.add(applyBtn, gbc);
+    actionPanel.add(applyBtn);
+
+    JButton scanBtn = new JButton("Scan Remote");
+    scanBtn.addActionListener(e -> {
+      hibiki.pb.commands.ScanRemotePlugins.Builder scanBuilder = hibiki.pb.commands.ScanRemotePlugins.newBuilder();
+      for (int i = 0; i < hostListModel.size(); i++) {
+        scanBuilder.addRemoteHosts(hostListModel.get(i));
+      }
+      hibiki.pb.commands.Request request = hibiki.pb.commands.Request.newBuilder()
+          .setScanRemotePlugins(scanBuilder.build())
+          .build();
+      hibiki.BackendManager.getInstance().sendRequest(request);
+    });
+    actionPanel.add(scanBtn);
+    p.add(actionPanel, gbc);
 
     return p;
   }

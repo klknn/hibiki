@@ -45,6 +45,7 @@ message PlayheadInfo {
 message PluginListResponse {
   string path = 1;
   repeated PluginDescription plugins = 2;
+  string remote_host = 3;  // "host:port" if from remote daemon, empty = local
 }
 
 // Description of a sub-plugin within a VST3 bundle.

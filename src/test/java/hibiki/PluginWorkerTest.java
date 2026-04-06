@@ -220,7 +220,7 @@ public class PluginWorkerTest {
               .setSetPluginHostMode(
                   SetPluginHostMode.newBuilder()
                       .setMode(PluginHostMode.PLUGIN_HOST_REMOTE)
-                      .setRemoteHost("localhost:" + port))
+                      .addRemoteHosts("localhost:" + port))
               .build(),
           "SET_PLUGIN_HOST_MODE");
 
@@ -276,7 +276,7 @@ public class PluginWorkerTest {
             .setSetPluginHostMode(
                 SetPluginHostMode.newBuilder()
                     .setMode(PluginHostMode.PLUGIN_HOST_REMOTE)
-                    .setRemoteHost("localhost:1"))
+                    .addRemoteHosts("localhost:1"))
             .build(),
         "SET_PLUGIN_HOST_MODE");
 

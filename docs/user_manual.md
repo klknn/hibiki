@@ -252,26 +252,30 @@ Best for: development, testing untrusted plugins.
 
 ### Remote (TCP)
 
-Plugins run on a different machine via `hbk-worker-daemon`, enabling
-cross-platform plugin hosting (e.g., run Windows VST3 from Linux).
+Plugins run on remote machines via `hbk-worker-daemon`, enabling
+cross-platform plugin hosting and CPU offloading across multiple servers.
 
 | Pro | Con |
 |-----|-----|
 | Cross-machine | ~1-5ms LAN latency |
 | Cross-platform | Requires network |
 | CPU offloading | ~180 KB/s per plugin |
+| Multi-server | Initial scan delay |
 
-**Setup on the remote machine:**
+**Setup on each remote machine:**
 ```bash
 bazel build -c opt //:hbk-worker-daemon
 ./bazel-bin/hbk-worker-daemon --port 9100
 ```
 
-**Setup in Hibiki:**
+**Setup in Hibiki (multi-server):**
 1. Open **Settings → Plugins**
 2. Set **Hosting Mode** to `Remote (TCP)`
-3. Enter **Remote Host**: `192.168.1.50:9100`
-4. Click **Apply**
+3. Use **+** / **−** to add/remove hosts (e.g., `mac-studio:9100`, `win-pc:9100`)
+4. Click **Apply** to save, then **Scan Remote** to discover plugins
+5. Remote plugins appear in the Browser under **📡 host:port** tree nodes
+
+Plugins are distributed across servers round-robin as they are loaded.
 
 **Network requirements:**
 
@@ -283,10 +287,39 @@ bazel build -c opt //:hbk-worker-daemon
 | Latency | ~1-5ms LAN |
 | Security | None (LAN-only) |
 
-Best for: running macOS/Windows-only plugins from Linux, or
-distributing CPU load across machines.
+### Finding Your Machine's IP Address
 
----
+| OS | Command | Example Output |
+|----|---------|----------------|
+| **Linux** | `hostname -I` | `192.168.1.50` |
+| **macOS** | `ipconfig getifaddr en0` | `192.168.1.51` |
+| **Windows** | `ipconfig` (look for IPv4 Address) | `192.168.1.52` |
+
+> **Tip:** On macOS, use `en0` for Wi-Fi and `en1` for Ethernet.
+> On Linux, `ip addr show` gives more detail if `hostname -I` lists multiple addresses.
+
+Best for: running macOS/Windows-only plugins from Linux, distributing
+CPU load across machines, or using specialized hardware on remote hosts.
+
+### Latency Tips
+
+Choose the right mode + buffer size for your scenario:
+
+| Scenario | Recommended Mode | Buffer Size | Expected Latency |
+|----------|-----------------|-------------|------------------|
+| Live monitoring | In-Process | 128–256 | 3–6 ms |
+| Tracking (recording) | In-Process | 256–512 | 6–12 ms |
+| Mixing (untrusted plugins) | Local Sandbox | 512 | ~12 ms |
+| Bouncing/export | Any | 1024–2048 | N/A (offline) |
+| Cross-OS plugins | Remote TCP | 512+ | 13–17 ms |
+| Multi-machine render | Remote TCP | 1024+ | N/A (offline) |
+
+> **Tip:** Latency only matters for **live monitoring**.
+> When bouncing/exporting, larger buffers reduce CPU load without
+> affecting the rendered output quality.
+
+> **Tip:** Wired Ethernet adds ~0.5ms. WiFi can add 3–15ms of
+> jitter — use wired connections for remote plugin hosting.
 
 ## Playing MIDI
 

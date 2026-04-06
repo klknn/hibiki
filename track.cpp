@@ -13,7 +13,7 @@ namespace hibiki {
 
 int Track::LoadPlugin(const std::string& path, int plugin_index,
                       double sample_rate, PluginHostMode host_mode,
-                      const std::string& remote_host) {
+                      const std::vector<std::string>& remote_hosts) {
   std::lock_guard<DummyMutex> lock(mutex);
   std::unique_ptr<IPlugin> plugin;
   switch (host_mode) {
@@ -21,13 +21,19 @@ int Track::LoadPlugin(const std::string& path, int plugin_index,
       plugin = std::make_unique<PluginProxy>();
       break;
     case PluginHostMode::REMOTE: {
-      // Parse "host:port" from remote_host
-      std::string host = remote_host;
+      // Round-robin across remote hosts
+      if (remote_hosts.empty()) {
+        std::cerr << "REMOTE mode but no hosts configured" << std::endl;
+        return -1;
+      }
+      const std::string& selected =
+          remote_hosts[plugins.size() % remote_hosts.size()];
+      std::string host = selected;
       int port = 9100;
-      auto colon = remote_host.rfind(':');
+      auto colon = selected.rfind(':');
       if (colon != std::string::npos) {
-        host = remote_host.substr(0, colon);
-        port = std::stoi(remote_host.substr(colon + 1));
+        host = selected.substr(0, colon);
+        port = std::stoi(selected.substr(colon + 1));
       }
       plugin = std::make_unique<PluginProxy>(host, port);
       break;

@@ -25,6 +25,10 @@ public class BrowserPane extends JPanel {
   private DefaultMutableTreeNode audioNode;
 
   private Map<String, List<PluginMetadata>> bundlesDiscovered = new ConcurrentHashMap<>();
+  // Remote plugins: key = "host:port", value = list of plugins from that daemon
+  private Map<String, List<PluginMetadata>> remoteDiscovered = new ConcurrentHashMap<>();
+  // Tree nodes for each remote host
+  private Map<String, DefaultMutableTreeNode> remoteHostNodes = new ConcurrentHashMap<>();
   private javax.swing.Timer refreshDebounceTimer;
 
   private static class PluginMetadata {
@@ -127,13 +131,19 @@ public class BrowserPane extends JPanel {
   private void handleNotification(Notification n) {
     if (n.getResponseCase() == Notification.ResponseCase.PLUGIN_LIST) {
       var list = n.getPluginList();
-      String path = list.getPath();
+      String remoteHost = list.getRemoteHost();
       List<PluginMetadata> plugins = new ArrayList<>();
       for (int i = 0; i < list.getPluginsCount(); i++) {
         var p = list.getPlugins(i);
         plugins.add(new PluginMetadata(p.getIndex(), p.getName(), p.getVendor()));
       }
-      bundlesDiscovered.put(path, plugins);
+      if (!remoteHost.isEmpty()) {
+        // Remote daemon — store under host key
+        remoteDiscovered.computeIfAbsent(remoteHost, k -> new ArrayList<>()).addAll(plugins);
+      } else {
+        // Local bundle discovery
+        bundlesDiscovered.put(list.getPath(), plugins);
+      }
       // Debounce: wait 300ms after last notification before refreshing
       SwingUtilities.invokeLater(
           () -> {
@@ -166,8 +176,8 @@ public class BrowserPane extends JPanel {
       }
     }
 
+    // Rebuild local plugins
     pluginsNode.removeAllChildren();
-
     for (Map.Entry<String, List<PluginMetadata>> entry : bundlesDiscovered.entrySet()) {
       File bundleFile = new File(entry.getKey());
       List<PluginMetadata> plugins = entry.getValue();
@@ -177,9 +187,27 @@ public class BrowserPane extends JPanel {
                 new FileItem(bundleFile, "vst", meta.name, meta.vendor, meta.index)));
       }
     }
-
     sortAndGroupPlugins(pluginsNode);
     treeModel.reload(pluginsNode);
+
+    // Rebuild remote host nodes
+    for (DefaultMutableTreeNode oldNode : remoteHostNodes.values()) {
+      root.remove(oldNode);
+    }
+    remoteHostNodes.clear();
+    for (Map.Entry<String, List<PluginMetadata>> entry : remoteDiscovered.entrySet()) {
+      String host = entry.getKey();
+      DefaultMutableTreeNode hostNode = new DefaultMutableTreeNode("\uD83D\uDCE1 " + host);
+      for (PluginMetadata meta : entry.getValue()) {
+        hostNode.add(
+            new DefaultMutableTreeNode(
+                new FileItem(new File(host), "remote-vst", meta.name, meta.vendor, meta.index)));
+      }
+      sortAndGroupPlugins(hostNode);
+      root.add(hostNode);
+      remoteHostNodes.put(host, hostNode);
+    }
+    treeModel.reload(root);
 
     // Restore expanded paths
     restoreExpansion(new TreePath(root), expandedNames);
@@ -327,6 +355,9 @@ public class BrowserPane extends JPanel {
       FileItem item = (FileItem) userObject;
       if ("vst".equals(item.type)) {
         sendLoadPlugin(item.file.getAbsolutePath(), item.pluginIndex);
+      } else if ("remote-vst".equals(item.type)) {
+        // For remote plugins, file.getName() is the host:port
+        sendLoadPlugin(item.file.getName() + ":" + item.pluginIndex, item.pluginIndex);
       } else if ("midi".equals(item.type)) {
         sendLoadClip(item.file.getAbsolutePath(), false);
       } else if ("audio".equals(item.type)) {

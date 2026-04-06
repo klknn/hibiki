@@ -290,10 +290,12 @@ cc_library(
         ":ipc",
         ":midi",
         ":project",
+        ":tcp",
         ":track",
         "//pb:commands_cc_proto",
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",
+        "//pb:plugin_worker_cc_proto",
     ] + select({
         "@platforms//os:windows": [
             ":vst3_host_win32",

@@ -127,7 +127,11 @@ enum PluginHostMode {
 
 message SetPluginHostMode {
   PluginHostMode mode = 1;
-  string remote_host = 2;  // "host:port" for REMOTE mode
+  repeated string remote_hosts = 2;  // one or more "host:port" for REMOTE mode
+}
+
+message ScanRemotePlugins {
+  repeated string remote_hosts = 1;  // daemons to query for plugin lists
 }
 
 // ─── Request Envelope ───────────────────────────────────────────────
@@ -142,5 +146,6 @@ message Request {
     MidiCmd midi = 44;
     ProjectCmd project = 45;
     SetPluginHostMode set_plugin_host_mode = 46;
+    ScanRemotePlugins scan_remote_plugins = 47;
   }
 }

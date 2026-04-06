@@ -169,3 +169,175 @@ cc_library(
 - **Path separators** — use `/` in code; Windows APIs accept both
 - **`ssize_t`** — doesn't exist on MSVC. Define it as `intptr_t` or
   use `int` in cross-platform headers
+
+---
+
+## TCP Shim Deep Dive
+
+The `tcp.hpp` / `tcp_posix.cpp` / `tcp_win32.cpp` pattern isolates
+all socket API differences behind five functions:
+
+```cpp
+// tcp.hpp — platform-neutral interface
+namespace hibiki {
+  void tcp_init();         // WSAStartup on Windows, no-op on POSIX
+  int tcp_close(socket_t); // close() vs closesocket()
+  int tcp_send(socket_t, const void*, size_t);  // write() vs send()
+  int tcp_recv(socket_t, void*, size_t);        // read() vs recv()
+  void tcp_setsockopt(socket_t, int, int, int);
+  const char* tcp_strerror(); // strerror(errno) vs WSA error string
+}
+```
+
+### Platform Differences Abstracted
+
+| Concern | POSIX (`tcp_posix.cpp`) | Windows (`tcp_win32.cpp`) |
+|---------|------------------------|--------------------------|
+| Socket type | `int` | `SOCKET` (unsigned) |
+| Invalid value | `-1` | `INVALID_SOCKET` (~0) |
+| Init | no-op | `WSAStartup(MAKEWORD(2,2), &wsaData)` |
+| Close | `close(fd)` | `closesocket(fd)` |
+| Send | `write(fd, buf, len)` | `send(fd, buf, len, 0)` |
+| Recv | `read(fd, buf, len)` | `recv(fd, buf, len, 0)` |
+| Error | `strerror(errno)` | `FormatMessageA(WSAGetLastError())` |
+| Headers | `<sys/socket.h>`, `<arpa/inet.h>` | `<winsock2.h>`, `<ws2tcpip.h>` |
+
+### Why Not `#ifdef` Inline?
+
+Using `#ifdef _WIN32` inside shared `.cpp` files creates spaghetti
+that's hard to test and review. The shim pattern:
+
+1. Keeps all platform code in one dedicated file per platform
+2. Makes `worker_channel_tcp.cpp` 100% platform-neutral
+3. Allows each platform file to be reviewed in isolation
+4. Works naturally with Bazel `select()` — no preprocessor needed
+   at build time
+
+---
+
+## Extended Pitfalls & Codebase Examples
+
+### Process Executable Path
+
+```cpp
+// ❌ Linux-only: /proc/self/exe doesn't exist elsewhere
+ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf));
+
+// ✅ Cross-platform approach:
+// Linux:   readlink("/proc/self/exe")
+// macOS:   _NSGetExecutablePath(buf, &size)
+// Windows: GetModuleFileNameA(NULL, buf, MAX_PATH)
+```
+
+In practice, Hibiki uses `readlink` in `plugin_proxy.cpp` because
+the sandbox mode only targets Linux currently. When adding macOS
+support, extract this into a platform shim.
+
+### Parent Death Signaling
+
+```cpp
+// ❌ Linux-only
+prctl(PR_SET_PDEATHSIG, SIGTERM);
+
+// macOS alternative:
+// Use kqueue with EVFILT_PROC + NOTE_EXIT on getppid()
+
+// Windows alternative:
+// AssignProcessToJobObject + JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+```
+
+### Socket Type Safety
+
+```cpp
+// ❌ Common mistake: comparing SOCKET to -1 on Windows
+if (fd == -1) { /* WRONG on Windows */ }
+
+// ✅ Use the shim constant
+if (fd == INVALID_SOCK) { /* Works everywhere */ }
+```
+
+### `ssize_t` on MSVC
+
+```cpp
+// ❌ Won't compile on MSVC
+ssize_t bytes_read = read(fd, buf, len);
+
+// ✅ Use int or intptr_t in cross-platform code
+int bytes_read = tcp_recv(fd, buf, len);
+```
+
+### Header Include Order
+
+```cpp
+// ❌ Including <windows.h> pulls in <winsock.h> which conflicts
+//    with <winsock2.h>
+#include <windows.h>
+#include <winsock2.h>  // ERROR: redefinition
+
+// ✅ Always include <winsock2.h> BEFORE <windows.h>, or use
+//    WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+```
+
+Hibiki avoids this entirely by never including Windows headers in
+`.hpp` files — they only appear in `_win32.cpp` files.
+
+---
+
+## Debugging Cross-Platform Builds
+
+### Running Windows Targets
+
+Windows builds are cross-compiled using MinGW or built natively
+with MSVC. To test locally on Linux:
+
+```bash
+# Cross-compile (if toolchain configured)
+bazel build --platforms=@platforms//os:windows //:hbk-play
+
+# Run under Wine (basic smoke test)
+wine bazel-bin/hbk-play.exe
+```
+
+### Checking for Platform Leaks
+
+Use `grep` to find accidental platform-specific includes in headers:
+
+```bash
+# Should find NO results in .hpp files
+grep -rn '#include <windows.h>\|#include <unistd.h>\|#include <sys/' *.hpp
+grep -rn 'pid_t\|HANDLE\|SOCKET' *.hpp
+```
+
+### Testing All Platforms in CI
+
+```yaml
+# .github/workflows/build.yml (example)
+strategy:
+  matrix:
+    os: [ubuntu-latest, macos-latest, windows-latest]
+```
+
+Each platform runs `bazel test //...` with the correct `select()`
+branches automatically chosen.
+
+---
+
+## Code Style Rules for Cross-Platform C++
+
+1. **No `#ifdef` in `.hpp` files** — use pimpl or virtual interface
+2. **No platform types in headers** — no `pid_t`, `HANDLE`, `SOCKET`,
+   `snd_pcm_t*` etc. Use opaque wrappers or forward-declared `Impl`
+3. **Use `select()` in BUILD** — never rely on preprocessor for
+   source selection
+4. **One `.cpp` per platform** — suffix with `_posix`, `_alsa`,
+   `_win32`, `_coreaudio`, `_x11`, `_mac`
+5. **Shared logic in shared `.cpp`** — TCP channel logic is in
+   `worker_channel_tcp.cpp`, calling platform-neutral `tcp.hpp`
+6. **Platform linkopts in `select()`** — `-lasound`, `-framework
+   CoreAudio`, `-lws2_32` etc.
+7. **Prefer standard C++17** — `<string>`, `<vector>`, `<thread>`,
+   `<mutex>`, `<filesystem>` work everywhere
+8. **Avoid glibc-isms** — `prctl`, `epoll`, `inotify` are Linux-only;
+   provide alternatives via the platform shim pattern

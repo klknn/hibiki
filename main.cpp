@@ -328,6 +328,9 @@ void run_ipc_loop(ProjectState& state) {
       case hibiki::pb::commands::Request::kSetPluginHostMode:
         handleSetPluginHostMode(request.set_plugin_host_mode(), state);
         break;
+      case hibiki::pb::commands::Request::kScanRemotePlugins:
+        handleScanRemotePlugins(request.scan_remote_plugins());
+        break;
     }
     if (state.quit) break;
   }

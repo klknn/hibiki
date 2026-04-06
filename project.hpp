@@ -32,7 +32,7 @@ struct ProjectState {
 
   // Plugin hosting mode (set via SetPluginHostMode command)
   PluginHostMode plugin_host_mode = PluginHostMode::IN_PROCESS;
-  std::string remote_host;  // "host:port" when plugin_host_mode == REMOTE
+  std::vector<std::string> remote_hosts;  // ["host:port", ...] for REMOTE mode
 };
 
 // Returns a pointer to the track, creating it if it doesn't exist

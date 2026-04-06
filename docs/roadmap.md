@@ -66,21 +66,25 @@
 
 ## Plugin Sandbox Workers
 
-> **Status: Not yet planned** — this section captures future ideas for safe plugin isolation.
+> **Status: Implemented** — core sandbox and remote worker infrastructure is complete.
 
 ### Motivation
 VST3 plugins run in-process and a misbehaving plugin can crash the entire DAW.
 Sandboxing each plugin in a separate worker process improves stability, security, and enables per-plugin resource limits.
 
-### Short-term (research)
-- [ ] Investigate IPC mechanisms for real-time audio streaming between host and sandbox (shared memory ring buffers, Unix domain sockets)
-- [ ] Prototype single-plugin-per-process architecture with latency benchmarks
-- [ ] Survey prior art (CLAP, Bitwig sandbox, Ardour process separation)
+### Completed
+- [x] IPC mechanism for real-time audio streaming (Unix socket + shared memory)
+- [x] Single-plugin-per-process architecture (`hbk-plugin-worker`)
+- [x] Crash isolation — worker death doesn't crash the DAW
+- [x] `IPlugin` interface (`Vst3Plugin` + `PluginProxy`)
+- [x] Cross-platform channel abstraction (`WorkerChannel`)
+- [x] Remote TCP daemon (`hbk-worker-daemon`) for cross-OS hosting
+- [x] Multi-server round-robin distribution
+- [x] UI integration (Settings → Plugins, Browser per-host tree)
 
-### Long-term (implementation)
-- [ ] Sandbox worker process that loads one VST3 plugin and communicates audio/MIDI/parameter data with the host via shared memory
-- [ ] Crash isolation — automatic restart of a faulted plugin worker without interrupting playback
+### Remaining (long-term)
+- [ ] Automatic crash recovery — respawn worker + restore cached state
 - [ ] Resource limits — CPU time and memory caps per plugin worker
-- [ ] GPU/UI isolation — plugin editor windows hosted in the sandbox process with XEmbed or similar
-- [ ] Security policy — restrict file-system and network access for untrusted plugins
+- [ ] GPU/UI isolation — plugin editor windows hosted in sandbox with XEmbed
+- [ ] Security policy — restrict file-system/network access for untrusted plugins
 - [ ] Plugin scanning in sandbox — avoid crashes during plugin enumeration

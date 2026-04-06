@@ -15,6 +15,8 @@
 #include "pb/commands.pb.h"
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
+#include "pb/plugin_worker.pb.h"
+#include "tcp.hpp"
 #include "track.hpp"
 #include "vst3_host.hpp"
 
@@ -231,7 +233,7 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
       auto track = GetOrCreateTrack(state, tidx);
       int target_idx =
           track->LoadPlugin(vpath, pidx, state.sample_rate,
-                            state.plugin_host_mode, state.remote_host);
+                            state.plugin_host_mode, state.remote_hosts);
       if (target_idx != -1) {
         std::vector<VstParamInfo> params;
         auto& plugin = track->plugins[target_idx];
@@ -650,7 +652,10 @@ void handleSetPluginHostMode(const pb::commands::SetPluginHostMode& cmd,
       break;
     case pb::commands::PLUGIN_HOST_REMOTE:
       state.plugin_host_mode = PluginHostMode::REMOTE;
-      state.remote_host = cmd.remote_host();
+      state.remote_hosts.clear();
+      for (const auto& host : cmd.remote_hosts()) {
+        state.remote_hosts.push_back(host);
+      }
       break;
     case pb::commands::PLUGIN_HOST_IN_PROCESS:
     default:
@@ -658,6 +663,154 @@ void handleSetPluginHostMode(const pb::commands::SetPluginHostMode& cmd,
       break;
   }
   sendAck("SET_PLUGIN_HOST_MODE", true);
+}
+
+void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
+  // Query each remote daemon for its plugin list in parallel.
+  for (const auto& host_port : cmd.remote_hosts()) {
+    std::string hp = host_port;
+    std::thread([hp]() {
+      std::string host = hp;
+      int port = 9100;
+      auto colon = hp.rfind(':');
+      if (colon != std::string::npos) {
+        host = hp.substr(0, colon);
+        port = std::stoi(hp.substr(colon + 1));
+      }
+
+      tcp_init();
+
+      socket_t fd = socket(AF_INET, SOCK_STREAM, 0);
+      if (fd == INVALID_SOCK) {
+        std::cerr << "ScanRemote: socket() failed for " << hp << "\n";
+        return;
+      }
+
+      struct sockaddr_in addr;
+      memset(&addr, 0, sizeof(addr));
+      addr.sin_family = AF_INET;
+      addr.sin_port = htons(port);
+
+      // Resolve hostname
+      struct hostent* he = gethostbyname(host.c_str());
+      if (!he) {
+        std::cerr << "ScanRemote: cannot resolve " << host << "\n";
+        tcp_close(fd);
+        return;
+      }
+      memcpy(&addr.sin_addr, he->h_addr_list[0], he->h_length);
+
+      if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        std::cerr << "ScanRemote: connect failed for " << hp << "\n";
+        tcp_close(fd);
+        return;
+      }
+
+      // Helper: length-prefixed send/recv
+      auto tcpSend = [&](const std::string& data) -> bool {
+        uint32_t size = static_cast<uint32_t>(data.size());
+        const uint8_t* p = reinterpret_cast<const uint8_t*>(&size);
+        size_t rem = sizeof(size);
+        while (rem > 0) {
+          int n = tcp_send(fd, p, rem);
+          if (n <= 0) return false;
+          p += n;
+          rem -= n;
+        }
+        p = reinterpret_cast<const uint8_t*>(data.data());
+        rem = data.size();
+        while (rem > 0) {
+          int n = tcp_send(fd, p, rem);
+          if (n <= 0) return false;
+          p += n;
+          rem -= n;
+        }
+        return true;
+      };
+
+      auto tcpRecv = [&](std::string& out) -> bool {
+        uint32_t size = 0;
+        uint8_t* p = reinterpret_cast<uint8_t*>(&size);
+        size_t rem = sizeof(size);
+        while (rem > 0) {
+          int n = tcp_recv(fd, p, rem);
+          if (n <= 0) return false;
+          p += n;
+          rem -= n;
+        }
+        if (size > 4 * 1024 * 1024) return false;
+        out.resize(size);
+        p = reinterpret_cast<uint8_t*>(out.data());
+        rem = size;
+        while (rem > 0) {
+          int n = tcp_recv(fd, p, rem);
+          if (n <= 0) return false;
+          p += n;
+          rem -= n;
+        }
+        return true;
+      };
+
+      // Send ListPlugins request
+      pb::worker::WorkerRequest req;
+      auto* lp = req.mutable_list_plugins();
+      lp->set_search_path("/");  // daemon scans its local paths
+
+      std::string req_data;
+      req.SerializeToString(&req_data);
+      if (!tcpSend(req_data)) {
+        std::cerr << "ScanRemote: send failed for " << hp << "\n";
+        tcp_close(fd);
+        return;
+      }
+
+      std::string resp_data;
+      if (!tcpRecv(resp_data)) {
+        std::cerr << "ScanRemote: recv failed for " << hp << "\n";
+        tcp_close(fd);
+        return;
+      }
+
+      pb::worker::WorkerResponse resp;
+      if (!resp.ParseFromString(resp_data) ||
+          resp.result_case() !=
+              pb::worker::WorkerResponse::kListPluginsResult) {
+        std::cerr << "ScanRemote: bad response from " << hp << "\n";
+        tcp_close(fd);
+        return;
+      }
+
+      // Send shutdown to be polite
+      pb::worker::WorkerRequest shutdown_req;
+      shutdown_req.mutable_shutdown();
+      std::string sd;
+      shutdown_req.SerializeToString(&sd);
+      tcpSend(sd);
+      tcp_close(fd);
+
+      // Convert to PluginListResponse notification
+      pb::notifications::PluginListResponse plr;
+      plr.set_path("/");
+      plr.set_remote_host(hp);
+      for (const auto& pi : resp.list_plugins_result().plugins()) {
+        auto* pd = plr.add_plugins();
+        pd->set_index(pi.plugin_index());
+        pd->set_name(pi.name());
+        pd->set_vendor("");  // worker proto doesn't have vendor
+      }
+
+      pb::notifications::Notification notif;
+      *notif.mutable_plugin_list() = plr;
+      std::string notif_data;
+      notif.SerializeToString(&notif_data);
+      sendNotification(reinterpret_cast<const uint8_t*>(notif_data.data()),
+                       notif_data.size());
+
+      std::cerr << "ScanRemote: found " << plr.plugins_size() << " plugins on "
+                << hp << "\n";
+    }).detach();
+  }
+  sendAck("SCAN_REMOTE_PLUGINS", true);
 }
 
 }  // namespace hibiki

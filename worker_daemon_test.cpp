@@ -7,11 +7,25 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <string>
 #include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <io.h>  // _access
+#include <windows.h>
+#define F_OK 0
+#define X_OK 0  // Windows _access doesn't distinguish X_OK
+#define access _access
+#else
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 #include "pb/plugin_worker.pb.h"
 #include "tcp.hpp"
@@ -101,15 +115,26 @@ std::string findDaemonBinary() {
   // Try runfiles (Bazel test environment)
   const char* srcdir = getenv("TEST_SRCDIR");
   if (srcdir) {
+#ifdef _WIN32
+    std::string p = std::string(srcdir) + "/_main/hbk-worker-daemon.exe";
+#else
     std::string p = std::string(srcdir) + "/_main/hbk-worker-daemon";
+#endif
     if (access(p.c_str(), X_OK) == 0) return p;
   }
   // Try bazel-bin
+#ifdef _WIN32
+  if (access("bazel-bin/hbk-worker-daemon.exe", X_OK) == 0)
+    return "bazel-bin/hbk-worker-daemon.exe";
+  if (access("./hbk-worker-daemon.exe", X_OK) == 0)
+    return "./hbk-worker-daemon.exe";
+#else
   if (access("bazel-bin/hbk-worker-daemon", X_OK) == 0)
     return "bazel-bin/hbk-worker-daemon";
   // Try CWD
   if (access("./hbk-worker-daemon", X_OK) == 0)
     return "./hbk-worker-daemon";
+#endif
   return "";
 }
 
@@ -149,7 +174,11 @@ socket_t connectToPort(int port, int max_attempts = 20) {
 
 class WorkerDaemonTest : public ::testing::Test {
  protected:
+#ifdef _WIN32
+  HANDLE daemon_handle_ = nullptr;
+#else
   pid_t daemon_pid_ = -1;
+#endif
   int port_ = 0;
 
   void SetUp() override {
@@ -162,6 +191,23 @@ class WorkerDaemonTest : public ::testing::Test {
 
     port_ = findFreePort();
 
+#ifdef _WIN32
+    std::string cmd_line = "\"" + daemon + "\" --port " + std::to_string(port_);
+
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+
+    ASSERT_TRUE(CreateProcessA(NULL, cmd_line.data(), NULL, NULL, FALSE,
+                               CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+        << "CreateProcess failed: " << GetLastError();
+
+    daemon_handle_ = pi.hProcess;
+    CloseHandle(pi.hThread);
+
+    std::cerr << "Spawned hbk-worker-daemon (handle=" << daemon_handle_
+              << " port=" << port_ << ")\n";
+#else
     daemon_pid_ = fork();
     ASSERT_NE(daemon_pid_, -1) << "fork() failed";
 
@@ -175,15 +221,26 @@ class WorkerDaemonTest : public ::testing::Test {
 
     std::cerr << "Spawned hbk-worker-daemon (pid=" << daemon_pid_
               << " port=" << port_ << ")\n";
+#endif
   }
 
   void TearDown() override {
+#ifdef _WIN32
+    if (daemon_handle_) {
+      TerminateProcess(daemon_handle_, 0);
+      WaitForSingleObject(daemon_handle_, 5000);
+      CloseHandle(daemon_handle_);
+      daemon_handle_ = nullptr;
+      std::cerr << "Stopped hbk-worker-daemon\n";
+    }
+#else
     if (daemon_pid_ > 0) {
       kill(daemon_pid_, SIGTERM);
       int status;
       waitpid(daemon_pid_, &status, 0);
       std::cerr << "Stopped hbk-worker-daemon\n";
     }
+#endif
   }
 };
 

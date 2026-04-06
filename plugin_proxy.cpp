@@ -1,8 +1,8 @@
-#include "plugin_proxy.hpp"
+// Platform-neutral implementation of PluginProxy.
+// Platform-specific methods (spawnLocalWorker, isWorkerAlive, killWorker)
+// are in plugin_proxy_posix.cpp / plugin_proxy_win32.cpp.
 
-#include <signal.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "plugin_proxy.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -17,27 +17,6 @@ namespace hibiki {
 
 namespace {
 
-std::string generateUniqueId() {
-  static std::mt19937 rng(std::random_device{}());
-  std::uniform_int_distribution<uint32_t> dist;
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%08x", dist(rng));
-  return buf;
-}
-
-std::string findWorkerBinary() {
-  char exe_path[1024];
-  ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-  if (len <= 0) return "hbk-plugin-worker";
-  exe_path[len] = '\0';
-  std::string path(exe_path);
-  size_t slash = path.find_last_of('/');
-  if (slash != std::string::npos) {
-    path = path.substr(0, slash + 1) + "hbk-plugin-worker";
-  }
-  return path;
-}
-
 bool sendRequest(WorkerChannel* channel,
                  const hibiki::pb::worker::WorkerRequest& req,
                  hibiki::pb::worker::WorkerResponse& resp) {
@@ -51,6 +30,15 @@ bool sendRequest(WorkerChannel* channel,
 }
 
 }  // namespace
+
+// Shared helper used by platform-specific files.
+std::string generateUniqueId() {
+  static std::mt19937 rng(std::random_device{}());
+  std::uniform_int_distribution<uint32_t> dist;
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%08x", dist(rng));
+  return buf;
+}
 
 // Local sandbox mode
 PluginProxy::PluginProxy() : is_remote_(false) {}
@@ -69,52 +57,8 @@ PluginProxy::~PluginProxy() {
     channel_->sendMessage(data.data(), data.size());
   }
 
-  if (!is_remote_ && worker_pid_ > 0) {
-    int status;
-    waitpid(worker_pid_, &status, WNOHANG);
-    if (isWorkerAlive()) {
-      kill(worker_pid_, SIGTERM);
-      waitpid(worker_pid_, &status, 0);
-    }
-  }
-
+  killWorker();  // Platform-specific cleanup (posix or win32)
   channel_.reset();
-}
-
-bool PluginProxy::spawnLocalWorker() {
-  std::string uid = generateUniqueId();
-  socket_path_ = "/tmp/hbk-plugin-" + uid + ".sock";
-  shm_name_ = "/hbk-plugin-" + uid;
-
-  auto* ch = WorkerChannelLocal::createServer(socket_path_, shm_name_, 512, 2);
-  if (!ch) return false;
-  channel_.reset(ch);
-
-  std::string worker_bin = findWorkerBinary();
-  worker_pid_ = fork();
-  if (worker_pid_ < 0) {
-    std::cerr << "PluginProxy: fork() failed: " << strerror(errno) << "\n";
-    channel_.reset();
-    return false;
-  }
-
-  if (worker_pid_ == 0) {
-    execl(worker_bin.c_str(), "hbk-plugin-worker", socket_path_.c_str(),
-          shm_name_.c_str(), nullptr);
-    std::cerr << "PluginProxy: execl() failed: " << strerror(errno) << "\n";
-    _exit(1);
-  }
-
-  if (!static_cast<WorkerChannelLocal*>(channel_.get())->accept()) {
-    std::cerr << "PluginProxy: accept() failed\n";
-    kill(worker_pid_, SIGTERM);
-    waitpid(worker_pid_, nullptr, 0);
-    worker_pid_ = -1;
-    channel_.reset();
-    return false;
-  }
-
-  return true;
 }
 
 bool PluginProxy::connectRemote() {
@@ -136,14 +80,6 @@ bool PluginProxy::connectRemote() {
   }
 
   return true;
-}
-
-bool PluginProxy::isWorkerAlive() const {
-  if (is_remote_) return channel_ != nullptr;
-  if (worker_pid_ <= 0) return false;
-  int status;
-  pid_t result = waitpid(worker_pid_, &status, WNOHANG);
-  return result == 0;
 }
 
 bool PluginProxy::load(const std::string& path, int plugin_index,

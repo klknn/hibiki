@@ -135,7 +135,10 @@ cc_library(
 
 cc_library(
     name = "plugin_proxy",
-    srcs = ["plugin_proxy.cpp"],
+    srcs = ["plugin_proxy.cpp"] + select({
+        "@platforms//os:windows": ["plugin_proxy_win32.cpp"],
+        "//conditions:default": ["plugin_proxy_posix.cpp"],
+    }),
     hdrs = ["plugin_proxy.hpp"],
     linkopts = select({
         "@platforms//os:windows": [],

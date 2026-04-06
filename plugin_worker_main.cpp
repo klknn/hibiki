@@ -7,8 +7,10 @@
 // and enters a command loop receiving WorkerRequests and sending
 // WorkerResponses.
 
+#ifndef _WIN32
 #include <signal.h>
 #include <sys/prctl.h>
+#endif
 
 #include <cstring>
 #include <iostream>

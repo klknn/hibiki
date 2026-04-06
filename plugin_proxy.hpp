@@ -1,7 +1,5 @@
 #pragma once
 
-#include <sys/types.h>
-
 #include <memory>
 #include <string>
 
@@ -53,9 +51,11 @@ class PluginProxy : public IPlugin {
   bool spawnLocalWorker();
   bool connectRemote();
   bool isWorkerAlive() const;
+  void killWorker();  // Platform-specific worker cleanup
 
   std::unique_ptr<WorkerChannel> channel_;
-  pid_t worker_pid_ = -1;
+  int worker_pid_ = -1;            // POSIX: pid_t (fork result)
+  void* worker_handle_ = nullptr;  // Windows: HANDLE (CreateProcess result)
   bool is_remote_ = false;
 
   // Local mode

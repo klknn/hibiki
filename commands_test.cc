@@ -317,4 +317,70 @@ TEST_F(CommandsTest, StopTrack) {
   EXPECT_NO_FATAL_FAILURE(hibiki::handleTrackCmd(cmd, state, history));
 }
 
+// ─── Plugin editor commands ─────────────────────────────────────────
+
+TEST_F(CommandsTest, ShowPluginGuiInvalidTrack) {
+  // No tracks created — should not crash
+  hibiki::pb::commands::PluginCmd cmd;
+  cmd.set_action(hibiki::pb::commands::PluginCmd::ACTION_SHOW_GUI);
+  cmd.mutable_target()->set_track_index(99);
+  cmd.mutable_target()->set_plugin_index(0);
+
+  EXPECT_NO_FATAL_FAILURE(hibiki::handlePluginCmd(cmd, state, history));
+}
+
+TEST_F(CommandsTest, StopPluginGuiInvalidTrack) {
+  hibiki::pb::commands::PluginCmd cmd;
+  cmd.set_action(hibiki::pb::commands::PluginCmd::ACTION_STOP_GUI);
+  cmd.mutable_target()->set_track_index(99);
+  cmd.mutable_target()->set_plugin_index(0);
+
+  EXPECT_NO_FATAL_FAILURE(hibiki::handlePluginCmd(cmd, state, history));
+}
+
+TEST_F(CommandsTest, GetEditorFrameNoPlugin) {
+  // Create a track but no plugin — should not crash
+  hibiki::GetOrCreateTrack(state, 0);
+
+  hibiki::pb::commands::PluginCmd cmd;
+  cmd.set_action(hibiki::pb::commands::PluginCmd::ACTION_GET_EDITOR_FRAME);
+  cmd.mutable_target()->set_track_index(0);
+  cmd.mutable_target()->set_plugin_index(0);
+
+  EXPECT_NO_FATAL_FAILURE(hibiki::handlePluginCmd(cmd, state, history));
+}
+
+TEST_F(CommandsTest, GetEditorFrameInvalidTrack) {
+  hibiki::pb::commands::PluginCmd cmd;
+  cmd.set_action(hibiki::pb::commands::PluginCmd::ACTION_GET_EDITOR_FRAME);
+  cmd.mutable_target()->set_track_index(99);
+  cmd.mutable_target()->set_plugin_index(0);
+
+  EXPECT_NO_FATAL_FAILURE(hibiki::handlePluginCmd(cmd, state, history));
+}
+
+TEST_F(CommandsTest, SendEditorInputNoPlugin) {
+  hibiki::GetOrCreateTrack(state, 0);
+
+  hibiki::pb::commands::PluginCmd cmd;
+  cmd.set_action(hibiki::pb::commands::PluginCmd::ACTION_SEND_EDITOR_INPUT);
+  cmd.mutable_target()->set_track_index(0);
+  cmd.mutable_target()->set_plugin_index(0);
+  cmd.set_input_type(0);  // MOUSE_MOVE
+  cmd.set_input_x(100);
+  cmd.set_input_y(200);
+
+  EXPECT_NO_FATAL_FAILURE(hibiki::handlePluginCmd(cmd, state, history));
+}
+
+TEST_F(CommandsTest, SendEditorInputInvalidTrack) {
+  hibiki::pb::commands::PluginCmd cmd;
+  cmd.set_action(hibiki::pb::commands::PluginCmd::ACTION_SEND_EDITOR_INPUT);
+  cmd.mutable_target()->set_track_index(99);
+  cmd.mutable_target()->set_plugin_index(0);
+  cmd.set_input_type(1);  // MOUSE_DOWN
+
+  EXPECT_NO_FATAL_FAILURE(hibiki::handlePluginCmd(cmd, state, history));
+}
+
 }  // namespace hibiki

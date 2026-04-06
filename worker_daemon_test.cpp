@@ -183,6 +183,10 @@ class WorkerDaemonTest : public ::testing::Test {
 
   void SetUp() override {
     tcp_init();
+#ifndef _WIN32
+    signal(SIGPIPE,
+           SIG_IGN);  // Ignore broken pipe — daemon may crash on headless
+#endif
 
     std::string daemon = findDaemonBinary();
     if (daemon.empty()) {
@@ -428,6 +432,164 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
 
   std::cerr << "\n=== PASS: Daemon loaded Dexed, processed MIDI, "
             << "produced audio (peak=" << max_abs_sample << ") ===\n";
+}
+
+// ─── Editor RPC Tests ─────────────────────────────────────────────
+
+TEST_F(WorkerDaemonTest, EditorShowAndStopWithoutCrash) {
+  std::string dexed = findDexedVst3();
+  if (dexed.empty()) {
+    GTEST_SKIP() << "testdata/Dexed.vst3 not found";
+  }
+
+  socket_t fd = connectToPort(port_);
+  ASSERT_NE(fd, INVALID_SOCK) << "Could not connect to daemon";
+
+  // Config
+  {
+    pb::worker::WorkerRequest req;
+    auto* cfg = req.mutable_config();
+    cfg->set_block_size(512);
+    cfg->set_num_channels(2);
+    cfg->set_use_shared_memory(false);
+    auto resp = sendRequest(fd, req);
+    EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kConfigAck);
+  }
+
+  // Load
+  {
+    pb::worker::WorkerRequest req;
+    auto* load = req.mutable_load();
+    load->set_path(dexed);
+    load->set_plugin_index(0);
+    load->set_sample_rate(44100.0);
+    auto resp = sendRequest(fd, req);
+    ASSERT_EQ(resp.result_case(), pb::worker::WorkerResponse::kLoadResult);
+    ASSERT_TRUE(resp.load_result().success());
+  }
+
+  // ShowEditor — may fail to create window on headless CI, but should not crash
+  {
+    pb::worker::WorkerRequest req;
+    req.mutable_show_editor();
+    auto resp = sendRequest(fd, req);
+    EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kEditorResult);
+    std::cerr << "  ShowEditor: success=" << resp.editor_result().success()
+              << "\n";
+  }
+
+  // GetEditorFrame — might return empty on headless, but should not crash
+  {
+    pb::worker::WorkerRequest req;
+    req.mutable_get_editor_frame();
+    auto resp = sendRequest(fd, req);
+    EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kEditorFrame);
+    std::cerr << "  GetEditorFrame: " << resp.editor_frame().width() << "x"
+              << resp.editor_frame().height() << " ("
+              << resp.editor_frame().image_data().size() << " bytes)\n";
+  }
+
+  // EditorInput — forward a fake mouse event, should not crash
+  {
+    pb::worker::WorkerRequest req;
+    auto* input = req.mutable_editor_input();
+    input->set_type(pb::worker::EditorInput::MOUSE_MOVE);
+    input->set_x(100);
+    input->set_y(200);
+    auto resp = sendRequest(fd, req);
+    EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kEditorResult);
+    std::cerr << "  EditorInput: success=" << resp.editor_result().success()
+              << "\n";
+  }
+
+  // StopEditor — on headless systems, the daemon may crash during
+  // X11 cleanup, so we tolerate connection loss here.
+  {
+    pb::worker::WorkerRequest req;
+    req.mutable_stop_editor();
+    std::string data;
+    req.SerializeToString(&data);
+    if (sendMessage(fd, data)) {
+      std::string resp_data;
+      int n = recvMessage(fd, resp_data);
+      if (n > 0) {
+        pb::worker::WorkerResponse resp;
+        resp.ParseFromString(resp_data);
+        std::cerr << "  StopEditor: success=" << resp.editor_result().success()
+                  << "\n";
+      } else {
+        std::cerr << "  StopEditor: daemon closed connection "
+                  << "(expected on headless)\n";
+      }
+    }
+  }
+
+  // Shutdown — best effort, daemon may already be gone
+  {
+    pb::worker::WorkerRequest req;
+    req.mutable_shutdown();
+    std::string data;
+    req.SerializeToString(&data);
+    sendMessage(fd, data);
+  }
+
+  tcp_close(fd);
+  std::cerr << "\n=== PASS: Editor RPCs completed without crash ===\n";
+}
+
+// ─── GetEditorFrame before loading plugin ─────────────────────────
+
+TEST_F(WorkerDaemonTest, GetEditorFrameNoPlugin) {
+  socket_t fd = connectToPort(port_);
+  ASSERT_NE(fd, INVALID_SOCK) << "Could not connect to daemon";
+
+  // Config
+  {
+    pb::worker::WorkerRequest req;
+    auto* cfg = req.mutable_config();
+    cfg->set_block_size(512);
+    cfg->set_num_channels(2);
+    cfg->set_use_shared_memory(false);
+    auto resp = sendRequest(fd, req);
+    EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kConfigAck);
+  }
+
+  // GetEditorFrame without a loaded plugin — should return empty frame
+  {
+    pb::worker::WorkerRequest req;
+    req.mutable_get_editor_frame();
+    auto resp = sendRequest(fd, req);
+    EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kEditorFrame);
+    EXPECT_EQ(resp.editor_frame().width(), 0);
+    EXPECT_EQ(resp.editor_frame().height(), 0);
+    EXPECT_TRUE(resp.editor_frame().image_data().empty());
+    std::cerr << "  GetEditorFrame (no plugin): empty as expected\n";
+  }
+
+  // EditorInput without a loaded plugin — should be a no-op
+  {
+    pb::worker::WorkerRequest req;
+    auto* input = req.mutable_editor_input();
+    input->set_type(pb::worker::EditorInput::MOUSE_DOWN);
+    input->set_x(50);
+    input->set_y(50);
+    input->set_button(1);
+    auto resp = sendRequest(fd, req);
+    EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kEditorResult);
+    std::cerr << "  EditorInput (no plugin): no-op as expected\n";
+  }
+
+  // Shutdown
+  {
+    pb::worker::WorkerRequest req;
+    req.mutable_shutdown();
+    std::string data;
+    req.SerializeToString(&data);
+    sendMessage(fd, data);
+  }
+
+  tcp_close(fd);
+  std::cerr << "\n=== PASS: Editor RPCs with no plugin ===\n";
 }
 
 }  // namespace

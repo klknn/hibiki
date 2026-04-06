@@ -88,6 +88,16 @@ objc_library(
     alwayslink = True,
 )
 
+# Stub implementations of platform-specific Vst3Plugin methods.
+# Used only by test binaries that don't link a real platform library.
+cc_library(
+    name = "vst3_host_stub",
+    srcs = ["vst3_host_stub.cpp"],
+    deps = [":vst3_host"],
+    alwayslink = True,
+    testonly = True,
+)
+
 cc_library(
     name = "midi",
     srcs = ["midi.cpp"],
@@ -410,6 +420,7 @@ cc_test(
     deps = [
         ":test_utils",
         ":track",
+        ":vst3_host_stub",
         "@googletest//:gtest_main",
     ],
 )
@@ -446,6 +457,7 @@ cc_test(
         ":audio_file",
         ":project",
         ":test_utils",
+        ":vst3_host_stub",
         "@googletest//:gtest_main",
     ],
 )
@@ -628,6 +640,20 @@ java_test(
     name = "timeline_view_test",
     srcs = ["src/test/java/hibiki/ui/TimelineViewTest.java"],
     test_class = "hibiki.ui.TimelineViewTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "//pb:commands_java_proto",
+        "//pb:core_java_proto",
+        "//pb:notifications_java_proto",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "remote_editor_panel_test",
+    srcs = ["src/test/java/hibiki/ui/RemoteEditorPanelTest.java"],
+    test_class = "hibiki.ui.RemoteEditorPanelTest",
     deps = [
         ":hibiki-gui-lib",
         "//pb:commands_java_proto",

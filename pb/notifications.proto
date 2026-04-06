@@ -53,6 +53,7 @@ message PluginDescription {
   int32 index = 1;
   string name = 2;
   string vendor = 3;
+  string path = 4;  // Filesystem path to the .vst3 bundle (from remote scan)
 }
 
 // ─── Legacy Notification Types ──────────────────────────────────────

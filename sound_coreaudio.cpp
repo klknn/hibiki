@@ -92,7 +92,8 @@ class SoundDeviceCoreAudio : public SoundDevice {
   }
 
  public:
-  SoundDeviceCoreAudio(int rate, int ch) : sample_rate(rate), channels(ch) {
+  SoundDeviceCoreAudio(int rate, int ch, int /*latency_ms*/)
+      : sample_rate(rate), channels(ch) {
     impl = std::make_unique<Impl>(rate, ch);
     AudioComponentDescription desc;
     desc.componentType = kAudioUnitType_Output;
@@ -185,8 +186,9 @@ class SoundDeviceCoreAudio : public SoundDevice {
 
 }  // namespace
 
-std::unique_ptr<SoundDevice> SoundDevice::create(int rate, int ch) {
-  return std::make_unique<SoundDeviceCoreAudio>(rate, ch);
+std::unique_ptr<SoundDevice> SoundDevice::create(int rate, int ch,
+                                                 int latency_ms) {
+  return std::make_unique<SoundDeviceCoreAudio>(rate, ch, latency_ms);
 }
 
 }  // namespace hibiki

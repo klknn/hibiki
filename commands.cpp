@@ -797,6 +797,7 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
         pd->set_index(pi.plugin_index());
         pd->set_name(pi.name());
         pd->set_vendor("");  // worker proto doesn't have vendor
+        pd->set_path(pi.path());  // actual .vst3 bundle path on remote
       }
 
       pb::notifications::Notification notif;

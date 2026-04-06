@@ -134,6 +134,10 @@ message ScanRemotePlugins {
   repeated string remote_hosts = 1;  // daemons to query for plugin lists
 }
 
+message SetAudioBufferSize {
+  int32 buffer_size_ms = 1;  // audio buffer latency in milliseconds
+}
+
 // ─── Request Envelope ───────────────────────────────────────────────
 
 // Contains the new domain-grouped commands.
@@ -147,5 +151,6 @@ message Request {
     ProjectCmd project = 45;
     SetPluginHostMode set_plugin_host_mode = 46;
     ScanRemotePlugins scan_remote_plugins = 47;
+    SetAudioBufferSize set_audio_buffer_size = 48;
   }
 }

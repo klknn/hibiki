@@ -35,11 +35,13 @@ public class BrowserPane extends JPanel {
     int index;
     String name;
     String vendor;
+    String path; // .vst3 bundle path on the remote filesystem
 
-    PluginMetadata(int index, String name, String vendor) {
+    PluginMetadata(int index, String name, String vendor, String path) {
       this.index = index;
       this.name = name;
       this.vendor = vendor;
+      this.path = path;
     }
   }
 
@@ -135,7 +137,7 @@ public class BrowserPane extends JPanel {
       List<PluginMetadata> plugins = new ArrayList<>();
       for (int i = 0; i < list.getPluginsCount(); i++) {
         var p = list.getPlugins(i);
-        plugins.add(new PluginMetadata(p.getIndex(), p.getName(), p.getVendor()));
+        plugins.add(new PluginMetadata(p.getIndex(), p.getName(), p.getVendor(), p.getPath()));
       }
       if (!remoteHost.isEmpty()) {
         // Remote daemon — store under host key
@@ -199,9 +201,13 @@ public class BrowserPane extends JPanel {
       String host = entry.getKey();
       DefaultMutableTreeNode hostNode = new DefaultMutableTreeNode("\uD83D\uDCE1 " + host);
       for (PluginMetadata meta : entry.getValue()) {
+        // Use the real .vst3 bundle path from the remote daemon, fall back to host
+        File bundleFile = (meta.path != null && !meta.path.isEmpty())
+            ? new File(meta.path)
+            : new File(host);
         hostNode.add(
             new DefaultMutableTreeNode(
-                new FileItem(new File(host), "remote-vst", meta.name, meta.vendor, meta.index)));
+                new FileItem(bundleFile, "remote-vst", meta.name, meta.vendor, meta.index)));
       }
       sortAndGroupPlugins(hostNode);
       root.add(hostNode);
@@ -356,8 +362,9 @@ public class BrowserPane extends JPanel {
       if ("vst".equals(item.type)) {
         sendLoadPlugin(item.file.getAbsolutePath(), item.pluginIndex);
       } else if ("remote-vst".equals(item.type)) {
-        // For remote plugins, file.getName() is the host:port
-        sendLoadPlugin(item.file.getName() + ":" + item.pluginIndex, item.pluginIndex);
+        // For remote plugins, use getPath() not getAbsolutePath() to avoid
+        // Linux CWD being prepended to Windows paths (e.g. C:\...).
+        sendLoadPlugin(item.file.getPath(), item.pluginIndex);
       } else if ("midi".equals(item.type)) {
         sendLoadClip(item.file.getAbsolutePath(), false);
       } else if ("audio".equals(item.type)) {

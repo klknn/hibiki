@@ -17,7 +17,8 @@ class SoundDevice {
   virtual void write(const std::vector<float>& interleaved_data,
                      int num_frames) = 0;
 
-  static std::unique_ptr<SoundDevice> create(int rate = 44100, int ch = 2);
+  static std::unique_ptr<SoundDevice> create(int rate = 44100, int ch = 2,
+                                             int latency_ms = 200);
 };
 
 }  // namespace hibiki

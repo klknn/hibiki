@@ -18,7 +18,8 @@ class SoundDeviceAlsa : public SoundDevice {
   int channels;
 
  public:
-  SoundDeviceAlsa(int rate, int ch) : sample_rate(rate), channels(ch) {
+  SoundDeviceAlsa(int rate, int ch, int latency_ms)
+      : sample_rate(rate), channels(ch) {
     impl = std::make_unique<Impl>();
     if (snd_pcm_open(&impl->pcm_handle, "default", SND_PCM_STREAM_PLAYBACK, 0) <
         0) {
@@ -36,8 +37,8 @@ class SoundDeviceAlsa : public SoundDevice {
     int err =
         snd_pcm_set_params(impl->pcm_handle, SND_PCM_FORMAT_FLOAT_LE,
                            SND_PCM_ACCESS_RW_INTERLEAVED, channels, sample_rate,
-                           1,       // allow resampling
-                           50000);  // 50ms latency
+                           1,                   // allow resampling
+                           latency_ms * 1000);  // convert ms to us
     if (err < 0) {
       std::cerr << "ALSA parameter setting failed: " << snd_strerror(err)
                 << std::endl;
@@ -72,8 +73,9 @@ class SoundDeviceAlsa : public SoundDevice {
 
 }  // namespace
 
-std::unique_ptr<SoundDevice> SoundDevice::create(int rate, int ch) {
-  return std::make_unique<SoundDeviceAlsa>(rate, ch);
+std::unique_ptr<SoundDevice> SoundDevice::create(int rate, int ch,
+                                                 int latency_ms) {
+  return std::make_unique<SoundDeviceAlsa>(rate, ch, latency_ms);
 }
 
 }  // namespace hibiki

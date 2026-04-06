@@ -26,7 +26,8 @@ class SoundDeviceWin32 : public SoundDevice {
   int channels;
 
  public:
-  SoundDeviceWin32(int rate, int ch) : sample_rate(rate), channels(ch) {
+  SoundDeviceWin32(int rate, int ch, int latency_ms)
+      : sample_rate(rate), channels(ch) {
     impl = std::make_unique<Impl>();
 
     HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
@@ -85,7 +86,7 @@ class SoundDeviceWin32 : public SoundDevice {
                 << std::endl;
     }
 
-    REFERENCE_TIME hnsRequestedDuration = 500000;  // 50ms
+    REFERENCE_TIME hnsRequestedDuration = (REFERENCE_TIME)latency_ms * 10000;
     hr = impl->pAudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, 0,
                                         hnsRequestedDuration, 0, pwfx, NULL);
     if (FAILED(hr)) {
@@ -155,8 +156,9 @@ class SoundDeviceWin32 : public SoundDevice {
 
 }  // namespace
 
-std::unique_ptr<SoundDevice> SoundDevice::create(int rate, int ch) {
-  return std::make_unique<SoundDeviceWin32>(rate, ch);
+std::unique_ptr<SoundDevice> SoundDevice::create(int rate, int ch,
+                                                 int latency_ms) {
+  return std::make_unique<SoundDeviceWin32>(rate, ch, latency_ms);
 }
 
 }  // namespace hibiki

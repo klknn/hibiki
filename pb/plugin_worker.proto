@@ -71,6 +71,10 @@ message ListPlugins {
 
 message Shutdown {}
 
+message ShowEditor {}
+
+message StopEditor {}
+
 // Connection handshake (sent once after connect).
 message WorkerConfig {
   int32 block_size = 1;
@@ -90,6 +94,8 @@ message WorkerRequest {
     Shutdown shutdown = 8;
     ListPlugins list_plugins = 9;
     WorkerConfig config = 10;
+    ShowEditor show_editor = 11;
+    StopEditor stop_editor = 12;
   }
 }
 
@@ -136,6 +142,10 @@ message ListPluginsResult {
 
 message ConfigAck {}
 
+message EditorResult {
+  bool success = 1;
+}
+
 message WorkerResponse {
   oneof result {
     LoadResult load_result = 1;
@@ -146,5 +156,6 @@ message WorkerResponse {
     PluginInfoResult plugin_info = 6;
     ListPluginsResult list_plugins_result = 7;
     ConfigAck config_ack = 8;
+    EditorResult editor_result = 9;
   }
 }

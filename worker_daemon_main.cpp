@@ -279,6 +279,18 @@ void handleClient(socket_t conn_fd) {
         return;
       }
 
+      case hibiki::pb::worker::WorkerRequest::kShowEditor: {
+        if (plugin) plugin->showEditor();
+        resp.mutable_editor_result()->set_success(plugin != nullptr);
+        break;
+      }
+
+      case hibiki::pb::worker::WorkerRequest::kStopEditor: {
+        if (plugin) plugin->stopEditor();
+        resp.mutable_editor_result()->set_success(true);
+        break;
+      }
+
       default:
         break;
     }

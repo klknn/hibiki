@@ -251,7 +251,20 @@ const std::string& PluginProxy::getName() const { return name_; }
 const std::string& PluginProxy::getPath() const { return path_; }
 int PluginProxy::getPluginIndex() const { return plugin_index_; }
 bool PluginProxy::isInstrument() const { return is_instrument_; }
-void PluginProxy::showEditor() {}
-void PluginProxy::stopEditor() {}
+void PluginProxy::showEditor() {
+  if (!channel_ || !isWorkerAlive()) return;
+  hibiki::pb::worker::WorkerRequest req;
+  req.mutable_show_editor();
+  hibiki::pb::worker::WorkerResponse resp;
+  sendRequest(channel_.get(), req, resp);
+}
+
+void PluginProxy::stopEditor() {
+  if (!channel_ || !isWorkerAlive()) return;
+  hibiki::pb::worker::WorkerRequest req;
+  req.mutable_stop_editor();
+  hibiki::pb::worker::WorkerResponse resp;
+  sendRequest(channel_.get(), req, resp);
+}
 
 }  // namespace hibiki

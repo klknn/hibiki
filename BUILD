@@ -169,6 +169,9 @@ cc_binary(
         ":worker_channel",
         "//pb:plugin_worker_cc_proto",
     ] + select({
+        "@platforms//os:windows": [
+            ":vst3_host_win32",
+        ],
         "@platforms//os:macos": [
             ":vst3_host_mac",
         ],

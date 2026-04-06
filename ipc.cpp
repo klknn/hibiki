@@ -210,4 +210,16 @@ void sendParamValueChange(int track_idx, int plugin_idx, uint32_t param_id,
   sendProto(notification);
 }
 
+void sendEditorFrameData(int track_idx, int plugin_idx, int width, int height,
+                         const std::vector<uint8_t>& rgba) {
+  hibiki::pb::notifications::Notification notification;
+  auto* frame = notification.mutable_editor_frame_data();
+  frame->set_track_index(track_idx);
+  frame->set_plugin_index(plugin_idx);
+  frame->set_width(width);
+  frame->set_height(height);
+  frame->set_image_data(rgba.data(), rgba.size());
+  sendProto(notification);
+}
+
 }  // namespace hibiki

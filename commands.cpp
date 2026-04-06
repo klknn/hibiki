@@ -291,6 +291,48 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
       }).detach();
       break;
     }
+    case pb::commands::PluginCmd::ACTION_GET_EDITOR_FRAME: {
+      int pidx = cmd.target().plugin_index();
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      if (state.tracks.count(tidx)) {
+        auto& plugins = state.tracks[tidx]->plugins;
+        if (pidx >= 0 && pidx < (int)plugins.size()) {
+          std::vector<uint8_t> rgba;
+          int w = 0, h = 0;
+          if (plugins[pidx]->captureEditorFrame(rgba, w, h)) {
+            sendEditorFrameData(tidx, pidx, w, h, rgba);
+          }
+        }
+      }
+      break;
+    }
+    case pb::commands::PluginCmd::ACTION_SEND_EDITOR_INPUT: {
+      int pidx = cmd.target().plugin_index();
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      if (state.tracks.count(tidx)) {
+        auto& plugins = state.tracks[tidx]->plugins;
+        if (pidx >= 0 && pidx < (int)plugins.size()) {
+          plugins[pidx]->sendEditorInput(cmd.input_type(), cmd.input_x(),
+                                         cmd.input_y(), cmd.input_button(),
+                                         cmd.input_key(), cmd.input_delta());
+        }
+      }
+      break;
+    }
+    case pb::commands::PluginCmd::ACTION_STOP_GUI: {
+      int pidx = cmd.target().plugin_index();
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      if (state.tracks.count(tidx)) {
+        auto& plugins = state.tracks[tidx]->plugins;
+        if (pidx >= 0 && pidx < (int)plugins.size()) {
+          plugins[pidx]->stopEditor();
+          sendAck("STOP_PLUGIN_GUI", true);
+        } else
+          sendAck("STOP_PLUGIN_GUI", false);
+      } else
+        sendAck("STOP_PLUGIN_GUI", false);
+      break;
+    }
     default:
       break;
   }

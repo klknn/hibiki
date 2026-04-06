@@ -125,8 +125,8 @@ public class BackendManager {
         int size = Integer.reverseBytes(in.readInt()); // Little endian
         msgCount++;
 
-        // Sanity check: messages should never be larger than 1MB
-        if (size < 0 || size > 1024 * 1024) {
+        // Sanity check: messages should never be larger than 10MB
+        if (size < 0 || size > 10 * 1024 * 1024) {
           System.err.println(
               "[READSTDOUT ERROR] Invalid size: " + size + " at msg#" + msgCount + ", skipping...");
           continue;

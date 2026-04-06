@@ -174,6 +174,15 @@ message Acknowledge {
   bool success = 2;
 }
 
+// Editor framebuffer data (remote plugin GUI forwarding).
+message EditorFrameData {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+  int32 width = 3;
+  int32 height = 4;
+  bytes image_data = 5;   // Raw RGBA pixel data
+}
+
 // ─── Notification Envelope ──────────────────────────────────────────
 
 // Top-level notification wrapper.
@@ -200,6 +209,7 @@ message Notification {
     ClipMidiData clip_midi_data = 11;
     AutomationLanesData automation_lanes_data = 12;
     ParamValueChange param_value_change = 18;
+    EditorFrameData editor_frame_data = 19;
 
     // Lifecycle
     ClearProject clear_project = 13;

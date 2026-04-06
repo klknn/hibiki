@@ -58,12 +58,22 @@ message PluginCmd {
     ACTION_SHOW_GUI = 3;
     ACTION_SET_PARAM = 4;
     ACTION_LIST = 5;
+    ACTION_GET_EDITOR_FRAME = 6;
+    ACTION_SEND_EDITOR_INPUT = 7;
+    ACTION_STOP_GUI = 8;
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
   string path = 3;
   uint32 param_id = 4;
   float param_value = 5;
+  // Editor input fields (for ACTION_SEND_EDITOR_INPUT)
+  int32 input_type = 6;   // 0=move, 1=down, 2=up, 3=key_down, 4=key_up, 5=wheel
+  int32 input_x = 7;
+  int32 input_y = 8;
+  int32 input_button = 9;
+  int32 input_key = 10;
+  int32 input_delta = 11;
 }
 
 message AutomationCmd {

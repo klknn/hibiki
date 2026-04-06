@@ -40,4 +40,8 @@ void sendClipMidiData(int track_idx, int slot_idx, int clip_idx, int resolution,
 void sendParamValueChange(int track_idx, int plugin_idx, uint32_t param_id,
                           float value);
 
+// Send editor framebuffer data to GUI
+void sendEditorFrameData(int track_idx, int plugin_idx, int width, int height,
+                         const std::vector<uint8_t>& rgba);
+
 }  // namespace hibiki

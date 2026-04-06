@@ -291,6 +291,31 @@ void handleClient(socket_t conn_fd) {
         break;
       }
 
+      case hibiki::pb::worker::WorkerRequest::kGetEditorFrame: {
+        auto* frame = resp.mutable_editor_frame();
+        if (plugin) {
+          std::vector<uint8_t> rgba;
+          int w = 0, h = 0;
+          if (plugin->captureEditorFrame(rgba, w, h)) {
+            frame->set_width(w);
+            frame->set_height(h);
+            frame->set_image_data(rgba.data(), rgba.size());
+          }
+        }
+        break;
+      }
+
+      case hibiki::pb::worker::WorkerRequest::kEditorInput: {
+        if (plugin) {
+          auto& inp = req.editor_input();
+          plugin->sendEditorInput(static_cast<int>(inp.type()), inp.x(),
+                                  inp.y(), inp.button(), inp.key_code(),
+                                  inp.delta());
+        }
+        resp.mutable_editor_result()->set_success(true);
+        break;
+      }
+
       default:
         break;
     }

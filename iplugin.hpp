@@ -58,6 +58,17 @@ class IPlugin {
   virtual const std::string& getPath() const = 0;
   virtual int getPluginIndex() const = 0;
   virtual bool isInstrument() const = 0;
+
+  // Editor framebuffer capture (for remote GUI forwarding).
+  // Returns raw BGRA pixel data in `rgba`, sets width/height.
+  virtual bool captureEditorFrame(std::vector<uint8_t>& /*rgba*/, int& /*w*/,
+                                  int& /*h*/) {
+    return false;
+  }
+  // Forward mouse/keyboard input to the editor window.
+  virtual void sendEditorInput(int /*type*/, int /*x*/, int /*y*/,
+                               int /*button*/, int /*key_code*/,
+                               int /*delta*/) {}
 };
 
 }  // namespace hibiki

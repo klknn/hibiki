@@ -142,4 +142,85 @@ std::vector<std::string> Vst3Plugin::getDefaultVst3Dirs() {
   return dirs;
 }
 
+bool Vst3Plugin::captureEditorFrame(std::vector<uint8_t>& rgba, int& w,
+                                    int& h) {
+  uint64_t win = impl->editorWindow.load();
+  if (!win || !impl->editorRunning) return false;
+
+  Display* dpy = XOpenDisplay(NULL);
+  if (!dpy) return false;
+
+  XWindowAttributes attrs;
+  if (!XGetWindowAttributes(dpy, (Window)win, &attrs)) {
+    XCloseDisplay(dpy);
+    return false;
+  }
+
+  w = attrs.width;
+  h = attrs.height;
+  XImage* img = XGetImage(dpy, (Window)win, 0, 0, w, h, AllPlanes, ZPixmap);
+  if (!img) {
+    XCloseDisplay(dpy);
+    return false;
+  }
+
+  rgba.resize(w * h * 4);
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      unsigned long pixel = XGetPixel(img, x, y);
+      int idx = (y * w + x) * 4;
+      rgba[idx + 0] = (pixel >> 16) & 0xFF;  // R
+      rgba[idx + 1] = (pixel >> 8) & 0xFF;   // G
+      rgba[idx + 2] = pixel & 0xFF;          // B
+      rgba[idx + 3] = 0xFF;                  // A
+    }
+  }
+
+  XDestroyImage(img);
+  XCloseDisplay(dpy);
+  return true;
+}
+
+void Vst3Plugin::sendEditorInput(int type, int x, int y, int button,
+                                 int /*key_code*/, int /*delta*/) {
+  uint64_t win = impl->editorWindow.load();
+  if (!win || !impl->editorRunning) return;
+
+  Display* dpy = XOpenDisplay(NULL);
+  if (!dpy) return;
+
+  XEvent ev = {};
+  Window w = (Window)win;
+
+  switch (type) {
+    case 0:  // MOUSE_MOVE
+      ev.type = MotionNotify;
+      ev.xmotion.window = w;
+      ev.xmotion.x = x;
+      ev.xmotion.y = y;
+      break;
+    case 1:  // MOUSE_DOWN
+      ev.type = ButtonPress;
+      ev.xbutton.window = w;
+      ev.xbutton.x = x;
+      ev.xbutton.y = y;
+      ev.xbutton.button = button;
+      break;
+    case 2:  // MOUSE_UP
+      ev.type = ButtonRelease;
+      ev.xbutton.window = w;
+      ev.xbutton.x = x;
+      ev.xbutton.y = y;
+      ev.xbutton.button = button;
+      break;
+    default:
+      XCloseDisplay(dpy);
+      return;
+  }
+
+  XSendEvent(dpy, w, True, NoEventMask, &ev);
+  XFlush(dpy);
+  XCloseDisplay(dpy);
+}
+
 }  // namespace hibiki

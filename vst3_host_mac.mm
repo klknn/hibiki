@@ -131,3 +131,15 @@ std::vector<std::string> Vst3Plugin::getDefaultVst3Dirs() {
   }
   return dirs;
 }
+
+bool Vst3Plugin::captureEditorFrame(std::vector<uint8_t>& /*rgba*/, int& /*w*/,
+                                    int& /*h*/) {
+  // TODO: Implement macOS framebuffer capture using CGWindowListCreateImage
+  return false;
+}
+
+void Vst3Plugin::sendEditorInput(int /*type*/, int /*x*/, int /*y*/,
+                                 int /*button*/, int /*key_code*/,
+                                 int /*delta*/) {
+  // TODO: Implement macOS input forwarding
+}

@@ -537,4 +537,18 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(
   return plugins;
 }
 
+// Weak default implementations — overridden by platform-specific files
+// (vst3_host_x11.cpp, vst3_host_win32.cpp, vst3_host_mac.mm) when linked.
+// These exist so test binaries that only link libvst3_host.a can still build.
+__attribute__((weak)) bool Vst3Plugin::captureEditorFrame(
+    std::vector<uint8_t>& /*rgba*/, int& /*w*/, int& /*h*/) {
+  return false;
+}
+
+__attribute__((weak)) void Vst3Plugin::sendEditorInput(int /*type*/, int /*x*/,
+                                                       int /*y*/,
+                                                       int /*button*/,
+                                                       int /*key_code*/,
+                                                       int /*delta*/) {}
+
 }  // namespace hibiki

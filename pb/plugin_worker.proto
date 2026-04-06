@@ -71,9 +71,30 @@ message ListPlugins {
 
 message Shutdown {}
 
-message ShowEditor {}
+message ShowEditor {
+  bool headless = 1;  // true = offscreen capture mode (framebuffer streaming)
+}
 
 message StopEditor {}
+
+message GetEditorFrame {}  // Request latest framebuffer snapshot
+
+message EditorInput {
+  enum Type {
+    MOUSE_MOVE = 0;
+    MOUSE_DOWN = 1;
+    MOUSE_UP = 2;
+    KEY_DOWN = 3;
+    KEY_UP = 4;
+    MOUSE_WHEEL = 5;
+  }
+  Type type = 1;
+  int32 x = 2;
+  int32 y = 3;
+  int32 button = 4;    // mouse button (1=left, 2=mid, 3=right)
+  int32 key_code = 5;  // platform key code
+  int32 delta = 6;     // scroll wheel delta
+}
 
 // Connection handshake (sent once after connect).
 message WorkerConfig {
@@ -96,6 +117,8 @@ message WorkerRequest {
     WorkerConfig config = 10;
     ShowEditor show_editor = 11;
     StopEditor stop_editor = 12;
+    GetEditorFrame get_editor_frame = 13;
+    EditorInput editor_input = 14;
   }
 }
 
@@ -144,6 +167,14 @@ message ConfigAck {}
 
 message EditorResult {
   bool success = 1;
+  int32 width = 2;   // editor window width
+  int32 height = 3;  // editor window height
+}
+
+message EditorFrame {
+  int32 width = 1;
+  int32 height = 2;
+  bytes image_data = 3;  // Raw BGRA pixel data (width * height * 4 bytes)
 }
 
 message WorkerResponse {
@@ -157,5 +188,6 @@ message WorkerResponse {
     ListPluginsResult list_plugins_result = 7;
     ConfigAck config_ack = 8;
     EditorResult editor_result = 9;
+    EditorFrame editor_frame = 10;
   }
 }

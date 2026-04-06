@@ -39,6 +39,9 @@ public:
   virtual bool isInstrument() const = 0;
   virtual void showEditor() = 0;
   virtual void stopEditor() = 0;
+  // Editor framebuffer capture (for remote GUI forwarding)
+  virtual bool captureEditorFrame(std::vector<uint8_t>& rgba, int& w, int& h) { return false; }
+  virtual void sendEditorInput(int type, int x, int y, int button, int key, int delta) {}
 };
 ```
 
@@ -158,3 +161,32 @@ Configured in Settings → Audio:
 - Applies to both in-process and sandboxed modes
 
 Changing either setting requires a backend restart.
+
+## Remote Editor UI Forwarding
+
+When a plugin runs on a remote daemon, its native GUI can be forwarded to the local client:
+
+```mermaid
+sequenceDiagram
+    participant Java as Java UI
+    participant Proxy as PluginProxy
+    participant Daemon as Worker Daemon
+    participant VST3 as VST3 Plugin
+
+    Proxy->>Daemon: ShowEditor
+    Daemon->>VST3: createView + attach
+
+    loop Every ~30ms
+        Daemon->>VST3: captureEditorFrame
+        Daemon->>Proxy: EditorFrame (RGBA bytes)
+        Proxy->>Java: Update BufferedImage
+    end
+
+    Java->>Proxy: EditorInput (mouse/key)
+    Proxy->>Daemon: Forward to window
+```
+
+**Platform capture methods:**
+- **X11 (Linux)**: `XGetImage` / `XSendEvent`
+- **Win32**: `BitBlt` + `CreateDIBSection` / `PostMessage`
+- **macOS**: Stub (TODO: `CGWindowListCreateImage`)

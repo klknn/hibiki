@@ -267,4 +267,35 @@ void PluginProxy::stopEditor() {
   sendRequest(channel_.get(), req, resp);
 }
 
+bool PluginProxy::captureEditorFrame(std::vector<uint8_t>& rgba, int& w,
+                                     int& h) {
+  if (!channel_ || !isWorkerAlive()) return false;
+  hibiki::pb::worker::WorkerRequest req;
+  req.mutable_get_editor_frame();
+  hibiki::pb::worker::WorkerResponse resp;
+  if (!sendRequest(channel_.get(), req, resp)) return false;
+  if (!resp.has_editor_frame()) return false;
+  const auto& frame = resp.editor_frame();
+  w = frame.width();
+  h = frame.height();
+  const auto& data = frame.image_data();
+  rgba.assign(data.begin(), data.end());
+  return !rgba.empty();
+}
+
+void PluginProxy::sendEditorInput(int type, int x, int y, int button,
+                                  int key_code, int delta) {
+  if (!channel_ || !isWorkerAlive()) return;
+  hibiki::pb::worker::WorkerRequest req;
+  auto* input = req.mutable_editor_input();
+  input->set_type(static_cast<hibiki::pb::worker::EditorInput::Type>(type));
+  input->set_x(x);
+  input->set_y(y);
+  input->set_button(button);
+  input->set_key_code(key_code);
+  input->set_delta(delta);
+  hibiki::pb::worker::WorkerResponse resp;
+  sendRequest(channel_.get(), req, resp);
+}
+
 }  // namespace hibiki

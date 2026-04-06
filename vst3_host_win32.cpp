@@ -115,4 +115,85 @@ std::vector<std::string> Vst3Plugin::getDefaultVst3Dirs() {
   return dirs;
 }
 
+bool Vst3Plugin::captureEditorFrame(std::vector<uint8_t>& rgba, int& w,
+                                    int& h) {
+  uint64_t win = impl->editorWindow.load();
+  if (!win || !impl->editorRunning) return false;
+
+  HWND hwnd = (HWND)win;
+  RECT rc;
+  if (!GetClientRect(hwnd, &rc)) return false;
+
+  w = rc.right - rc.left;
+  h = rc.bottom - rc.top;
+  if (w <= 0 || h <= 0) return false;
+
+  HDC hdcWin = GetDC(hwnd);
+  HDC hdcMem = CreateCompatibleDC(hdcWin);
+
+  BITMAPINFO bmi = {};
+  bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  bmi.bmiHeader.biWidth = w;
+  bmi.bmiHeader.biHeight = -h;  // top-down
+  bmi.bmiHeader.biPlanes = 1;
+  bmi.bmiHeader.biBitCount = 32;
+  bmi.bmiHeader.biCompression = BI_RGB;
+
+  void* bits = nullptr;
+  HBITMAP hbm = CreateDIBSection(hdcMem, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+  if (!hbm) {
+    DeleteDC(hdcMem);
+    ReleaseDC(hwnd, hdcWin);
+    return false;
+  }
+
+  HGDIOBJ old = SelectObject(hdcMem, hbm);
+  BitBlt(hdcMem, 0, 0, w, h, hdcWin, 0, 0, SRCCOPY);
+
+  // Convert BGRA → RGBA
+  rgba.resize(w * h * 4);
+  uint8_t* src = (uint8_t*)bits;
+  for (int i = 0; i < w * h; ++i) {
+    rgba[i * 4 + 0] = src[i * 4 + 2];  // R
+    rgba[i * 4 + 1] = src[i * 4 + 1];  // G
+    rgba[i * 4 + 2] = src[i * 4 + 0];  // B
+    rgba[i * 4 + 3] = 0xFF;            // A
+  }
+
+  SelectObject(hdcMem, old);
+  DeleteObject(hbm);
+  DeleteDC(hdcMem);
+  ReleaseDC(hwnd, hdcWin);
+  return true;
+}
+
+void Vst3Plugin::sendEditorInput(int type, int x, int y, int button,
+                                 int /*key_code*/, int /*delta*/) {
+  uint64_t win = impl->editorWindow.load();
+  if (!win || !impl->editorRunning) return;
+
+  HWND hwnd = (HWND)win;
+  LPARAM lParam = MAKELPARAM(x, y);
+
+  switch (type) {
+    case 0:  // MOUSE_MOVE
+      PostMessage(hwnd, WM_MOUSEMOVE, 0, lParam);
+      break;
+    case 1:  // MOUSE_DOWN
+      if (button == 1)
+        PostMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lParam);
+      else if (button == 3)
+        PostMessage(hwnd, WM_RBUTTONDOWN, MK_RBUTTON, lParam);
+      break;
+    case 2:  // MOUSE_UP
+      if (button == 1)
+        PostMessage(hwnd, WM_LBUTTONUP, 0, lParam);
+      else if (button == 3)
+        PostMessage(hwnd, WM_RBUTTONUP, 0, lParam);
+      break;
+    default:
+      break;
+  }
+}
+
 }  // namespace hibiki

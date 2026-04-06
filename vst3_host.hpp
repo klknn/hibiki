@@ -32,6 +32,9 @@ class Vst3Plugin : public IPlugin {
   const std::string& getPath() const override;
   int getPluginIndex() const override;
   bool isInstrument() const override;
+  bool captureEditorFrame(std::vector<uint8_t>& rgba, int& w, int& h) override;
+  void sendEditorInput(int type, int x, int y, int button, int key_code,
+                       int delta) override;
 
   static std::vector<PluginDescription> listPlugins(const std::string& path);
   static std::vector<PluginDescription> listPluginsIsolated(

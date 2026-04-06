@@ -665,6 +665,16 @@ void handleSetPluginHostMode(const pb::commands::SetPluginHostMode& cmd,
   sendAck("SET_PLUGIN_HOST_MODE", true);
 }
 
+void handleSetAudioBufferSize(const pb::commands::SetAudioBufferSize& cmd,
+                              ProjectState& state) {
+  int ms = cmd.buffer_size_ms();
+  if (ms < 10) ms = 10;
+  if (ms > 2000) ms = 2000;
+  state.buffer_latency_ms = ms;
+  std::cerr << "Audio buffer size set to " << ms << " ms (restart to apply)\n";
+  sendAck("SET_AUDIO_BUFFER_SIZE", true);
+}
+
 void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
   // Query each remote daemon for its plugin list in parallel.
   for (const auto& host_port : cmd.remote_hosts()) {

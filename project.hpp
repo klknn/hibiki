@@ -33,6 +33,7 @@ struct ProjectState {
   // Plugin hosting mode (set via SetPluginHostMode command)
   PluginHostMode plugin_host_mode = PluginHostMode::IN_PROCESS;
   std::vector<std::string> remote_hosts;  // ["host:port", ...] for REMOTE mode
+  int buffer_latency_ms = 200;  // Audio buffer latency in ms (configurable)
 };
 
 // Returns a pointer to the track, creating it if it doesn't exist

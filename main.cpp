@@ -33,7 +33,7 @@
 namespace hibiki {
 
 void playback_thread(ProjectState& state) {
-  auto audio = SoundDevice::create(44100, 2);
+  auto audio = SoundDevice::create(44100, 2, state.buffer_latency_ms);
   float sample_rate = (float)audio->get_sample_rate();
   int actual_channels = audio->get_channels();
   state.sample_rate = (double)sample_rate;
@@ -330,6 +330,9 @@ void run_ipc_loop(ProjectState& state) {
         break;
       case hibiki::pb::commands::Request::kScanRemotePlugins:
         handleScanRemotePlugins(request.scan_remote_plugins());
+        break;
+      case hibiki::pb::commands::Request::kSetAudioBufferSize:
+        handleSetAudioBufferSize(request.set_audio_buffer_size(), state);
         break;
     }
     if (state.quit) break;

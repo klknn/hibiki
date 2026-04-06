@@ -21,5 +21,7 @@ void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
 void handleSetPluginHostMode(const pb::commands::SetPluginHostMode& cmd,
                              ProjectState& state);
 void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd);
+void handleSetAudioBufferSize(const pb::commands::SetAudioBufferSize& cmd,
+                              ProjectState& state);
 
 }  // namespace hibiki

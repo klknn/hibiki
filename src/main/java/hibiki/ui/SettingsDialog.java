@@ -29,13 +29,62 @@ public class SettingsDialog extends JDialog {
   }
 
   private JPanel createAudioPanel() {
-    JPanel p = new JPanel(new BorderLayout());
+    JPanel p = new JPanel(new GridBagLayout());
     p.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+    GridBagConstraints gbc = new GridBagConstraints();
+    gbc.fill = GridBagConstraints.HORIZONTAL;
+    gbc.insets = new Insets(5, 5, 5, 5);
+    int row = 0;
 
-    // In a real app we'd fetch actual device name from backend info
+    // Device info
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    gbc.gridwidth = 2;
     JLabel deviceLabel = new JLabel("Audio Engine: ALSA (alsa_playback.hbk-play)");
     deviceLabel.setFont(Theme.getInstance().FONT_UI);
-    p.add(deviceLabel, BorderLayout.NORTH);
+    p.add(deviceLabel, gbc);
+    gbc.gridwidth = 1;
+
+    // Buffer Size
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    p.add(new JLabel("Buffer Size (ms):"), gbc);
+    gbc.gridx = 1;
+    JSpinner bufferSpinner = new JSpinner(new SpinnerNumberModel(200, 10, 2000, 10));
+    p.add(bufferSpinner, gbc);
+
+    // Description
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    gbc.gridwidth = 2;
+    JLabel desc = new JLabel("<html><small>"
+        + "Lower values = less latency but more glitches.<br>"
+        + "Higher values = more stable but more latency.<br>"
+        + "Recommended: 50ms (local), 200ms+ (remote plugins)"
+        + "</small></html>");
+    desc.setFont(Theme.getInstance().FONT_UI.deriveFont(11.0f));
+    p.add(desc, gbc);
+    gbc.gridwidth = 1;
+
+    // Apply button
+    row++;
+    gbc.gridx = 1;
+    gbc.gridy = row;
+    JButton applyBtn = new JButton("Apply");
+    applyBtn.addActionListener(e -> {
+      int ms = (Integer) bufferSpinner.getValue();
+      hibiki.pb.commands.Request request = hibiki.pb.commands.Request.newBuilder()
+          .setSetAudioBufferSize(
+              hibiki.pb.commands.SetAudioBufferSize.newBuilder()
+                  .setBufferSizeMs(ms))
+          .build();
+      hibiki.BackendManager.getInstance().sendRequest(request);
+      JOptionPane.showMessageDialog(this,
+          "Audio buffer set to " + ms + " ms.\nRestart the app to apply.");
+    });
+    p.add(applyBtn, gbc);
 
     return p;
   }

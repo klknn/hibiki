@@ -36,6 +36,7 @@ class Vst3Plugin : public IPlugin {
   static std::vector<PluginDescription> listPlugins(const std::string& path);
   static std::vector<PluginDescription> listPluginsIsolated(
       const std::string& path);
+  static std::vector<std::string> getDefaultVst3Dirs();
   static void
   runMainLoop();  // For platforms that need a UI loop on the main thread
 

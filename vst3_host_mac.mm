@@ -120,3 +120,14 @@ void Vst3Plugin::stopEditor() {
         impl->editorRunning = false;
     });
 }
+
+std::vector<std::string> Vst3Plugin::getDefaultVst3Dirs() {
+  std::vector<std::string> dirs;
+  dirs.push_back("/Library/Audio/Plug-ins/VST3");
+  const char* home = getenv("HOME");
+  if (home) {
+    dirs.push_back(std::string(home) + "/Library/Audio/Plug-ins/VST3");
+    dirs.push_back(std::string(home) + "/.vst3");
+  }
+  return dirs;
+}

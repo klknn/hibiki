@@ -14,14 +14,14 @@
 #include <signal.h>
 #endif
 
-#include "tcp.hpp"
-
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <thread>
 
 #include "pb/plugin_worker.pb.h"
+#include "tcp.hpp"
 #include "vst3_host.hpp"
 
 namespace hibiki {
@@ -237,12 +237,35 @@ void handleClient(socket_t conn_fd) {
       case hibiki::pb::worker::WorkerRequest::kListPlugins: {
         auto& cmd = req.list_plugins();
         auto* result = resp.mutable_list_plugins_result();
-        auto plugins = Vst3Plugin::listPlugins(cmd.search_path());
-        for (const auto& pd : plugins) {
-          auto* pi = result->add_plugins();
-          pi->set_name(pd.name);
-          pi->set_path(cmd.search_path());
-          pi->set_plugin_index(pd.index);
+
+        // Determine which directories to scan
+        std::vector<std::string> scan_dirs;
+        std::string sp = cmd.search_path();
+        if (sp.empty() || sp == "/") {
+          // Use platform-appropriate defaults
+          scan_dirs = Vst3Plugin::getDefaultVst3Dirs();
+        } else {
+          scan_dirs.push_back(sp);
+        }
+
+        // Iterate each directory, find .vst3 bundles, list their plugins
+        for (const auto& dir : scan_dirs) {
+          std::error_code ec;
+          if (!std::filesystem::is_directory(dir, ec)) continue;
+          for (const auto& entry :
+               std::filesystem::directory_iterator(dir, ec)) {
+            std::string name = entry.path().filename().string();
+            if (name.size() > 5 && name.substr(name.size() - 5) == ".vst3") {
+              std::string bundle_path = entry.path().string();
+              auto plugins = Vst3Plugin::listPlugins(bundle_path);
+              for (const auto& pd : plugins) {
+                auto* pi = result->add_plugins();
+                pi->set_name(pd.name);
+                pi->set_path(bundle_path);
+                pi->set_plugin_index(pd.index);
+              }
+            }
+          }
         }
         break;
       }

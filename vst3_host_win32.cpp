@@ -105,4 +105,14 @@ void Vst3Plugin::stopEditor() {
   }
 }
 
+std::vector<std::string> Vst3Plugin::getDefaultVst3Dirs() {
+  std::vector<std::string> dirs;
+  dirs.push_back("C:\\Program Files\\Common Files\\VST3");
+  const char* userProfile = getenv("USERPROFILE");
+  if (userProfile) {
+    dirs.push_back(std::string(userProfile) + "\\.vst3");
+  }
+  return dirs;
+}
+
 }  // namespace hibiki

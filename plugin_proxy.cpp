@@ -9,8 +9,6 @@
 #include <random>
 
 #include "pb/plugin_worker.pb.h"
-#include "vst3_host.hpp"
-#include "worker_channel_local.hpp"
 #include "worker_channel_tcp.hpp"
 
 namespace hibiki {

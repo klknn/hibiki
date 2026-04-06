@@ -1,12 +1,8 @@
-#include <atomic>
 #include <chrono>
 #include <cmath>
-#include <fstream>
 #include <iostream>
-#include <map>
 #include <memory>
 #include <mutex>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -16,14 +12,12 @@
 #include <io.h>
 #endif
 
-#include "audio_file.hpp"
 #include "clip.hpp"
 #include "commands.hpp"
 #include "history.hpp"
 #include "ipc.hpp"
 #include "midi.hpp"
 #include "pb/commands.pb.h"
-#include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
 #include "project.hpp"
 #include "sound.hpp"

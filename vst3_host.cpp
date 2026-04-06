@@ -1,7 +1,6 @@
 #include "vst3_host.hpp"
 
 #include <atomic>
-#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>

@@ -6,10 +6,9 @@
 #include <queue>
 #include <thread>
 
-#include "pb/commands.pb.h"
+#include "iplugin.hpp"
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
-#include "vst3_host.hpp"
 
 namespace hibiki {
 

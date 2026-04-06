@@ -5,9 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "plugin_proxy.hpp"
+#include "iplugin.hpp"
 #include "track.hpp"
-#include "vst3_host.hpp"
 
 namespace hibiki {
 

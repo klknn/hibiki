@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <iostream>
 
-#include "audio_file.hpp"
 #include "ipc.hpp"
 #include "pb/commands.pb.h"
 #include "pb/core.pb.h"

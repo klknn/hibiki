@@ -8,7 +8,6 @@
 #include <thread>
 #include <vector>
 
-#include "audio_file.hpp"
 #include "clip.hpp"
 #include "ipc.hpp"
 #include "midi.hpp"
@@ -18,7 +17,6 @@
 #include "pb/plugin_worker.pb.h"
 #include "tcp.hpp"
 #include "track.hpp"
-#include "vst3_host.hpp"
 
 namespace hibiki {
 

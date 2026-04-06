@@ -31,10 +31,14 @@ cc_library(
 )
 
 cc_library(
+    name = "iplugin",
+    hdrs = ["iplugin.hpp"],
+)
+
+cc_library(
     name = "vst3_host",
     srcs = ["vst3_host.cpp"],
     hdrs = [
-        "iplugin.hpp",
         "vst3_host.hpp",
         "vst3_host_impl.hpp",
     ],
@@ -46,6 +50,7 @@ cc_library(
         ],
     }),
     deps = [
+        ":iplugin",
         "@vst3sdk",
     ],
 )
@@ -157,7 +162,7 @@ cc_library(
         ],
     }),
     deps = [
-        ":vst3_host",
+        ":iplugin",
         ":worker_channel",
         ":worker_channel_tcp",
         "//pb:plugin_worker_cc_proto",
@@ -251,6 +256,7 @@ cc_library(
         ":ipc",
         ":plugin_proxy",
         ":vst3_host",
+        "//pb:commands_cc_proto",
     ],
 )
 
@@ -261,9 +267,8 @@ cc_library(
     deps = [
         ":audio_file",
         ":ipc",
-        ":plugin_proxy",
+        ":iplugin",
         ":track",
-        "//pb:commands_cc_proto",
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",
     ],
@@ -274,8 +279,7 @@ cc_library(
     srcs = ["ipc.cpp"],
     hdrs = ["ipc.hpp"],
     deps = [
-        ":vst3_host",
-        "//pb:commands_cc_proto",
+        ":iplugin",
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",
     ],
@@ -312,17 +316,7 @@ cc_library(
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",
         "//pb:plugin_worker_cc_proto",
-    ] + select({
-        "@platforms//os:windows": [
-            ":vst3_host_win32",
-        ],
-        "@platforms//os:macos": [
-            ":vst3_host_mac",
-        ],
-        "//conditions:default": [
-            ":vst3_host_x11",
-        ],
-    }),
+    ],
 )
 
 cc_binary(
@@ -332,7 +326,6 @@ cc_binary(
     ],
     linkstatic = True,
     deps = [
-        ":audio_file",
         ":clip",
         ":commands",
         ":history",
@@ -471,6 +464,7 @@ cc_test(
         ":commands",
         ":ipc",
         ":track",
+        ":vst3_host_stub",
         "@googletest//:gtest_main",
     ],
 )

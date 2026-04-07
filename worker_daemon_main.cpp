@@ -14,13 +14,14 @@
 #include <signal.h>
 #endif
 
+#include <chrono>
 #include <cstring>
-#include <filesystem>
 #include <iostream>
 #include <string>
 #include <thread>
 
 #include "pb/plugin_worker.pb.h"
+#include "plugin_scanner.hpp"
 #include "tcp.hpp"
 #include "vst3_host.hpp"
 
@@ -30,7 +31,7 @@ static constexpr int DEFAULT_PORT = 9100;
 
 // Handle a single client connection — run a Vst3Plugin directly in-process
 // (simpler than proxying to a separate hbk-plugin-worker).
-void handleClient(socket_t conn_fd) {
+void handleClient(socket_t conn_fd, AsyncPluginCache& plugin_cache) {
   // Wrap in a WorkerChannelTcp for message framing
   // We'll use raw send/recv on conn_fd since we already accepted.
   auto sendMsg = [&](const void* data, size_t len) -> bool {
@@ -235,39 +236,66 @@ void handleClient(socket_t conn_fd) {
       }
 
       case hibiki::pb::worker::WorkerRequest::kListPlugins: {
-        auto& cmd = req.list_plugins();
-        auto* result = resp.mutable_list_plugins_result();
+        // Stream results live from the async cache.
+        // Poll for new entries and send them as they become available.
+        size_t sent_index = 0;
+        bool send_failed = false;
 
-        // Determine which directories to scan
-        std::vector<std::string> scan_dirs;
-        std::string sp = cmd.search_path();
-        if (sp.empty() || sp == "/") {
-          // Use platform-appropriate defaults
-          scan_dirs = Vst3Plugin::getDefaultVst3Dirs();
-        } else {
-          scan_dirs.push_back(sp);
-        }
+        while (!send_failed) {
+          auto new_entries = plugin_cache.getNewEntries(sent_index);
 
-        // Iterate each directory, find .vst3 bundles, list their plugins
-        for (const auto& dir : scan_dirs) {
-          std::error_code ec;
-          if (!std::filesystem::is_directory(dir, ec)) continue;
-          for (const auto& entry :
-               std::filesystem::directory_iterator(dir, ec)) {
-            std::string name = entry.path().filename().string();
-            if (name.size() > 5 && name.substr(name.size() - 5) == ".vst3") {
-              std::string bundle_path = entry.path().string();
-              auto plugins = Vst3Plugin::listPlugins(bundle_path);
-              for (const auto& pd : plugins) {
-                auto* pi = result->add_plugins();
-                pi->set_name(pd.name);
-                pi->set_path(bundle_path);
-                pi->set_plugin_index(pd.index);
-              }
+          if (!new_entries.empty()) {
+            pb::worker::WorkerResponse chunk;
+            auto* result = chunk.mutable_list_plugins_result();
+            for (const auto& e : new_entries) {
+              auto* pi = result->add_plugins();
+              pi->set_name(e.name);
+              pi->set_path(e.path);
+              pi->set_plugin_index(e.index);
+            }
+            sent_index += new_entries.size();
+            std::string data;
+            chunk.SerializeToString(&data);
+            if (!sendMsg(data.data(), data.size())) {
+              send_failed = true;
+              break;
             }
           }
+
+          if (plugin_cache.complete.load()) {
+            // Drain any remaining entries
+            auto final_entries = plugin_cache.getNewEntries(sent_index);
+            if (!final_entries.empty()) {
+              pb::worker::WorkerResponse chunk;
+              auto* result = chunk.mutable_list_plugins_result();
+              for (const auto& e : final_entries) {
+                auto* pi = result->add_plugins();
+                pi->set_name(e.name);
+                pi->set_path(e.path);
+                pi->set_plugin_index(e.index);
+              }
+              std::string data;
+              chunk.SerializeToString(&data);
+              if (!sendMsg(data.data(), data.size())) {
+                send_failed = true;
+                break;
+              }
+            }
+            // Send final is_complete=true
+            pb::worker::WorkerResponse final_resp;
+            final_resp.mutable_list_plugins_result()->set_is_complete(true);
+            std::string data;
+            final_resp.SerializeToString(&data);
+            if (!sendMsg(data.data(), data.size())) send_failed = true;
+            break;
+          }
+
+          // Wait briefly for more results
+          std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
-        break;
+
+        if (send_failed) break;
+        continue;
       }
 
       case hibiki::pb::worker::WorkerRequest::kShutdown: {
@@ -373,6 +401,10 @@ int main(int argc, char** argv) {
 
   std::cerr << "hbk-worker-daemon listening on port " << port << "\n";
 
+  // Start async plugin scan (non-blocking — results stream as they arrive)
+  AsyncPluginCache plugin_cache;
+  startPluginScan(plugin_cache);
+
   // Ignore SIGPIPE
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
@@ -392,7 +424,7 @@ int main(int argc, char** argv) {
     std::cerr << "Accepted connection (fd=" << conn_fd << ")\n";
 
     // Handle each client in a detached thread
-    std::thread(handleClient, conn_fd).detach();
+    std::thread(handleClient, conn_fd, std::ref(plugin_cache)).detach();
   }
 
   tcp_close(listen_fd);

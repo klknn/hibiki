@@ -207,6 +207,7 @@ cc_binary(
         ],
     }),
     deps = [
+        ":plugin_scanner",
         ":worker_channel_tcp",
         ":vst3_host",
         "//pb:plugin_worker_cc_proto",
@@ -301,6 +302,16 @@ cc_test(
 )
 
 cc_library(
+    name = "plugin_scanner",
+    srcs = ["plugin_scanner.cpp"],
+    hdrs = ["plugin_scanner.hpp"],
+    deps = [
+        ":iplugin",
+        ":vst3_host",
+    ],
+)
+
+cc_library(
     name = "commands",
     srcs = ["commands.cpp"],
     hdrs = ["commands.hpp"],
@@ -309,6 +320,7 @@ cc_library(
         ":history",
         ":ipc",
         ":midi",
+        ":plugin_scanner",
         ":project",
         ":tcp",
         ":track",

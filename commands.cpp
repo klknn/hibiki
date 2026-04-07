@@ -15,6 +15,7 @@
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
 #include "pb/plugin_worker.pb.h"
+#include "plugin_scanner.hpp"
 #include "tcp.hpp"
 #include "track.hpp"
 
@@ -229,6 +230,8 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       history.pushState(CaptureProjectState(state));
       auto track = GetOrCreateTrack(state, tidx);
+      std::cerr << "BACKEND: Loading plugin: " << vpath << "\n";
+      sendLog("Loading plugin: " + vpath + " ...");
       int target_idx =
           track->LoadPlugin(vpath, pidx, state.sample_rate,
                             state.plugin_host_mode, state.remote_hosts);
@@ -285,7 +288,18 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
     case pb::commands::PluginCmd::ACTION_LIST: {
       std::string path = cmd.path();
       std::thread([path]() {
-        sendPluginList(path, Vst3Plugin::listPluginsIsolated(path));
+        auto bundles = collectVst3Bundles({path});
+        scanBundlesParallel(
+            bundles,
+            [](const std::string& bp) {
+              return Vst3Plugin::listPluginsIsolated(bp);
+            },
+            [&path](const std::string& /*bundle_path*/,
+                    const std::vector<PluginDescription>& plugins) {
+              if (!plugins.empty()) {
+                sendPluginList(path, plugins);
+              }
+            });
       }).detach();
       break;
     }
@@ -814,51 +828,60 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
         return;
       }
 
-      std::string resp_data;
-      if (!tcpRecv(resp_data)) {
-        std::cerr << "ScanRemote: recv failed for " << hp << "\n";
-        tcp_close(fd);
-        return;
+      // Read streamed plugin chunks until is_complete=true
+      int total_plugins = 0;
+      while (true) {
+        std::string resp_data;
+        if (!tcpRecv(resp_data)) {
+          std::cerr << "ScanRemote: recv failed for " << hp << "\n";
+          break;
+        }
+
+        pb::worker::WorkerResponse resp;
+        if (!resp.ParseFromString(resp_data) ||
+            resp.result_case() !=
+                pb::worker::WorkerResponse::kListPluginsResult) {
+          std::cerr << "ScanRemote: bad response from " << hp << "\n";
+          break;
+        }
+
+        const auto& chunk = resp.list_plugins_result();
+
+        // Forward this chunk as a notification (even if empty)
+        if (chunk.plugins_size() > 0) {
+          pb::notifications::PluginListResponse plr;
+          plr.set_path("/");
+          plr.set_remote_host(hp);
+          for (const auto& pi : chunk.plugins()) {
+            auto* pd = plr.add_plugins();
+            pd->set_index(pi.plugin_index());
+            pd->set_name(pi.name());
+            pd->set_vendor("");  // worker proto doesn't have vendor
+            pd->set_path(pi.path());
+          }
+          total_plugins += chunk.plugins_size();
+
+          pb::notifications::Notification notif;
+          *notif.mutable_plugin_list() = plr;
+          std::string notif_data;
+          notif.SerializeToString(&notif_data);
+          sendNotification(reinterpret_cast<const uint8_t*>(notif_data.data()),
+                           notif_data.size());
+        }
+
+        if (chunk.is_complete()) break;
       }
 
-      pb::worker::WorkerResponse resp;
-      if (!resp.ParseFromString(resp_data) ||
-          resp.result_case() !=
-              pb::worker::WorkerResponse::kListPluginsResult) {
-        std::cerr << "ScanRemote: bad response from " << hp << "\n";
-        tcp_close(fd);
-        return;
-      }
+      std::cerr << "ScanRemote: found " << total_plugins << " plugins on " << hp
+                << "\n";
 
-      // Send shutdown to be polite
+      // Send shutdown to be polite, then close
       pb::worker::WorkerRequest shutdown_req;
       shutdown_req.mutable_shutdown();
       std::string sd;
       shutdown_req.SerializeToString(&sd);
       tcpSend(sd);
       tcp_close(fd);
-
-      // Convert to PluginListResponse notification
-      pb::notifications::PluginListResponse plr;
-      plr.set_path("/");
-      plr.set_remote_host(hp);
-      for (const auto& pi : resp.list_plugins_result().plugins()) {
-        auto* pd = plr.add_plugins();
-        pd->set_index(pi.plugin_index());
-        pd->set_name(pi.name());
-        pd->set_vendor("");  // worker proto doesn't have vendor
-        pd->set_path(pi.path());  // actual .vst3 bundle path on remote
-      }
-
-      pb::notifications::Notification notif;
-      *notif.mutable_plugin_list() = plr;
-      std::string notif_data;
-      notif.SerializeToString(&notif_data);
-      sendNotification(reinterpret_cast<const uint8_t*>(notif_data.data()),
-                       notif_data.size());
-
-      std::cerr << "ScanRemote: found " << plr.plugins_size() << " plugins on "
-                << hp << "\n";
     }).detach();
   }
   sendAck("SCAN_REMOTE_PLUGINS", true);

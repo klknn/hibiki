@@ -290,7 +290,11 @@ public class PluginWorkerTest {
     backend.addNotificationListener(
         n -> {
           if (n.getResponseCase() == Notification.ResponseCase.LOG) {
-            logFuture.complete(n.getLog().getMessage());
+            String msg = n.getLog().getMessage();
+            // Skip progress logs — only complete on failure messages
+            if (msg.toLowerCase().contains("fail")) {
+              logFuture.complete(msg);
+            }
           }
         });
 

@@ -161,6 +161,7 @@ message PluginInfoResult {
 
 message ListPluginsResult {
   repeated PluginInfoResult plugins = 1;
+  bool is_complete = 2;  // true = final chunk, no more results
 }
 
 message ConfigAck {}

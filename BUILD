@@ -311,6 +311,26 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "plugin_scanner_test",
+    size = "medium",
+    srcs = ["plugin_scanner_test.cpp"],
+    data = ["//testdata"],
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "-lpthread",
+        ],
+    }),
+    linkstatic = True,
+    deps = [
+        ":plugin_scanner",
+        ":vst3_host",
+        ":vst3_host_stub",
+        "@googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "commands",
     srcs = ["commands.cpp"],

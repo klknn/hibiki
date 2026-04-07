@@ -269,6 +269,26 @@ void notification_thread(ProjectState& state) {
 
 void run_ipc_loop(ProjectState& state) {
   HistoryManager history;
+
+  // Push current config to GUI on startup
+  {
+    pb::commands::HibikiConfig config;
+    config.set_plugin_host_mode(
+        (state.plugin_host_mode == PluginHostMode::LOCAL_SANDBOX)
+            ? pb::commands::PLUGIN_HOST_LOCAL_SANDBOX
+            : pb::commands::PLUGIN_HOST_IN_PROCESS);
+    for (const auto& host : state.remote_hosts) {
+      config.add_remote_hosts(host);
+    }
+    config.set_buffer_latency_ms(state.buffer_latency_ms);
+    pb::notifications::Notification notif;
+    *notif.mutable_config() = config;
+    std::string data;
+    notif.SerializeToString(&data);
+    sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
+                     data.size());
+  }
+
   while (true) {
     uint32_t msg_size = 0;
     std::cin.read(reinterpret_cast<char*>(&msg_size), sizeof(msg_size));
@@ -354,6 +374,8 @@ int main(int argc, char** argv) {
   hibiki::ProjectState state;
   state.bpm = 140.0;            // Explicitly set default BPM
   state.sample_rate = 44100.0;  // Explicitly set default sample rate
+  hibiki::loadConfig(
+      state);  // Load persisted settings from .hibikirc.textproto
   std::thread audio_thread(hibiki::playback_thread, std::ref(state));
   std::thread notif_thread(hibiki::notification_thread, std::ref(state));
 

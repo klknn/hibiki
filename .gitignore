@@ -20,3 +20,4 @@ genhtml
 # Temporary files
 *.log
 *.txt
+.hibikirc.textproto

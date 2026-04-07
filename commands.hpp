@@ -24,4 +24,9 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd);
 void handleSetAudioBufferSize(const pb::commands::SetAudioBufferSize& cmd,
                               ProjectState& state);
 
+// Config file persistence (.hibikirc.textproto)
+constexpr const char* kConfigFile = ".hibikirc.textproto";
+void loadConfig(ProjectState& state);
+void saveConfig(const ProjectState& state);
+
 }  // namespace hibiki

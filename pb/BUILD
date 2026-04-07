@@ -19,7 +19,10 @@ proto_library(
     name = "notifications_proto",
     srcs = ["notifications.proto"],
     visibility = ["//visibility:public"],
-    deps = [":core_proto"],
+    deps = [
+        ":commands_proto",
+        ":core_proto",
+    ],
 )
 
 # C++ proto libraries

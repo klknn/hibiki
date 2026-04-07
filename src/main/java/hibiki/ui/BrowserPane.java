@@ -207,7 +207,7 @@ public class BrowserPane extends JPanel {
             : new File(host);
         hostNode.add(
             new DefaultMutableTreeNode(
-                new FileItem(bundleFile, "remote-vst", meta.name, meta.vendor, meta.index)));
+                new FileItem(bundleFile, "remote-vst", meta.name, meta.vendor, meta.index, host)));
       }
       sortAndGroupPlugins(hostNode);
       root.add(hostNode);
@@ -315,14 +315,16 @@ public class BrowserPane extends JPanel {
     }
   }
 
-  private void requestPluginsInBundle(File bundle) {
-    String path = bundle.getAbsolutePath();
+  private void requestPluginsInBundles(java.util.List<String> paths) {
+    if (paths.isEmpty())
+      return;
+    PluginCmd.Builder cmd = PluginCmd.newBuilder()
+        .setAction(PluginCmd.Action.ACTION_LIST);
+    for (String p : paths) {
+      cmd.addPaths(p);
+    }
     BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder().setAction(PluginCmd.Action.ACTION_LIST).setPath(path))
-                .build());
+        .sendRequest(Request.newBuilder().setPlugin(cmd).build());
   }
 
   private void scanDirectory(
@@ -330,15 +332,27 @@ public class BrowserPane extends JPanel {
       DefaultMutableTreeNode pluginsNode,
       DefaultMutableTreeNode midiNode,
       DefaultMutableTreeNode audioNode) {
+    java.util.List<String> bundlePaths = new java.util.ArrayList<>();
+    collectFiles(dir, pluginsNode, midiNode, audioNode, bundlePaths);
+    // Send all .vst3 bundles as a single batch request for parallel scanning
+    requestPluginsInBundles(bundlePaths);
+  }
+
+  private void collectFiles(
+      File dir,
+      DefaultMutableTreeNode pluginsNode,
+      DefaultMutableTreeNode midiNode,
+      DefaultMutableTreeNode audioNode,
+      java.util.List<String> bundlePaths) {
     File[] files = dir.listFiles();
     if (files == null) return;
 
     for (File f : files) {
       if (f.isDirectory()) {
         if (f.getName().endsWith(".vst3")) {
-          requestPluginsInBundle(f);
+          bundlePaths.add(f.getAbsolutePath());
         } else {
-          scanDirectory(f, pluginsNode, midiNode, audioNode);
+          collectFiles(f, pluginsNode, midiNode, audioNode, bundlePaths);
         }
       } else {
         String name = f.getName().toLowerCase();
@@ -364,7 +378,7 @@ public class BrowserPane extends JPanel {
       } else if ("remote-vst".equals(item.type)) {
         // For remote plugins, use getPath() not getAbsolutePath() to avoid
         // Linux CWD being prepended to Windows paths (e.g. C:\...).
-        sendLoadPlugin(item.file.getPath(), item.pluginIndex);
+        sendLoadPlugin(item.file.getPath(), item.pluginIndex, item.remoteHost);
       } else if ("midi".equals(item.type)) {
         sendLoadClip(item.file.getAbsolutePath(), false);
       } else if ("audio".equals(item.type)) {
@@ -374,19 +388,26 @@ public class BrowserPane extends JPanel {
   }
 
   private void sendLoadPlugin(String path, int pluginIndex) {
+    sendLoadPlugin(path, pluginIndex, "");
+  }
+
+  private void sendLoadPlugin(String path, int pluginIndex, String remoteHost) {
     int trackIndex =
         SessionView.getInstance() != null ? SessionView.getInstance().getSelectedTrack() : 0;
+    PluginCmd.Builder pluginCmd = PluginCmd.newBuilder()
+        .setAction(PluginCmd.Action.ACTION_LOAD)
+        .setTarget(
+            EntityRef.newBuilder()
+                .setTrackIndex(trackIndex)
+                .setPluginIndex(pluginIndex))
+        .setPath(path);
+    if (remoteHost != null && !remoteHost.isEmpty()) {
+      pluginCmd.setRemoteHost(remoteHost);
+    }
     BackendManager.getInstance()
         .sendRequest(
             Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_LOAD)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex))
-                        .setPath(path))
+                .setPlugin(pluginCmd)
                 .build());
   }
 
@@ -411,17 +432,23 @@ public class BrowserPane extends JPanel {
     public String displayName;
     public String vendor;
     public int pluginIndex;
+    public String remoteHost; // non-empty for remote plugins ("host:port")
 
     public FileItem(File file, String type, String displayName) {
-      this(file, type, displayName, "", 0);
+      this(file, type, displayName, "", 0, "");
     }
 
     public FileItem(File file, String type, String displayName, String vendor, int pluginIndex) {
+      this(file, type, displayName, vendor, pluginIndex, "");
+    }
+
+    public FileItem(File file, String type, String displayName, String vendor, int pluginIndex, String remoteHost) {
       this.file = file;
       this.type = type;
       this.displayName = displayName;
       this.vendor = vendor;
       this.pluginIndex = pluginIndex;
+      this.remoteHost = remoteHost != null ? remoteHost : "";
     }
 
     @Override

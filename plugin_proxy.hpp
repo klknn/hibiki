@@ -9,11 +9,10 @@ namespace hibiki {
 
 class WorkerChannel;
 
-// Plugin hosting mode — determines how PluginProxy communicates.
+// Plugin hosting mode — determines how local plugins are hosted.
 enum class PluginHostMode {
   IN_PROCESS,     // Use Vst3Plugin directly (no worker)
   LOCAL_SANDBOX,  // Fork hbk-plugin-worker, Unix socket + shared memory
-  REMOTE,         // Connect to hbk-worker-daemon via TCP
 };
 
 // Out-of-process IPlugin implementation.

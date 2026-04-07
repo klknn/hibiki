@@ -5,7 +5,7 @@ import javax.swing.*;
 
 public class SettingsDialog extends JDialog {
   private static final String[] HOST_MODES = {
-      "In-Process", "Local Sandbox (Unix)", "Remote (TCP)"
+      "In-Process", "Out-of-Process (Sandbox)"
   };
 
   public SettingsDialog(Frame owner) {
@@ -45,13 +45,18 @@ public class SettingsDialog extends JDialog {
     p.add(deviceLabel, gbc);
     gbc.gridwidth = 1;
 
-    // Buffer Size
+    // Buffer Size — read from backend config if available
+    int bufferMs = 200;
+    hibiki.pb.commands.HibikiConfig cfg = hibiki.BackendManager.getInstance().getCurrentConfig();
+    if (cfg != null && cfg.getBufferLatencyMs() > 0) {
+      bufferMs = cfg.getBufferLatencyMs();
+    }
     row++;
     gbc.gridx = 0;
     gbc.gridy = row;
     p.add(new JLabel("Buffer Size (ms):"), gbc);
     gbc.gridx = 1;
-    JSpinner bufferSpinner = new JSpinner(new SpinnerNumberModel(200, 10, 2000, 10));
+    JSpinner bufferSpinner = new JSpinner(new SpinnerNumberModel(bufferMs, 10, 2000, 10));
     p.add(bufferSpinner, gbc);
 
     // Description
@@ -97,6 +102,9 @@ public class SettingsDialog extends JDialog {
     gbc.insets = new Insets(5, 5, 5, 5);
     int row = 0;
 
+    // Read config once for this panel
+    hibiki.pb.commands.HibikiConfig pcfg = hibiki.BackendManager.getInstance().getCurrentConfig();
+
     // Hosting Mode
     gbc.gridx = 0;
     gbc.gridy = row;
@@ -104,6 +112,10 @@ public class SettingsDialog extends JDialog {
     gbc.gridx = 1;
     gbc.gridwidth = 2;
     JComboBox<String> modeCombo = new JComboBox<>(HOST_MODES);
+    // Pre-select from backend config
+    if (pcfg != null && pcfg.getPluginHostMode() == hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX) {
+      modeCombo.setSelectedIndex(1);
+    }
     p.add(modeCombo, gbc);
     gbc.gridwidth = 1;
 
@@ -113,14 +125,19 @@ public class SettingsDialog extends JDialog {
     gbc.gridy = row;
     gbc.anchor = GridBagConstraints.NORTH;
     JLabel hostsLabel = new JLabel("Remote Hosts:");
-    hostsLabel.setEnabled(false);
     p.add(hostsLabel, gbc);
 
     DefaultListModel<String> hostListModel = new DefaultListModel<>();
-    hostListModel.addElement("localhost:9100");
+    // Pre-populate from backend config
+    if (pcfg != null && pcfg.getRemoteHostsCount() > 0) {
+      for (String host : pcfg.getRemoteHostsList()) {
+        hostListModel.addElement(host);
+      }
+    } else {
+      hostListModel.addElement("localhost:9100");
+    }
     JList<String> hostList = new JList<>(hostListModel);
     hostList.setVisibleRowCount(4);
-    hostList.setEnabled(false);
     JScrollPane hostScroll = new JScrollPane(hostList);
     hostScroll.setPreferredSize(new java.awt.Dimension(200, 80));
     gbc.gridx = 1;
@@ -135,7 +152,6 @@ public class SettingsDialog extends JDialog {
     gbc.gridy = row;
     JPanel hostBtnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
     JButton addBtn = new JButton("+");
-    addBtn.setEnabled(false);
     addBtn.addActionListener(e -> {
       String host = JOptionPane.showInputDialog(this, "Enter host:port", "localhost:9100");
       if (host != null && !host.isEmpty()) {
@@ -143,7 +159,6 @@ public class SettingsDialog extends JDialog {
       }
     });
     JButton removeBtn = new JButton("−");
-    removeBtn.setEnabled(false);
     removeBtn.addActionListener(e -> {
       int sel = hostList.getSelectedIndex();
       if (sel >= 0)
@@ -153,14 +168,6 @@ public class SettingsDialog extends JDialog {
     hostBtnPanel.add(removeBtn);
     p.add(hostBtnPanel, gbc);
 
-    // Enable/disable remote fields based on mode
-    modeCombo.addActionListener(e -> {
-      boolean isRemote = modeCombo.getSelectedIndex() == 2;
-      hostsLabel.setEnabled(isRemote);
-      hostList.setEnabled(isRemote);
-      addBtn.setEnabled(isRemote);
-      removeBtn.setEnabled(isRemote);
-    });
 
     // Description
     row++;
@@ -169,8 +176,8 @@ public class SettingsDialog extends JDialog {
     gbc.gridwidth = 3;
     JLabel desc = new JLabel("<html><small>"
         + "In-Process: plugins run in the audio engine (lowest latency)<br>"
-        + "Local Sandbox: isolated process per plugin (crash protection)<br>"
-        + "Remote: plugins on other machines via TCP (cross-OS, multi-server)"
+        + "Sandbox: isolated process per plugin (crash protection)<br>"
+        + "Remote hosts: plugins from other machines via TCP (always available)"
         + "</small></html>");
     desc.setFont(Theme.getInstance().FONT_UI.deriveFont(11.0f));
     p.add(desc, gbc);
@@ -189,20 +196,16 @@ public class SettingsDialog extends JDialog {
         case 1:
           mode = hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX;
           break;
-        case 2:
-          mode = hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_REMOTE;
-          break;
         default:
           mode = hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_IN_PROCESS;
           break;
       }
 
+      // Always send remote hosts alongside the local mode
       hibiki.pb.commands.SetPluginHostMode.Builder builder = hibiki.pb.commands.SetPluginHostMode.newBuilder()
           .setMode(mode);
-      if (idx == 2) {
-        for (int i = 0; i < hostListModel.size(); i++) {
-          builder.addRemoteHosts(hostListModel.get(i));
-        }
+      for (int i = 0; i < hostListModel.size(); i++) {
+        builder.addRemoteHosts(hostListModel.get(i));
       }
 
       hibiki.pb.commands.Request request = hibiki.pb.commands.Request.newBuilder()

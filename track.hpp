@@ -137,7 +137,7 @@ class Track {
 
   int LoadPlugin(const std::string& path, int plugin_index, double sample_rate,
                  PluginHostMode host_mode = PluginHostMode::IN_PROCESS,
-                 const std::vector<std::string>& remote_hosts = {});
+                 const std::string& remote_host = "");
   bool DeleteClip(int slot);
   bool LoadClip(int slot, const std::string& path, bool is_loop = false);
   void SetClipLoop(int slot, bool is_loop);

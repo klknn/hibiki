@@ -1,6 +1,9 @@
 #include "commands.hpp"
 
+#include <google/protobuf/text_format.h>
+
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -15,6 +18,7 @@
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
 #include "pb/plugin_worker.pb.h"
+#include "plugin_scanner.hpp"
 #include "tcp.hpp"
 #include "track.hpp"
 
@@ -233,7 +237,7 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
       sendLog("Loading plugin: " + vpath + " ...");
       int target_idx =
           track->LoadPlugin(vpath, pidx, state.sample_rate,
-                            state.plugin_host_mode, state.remote_hosts);
+                            state.plugin_host_mode, cmd.remote_host());
       if (target_idx != -1) {
         std::vector<VstParamInfo> params;
         auto& plugin = track->plugins[target_idx];
@@ -285,10 +289,27 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
       break;
     }
     case pb::commands::PluginCmd::ACTION_LIST: {
-      std::string path = cmd.path();
-      std::thread([path]() {
-        sendPluginList(path, Vst3Plugin::listPluginsIsolated(path));
-      }).detach();
+      // Batch mode: scan multiple bundles in parallel
+      if (cmd.paths_size() > 0) {
+        std::vector<std::string> bundles;
+        for (const auto& p : cmd.paths()) {
+          bundles.push_back(p);
+        }
+        std::thread([bundles]() {
+          scanBundlesParallel(
+              bundles, Vst3Plugin::listPluginsIsolated,
+              [](const std::string& path,
+                 const std::vector<PluginDescription>& plugins) {
+                sendPluginList(path, plugins);
+              });
+        }).detach();
+      } else {
+        // Single path fallback
+        std::string path = cmd.path();
+        std::thread([path]() {
+          sendPluginList(path, Vst3Plugin::listPluginsIsolated(path));
+        }).detach();
+      }
       break;
     }
     case pb::commands::PluginCmd::ACTION_GET_EDITOR_FRAME: {
@@ -692,19 +713,18 @@ void handleSetPluginHostMode(const pb::commands::SetPluginHostMode& cmd,
     case pb::commands::PLUGIN_HOST_LOCAL_SANDBOX:
       state.plugin_host_mode = PluginHostMode::LOCAL_SANDBOX;
       break;
-    case pb::commands::PLUGIN_HOST_REMOTE:
-      state.plugin_host_mode = PluginHostMode::REMOTE;
-      state.remote_hosts.clear();
-      for (const auto& host : cmd.remote_hosts()) {
-        state.remote_hosts.push_back(host);
-      }
-      break;
     case pb::commands::PLUGIN_HOST_IN_PROCESS:
     default:
       state.plugin_host_mode = PluginHostMode::IN_PROCESS;
       break;
   }
+  // Always update remote hosts list (independent of local mode)
+  state.remote_hosts.clear();
+  for (const auto& host : cmd.remote_hosts()) {
+    state.remote_hosts.push_back(host);
+  }
   sendAck("SET_PLUGIN_HOST_MODE", true);
+  saveConfig(state);
 }
 
 void handleSetAudioBufferSize(const pb::commands::SetAudioBufferSize& cmd,
@@ -715,6 +735,7 @@ void handleSetAudioBufferSize(const pb::commands::SetAudioBufferSize& cmd,
   state.buffer_latency_ms = ms;
   std::cerr << "Audio buffer size set to " << ms << " ms (restart to apply)\n";
   sendAck("SET_AUDIO_BUFFER_SIZE", true);
+  saveConfig(state);
 }
 
 void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
@@ -873,6 +894,57 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
     }).detach();
   }
   sendAck("SCAN_REMOTE_PLUGINS", true);
+}
+
+void loadConfig(ProjectState& state) {
+  std::ifstream in(kConfigFile);
+  if (!in.is_open()) {
+    std::cerr << "No config file found (" << kConfigFile
+              << "), using defaults\n";
+    return;
+  }
+  std::string content((std::istreambuf_iterator<char>(in)),
+                      std::istreambuf_iterator<char>());
+  pb::commands::HibikiConfig config;
+  if (!google::protobuf::TextFormat::ParseFromString(content, &config)) {
+    std::cerr << "Failed to parse " << kConfigFile << ", using defaults\n";
+    return;
+  }
+  // Apply config to state
+  state.plugin_host_mode =
+      (config.plugin_host_mode() == pb::commands::PLUGIN_HOST_LOCAL_SANDBOX)
+          ? PluginHostMode::LOCAL_SANDBOX
+          : PluginHostMode::IN_PROCESS;
+  state.remote_hosts.clear();
+  for (const auto& host : config.remote_hosts()) {
+    state.remote_hosts.push_back(host);
+  }
+  if (config.buffer_latency_ms() > 0) {
+    state.buffer_latency_ms = config.buffer_latency_ms();
+  }
+  std::cerr << "Loaded config from " << kConfigFile << "\n";
+}
+
+void saveConfig(const ProjectState& state) {
+  pb::commands::HibikiConfig config;
+  config.set_plugin_host_mode(
+      (state.plugin_host_mode == PluginHostMode::LOCAL_SANDBOX)
+          ? pb::commands::PLUGIN_HOST_LOCAL_SANDBOX
+          : pb::commands::PLUGIN_HOST_IN_PROCESS);
+  for (const auto& host : state.remote_hosts) {
+    config.add_remote_hosts(host);
+  }
+  config.set_buffer_latency_ms(state.buffer_latency_ms);
+
+  std::string text;
+  google::protobuf::TextFormat::PrintToString(config, &text);
+  std::ofstream out(kConfigFile);
+  if (out.is_open()) {
+    out << text;
+    std::cerr << "Saved config to " << kConfigFile << "\n";
+  } else {
+    std::cerr << "Failed to save config to " << kConfigFile << "\n";
+  }
 }
 
 }  // namespace hibiki

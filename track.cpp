@@ -12,35 +12,31 @@ namespace hibiki {
 
 int Track::LoadPlugin(const std::string& path, int plugin_index,
                       double sample_rate, PluginHostMode host_mode,
-                      const std::vector<std::string>& remote_hosts) {
+                      const std::string& remote_host) {
   std::lock_guard<DummyMutex> lock(mutex);
   std::unique_ptr<IPlugin> plugin;
-  switch (host_mode) {
-    case PluginHostMode::LOCAL_SANDBOX:
-      plugin = std::make_unique<PluginProxy>();
-      break;
-    case PluginHostMode::REMOTE: {
-      // Round-robin across remote hosts
-      if (remote_hosts.empty()) {
-        std::cerr << "REMOTE mode but no hosts configured" << std::endl;
-        return -1;
-      }
-      const std::string& selected =
-          remote_hosts[plugins.size() % remote_hosts.size()];
-      std::string host = selected;
-      int port = 9100;
-      auto colon = selected.rfind(':');
-      if (colon != std::string::npos) {
-        host = selected.substr(0, colon);
-        port = std::stoi(selected.substr(colon + 1));
-      }
-      plugin = std::make_unique<PluginProxy>(host, port);
-      break;
+
+  if (!remote_host.empty()) {
+    // Per-load remote host — always use TCP proxy
+    std::string host = remote_host;
+    int port = 9100;
+    auto colon = remote_host.rfind(':');
+    if (colon != std::string::npos) {
+      host = remote_host.substr(0, colon);
+      port = std::stoi(remote_host.substr(colon + 1));
     }
-    case PluginHostMode::IN_PROCESS:
-    default:
-      plugin = std::make_unique<Vst3Plugin>();
-      break;
+    plugin = std::make_unique<PluginProxy>(host, port);
+  } else {
+    // Local plugin — use configured host mode
+    switch (host_mode) {
+      case PluginHostMode::LOCAL_SANDBOX:
+        plugin = std::make_unique<PluginProxy>();
+        break;
+      case PluginHostMode::IN_PROCESS:
+      default:
+        plugin = std::make_unique<Vst3Plugin>();
+        break;
+    }
   }
   if (!plugin->load(path, plugin_index, sample_rate)) {
     return -1;

@@ -340,6 +340,7 @@ cc_library(
         ":history",
         ":ipc",
         ":midi",
+        ":plugin_scanner",
         ":project",
         ":tcp",
         ":track",
@@ -347,6 +348,7 @@ cc_library(
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",
         "//pb:plugin_worker_cc_proto",
+        "@protobuf//:protobuf",
     ],
 )
 

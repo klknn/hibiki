@@ -214,17 +214,17 @@ public class PluginWorkerTest {
       assertTrue("Daemon should accept connections on port " + port, connected);
       System.out.println("hbk-worker-daemon started on port " + port);
 
-      // Tell backend to use remote mode pointing at our daemon
+      // Tell backend to store remote hosts (mode is independent now)
       sendAndWaitAck(
           Request.newBuilder()
               .setSetPluginHostMode(
                   SetPluginHostMode.newBuilder()
-                      .setMode(PluginHostMode.PLUGIN_HOST_REMOTE)
+                      .setMode(PluginHostMode.PLUGIN_HOST_IN_PROCESS)
                       .addRemoteHosts("localhost:" + port))
               .build(),
           "SET_PLUGIN_HOST_MODE");
 
-      // Load a plugin through the daemon
+      // Load a plugin through the daemon using per-load remote_host
       CompletableFuture<ParamList> paramFuture = new CompletableFuture<>();
       CompletableFuture<String> logFuture = new CompletableFuture<>();
       backend.addNotificationListener(
@@ -242,7 +242,8 @@ public class PluginWorkerTest {
                   PluginCmd.newBuilder()
                       .setAction(PluginCmd.Action.ACTION_LOAD)
                       .setTarget(EntityRef.newBuilder().setTrackIndex(2).setPluginIndex(0))
-                      .setPath(vstFile.getAbsolutePath()))
+                      .setPath(vstFile.getAbsolutePath())
+                      .setRemoteHost("localhost:" + port))
               .build());
 
       try {
@@ -268,14 +269,12 @@ public class PluginWorkerTest {
 
   @Test
   public void testDaemonConnectFailureGraceful() throws Exception {
-    // Set remote mode pointing at a port where nothing is listening.
-    // The SetPluginHostMode command itself should still succeed (it just
-    // stores the config). The failure happens at plugin load time.
+    // Set mode to in-process with a bad remote host stored
     sendAndWaitAck(
         Request.newBuilder()
             .setSetPluginHostMode(
                 SetPluginHostMode.newBuilder()
-                    .setMode(PluginHostMode.PLUGIN_HOST_REMOTE)
+                    .setMode(PluginHostMode.PLUGIN_HOST_IN_PROCESS)
                     .addRemoteHosts("localhost:1"))
             .build(),
         "SET_PLUGIN_HOST_MODE");
@@ -298,13 +297,15 @@ public class PluginWorkerTest {
           }
         });
 
+    // Load with per-load remote_host pointing at unreachable port
     backend.sendRequest(
         Request.newBuilder()
             .setPlugin(
                 PluginCmd.newBuilder()
                     .setAction(PluginCmd.Action.ACTION_LOAD)
                     .setTarget(EntityRef.newBuilder().setTrackIndex(3).setPluginIndex(0))
-                    .setPath(vstFile.getAbsolutePath()))
+                    .setPath(vstFile.getAbsolutePath())
+                    .setRemoteHost("localhost:1"))
             .build());
 
     // Should get a failure log rather than a crash

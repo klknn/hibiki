@@ -12,6 +12,7 @@ option java_outer_classname = "NotificationsProto";
 option java_multiple_files = true;
 
 import "pb/core.proto";
+import "pb/commands.proto";
 
 // ─── State Synchronization (new pattern) ────────────────────────────
 
@@ -216,5 +217,8 @@ message Notification {
     BounceFinished bounce_finished = 14;
     Log log = 16;
     Acknowledge acknowledge = 17;
+
+    // Settings state pushed on startup
+    hibiki.pb.commands.HibikiConfig config = 20;
   }
 }

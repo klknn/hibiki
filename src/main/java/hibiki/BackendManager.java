@@ -19,6 +19,7 @@ public class BackendManager {
   private final ExecutorService executor = Executors.newCachedThreadPool();
   private final List<Consumer<Notification>> listeners = new ArrayList<>();
   private boolean isPlaying = false; // Track playback state for toggle
+  private volatile HibikiConfig currentConfig = null;
 
   private BackendManager() {}
 
@@ -156,6 +157,10 @@ public class BackendManager {
   }
 
   private void handleNotification(Notification notification) {
+    // Store config if received
+    if (notification.getResponseCase() == Notification.ResponseCase.CONFIG) {
+      currentConfig = notification.getConfig();
+    }
     synchronized (listeners) {
       for (Consumer<Notification> listener : listeners) {
         try {
@@ -166,6 +171,10 @@ public class BackendManager {
         }
       }
     }
+  }
+
+  public HibikiConfig getCurrentConfig() {
+    return currentConfig;
   }
 
   public synchronized void sendRequest(Request request) {

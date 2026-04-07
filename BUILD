@@ -73,7 +73,7 @@ cc_library(
 cc_library(
     name = "vst3_host_win32",
     srcs = ["vst3_host_win32.cpp"],
-    linkopts = ["-DEFAULTLIB:user32"],
+    linkopts = ["-DEFAULTLIB:user32", "-DEFAULTLIB:gdi32"],
     target_compatible_with = ["@platforms//os:windows"],
     deps = [
         ":vst3_host",

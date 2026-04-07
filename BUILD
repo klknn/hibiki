@@ -340,7 +340,6 @@ cc_library(
         ":history",
         ":ipc",
         ":midi",
-        ":plugin_scanner",
         ":project",
         ":tcp",
         ":track",

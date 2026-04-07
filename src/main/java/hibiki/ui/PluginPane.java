@@ -359,7 +359,17 @@ public class PluginPane extends JPanel {
     }
 
     private void sendShowGui() {
-      RemoteEditorPanel.showEditor(PluginPane.this, trackIndex, pluginIndex, pluginName);
+      BackendManager.getInstance()
+          .sendRequest(
+              Request.newBuilder()
+                  .setPlugin(
+                      PluginCmd.newBuilder()
+                          .setAction(PluginCmd.Action.ACTION_SHOW_GUI)
+                          .setTarget(
+                              EntityRef.newBuilder()
+                                  .setTrackIndex(trackIndex)
+                                  .setPluginIndex(pluginIndex)))
+                  .build());
     }
 
     private void sendRemovePlugin() {

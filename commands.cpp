@@ -15,7 +15,6 @@
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
 #include "pb/plugin_worker.pb.h"
-#include "plugin_scanner.hpp"
 #include "tcp.hpp"
 #include "track.hpp"
 
@@ -288,18 +287,7 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
     case pb::commands::PluginCmd::ACTION_LIST: {
       std::string path = cmd.path();
       std::thread([path]() {
-        auto bundles = collectVst3Bundles({path});
-        scanBundlesParallel(
-            bundles,
-            [](const std::string& bp) {
-              return Vst3Plugin::listPluginsIsolated(bp);
-            },
-            [&path](const std::string& /*bundle_path*/,
-                    const std::vector<PluginDescription>& plugins) {
-              if (!plugins.empty()) {
-                sendPluginList(path, plugins);
-              }
-            });
+        sendPluginList(path, Vst3Plugin::listPluginsIsolated(path));
       }).detach();
       break;
     }

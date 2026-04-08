@@ -360,6 +360,8 @@ public class BackendManager {
   private String findBinary(String binaryName) {
     // Try simple relative
     if (new File("./" + binaryName).exists()) return "./" + binaryName;
+    if (new File("./engine/" + binaryName).exists()) return "./engine/" + binaryName;
+
 
     // Search up for bazel-bin or root
     File dir = new File(".").getAbsoluteFile();
@@ -369,11 +371,13 @@ public class BackendManager {
       // Try in bazel-bin
       File bin = new File(dir, "bazel-bin/" + binaryName);
       if (bin.exists()) return bin.getAbsolutePath();
+      File binEngine = new File(dir, "bazel-bin/engine/" + binaryName);
+      if (binEngine.exists()) return binEngine.getAbsolutePath();
 
       // Try in bazel-out
-      File outWin = new File(dir, "bazel-out/x64_windows-opt/bin/" + binaryName);
+      File outWin = new File(dir, "bazel-out/x64_windows-opt/bin/engine/" + binaryName);
       if (outWin.exists()) return outWin.getAbsolutePath();
-      File outLinux = new File(dir, "bazel-out/k8-opt/bin/" + binaryName);
+      File outLinux = new File(dir, "bazel-out/k8-opt/bin/engine/" + binaryName);
       if (outLinux.exists()) return outLinux.getAbsolutePath();
 
       // Try in runfiles sibling to jar (if executed via java_binary)
@@ -386,9 +390,9 @@ public class BackendManager {
     // Try environment
     String runfilesDir = System.getenv("RUNFILES_DIR");
     if (runfilesDir != null) {
-      File f1 = new File(runfilesDir, "_main/" + binaryName);
+      File f1 = new File(runfilesDir, "_main/engine/" + binaryName);
       if (f1.exists()) return f1.getAbsolutePath();
-      File f2 = new File(runfilesDir, "hibiki/" + binaryName);
+      File f2 = new File(runfilesDir, "hibiki/engine/" + binaryName);
       if (f2.exists()) return f2.getAbsolutePath();
     }
 

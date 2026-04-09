@@ -133,6 +133,20 @@ public class SettingsDialog extends JDialog {
     }
     p.add(inputCombo, gbc);
 
+    // Auto-refresh after backend responds (request was sent in constructor)
+    Timer autoRefresh = new Timer(500, ev -> {
+      var freshDevs = TimelineNotificationHandler.cachedInputDevices;
+      if (!freshDevs.isEmpty()) {
+        inputCombo.removeAllItems();
+        for (int i = 0; i < freshDevs.size(); i++) {
+          var d = freshDevs.get(i);
+          inputCombo.addItem(d.getName() + " (" + d.getChannelCount() + " ch)");
+        }
+      }
+    });
+    autoRefresh.setRepeats(false);
+    autoRefresh.start();
+
     row++;
     gbc.gridx = 1;
     gbc.gridy = row;

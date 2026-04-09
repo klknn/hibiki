@@ -213,15 +213,28 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 int baseH = Theme.getInstance().scale(getBaseTrackHeight());
                 int clickYInTrack = (e.getY() - scaleTimeRuler) - trackTopY;
 
-                // Check if click is on the arm indicator (top-right circle)
-                int circleSize = 12;
-                int circleX = scaleLabelWidth - circleSize - 4;
-                if (e.getX() >= circleX && e.getX() <= circleX + circleSize
-                    && clickYInTrack >= 4 && clickYInTrack <= 4 + circleSize) {
+                // Row 3 button positions (must match TimelineRenderer)
+                int row3Y = 33; // relative to track top
+                int btnH = 18;
+                int armW = 30;
+                int gap = 3;
+                int inputW = scaleLabelWidth - armW - gap * 3;
+
+                // Check if click is on the ARM button
+                int armX = gap + inputW + gap;
+                if (e.getX() >= armX && e.getX() <= armX + armW
+                    && clickYInTrack >= row3Y && clickYInTrack <= row3Y + btnH) {
                   track.recordArmed = !track.recordArmed;
                   BackendManager.getInstance().armTrack(trackIdx);
                   rowHeader.repaint();
                   contentPanel.repaint();
+                  return;
+                }
+
+                // Check if click is on the Input dropdown button
+                if (e.getX() >= gap && e.getX() <= gap + inputW
+                    && clickYInTrack >= row3Y && clickYInTrack <= row3Y + btnH) {
+                  showInputChannelPopup(trackIdx, e);
                   return;
                 }
 
@@ -288,6 +301,14 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     repaintTimer.start();
 
     BackendManager.getInstance().addNotificationListener(this::handleNotification);
+
+    // Pre-populate audio input device cache at startup
+    BackendManager.getInstance().requestAudioInputs();
+    // Retry after 1s in case backend wasn't ready yet
+    javax.swing.Timer startupRetry = new javax.swing.Timer(1000,
+        ev -> BackendManager.getInstance().requestAudioInputs());
+    startupRetry.setRepeats(false);
+    startupRetry.start();
 
     setupMouseListeners();
     setupDropTarget();
@@ -699,6 +720,78 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   }
 
   /** Show dialog for selecting audio input device and channel configuration */
+  /** Show popup from the input dropdown button in the track header */
+  private void showInputChannelPopup(int trackIdx, MouseEvent e) {
+    TrackTimeline track = tracks.get(trackIdx);
+    JPopupMenu popup = new JPopupMenu();
+
+    // Input Device submenu
+    JMenu deviceMenu = new JMenu("Input Device");
+    var devices = TimelineNotificationHandler.cachedInputDevices;
+    if (devices.isEmpty()) {
+      JMenuItem noDevices = new JMenuItem("(no devices — refresh in Settings)");
+      noDevices.setEnabled(false);
+      deviceMenu.add(noDevices);
+    } else {
+      for (int i = 0; i < devices.size(); i++) {
+        var dev = devices.get(i);
+        String label = dev.getName() + " (" + dev.getChannelCount() + " ch)";
+        JRadioButtonMenuItem item = new JRadioButtonMenuItem(
+            label, dev.getId().equals(track.inputDeviceId));
+        final String devId = dev.getId();
+        item.addActionListener(ev -> {
+          track.inputDeviceId = devId;
+          BackendManager.getInstance().setInputDevice(
+              trackIdx, devId, track.inputChannelStart, track.inputStereo);
+          rowHeader.repaint();
+        });
+        deviceMenu.add(item);
+      }
+    }
+    popup.add(deviceMenu);
+    popup.addSeparator();
+
+    // Stereo / Mono toggle
+    JRadioButtonMenuItem stereoItem = new JRadioButtonMenuItem("Stereo", track.inputStereo);
+    JRadioButtonMenuItem monoItem = new JRadioButtonMenuItem("Mono", !track.inputStereo);
+    ButtonGroup chGroup = new ButtonGroup();
+    chGroup.add(stereoItem);
+    chGroup.add(monoItem);
+    stereoItem.addActionListener(ev -> {
+      track.inputStereo = true;
+      BackendManager.getInstance().setInputDevice(
+          trackIdx, track.inputDeviceId, track.inputChannelStart, true);
+      rowHeader.repaint();
+    });
+    monoItem.addActionListener(ev -> {
+      track.inputStereo = false;
+      BackendManager.getInstance().setInputDevice(
+          trackIdx, track.inputDeviceId, track.inputChannelStart, false);
+      rowHeader.repaint();
+    });
+    popup.add(stereoItem);
+    popup.add(monoItem);
+    popup.addSeparator();
+
+    // Channel offset (1-8)
+    for (int ch = 0; ch < 8; ch++) {
+      final int chStart = ch;
+      String label = track.inputStereo
+          ? "Ch " + (ch + 1) + "-" + (ch + 2)
+          : "Ch " + (ch + 1);
+      JRadioButtonMenuItem chItem = new JRadioButtonMenuItem(label, ch == track.inputChannelStart);
+      chItem.addActionListener(ev -> {
+        track.inputChannelStart = chStart;
+        BackendManager.getInstance().setInputDevice(
+            trackIdx, track.inputDeviceId, chStart, track.inputStereo);
+        rowHeader.repaint();
+      });
+      popup.add(chItem);
+    }
+
+    popup.show(e.getComponent(), e.getX(), e.getY());
+  }
+
   private void showInputDeviceDialog(int trackIdx) {
     // Request fresh device list
     BackendManager.getInstance().requestAudioInputs();

@@ -45,45 +45,84 @@ class TimelineRenderer {
       }
       g2.fillRect(0, y, scaleLabelWidth, scaleBaseTrack - 1);
 
+      TimelineView.TrackTimeline track = tracks.get(i);
+
+      // Row 1: Track name
       g2.setColor(Theme.getInstance().TEXT_BRIGHT);
       g2.setFont(Theme.getInstance().FONT_UI_BOLD);
-      g2.drawString(tracks.get(i).getDisplayName(), 5, y + 16);
+      String displayName = track.getDisplayName();
+      if (displayName.length() > 14)
+        displayName = displayName.substring(0, 13) + "…";
+      g2.drawString(displayName, 5, y + 14);
 
-      TimelineView.TrackTimeline track = tracks.get(i);
+      // Row 2: Plugin name
+      g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(9.0f)));
       if (track.pluginName != null) {
-        g2.setFont(Theme.getInstance().FONT_UI);
         g2.setColor(
             track.isInstrument ? Theme.getInstance().ACCENT_ORANGE : Theme.getInstance().TEXT_DIM);
         String pname = track.pluginName;
-        if (pname.length() > 12) pname = pname.substring(0, 11) + "…";
-        g2.drawString(pname, 5, y + 32);
+        if (pname.length() > 14)
+          pname = pname.substring(0, 13) + "…";
+        g2.drawString(pname, 5, y + 27);
       } else {
-        g2.setFont(Theme.getInstance().FONT_UI);
         g2.setColor(Theme.getInstance().TEXT_DIM);
-        g2.drawString("(no plugin)", 5, y + 32);
+        g2.drawString("(no plugin)", 5, y + 27);
       }
 
-      // Record arm indicator
-      if (track.recordArmed) {
-        int circleSize = 12;
-        int cx = scaleLabelWidth - circleSize - 4;
-        int cy = y + 4;
-        g2.setColor(new Color(220, 30, 30));
-        g2.fillOval(cx, cy, circleSize, circleSize);
-        g2.setColor(Color.WHITE);
-        g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(8.0f)));
-        g2.drawString("R", cx + 3, cy + 10);
+      // Row 3: Input dropdown + ARM button (Ableton-style, always visible)
+      int row3Y = y + 33;
+      int btnH = 18;
+      int armW = 30;
+      int gap = 3;
+      int inputW = scaleLabelWidth - armW - gap * 3;
 
-        // Input channel label
-        String chLabel;
-        if (track.inputStereo) {
-          chLabel = "In: " + (track.inputChannelStart + 1) + "-" + (track.inputChannelStart + 2);
-        } else {
-          chLabel = "In: " + (track.inputChannelStart + 1);
-        }
-        g2.setColor(Theme.getInstance().TEXT_DIM);
-        g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(9.0f)));
-        g2.drawString(chLabel, 5, y + 46);
+      // ── Input channel dropdown button ──
+      g2.setColor(new Color(50, 50, 55));
+      g2.fillRoundRect(gap, row3Y, inputW, btnH, 4, 4);
+      g2.setColor(new Color(80, 80, 85));
+      g2.drawRoundRect(gap, row3Y, inputW, btnH, 4, 4);
+      String inLabel;
+      if (track.inputStereo) {
+        inLabel = "In " + (track.inputChannelStart + 1) + "-" + (track.inputChannelStart + 2);
+      } else {
+        inLabel = "In " + (track.inputChannelStart + 1);
+      }
+      g2.setColor(Theme.getInstance().TEXT_BRIGHT);
+      g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(9.0f)));
+      g2.drawString(inLabel, gap + 4, row3Y + 13);
+      // Dropdown arrow ▼
+      g2.setColor(Theme.getInstance().TEXT_DIM);
+      int ax = gap + inputW - 12;
+      int[] xPts = { ax, ax + 8, ax + 4 };
+      int[] yPts = { row3Y + 7, row3Y + 7, row3Y + 12 };
+      g2.fillPolygon(xPts, yPts, 3);
+
+      // ── ARM button ──
+      int armX = gap + inputW + gap;
+      if (track.recordArmed) {
+        g2.setColor(new Color(200, 35, 35));
+        g2.fillRoundRect(armX, row3Y, armW, btnH, 4, 4);
+        g2.setColor(Color.WHITE);
+      } else {
+        g2.setColor(new Color(50, 50, 55));
+        g2.fillRoundRect(armX, row3Y, armW, btnH, 4, 4);
+        g2.setColor(new Color(80, 80, 85));
+        g2.drawRoundRect(armX, row3Y, armW, btnH, 4, 4);
+        g2.setColor(new Color(160, 60, 60));
+      }
+      g2.setFont(Theme.getInstance().FONT_UI_BOLD.deriveFont(Theme.getInstance().scale(9.0f)));
+      FontMetrics fm = g2.getFontMetrics();
+      int tw = fm.stringWidth("ARM");
+      g2.drawString("ARM", armX + (armW - tw) / 2, row3Y + 13);
+
+      // Row 4: Device name (if armed)
+      if (track.recordArmed && track.inputDeviceId != null && !track.inputDeviceId.isEmpty()) {
+        g2.setColor(new Color(100, 180, 100));
+        g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(8.0f)));
+        String devName = track.inputDeviceId;
+        if (devName.length() > 16)
+          devName = devName.substring(0, 15) + "…";
+        g2.drawString(devName, 5, y + 63);
       }
 
       // Automation expand/collapse indicator

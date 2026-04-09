@@ -23,6 +23,7 @@ void handleSetPluginHostMode(const pb::commands::SetPluginHostMode& cmd,
 void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd);
 void handleSetAudioBufferSize(const pb::commands::SetAudioBufferSize& cmd,
                               ProjectState& state);
+void handleListAudioInputs();
 
 // Config file persistence (.hibikirc.textproto)
 constexpr const char* kConfigFile = ".hibikirc.textproto";

@@ -19,7 +19,9 @@ public class BackendManager {
   private final ExecutorService executor = Executors.newCachedThreadPool();
   private final List<Consumer<Notification>> listeners = new ArrayList<>();
   private boolean isPlaying = false; // Track playback state for toggle
+  private boolean isRecording = false; // Track recording state
   private volatile HibikiConfig currentConfig = null;
+  private String defaultInputDeviceId = ""; // Default input device from Settings
 
   private BackendManager() {}
 
@@ -208,6 +210,64 @@ public class BackendManager {
             .setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_STOP))
             .build());
     isPlaying = false;
+    isRecording = false;
+  }
+
+  /** Start recording on armed tracks */
+  public void startRecording() {
+    sendRequest(
+        Request.newBuilder()
+            .setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_RECORD))
+            .build());
+    isPlaying = true;
+    isRecording = true;
+  }
+
+  public boolean isRecording() {
+    return isRecording;
+  }
+
+  /** Toggle record arm on a track */
+  public void armTrack(int trackIndex) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_ARM_RECORD)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex)))
+            .build());
+  }
+
+  /** Set input device and channel configuration for a track */
+  public void setInputDevice(int trackIndex, String deviceId, int channelStart, boolean stereo) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_INPUT_DEVICE)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setInputDeviceId(deviceId)
+                    .setInputChannelStart(channelStart)
+                    .setInputStereo(stereo))
+            .build());
+  }
+
+  /** Request list of available audio input devices */
+  public void requestAudioInputs() {
+    sendRequest(
+        Request.newBuilder()
+            .setListAudioInputs(ListAudioInputs.newBuilder())
+            .build());
+  }
+
+  /** Get the default input device ID set in Settings */
+  public String getDefaultInputDeviceId() {
+    return defaultInputDeviceId;
+  }
+
+  /** Set the default input device ID from Settings */
+  public void setDefaultInputDeviceId(String id) {
+    this.defaultInputDeviceId = id;
   }
 
   /** Toggle play/stop state - triggered by Space key */

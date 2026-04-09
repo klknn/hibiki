@@ -153,6 +153,27 @@ message ParamValueChange {
   float value = 4;
 }
 
+// ─── Recording ──────────────────────────────────────────────────────
+
+// Sent when recording finishes and a new clip is created.
+message RecordingFinished {
+  int32 track_index = 1;
+  string path = 2;
+  int32 clip_index = 3;
+}
+
+// A single audio input device.
+message AudioInputDevice {
+  string id = 1;    // Platform device ID
+  string name = 2;  // Human-readable name
+  int32 channel_count = 3;  // Number of input channels
+}
+
+// List of available audio input devices.
+message AudioInputList {
+  repeated AudioInputDevice devices = 1;
+}
+
 // ─── Lifecycle ──────────────────────────────────────────────────────
 
 // Project cleared (before load or undo/redo).
@@ -211,6 +232,10 @@ message Notification {
     AutomationLanesData automation_lanes_data = 12;
     ParamValueChange param_value_change = 18;
     EditorFrameData editor_frame_data = 19;
+
+    // Recording
+    RecordingFinished recording_finished = 21;
+    AudioInputList audio_input_list = 22;
 
     // Lifecycle
     ClearProject clear_project = 13;

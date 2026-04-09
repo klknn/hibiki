@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -12,17 +13,18 @@
 #include <io.h>
 #endif
 
+#include "engine/audio/sound.hpp"
+#include "engine/core/audio_file.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/core/commands.hpp"
 #include "engine/core/history.hpp"
-#include "engine/ipc/ipc.hpp"
 #include "engine/core/midi.hpp"
+#include "engine/core/project.hpp"
+#include "engine/core/track.hpp"
+#include "engine/ipc/ipc.hpp"
+#include "engine/vst3/vst3_host.hpp"
 #include "pb/commands.pb.h"
 #include "pb/notifications.pb.h"
-#include "engine/core/project.hpp"
-#include "engine/audio/sound.hpp"
-#include "engine/core/track.hpp"
-#include "engine/vst3/vst3_host.hpp"
 
 namespace hibiki {
 
@@ -189,6 +191,40 @@ void playback_thread(ProjectState& state) {
           }
         }
 
+        // 2a. Recording input capture
+        if (state.is_recording && track->record_armed && track->input_device &&
+            track->input_device->is_ready()) {
+          std::vector<float> input_block;
+          int input_ch = track->input_device->get_channels();
+          if (track->input_device->read(input_block, block_size)) {
+            // Extract selected channels from device input
+            int ch_start = track->input_channel_start;
+            bool stereo = track->input_stereo;
+            for (int i = 0; i < block_size; ++i) {
+              if (stereo) {
+                int idx_l = i * input_ch + ch_start;
+                int idx_r = i * input_ch + ch_start + 1;
+                float l = (idx_l < (int)input_block.size()) ? input_block[idx_l]
+                                                            : 0.0f;
+                float r = (idx_r < (int)input_block.size()) ? input_block[idx_r]
+                                                            : 0.0f;
+                track->record_buffer.push_back(l);
+                track->record_buffer.push_back(r);
+                // Live monitoring: mix input into track output
+                bufferL[i] += l;
+                bufferR[i] += r;
+              } else {
+                int idx = i * input_ch + ch_start;
+                float s =
+                    (idx < (int)input_block.size()) ? input_block[idx] : 0.0f;
+                track->record_buffer.push_back(s);
+                bufferL[i] += s;
+                bufferR[i] += s;
+              }
+            }
+          }
+        }
+
         // 3. Apply Automation — set parameter values from curves
         if (state.is_timeline_playing) {
           double current_beats = state.playhead_pos_sec * (state.bpm / 60.0);
@@ -264,6 +300,43 @@ void notification_thread(ProjectState& state) {
     notification.SerializeToString(&data);
     sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
                      data.size());
+
+    // Live waveform updates during recording (~5Hz)
+    static int wf_counter = 0;
+    if (state.is_recording && ++wf_counter >= 6) {
+      wf_counter = 0;
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      for (auto& pair : state.tracks) {
+        auto& track = pair.second;
+        if (!track->record_armed || track->record_buffer.empty()) continue;
+        int rec_ch = track->input_stereo ? 2 : 1;
+        int total_samples = (int)track->record_buffer.size();
+        double duration_sec =
+            (double)total_samples / (rec_ch * state.sample_rate);
+
+        // Generate quick 200-point peak summary
+        int summary_size = 200;
+        std::vector<float> waveform(summary_size, 0.0f);
+        int samples_per_bucket = total_samples / (rec_ch * summary_size);
+        if (samples_per_bucket < 1) samples_per_bucket = 1;
+        for (int b = 0; b < summary_size; ++b) {
+          float peak = 0.0f;
+          for (int s = 0; s < samples_per_bucket; ++s) {
+            int idx = (b * samples_per_bucket + s) * rec_ch;
+            if (idx < total_samples) {
+              peak = std::max(peak, std::abs(track->record_buffer[idx]));
+            }
+          }
+          waveform[b] = peak;
+        }
+
+        // Use next available clip index (matches final clip on stop)
+        int live_clip_idx = (int)track->timeline_clips.size();
+        sendTimelineClipInfo(pair.first, live_clip_idx, "Recording...", "",
+                             (float)state.record_start_sec, (float)duration_sec,
+                             waveform);
+      }
+    }
   }
 }
 
@@ -347,6 +420,9 @@ void run_ipc_loop(ProjectState& state) {
         break;
       case hibiki::pb::commands::Request::kSetAudioBufferSize:
         handleSetAudioBufferSize(request.set_audio_buffer_size(), state);
+        break;
+      case hibiki::pb::commands::Request::kListAudioInputs:
+        handleListAudioInputs();
         break;
     }
     if (state.quit) break;

@@ -18,6 +18,8 @@ public class TopBar extends JPanel {
   private JButton replBtn;
   private boolean isLooping = false;
   private JButton loopBtn;
+  private boolean isRecording = false;
+  private JButton recordButton;
 
   public interface ViewToggleListener {
     void onViewToggle(boolean isTimeline);
@@ -87,16 +89,14 @@ public class TopBar extends JPanel {
     JButton stopBtn = Theme.getInstance().createButton("■", e -> sendStop());
     stopBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
 
-    JButton recordBtn =
+    recordButton =
         Theme.getInstance()
             .createButton(
                 "●",
-                e -> {
-                  /* Record placeholder for future */
-                });
-    recordBtn.setForeground(new Color(200, 50, 50)); // Red for record
-    recordBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
-    recordBtn.setToolTipText("Record (coming soon)");
+                e -> sendRecord());
+    recordButton.setForeground(new Color(200, 50, 50));
+    recordButton.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
+    recordButton.setToolTipText("Record");
 
     loopBtn = Theme.getInstance().createButton("⟳", e -> toggleLoop());
     loopBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
@@ -106,7 +106,7 @@ public class TopBar extends JPanel {
 
     centerPanel.add(playBtn);
     centerPanel.add(stopBtn);
-    centerPanel.add(recordBtn);
+    centerPanel.add(recordButton);
     centerPanel.add(loopBtn);
     centerPanel.add(Box.createHorizontalStrut(Theme.getInstance().scale(10)));
     centerPanel.add(positionLabel);
@@ -188,6 +188,19 @@ public class TopBar extends JPanel {
 
   private void sendStop() {
     BackendManager.getInstance().stopPlayback();
+    isRecording = false;
+    recordButton.setForeground(new Color(200, 50, 50));
+  }
+
+  private void sendRecord() {
+    if (isRecording) {
+      sendStop();
+    } else {
+      BackendManager.getInstance().startRecording();
+      isRecording = true;
+      recordButton.setForeground(new Color(255, 50, 50));
+      recordButton.setBackground(new Color(80, 20, 20));
+    }
   }
 
   private void toggleLoop() {

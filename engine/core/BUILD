@@ -38,6 +38,7 @@ cc_library(
     hdrs = ["track.hpp"],
     deps = [
         ":clip",
+        "//engine/audio:sound",
         "//engine/ipc:ipc",
         "//engine/plugin:plugin_proxy",
         "//engine/vst3:vst3_host",
@@ -64,10 +65,12 @@ cc_library(
     srcs = ["commands.cpp"],
     hdrs = ["commands.hpp"],
     deps = [
+        ":audio_file",
         ":clip",
         ":history",
         ":project",
         ":track",
+        "//engine/audio:sound",
         "//engine/ipc:ipc",
         "//engine/ipc:tcp",
         "//engine/core:midi",

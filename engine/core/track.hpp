@@ -7,13 +7,14 @@
 #include <string>
 #include <vector>
 
+#include "engine/audio/sound.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/plugin/iplugin.hpp"
+#include "engine/plugin/plugin_proxy.hpp"
+#include "engine/vst3/vst3_host.hpp"
 #include "pb/commands.pb.h"
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
-#include "engine/plugin/plugin_proxy.hpp"
-#include "engine/vst3/vst3_host.hpp"
 
 namespace hibiki {
 
@@ -134,6 +135,14 @@ class Track {
   int current_midi_idx = 0;
 
   Track(int idx) : index(idx) {}
+
+  // Recording state
+  bool record_armed = false;
+  std::string input_device_id;                // Selected input device
+  int input_channel_start = 0;                // 0-based start channel
+  bool input_stereo = true;                   // true = stereo, false = mono
+  std::unique_ptr<SoundDevice> input_device;  // Lazily created on record start
+  std::vector<float> record_buffer;           // Accumulates captured audio
 
   int LoadPlugin(const std::string& path, int plugin_index, double sample_rate,
                  PluginHostMode host_mode = PluginHostMode::IN_PROCESS,

@@ -161,4 +161,22 @@ std::unique_ptr<SoundDevice> SoundDevice::create(int rate, int ch,
   return std::make_unique<SoundDeviceWin32>(rate, ch, latency_ms);
 }
 
+std::unique_ptr<SoundDevice> SoundDevice::createInput(
+    const std::string& /*device_id*/, int rate, int ch, int latency_ms) {
+  // TODO(karita): Implement WASAPI input capture with IAudioCaptureClient.
+  return std::make_unique<SoundDeviceWin32>(rate, ch, latency_ms);
+}
+
+std::vector<AudioInputInfo> SoundDevice::listInputDevices() {
+  std::vector<AudioInputInfo> result;
+  // TODO(karita): Enumerate WASAPI capture endpoints via
+  // IMMDeviceEnumerator::EnumAudioEndpoints(eCapture).
+  AudioInputInfo defaultDev;
+  defaultDev.id = "default";
+  defaultDev.name = "Default Input";
+  defaultDev.channel_count = 2;
+  result.push_back(defaultDev);
+  return result;
+}
+
 }  // namespace hibiki

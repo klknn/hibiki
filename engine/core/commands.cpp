@@ -3,6 +3,7 @@
 #include <google/protobuf/text_format.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -11,16 +12,17 @@
 #include <thread>
 #include <vector>
 
+#include "engine/core/audio_file.hpp"
 #include "engine/core/clip.hpp"
-#include "engine/ipc/ipc.hpp"
 #include "engine/core/midi.hpp"
+#include "engine/core/track.hpp"
+#include "engine/ipc/ipc.hpp"
+#include "engine/ipc/tcp.hpp"
+#include "engine/plugin/plugin_scanner.hpp"
 #include "pb/commands.pb.h"
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
 #include "pb/plugin_worker.pb.h"
-#include "engine/plugin/plugin_scanner.hpp"
-#include "engine/ipc/tcp.hpp"
-#include "engine/core/track.hpp"
 
 namespace hibiki {
 
@@ -29,7 +31,34 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
   switch (cmd.action()) {
     case pb::commands::ProjectCmd::ACTION_SAVE: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      SaveProject(state, cmd.path());
+      // Copy /tmp/hibiki recordings to audio/ subdir next to project file
+      std::string project_path = cmd.path();
+      std::filesystem::path proj_dir =
+          std::filesystem::path(project_path).parent_path();
+      state.project_dir = proj_dir.string();
+      std::filesystem::path audio_dir = proj_dir / "audio";
+      std::filesystem::path tmp_dir = "/tmp/hibiki";
+      if (std::filesystem::exists(tmp_dir)) {
+        std::filesystem::create_directories(audio_dir);
+        for (auto& [tidx, track] : state.tracks) {
+          for (auto& tc : track->timeline_clips) {
+            if (!tc || !tc->clip) continue;
+            std::string cpath = tc->clip->path;
+            if (cpath.find("/tmp/hibiki/") == 0) {
+              std::filesystem::path src(cpath);
+              std::filesystem::path dst = audio_dir / src.filename();
+              std::error_code ec;
+              std::filesystem::copy_file(
+                  src, dst, std::filesystem::copy_options::overwrite_existing,
+                  ec);
+              if (!ec) {
+                tc->clip->path = dst.string();
+              }
+            }
+          }
+        }
+      }
+      SaveProject(state, project_path);
       sendAck("SAVE_PROJECT", true);
       break;
     }
@@ -95,11 +124,123 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
       break;
     case pb::commands::TransportCmd::ACTION_STOP: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      // Finalize recording if active
+      if (state.is_recording) {
+        state.is_recording = false;
+        // Determine output directory
+        std::string out_dir = "/tmp/hibiki";
+        if (!state.project_dir.empty()) {
+          out_dir =
+              (std::filesystem::path(state.project_dir) / "audio").string();
+        }
+        std::filesystem::create_directories(out_dir);
+
+        for (auto& pair : state.tracks) {
+          Track* track = pair.second.get();
+          if (!track->record_armed || track->record_buffer.empty()) continue;
+
+          int rec_channels = track->input_stereo ? 2 : 1;
+          int sample_rate = track->input_device
+                                ? track->input_device->get_sample_rate()
+                                : 44100;
+
+          // Generate filename
+          static int rec_counter = 0;
+          std::string filename = "recording_track" +
+                                 std::to_string(pair.first) + "_" +
+                                 std::to_string(++rec_counter) + ".wav";
+          std::string filepath =
+              (std::filesystem::path(out_dir) / filename).string();
+
+          // Save WAV
+          SaveWav(filepath, track->record_buffer, rec_channels, sample_rate);
+
+          // Create timeline clip from recorded audio
+          double duration_sec = (double)track->record_buffer.size() /
+                                (rec_channels * sample_rate);
+          auto clip = std::make_unique<Clip>();
+          clip->type = Clip::Type::AUDIO;
+          clip->audio_data = std::move(track->record_buffer);
+          clip->num_channels = rec_channels;
+          clip->sample_rate = sample_rate;
+          clip->duration_sec = duration_sec;
+          clip->path = filepath;
+          clip->name = filename;
+          // Generate waveform summary
+          int summary_size = 200;
+          clip->waveform_summary.resize(summary_size, 0.0f);
+          int samples_per_bucket =
+              (int)clip->audio_data.size() / (rec_channels * summary_size);
+          if (samples_per_bucket < 1) samples_per_bucket = 1;
+          for (int b = 0; b < summary_size; ++b) {
+            float peak = 0.0f;
+            for (int s = 0; s < samples_per_bucket; ++s) {
+              int idx = (b * samples_per_bucket + s) * rec_channels;
+              if (idx < (int)clip->audio_data.size()) {
+                peak = std::max(peak, std::abs(clip->audio_data[idx]));
+              }
+            }
+            clip->waveform_summary[b] = peak;
+          }
+
+          auto tc = std::make_unique<TimelineClip>();
+          tc->start_time_sec = state.record_start_sec;
+          tc->duration_sec = duration_sec;
+          tc->clip = std::move(clip);
+          track->timeline_clips.push_back(std::move(tc));
+          int clip_idx = (int)track->timeline_clips.size() - 1;
+
+          sendTimelineClipInfo(
+              pair.first, clip_idx, filename, filepath,
+              (float)state.record_start_sec, (float)duration_sec,
+              track->timeline_clips[clip_idx]->clip->waveform_summary);
+
+          // Send recording finished notification
+          pb::notifications::Notification notif;
+          auto* rf = notif.mutable_recording_finished();
+          rf->set_track_index(pair.first);
+          rf->set_path(filepath);
+          rf->set_clip_index(clip_idx);
+          std::string data;
+          notif.SerializeToString(&data);
+          sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
+                           data.size());
+
+          // Release input device
+          track->input_device.reset();
+        }
+      }
+
       state.is_timeline_playing = false;
       for (auto& pair : state.tracks) {
         pair.second->Stop();
       }
       sendAck("STOP", true);
+      break;
+    }
+    case pb::commands::TransportCmd::ACTION_RECORD: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      state.record_start_sec = state.playhead_pos_sec;
+      // Create input devices for armed tracks
+      for (auto& pair : state.tracks) {
+        Track* track = pair.second.get();
+        if (track->record_armed && !track->input_device) {
+          int ch = track->input_stereo ? 2 : 1;
+          // Open device with max channels to support channel selection
+          track->input_device = SoundDevice::createInput(
+              track->input_device_id, (int)state.sample_rate, ch,
+              state.buffer_latency_ms);
+          if (!track->input_device->is_ready()) {
+            sendLog("Failed to open input device for track " +
+                    std::to_string(pair.first));
+            track->input_device.reset();
+          }
+        }
+        track->record_buffer.clear();
+      }
+      state.is_recording = true;
+      state.is_timeline_playing = true;
+      sendAck("RECORD", true);
       break;
     }
     case pb::commands::TransportCmd::ACTION_SEEK:
@@ -218,11 +359,43 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       sendAck("RESIZE_TIMELINE_CLIP", true);
       break;
     }
+    case pb::commands::TrackCmd::ACTION_ARM_RECORD: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->record_armed = !track->record_armed;
+      sendAck("ARM_RECORD", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_INPUT_DEVICE: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->input_device_id = cmd.input_device_id();
+      track->input_channel_start = cmd.input_channel_start();
+      track->input_stereo = cmd.input_stereo();
+      // Reset existing device so next recording opens with new settings
+      track->input_device.reset();
+      sendAck("SET_INPUT_DEVICE", true);
+      break;
+    }
     default:
       break;
   }
 }
 
+void handleListAudioInputs() {
+  auto devices = SoundDevice::listInputDevices();
+  pb::notifications::Notification notif;
+  auto* list = notif.mutable_audio_input_list();
+  for (const auto& dev : devices) {
+    auto* d = list->add_devices();
+    d->set_id(dev.id);
+    d->set_name(dev.name);
+    d->set_channel_count(dev.channel_count);
+  }
+  std::string data;
+  notif.SerializeToString(&data);
+  sendNotification(reinterpret_cast<const uint8_t*>(data.data()), data.size());
+}
 void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
                      HistoryManager& history) {
   int tidx = cmd.target().track_index();

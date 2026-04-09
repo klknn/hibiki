@@ -33,6 +33,11 @@ struct ProjectState {
   PluginHostMode plugin_host_mode = PluginHostMode::IN_PROCESS;
   std::vector<std::string> remote_hosts;  // ["host:port", ...] for REMOTE mode
   int buffer_latency_ms = 200;  // Audio buffer latency in ms (configurable)
+
+  // Recording state
+  bool is_recording = false;
+  double record_start_sec = 0.0;  // Playhead position when recording started
+  std::string project_dir;        // "" = unsaved, set on save/load
 };
 
 // Returns a pointer to the track, creating it if it doesn't exist

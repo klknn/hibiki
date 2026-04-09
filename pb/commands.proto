@@ -25,6 +25,7 @@ message TransportCmd {
     ACTION_PLAY = 1;
     ACTION_STOP = 2;
     ACTION_SEEK = 3;
+    ACTION_RECORD = 4;
   }
   Action action = 1;
   float seek_pos = 2;
@@ -42,12 +43,17 @@ message TrackCmd {
     ACTION_ADD_TIMELINE_CLIP = 6;
     ACTION_REMOVE_TIMELINE_CLIP = 7;
     ACTION_RESIZE_TIMELINE_CLIP = 8;
+    ACTION_ARM_RECORD = 9;
+    ACTION_SET_INPUT_DEVICE = 10;
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
   hibiki.pb.core.Clip clip_data = 3;
   float value = 4;
   bool flag = 5;
+  string input_device_id = 6;
+  uint32 input_channel_start = 7;  // 0-based start channel
+  bool input_stereo = 8;           // mono or stereo
 }
 
 message PluginCmd {
@@ -156,6 +162,9 @@ message HibikiConfig {
   int32 buffer_latency_ms = 3;
 }
 
+// Request to list available audio input devices.
+message ListAudioInputs {}
+
 // ─── Request Envelope ───────────────────────────────────────────────
 
 // Contains the new domain-grouped commands.
@@ -170,5 +179,6 @@ message Request {
     SetPluginHostMode set_plugin_host_mode = 46;
     ScanRemotePlugins scan_remote_plugins = 47;
     SetAudioBufferSize set_audio_buffer_size = 48;
+    ListAudioInputs list_audio_inputs = 49;
   }
 }

@@ -2,6 +2,7 @@ package hibiki.ui;
 
 import java.awt.*;
 import javax.swing.*;
+import javax.swing.Timer;
 
 public class SettingsDialog extends JDialog {
   private static final String[] HOST_MODES = {
@@ -11,8 +12,11 @@ public class SettingsDialog extends JDialog {
   public SettingsDialog(Frame owner) {
     super(owner, "Settings", true);
     setLayout(new BorderLayout());
-    setSize(Theme.getInstance().scale(400), Theme.getInstance().scale(350));
+    setSize(Theme.getInstance().scale(450), Theme.getInstance().scale(450));
     setLocationRelativeTo(owner);
+
+    // Auto-request input device list from backend
+    hibiki.BackendManager.getInstance().requestAudioInputs();
 
     JTabbedPane tabs = new JTabbedPane();
     tabs.addTab("Audio", createAudioPanel());
@@ -73,7 +77,7 @@ public class SettingsDialog extends JDialog {
     p.add(desc, gbc);
     gbc.gridwidth = 1;
 
-    // Apply button
+    // Apply button for buffer
     row++;
     gbc.gridx = 1;
     gbc.gridy = row;
@@ -90,6 +94,82 @@ public class SettingsDialog extends JDialog {
           "Audio buffer set to " + ms + " ms.\nRestart the app to apply.");
     });
     p.add(applyBtn, gbc);
+
+    // ── Audio Input Device ──
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    gbc.gridwidth = 2;
+    JLabel inputHeader = new JLabel("── Audio Input ──");
+    inputHeader.setFont(Theme.getInstance().FONT_UI_BOLD);
+    p.add(inputHeader, gbc);
+    gbc.gridwidth = 1;
+
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    p.add(new JLabel("Input Device:"), gbc);
+    gbc.gridx = 1;
+    JComboBox<String> inputCombo = new JComboBox<>();
+    inputCombo.setPrototypeDisplayValue("ALSA Input Device Name (16 ch)");
+
+    // Populate from cache
+    java.util.List<hibiki.pb.notifications.AudioInputDevice> devices = TimelineNotificationHandler.cachedInputDevices;
+    String currentDefault = hibiki.BackendManager.getInstance().getDefaultInputDeviceId();
+    int selectedIdx = -1;
+    for (int i = 0; i < devices.size(); i++) {
+      var dev = devices.get(i);
+      String label = dev.getName() + " (" + dev.getChannelCount() + " ch)";
+      inputCombo.addItem(label);
+      if (dev.getId().equals(currentDefault)) {
+        selectedIdx = i;
+      }
+    }
+    if (devices.isEmpty()) {
+      inputCombo.addItem("(no devices — click Refresh)");
+    }
+    if (selectedIdx >= 0) {
+      inputCombo.setSelectedIndex(selectedIdx);
+    }
+    p.add(inputCombo, gbc);
+
+    row++;
+    gbc.gridx = 1;
+    gbc.gridy = row;
+    JPanel inputBtnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+    JButton refreshBtn = new JButton("Refresh");
+    refreshBtn.addActionListener(e -> {
+      hibiki.BackendManager.getInstance().requestAudioInputs();
+      // Re-populate after a short delay to let the notification arrive
+      Timer timer = new Timer(500, ev -> {
+        inputCombo.removeAllItems();
+        var devs = TimelineNotificationHandler.cachedInputDevices;
+        for (int i = 0; i < devs.size(); i++) {
+          var d = devs.get(i);
+          inputCombo.addItem(d.getName() + " (" + d.getChannelCount() + " ch)");
+        }
+        if (devs.isEmpty()) {
+          inputCombo.addItem("(no devices found)");
+        }
+      });
+      timer.setRepeats(false);
+      timer.start();
+    });
+    inputBtnPanel.add(refreshBtn);
+
+    JButton selectBtn = new JButton("Set Default");
+    selectBtn.addActionListener(e -> {
+      int idx = inputCombo.getSelectedIndex();
+      var devs = TimelineNotificationHandler.cachedInputDevices;
+      if (idx >= 0 && idx < devs.size()) {
+        String devId = devs.get(idx).getId();
+        hibiki.BackendManager.getInstance().setDefaultInputDeviceId(devId);
+        JOptionPane.showMessageDialog(this,
+            "Default input device set to: " + devs.get(idx).getName());
+      }
+    });
+    inputBtnPanel.add(selectBtn);
+    p.add(inputBtnPanel, gbc);
 
     return p;
   }

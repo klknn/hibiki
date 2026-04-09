@@ -33,6 +33,12 @@ class TimelineNotificationHandler {
       case AUTOMATION_LANES_DATA:
         handleAutomationLanes(n);
         break;
+      case RECORDING_FINISHED:
+        handleRecordingFinished(n);
+        break;
+      case AUDIO_INPUT_LIST:
+        handleAudioInputList(n);
+        break;
       default:
         break;
     }
@@ -44,7 +50,8 @@ class TimelineNotificationHandler {
     view.bpm = info.getBpm();
     boolean wasPlaying = view.isPlaying;
     view.isPlaying =
-        info.getTransportState() == hibiki.pb.core.TransportState.TRANSPORT_STATE_PLAYING;
+        info.getTransportState() == hibiki.pb.core.TransportState.TRANSPORT_STATE_PLAYING
+            || info.getTransportState() == hibiki.pb.core.TransportState.TRANSPORT_STATE_RECORDING;
 
     if (view.isPlaying && !wasPlaying && view.autoScroll) {
       int playheadX = (int) (view.playheadPos * view.getPixelsPerSecond());
@@ -139,5 +146,28 @@ class TimelineNotificationHandler {
     }
     view.updateContentSize();
     view.repaint();
+  }
+
+  private void handleRecordingFinished(Notification n) {
+    var info = n.getRecordingFinished();
+    int tidx = info.getTrackIndex();
+    while (view.tracks.size() <= tidx) {
+      view.tracks.add(new TimelineView.TrackTimeline(view.tracks.size()));
+    }
+    // The clip is already added via TimelineClipInfo notification from the engine,
+    // but update display to show the recording is complete
+    view.updateContentSize();
+    view.repaint();
+  }
+
+  /** Cached audio input device list for dialogs */
+  static java.util.List<hibiki.pb.notifications.AudioInputDevice> cachedInputDevices = new java.util.ArrayList<>();
+
+  private void handleAudioInputList(Notification n) {
+    var list = n.getAudioInputList();
+    cachedInputDevices.clear();
+    for (int i = 0; i < list.getDevicesCount(); i++) {
+      cachedInputDevices.add(list.getDevices(i));
+    }
   }
 }

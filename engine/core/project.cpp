@@ -27,6 +27,10 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
     auto* ts = project.add_tracks();
     ts->set_track_index(idx);
     ts->set_name(track->name);
+    ts->set_record_armed(track->record_armed);
+    ts->set_input_device_id(track->input_device_id);
+    ts->set_input_channel_start(track->input_channel_start);
+    ts->set_input_stereo(track->input_stereo);
 
     for (const auto& plugin : track->plugins) {
       auto* ps = ts->add_plugins();
@@ -100,6 +104,10 @@ static void LoadTracksFromProto(ProjectState& state,
       track->name = track_data.name();
       sendTrackInfo(track_data.track_index(), track->name);
     }
+    track->record_armed = track_data.record_armed();
+    track->input_device_id = track_data.input_device_id();
+    track->input_channel_start = track_data.input_channel_start();
+    track->input_stereo = track_data.input_stereo();
 
     for (const auto& plugin_data : track_data.plugins()) {
       if (plugin_data.path().empty()) continue;

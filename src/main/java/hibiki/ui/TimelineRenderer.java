@@ -63,6 +63,29 @@ class TimelineRenderer {
         g2.drawString("(no plugin)", 5, y + 32);
       }
 
+      // Record arm indicator
+      if (track.recordArmed) {
+        int circleSize = 12;
+        int cx = scaleLabelWidth - circleSize - 4;
+        int cy = y + 4;
+        g2.setColor(new Color(220, 30, 30));
+        g2.fillOval(cx, cy, circleSize, circleSize);
+        g2.setColor(Color.WHITE);
+        g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(8.0f)));
+        g2.drawString("R", cx + 3, cy + 10);
+
+        // Input channel label
+        String chLabel;
+        if (track.inputStereo) {
+          chLabel = "In: " + (track.inputChannelStart + 1) + "-" + (track.inputChannelStart + 2);
+        } else {
+          chLabel = "In: " + (track.inputChannelStart + 1);
+        }
+        g2.setColor(Theme.getInstance().TEXT_DIM);
+        g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(9.0f)));
+        g2.drawString(chLabel, 5, y + 46);
+      }
+
       // Automation expand/collapse indicator
       if (!track.automationLanes.isEmpty()) {
         String toggleSymbol = track.automationExpanded ? "▼" : "▶";

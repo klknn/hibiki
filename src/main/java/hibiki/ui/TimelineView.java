@@ -207,11 +207,25 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                   showTrackHeaderContextMenu(trackIdx, e);
                   return;
                 }
-                // Check if click is in the automation toggle area
                 TrackTimeline track = tracks.get(trackIdx);
+                int scaleLabelWidth = Theme.getInstance().scale(TRACK_LABEL_WIDTH);
                 int trackTopY = Theme.getInstance().scale(getTrackY(trackIdx));
                 int baseH = Theme.getInstance().scale(getBaseTrackHeight());
                 int clickYInTrack = (e.getY() - scaleTimeRuler) - trackTopY;
+
+                // Check if click is on the arm indicator (top-right circle)
+                int circleSize = 12;
+                int circleX = scaleLabelWidth - circleSize - 4;
+                if (e.getX() >= circleX && e.getX() <= circleX + circleSize
+                    && clickYInTrack >= 4 && clickYInTrack <= 4 + circleSize) {
+                  track.recordArmed = !track.recordArmed;
+                  BackendManager.getInstance().armTrack(trackIdx);
+                  rowHeader.repaint();
+                  contentPanel.repaint();
+                  return;
+                }
+
+                // Check if click is in the automation toggle area
                 if (!track.automationLanes.isEmpty()
                     && clickYInTrack > baseH - 20
                     && clickYInTrack < baseH) {
@@ -570,6 +584,64 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
     menu.addSeparator();
 
+    // Record arm toggle
+    JMenuItem armItem = new JMenuItem(track.recordArmed ? "✓ Disarm Recording" : "Arm for Recording");
+    armItem.addActionListener(ev -> {
+      track.recordArmed = !track.recordArmed;
+      BackendManager.getInstance().armTrack(trackIdx);
+      rowHeader.repaint();
+      contentPanel.repaint();
+    });
+    menu.add(armItem);
+
+    // Set Input Device
+    JMenuItem inputItem = new JMenuItem("Set Input Device...");
+    inputItem.addActionListener(ev -> showInputDeviceDialog(trackIdx));
+    menu.add(inputItem);
+
+    // Input Channel submenu
+    JMenu chMenu = new JMenu("Input Channel");
+    JRadioButtonMenuItem stereoItem = new JRadioButtonMenuItem("Stereo", track.inputStereo);
+    JRadioButtonMenuItem monoItem = new JRadioButtonMenuItem("Mono", !track.inputStereo);
+    ButtonGroup chGroup = new ButtonGroup();
+    chGroup.add(stereoItem);
+    chGroup.add(monoItem);
+    stereoItem.addActionListener(ev -> {
+      track.inputStereo = true;
+      BackendManager.getInstance().setInputDevice(
+          trackIdx, track.inputDeviceId, track.inputChannelStart, true);
+      rowHeader.repaint();
+    });
+    monoItem.addActionListener(ev -> {
+      track.inputStereo = false;
+      BackendManager.getInstance().setInputDevice(
+          trackIdx, track.inputDeviceId, track.inputChannelStart, false);
+      rowHeader.repaint();
+    });
+    chMenu.add(stereoItem);
+    chMenu.add(monoItem);
+    chMenu.addSeparator();
+    // Channel offset options (1-8)
+    JMenu offsetMenu = new JMenu("Start Channel");
+    for (int ch = 0; ch < 8; ch++) {
+      final int chStart = ch;
+      String label = track.inputStereo
+          ? "Ch " + (ch + 1) + "-" + (ch + 2)
+          : "Ch " + (ch + 1);
+      JRadioButtonMenuItem chItem = new JRadioButtonMenuItem(label, ch == track.inputChannelStart);
+      chItem.addActionListener(ev -> {
+        track.inputChannelStart = chStart;
+        BackendManager.getInstance().setInputDevice(
+            trackIdx, track.inputDeviceId, chStart, track.inputStereo);
+        rowHeader.repaint();
+      });
+      offsetMenu.add(chItem);
+    }
+    chMenu.add(offsetMenu);
+    menu.add(chMenu);
+
+    menu.addSeparator();
+
     // Add Automation Lane (using last touched param if available)
     PluginPane.LastTouchedParam ltp = PluginPane.getLastTouchedParam();
     if (ltp != null && ltp.trackIndex == trackIdx) {
@@ -624,6 +696,45 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     }
 
     menu.show(rowHeader, e.getX(), e.getY());
+  }
+
+  /** Show dialog for selecting audio input device and channel configuration */
+  private void showInputDeviceDialog(int trackIdx) {
+    // Request fresh device list
+    BackendManager.getInstance().requestAudioInputs();
+
+    // Use cached list (will be populated from notification)
+    var devices = TimelineNotificationHandler.cachedInputDevices;
+    if (devices.isEmpty()) {
+      JOptionPane.showMessageDialog(this,
+          "No audio input devices found.\nTry again in a moment after the device list loads.",
+          "Input Devices", JOptionPane.INFORMATION_MESSAGE);
+      return;
+    }
+
+    String[] deviceNames = new String[devices.size()];
+    for (int i = 0; i < devices.size(); i++) {
+      var dev = devices.get(i);
+      deviceNames[i] = dev.getName() + " (" + dev.getChannelCount() + " ch)";
+    }
+
+    String selected = (String) JOptionPane.showInputDialog(this,
+        "Select audio input device:", "Input Device",
+        JOptionPane.PLAIN_MESSAGE, null, deviceNames,
+        deviceNames.length > 0 ? deviceNames[0] : null);
+
+    if (selected != null) {
+      for (int i = 0; i < deviceNames.length; i++) {
+        if (deviceNames[i].equals(selected)) {
+          var dev = devices.get(i);
+          TrackTimeline track = tracks.get(trackIdx);
+          track.inputDeviceId = dev.getId();
+          BackendManager.getInstance().setInputDevice(
+              trackIdx, dev.getId(), track.inputChannelStart, track.inputStereo);
+          break;
+        }
+      }
+    }
   }
 
   /** Show dialog to pick a parameter for automation (fallback when no param was touched) */
@@ -716,6 +827,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     String customName = null; // User-defined track name
     List<AutomationLaneData> automationLanes = new ArrayList<>();
     boolean automationExpanded = true; // Whether automation sub-rows are visible
+    boolean recordArmed = false; // Whether track is armed for recording
+    String inputDeviceId = ""; // Selected input device ID
+    int inputChannelStart = 0; // Starting input channel
+    boolean inputStereo = true; // Mono vs stereo input
 
     TrackTimeline(int index) {
       this.index = index;

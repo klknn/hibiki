@@ -64,6 +64,7 @@ void playback_thread(ProjectState& state) {
         std::fill(bufferR, bufferR + block_size, 0.0f);
 
         // 1. Session clip playback
+        std::vector<MidiNoteEvent> clipMidiEvents;
         if (track->playing_slot >= 0 &&
             track->clips.count(track->playing_slot) &&
             track->clips[track->playing_slot]) {
@@ -90,6 +91,7 @@ void playback_thread(ProjectState& state) {
             }
           } else if (clip->type == Clip::Type::MIDI) {
             // MIDI playback for session clips (looping)
+            // Collect clip events — merged with live events below.
             double beats_per_sec = state.bpm / 60.0;
             double current_beats = track->current_time_sec * beats_per_sec;
             double block_end_beats =
@@ -101,7 +103,6 @@ void playback_thread(ProjectState& state) {
               current_beats = std::fmod(current_beats, loop_beats);
               block_end_beats = current_beats + time_per_block * beats_per_sec;
             }
-            std::vector<MidiNoteEvent> blockEvents;
             for (const auto& me : clip->midi_events) {
               if (me.beats >= current_beats && me.beats < block_end_beats) {
                 MidiNoteEvent e;
@@ -117,52 +118,43 @@ void playback_thread(ProjectState& state) {
                 e.pitch = me.note;
                 e.isNoteOn = isNoteOn(me);
                 e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
-                blockEvents.push_back(e);
+                clipMidiEvents.push_back(e);
               }
-            }
-            if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
-              track->plugins[0]->process(nullptr, outChannels, block_size,
-                                         context, blockEvents);
             }
           }
           track->current_time_sec += time_per_block;
         }
 
-        // 1b. Live MIDI input for instrument tracks
+        // 1b. Merge live MIDI + virtual MIDI, then process instrument once
         if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
-          // Lazily create MIDI input device
-          if (!track->midi_input_device) {
+          std::vector<MidiNoteEvent> allEvents(std::move(clipMidiEvents));
+
+          // Lazily create MIDI input device (only if one is configured)
+          if (!track->midi_input_device &&
+              !track->midi_input_device_id.empty()) {
             track->midi_input_device = MidiInput::create();
             if (!track->midi_input_device->open(track->midi_input_device_id)) {
               track->midi_input_device.reset();
             }
           }
           if (track->midi_input_device) {
-            auto midiEvents = track->midi_input_device->read();
-            // Drain virtual MIDI queue (from PC keyboard)
-            {
-              std::lock_guard<std::mutex> mlock(track->virtual_midi_mutex);
-              for (const auto& vev : track->virtual_midi_queue) {
-                midiEvents.push_back(vev);
-              }
-              track->virtual_midi_queue.clear();
-            }
-            if (!midiEvents.empty()) {
-              track->plugins[0]->process(nullptr, outChannels, block_size,
-                                         context, midiEvents);
-            }
-          } else {
-            // No hardware MIDI device — still check virtual queue
-            std::vector<MidiNoteEvent> virtualEvents;
-            {
-              std::lock_guard<std::mutex> mlock(track->virtual_midi_mutex);
-              virtualEvents.swap(track->virtual_midi_queue);
-            }
-            if (!virtualEvents.empty()) {
-              track->plugins[0]->process(nullptr, outChannels, block_size,
-                                         context, virtualEvents);
-            }
+            auto hwEvents = track->midi_input_device->read();
+            allEvents.insert(allEvents.end(), hwEvents.begin(), hwEvents.end());
           }
+
+          // Drain virtual MIDI queue (from PC keyboard)
+          {
+            std::lock_guard<std::mutex> mlock(track->virtual_midi_mutex);
+            allEvents.insert(allEvents.end(), track->virtual_midi_queue.begin(),
+                             track->virtual_midi_queue.end());
+            track->virtual_midi_queue.clear();
+          }
+
+          // Always call process() — instruments must render every block
+          // (sustained notes, envelopes, effects tails) even without new
+          // events.
+          track->plugins[0]->process(nullptr, outChannels, block_size, context,
+                                     allEvents);
         }
 
         // 2. Timeline clip playback

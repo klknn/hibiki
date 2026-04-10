@@ -118,6 +118,7 @@ message Track {
   string input_device_id = 10;    // Selected audio input device ID
   uint32 input_channel_start = 11; // 0-based start channel on the input device
   bool input_stereo = 12;          // true = stereo (ch, ch+1), false = mono
+  string midi_input_device_id = 13; // Selected MIDI input device ID ("__global__" = all)
 }
 
 // Transport state enum. Prefer enum over bool `is_playing`

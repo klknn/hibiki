@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "engine/audio/midi_input.hpp"
 #include "engine/audio/sound.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/plugin/iplugin.hpp"
@@ -143,6 +144,10 @@ class Track {
   bool input_stereo = true;                   // true = stereo, false = mono
   std::unique_ptr<SoundDevice> input_device;  // Lazily created on record start
   std::vector<float> record_buffer;           // Accumulates captured audio
+
+  // MIDI input state
+  std::string midi_input_device_id = MIDI_GLOBAL_ID;  // Default: global
+  std::unique_ptr<MidiInput> midi_input_device;       // Lazily created
 
   int LoadPlugin(const std::string& path, int plugin_index, double sample_rate,
                  PluginHostMode host_mode = PluginHostMode::IN_PROCESS,

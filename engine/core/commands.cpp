@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 
+#include "engine/audio/midi_input.hpp"
 #include "engine/core/audio_file.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/core/midi.hpp"
@@ -377,6 +378,15 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       sendAck("SET_INPUT_DEVICE", true);
       break;
     }
+    case pb::commands::TrackCmd::ACTION_SET_MIDI_INPUT: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->midi_input_device_id = cmd.midi_input_device_id();
+      // Reset existing MIDI device so it reopens with new settings
+      track->midi_input_device.reset();
+      sendAck("SET_MIDI_INPUT", true);
+      break;
+    }
     default:
       break;
   }
@@ -391,6 +401,21 @@ void handleListAudioInputs() {
     d->set_id(dev.id);
     d->set_name(dev.name);
     d->set_channel_count(dev.channel_count);
+  }
+  std::string data;
+  notif.SerializeToString(&data);
+  sendNotification(reinterpret_cast<const uint8_t*>(data.data()), data.size());
+}
+
+void handleListMidiInputs() {
+  auto devices = MidiInput::listDevices();
+  pb::notifications::Notification notif;
+  auto* list = notif.mutable_midi_input_list();
+  for (const auto& dev : devices) {
+    auto* d = list->add_devices();
+    d->set_id(dev.id);
+    d->set_name(dev.name);
+    d->set_port_count(dev.port_count);
   }
   std::string data;
   notif.SerializeToString(&data);

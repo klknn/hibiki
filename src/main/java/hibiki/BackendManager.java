@@ -270,6 +270,27 @@ public class BackendManager {
     this.defaultInputDeviceId = id;
   }
 
+  /** Request list of available MIDI input devices */
+  public void requestMidiInputs() {
+    sendRequest(
+        Request.newBuilder()
+            .setListMidiInputs(hibiki.pb.commands.ListMidiInputs.newBuilder())
+            .build());
+  }
+
+  /** Set MIDI input device for a track */
+  public void setMidiInput(int trackIndex, String midiDeviceId) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_MIDI_INPUT)
+                    .setTarget(
+                        hibiki.pb.core.EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setMidiInputDeviceId(midiDeviceId))
+            .build());
+  }
+
   /** Toggle play/stop state - triggered by Space key */
   public void togglePlay() {
     if (isPlaying) {
@@ -418,9 +439,10 @@ public class BackendManager {
   }
 
   private String findBinary(String binaryName) {
-    // Try simple relative
-    if (new File("./" + binaryName).exists()) return "./" + binaryName;
+    // Try simple relative (prefer engine/ first since it's the canonical location)
     if (new File("./engine/" + binaryName).exists()) return "./engine/" + binaryName;
+    if (new File("./" + binaryName).exists())
+      return "./" + binaryName;
 
 
     // Search up for bazel-bin or root
@@ -428,11 +450,13 @@ public class BackendManager {
     for (int i = 0; i < 10; i++) {
       if (dir == null) break;
 
-      // Try in bazel-bin
-      File bin = new File(dir, "bazel-bin/" + binaryName);
-      if (bin.exists()) return bin.getAbsolutePath();
+      // Try in bazel-bin (prefer engine/ subdirectory first — canonical build
+      // location)
       File binEngine = new File(dir, "bazel-bin/engine/" + binaryName);
       if (binEngine.exists()) return binEngine.getAbsolutePath();
+      File bin = new File(dir, "bazel-bin/" + binaryName);
+      if (bin.exists())
+        return bin.getAbsolutePath();
 
       // Try in bazel-out
       File outWin = new File(dir, "bazel-out/x64_windows-opt/bin/engine/" + binaryName);

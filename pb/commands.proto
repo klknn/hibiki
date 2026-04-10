@@ -45,6 +45,7 @@ message TrackCmd {
     ACTION_RESIZE_TIMELINE_CLIP = 8;
     ACTION_ARM_RECORD = 9;
     ACTION_SET_INPUT_DEVICE = 10;
+    ACTION_SET_MIDI_INPUT = 11;
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -54,6 +55,7 @@ message TrackCmd {
   string input_device_id = 6;
   uint32 input_channel_start = 7;  // 0-based start channel
   bool input_stereo = 8;           // mono or stereo
+  string midi_input_device_id = 9; // MIDI input device ID
 }
 
 message PluginCmd {
@@ -165,6 +167,9 @@ message HibikiConfig {
 // Request to list available audio input devices.
 message ListAudioInputs {}
 
+// Request to list available MIDI input devices.
+message ListMidiInputs {}
+
 // ─── Request Envelope ───────────────────────────────────────────────
 
 // Contains the new domain-grouped commands.
@@ -180,5 +185,6 @@ message Request {
     ScanRemotePlugins scan_remote_plugins = 47;
     SetAudioBufferSize set_audio_buffer_size = 48;
     ListAudioInputs list_audio_inputs = 49;
+    ListMidiInputs list_midi_inputs = 50;
   }
 }

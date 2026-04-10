@@ -128,6 +128,24 @@ void playback_thread(ProjectState& state) {
           track->current_time_sec += time_per_block;
         }
 
+        // 1b. Live MIDI input for instrument tracks
+        if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
+          // Lazily create MIDI input device
+          if (!track->midi_input_device) {
+            track->midi_input_device = MidiInput::create();
+            if (!track->midi_input_device->open(track->midi_input_device_id)) {
+              track->midi_input_device.reset();
+            }
+          }
+          if (track->midi_input_device) {
+            auto midiEvents = track->midi_input_device->read();
+            if (!midiEvents.empty()) {
+              track->plugins[0]->process(nullptr, outChannels, block_size,
+                                         context, midiEvents);
+            }
+          }
+        }
+
         // 2. Timeline clip playback
         if (state.is_timeline_playing) {
           for (const auto& tc : track->timeline_clips) {
@@ -423,6 +441,9 @@ void run_ipc_loop(ProjectState& state) {
         break;
       case hibiki::pb::commands::Request::kListAudioInputs:
         handleListAudioInputs();
+        break;
+      case hibiki::pb::commands::Request::kListMidiInputs:
+        handleListMidiInputs();
         break;
     }
     if (state.quit) break;

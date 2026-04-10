@@ -39,6 +39,9 @@ class TimelineNotificationHandler {
       case AUDIO_INPUT_LIST:
         handleAudioInputList(n);
         break;
+      case MIDI_INPUT_LIST:
+        handleMidiInputList(n);
+        break;
       default:
         break;
     }
@@ -168,6 +171,17 @@ class TimelineNotificationHandler {
     cachedInputDevices.clear();
     for (int i = 0; i < list.getDevicesCount(); i++) {
       cachedInputDevices.add(list.getDevices(i));
+    }
+  }
+
+  /** Cached MIDI input device list for dropdowns */
+  static java.util.List<hibiki.pb.notifications.MidiInputDevice> cachedMidiDevices = new java.util.ArrayList<>();
+
+  private void handleMidiInputList(Notification n) {
+    var list = n.getMidiInputList();
+    cachedMidiDevices.clear();
+    for (int i = 0; i < list.getDevicesCount(); i++) {
+      cachedMidiDevices.add(list.getDevices(i));
     }
   }
 }

@@ -302,11 +302,14 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
     BackendManager.getInstance().addNotificationListener(this::handleNotification);
 
-    // Pre-populate audio input device cache at startup
+    // Pre-populate audio + MIDI input device cache at startup
     BackendManager.getInstance().requestAudioInputs();
+    BackendManager.getInstance().requestMidiInputs();
     // Retry after 1s in case backend wasn't ready yet
-    javax.swing.Timer startupRetry = new javax.swing.Timer(1000,
-        ev -> BackendManager.getInstance().requestAudioInputs());
+    javax.swing.Timer startupRetry = new javax.swing.Timer(1000, ev -> {
+      BackendManager.getInstance().requestAudioInputs();
+      BackendManager.getInstance().requestMidiInputs();
+    });
     startupRetry.setRepeats(false);
     startupRetry.start();
 
@@ -751,6 +754,31 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     popup.add(deviceMenu);
     popup.addSeparator();
 
+    // MIDI Input Device submenu
+    JMenu midiMenu = new JMenu("MIDI Input");
+    var midiDevices = TimelineNotificationHandler.cachedMidiDevices;
+    if (midiDevices.isEmpty()) {
+      JMenuItem noMidi = new JMenuItem("(no MIDI devices found)");
+      noMidi.setEnabled(false);
+      midiMenu.add(noMidi);
+    } else {
+      for (int i = 0; i < midiDevices.size(); i++) {
+        var mdev = midiDevices.get(i);
+        String mlabel = mdev.getName();
+        JRadioButtonMenuItem mitem = new JRadioButtonMenuItem(
+            mlabel, mdev.getId().equals(track.midiInputDeviceId));
+        final String mdevId = mdev.getId();
+        mitem.addActionListener(ev -> {
+          track.midiInputDeviceId = mdevId;
+          BackendManager.getInstance().setMidiInput(trackIdx, mdevId);
+          rowHeader.repaint();
+        });
+        midiMenu.add(mitem);
+      }
+    }
+    popup.add(midiMenu);
+    popup.addSeparator();
+
     // Stereo / Mono toggle
     JRadioButtonMenuItem stereoItem = new JRadioButtonMenuItem("Stereo", track.inputStereo);
     JRadioButtonMenuItem monoItem = new JRadioButtonMenuItem("Mono", !track.inputStereo);
@@ -924,6 +952,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     String inputDeviceId = ""; // Selected input device ID
     int inputChannelStart = 0; // Starting input channel
     boolean inputStereo = true; // Mono vs stereo input
+    String midiInputDeviceId = "__global__"; // MIDI input device (default: global)
 
     TrackTimeline(int index) {
       this.index = index;

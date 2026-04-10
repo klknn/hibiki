@@ -170,6 +170,14 @@ message ListAudioInputs {}
 // Request to list available MIDI input devices.
 message ListMidiInputs {}
 
+// Send a live virtual MIDI event (from PC keyboard or on-screen piano).
+message SendVirtualMidi {
+  int32 track_index = 1;
+  uint32 note = 2;       // MIDI note number [0, 127]
+  uint32 velocity = 3;   // Note-on velocity [0, 127]
+  bool note_on = 4;      // true = note-on, false = note-off
+}
+
 // ─── Request Envelope ───────────────────────────────────────────────
 
 // Contains the new domain-grouped commands.
@@ -186,5 +194,6 @@ message Request {
     SetAudioBufferSize set_audio_buffer_size = 48;
     ListAudioInputs list_audio_inputs = 49;
     ListMidiInputs list_midi_inputs = 50;
+    SendVirtualMidi send_virtual_midi = 51;
   }
 }

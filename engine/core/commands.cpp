@@ -421,6 +421,25 @@ void handleListMidiInputs() {
   notif.SerializeToString(&data);
   sendNotification(reinterpret_cast<const uint8_t*>(data.data()), data.size());
 }
+
+void handleSendVirtualMidi(const pb::commands::SendVirtualMidi& cmd,
+                           ProjectState& state) {
+  int tidx = cmd.track_index();
+  std::lock_guard<std::mutex> lock(state.tracks_mutex);
+  if (!state.tracks.count(tidx)) return;
+  auto& track = state.tracks[tidx];
+  MidiNoteEvent ev;
+  ev.sampleOffset = 0;
+  ev.channel = 0;
+  ev.pitch = static_cast<uint8_t>(cmd.note());
+  ev.velocity = cmd.velocity() / 127.0f;
+  ev.isNoteOn = cmd.note_on();
+  {
+    std::lock_guard<std::mutex> mlock(track->virtual_midi_mutex);
+    track->virtual_midi_queue.push_back(ev);
+  }
+}
+
 void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
                      HistoryManager& history) {
   int tidx = cmd.target().track_index();

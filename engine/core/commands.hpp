@@ -25,6 +25,8 @@ void handleSetAudioBufferSize(const pb::commands::SetAudioBufferSize& cmd,
                               ProjectState& state);
 void handleListAudioInputs();
 void handleListMidiInputs();
+void handleSendVirtualMidi(const pb::commands::SendVirtualMidi& cmd,
+                           ProjectState& state);
 
 // Config file persistence (.hibikirc.textproto)
 constexpr const char* kConfigFile = ".hibikirc.textproto";

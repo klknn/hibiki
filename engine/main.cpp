@@ -139,9 +139,28 @@ void playback_thread(ProjectState& state) {
           }
           if (track->midi_input_device) {
             auto midiEvents = track->midi_input_device->read();
+            // Drain virtual MIDI queue (from PC keyboard)
+            {
+              std::lock_guard<std::mutex> mlock(track->virtual_midi_mutex);
+              for (const auto& vev : track->virtual_midi_queue) {
+                midiEvents.push_back(vev);
+              }
+              track->virtual_midi_queue.clear();
+            }
             if (!midiEvents.empty()) {
               track->plugins[0]->process(nullptr, outChannels, block_size,
                                          context, midiEvents);
+            }
+          } else {
+            // No hardware MIDI device — still check virtual queue
+            std::vector<MidiNoteEvent> virtualEvents;
+            {
+              std::lock_guard<std::mutex> mlock(track->virtual_midi_mutex);
+              virtualEvents.swap(track->virtual_midi_queue);
+            }
+            if (!virtualEvents.empty()) {
+              track->plugins[0]->process(nullptr, outChannels, block_size,
+                                         context, virtualEvents);
             }
           }
         }
@@ -444,6 +463,9 @@ void run_ipc_loop(ProjectState& state) {
         break;
       case hibiki::pb::commands::Request::kListMidiInputs:
         handleListMidiInputs();
+        break;
+      case hibiki::pb::commands::Request::kSendVirtualMidi:
+        handleSendVirtualMidi(request.send_virtual_midi(), state);
         break;
     }
     if (state.quit) break;

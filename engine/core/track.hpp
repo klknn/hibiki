@@ -149,6 +149,10 @@ class Track {
   std::string midi_input_device_id = MIDI_GLOBAL_ID;  // Default: global
   std::unique_ptr<MidiInput> midi_input_device;       // Lazily created
 
+  // Virtual MIDI queue (from PC keyboard / on-screen piano)
+  std::mutex virtual_midi_mutex;
+  std::vector<MidiNoteEvent> virtual_midi_queue;
+
   int LoadPlugin(const std::string& path, int plugin_index, double sample_rate,
                  PluginHostMode host_mode = PluginHostMode::IN_PROCESS,
                  const std::string& remote_host = "");

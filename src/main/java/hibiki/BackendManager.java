@@ -291,6 +291,19 @@ public class BackendManager {
             .build());
   }
 
+  /** Send a virtual MIDI note event (from PC keyboard) */
+  public void sendVirtualMidi(int trackIndex, int note, int velocity, boolean noteOn) {
+    sendRequest(
+        Request.newBuilder()
+            .setSendVirtualMidi(
+                hibiki.pb.commands.SendVirtualMidi.newBuilder()
+                    .setTrackIndex(trackIndex)
+                    .setNote(note)
+                    .setVelocity(velocity)
+                    .setNoteOn(noteOn))
+            .build());
+  }
+
   /** Toggle play/stop state - triggered by Space key */
   public void togglePlay() {
     if (isPlaying) {

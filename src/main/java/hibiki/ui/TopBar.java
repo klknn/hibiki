@@ -20,6 +20,9 @@ public class TopBar extends JPanel {
   private JButton loopBtn;
   private boolean isRecording = false;
   private JButton recordButton;
+  private final VirtualKeyboard virtualKeyboard = new VirtualKeyboard();
+  private JButton pianoBtn;
+  private JLabel octaveLabel;
 
   public interface ViewToggleListener {
     void onViewToggle(boolean isTimeline);
@@ -135,8 +138,27 @@ public class TopBar extends JPanel {
     JButton settingsBtn = Theme.getInstance().createButton("⚙", e -> showSettings());
     settingsBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
 
+    // Virtual keyboard toggle
+    pianoBtn = Theme.getInstance().createButton("🎹", e -> {
+      boolean nowEnabled = !virtualKeyboard.isEnabled();
+      virtualKeyboard.setEnabled(nowEnabled);
+      pianoBtn.setForeground(nowEnabled ? Theme.getInstance().ACCENT_GREEN : Color.LIGHT_GRAY);
+      octaveLabel.setVisible(nowEnabled);
+      octaveLabel.setText("C" + virtualKeyboard.getOctave());
+    });
+    pianoBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
+    pianoBtn.setForeground(Color.LIGHT_GRAY);
+    pianoBtn.setToolTipText("Virtual MIDI Keyboard (PC keys → notes)");
+
+    octaveLabel = new JLabel("C" + virtualKeyboard.getOctave());
+    octaveLabel.setForeground(Theme.getInstance().ACCENT_GREEN);
+    octaveLabel.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(9)));
+    octaveLabel.setVisible(false);
+
     rightPanel.add(rateLabel);
     rightPanel.add(cpuLabel);
+    rightPanel.add(pianoBtn);
+    rightPanel.add(octaveLabel);
     rightPanel.add(replBtn);
     rightPanel.add(settingsBtn);
     add(rightPanel, BorderLayout.EAST);

@@ -150,6 +150,18 @@ void playback_thread(ProjectState& state) {
             track->virtual_midi_queue.clear();
           }
 
+          // Capture MIDI events for recording (MIDI mode)
+          if (state.is_recording && track->record_armed &&
+              track->record_mode == Track::RECORD_MIDI) {
+            for (const auto& ev : allEvents) {
+              Track::TimestampedMidiEvent tev;
+              tev.time_sec =
+                  state.playhead_pos_sec + ev.sampleOffset / state.sample_rate;
+              tev.event = ev;
+              track->midi_record_buffer.push_back(tev);
+            }
+          }
+
           // Always call process() — instruments must render every block
           // (sustained notes, envelopes, effects tails) even without new
           // events.

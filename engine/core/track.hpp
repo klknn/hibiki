@@ -138,12 +138,21 @@ class Track {
   Track(int idx) : index(idx) {}
 
   // Recording state
+  enum RecordMode { RECORD_AUDIO = 0, RECORD_MIDI = 1 };
+  RecordMode record_mode = RECORD_MIDI;  // Default to MIDI for new tracks
   bool record_armed = false;
   std::string input_device_id;                // Selected input device
   int input_channel_start = 0;                // 0-based start channel
   bool input_stereo = true;                   // true = stereo, false = mono
   std::unique_ptr<SoundDevice> input_device;  // Lazily created on record start
   std::vector<float> record_buffer;           // Accumulates captured audio
+
+  // MIDI recording buffer
+  struct TimestampedMidiEvent {
+    double time_sec;  // Absolute time from record start
+    MidiNoteEvent event;
+  };
+  std::vector<TimestampedMidiEvent> midi_record_buffer;
 
   // MIDI input state
   std::string midi_input_device_id = MIDI_GLOBAL_ID;  // Default: global

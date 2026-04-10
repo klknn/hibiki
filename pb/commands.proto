@@ -46,6 +46,7 @@ message TrackCmd {
     ACTION_ARM_RECORD = 9;
     ACTION_SET_INPUT_DEVICE = 10;
     ACTION_SET_MIDI_INPUT = 11;
+    ACTION_SET_RECORD_MODE = 12;
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -56,6 +57,7 @@ message TrackCmd {
   uint32 input_channel_start = 7;  // 0-based start channel
   bool input_stereo = 8;           // mono or stereo
   string midi_input_device_id = 9; // MIDI input device ID
+  int32 record_mode = 10;           // 0 = audio, 1 = MIDI
 }
 
 message PluginCmd {

@@ -69,12 +69,14 @@ class TimelineRenderer {
         g2.drawString("(no plugin)", 5, y + 27);
       }
 
-      // Row 3: Input dropdown + ARM button (Ableton-style, always visible)
+      // Row 3: Input dropdown + MIDI/AUD toggle + ARM button (Ableton-style, always
+      // visible)
       int row3Y = y + 33;
       int btnH = 18;
       int armW = 30;
+      int modeW = 34;
       int gap = 3;
-      int inputW = scaleLabelWidth - armW - gap * 3;
+      int inputW = scaleLabelWidth - armW - modeW - gap * 4;
 
       // ── Input channel dropdown button ──
       g2.setColor(new Color(50, 50, 55));
@@ -97,8 +99,27 @@ class TimelineRenderer {
       int[] yPts = { row3Y + 7, row3Y + 7, row3Y + 12 };
       g2.fillPolygon(xPts, yPts, 3);
 
+      // ── MIDI/AUD toggle button ──
+      int modeX = gap + inputW + gap;
+      if (track.midiRecordMode) {
+        g2.setColor(new Color(40, 80, 140));
+        g2.fillRoundRect(modeX, row3Y, modeW, btnH, 4, 4);
+        g2.setColor(new Color(100, 160, 220));
+      } else {
+        g2.setColor(new Color(50, 50, 55));
+        g2.fillRoundRect(modeX, row3Y, modeW, btnH, 4, 4);
+        g2.setColor(new Color(80, 80, 85));
+        g2.drawRoundRect(modeX, row3Y, modeW, btnH, 4, 4);
+        g2.setColor(new Color(140, 140, 140));
+      }
+      g2.setFont(Theme.getInstance().FONT_UI_BOLD.deriveFont(Theme.getInstance().scale(8.0f)));
+      String modeLabel = track.midiRecordMode ? "MIDI" : "AUD";
+      FontMetrics mfm = g2.getFontMetrics();
+      int mtw = mfm.stringWidth(modeLabel);
+      g2.drawString(modeLabel, modeX + (modeW - mtw) / 2, row3Y + 13);
+
       // ── ARM button ──
-      int armX = gap + inputW + gap;
+      int armX = gap + inputW + gap + modeW + gap;
       if (track.recordArmed) {
         g2.setColor(new Color(200, 35, 35));
         g2.fillRoundRect(armX, row3Y, armW, btnH, 4, 4);

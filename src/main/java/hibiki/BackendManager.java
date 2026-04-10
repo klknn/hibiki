@@ -304,6 +304,18 @@ public class BackendManager {
             .build());
   }
 
+  /** Set recording mode for a track (0 = audio, 1 = MIDI) */
+  public void setRecordMode(int trackIndex, boolean midiMode) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_RECORD_MODE)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setRecordMode(midiMode ? 1 : 0))
+            .build());
+  }
+
   /** Toggle play/stop state - triggered by Space key */
   public void togglePlay() {
     if (isPlaying) {

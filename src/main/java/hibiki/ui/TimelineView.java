@@ -217,17 +217,28 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 int row3Y = 33; // relative to track top
                 int btnH = 18;
                 int armW = 30;
+                int modeW = 34;
                 int gap = 3;
-                int inputW = scaleLabelWidth - armW - gap * 3;
+                int inputW = scaleLabelWidth - armW - modeW - gap * 4;
 
                 // Check if click is on the ARM button
-                int armX = gap + inputW + gap;
+                int armX = gap + inputW + gap + modeW + gap;
                 if (e.getX() >= armX && e.getX() <= armX + armW
                     && clickYInTrack >= row3Y && clickYInTrack <= row3Y + btnH) {
                   track.recordArmed = !track.recordArmed;
                   BackendManager.getInstance().armTrack(trackIdx);
                   rowHeader.repaint();
                   contentPanel.repaint();
+                  return;
+                }
+
+                // Check if click is on the MIDI/AUD toggle button
+                int modeX = gap + inputW + gap;
+                if (e.getX() >= modeX && e.getX() <= modeX + modeW
+                    && clickYInTrack >= row3Y && clickYInTrack <= row3Y + btnH) {
+                  track.midiRecordMode = !track.midiRecordMode;
+                  BackendManager.getInstance().setRecordMode(trackIdx, track.midiRecordMode);
+                  rowHeader.repaint();
                   return;
                 }
 
@@ -949,6 +960,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     List<AutomationLaneData> automationLanes = new ArrayList<>();
     boolean automationExpanded = true; // Whether automation sub-rows are visible
     boolean recordArmed = false; // Whether track is armed for recording
+    boolean midiRecordMode = true; // true = MIDI recording, false = audio recording
     String inputDeviceId = ""; // Selected input device ID
     int inputChannelStart = 0; // Starting input channel
     boolean inputStereo = true; // Mono vs stereo input

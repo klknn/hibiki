@@ -138,77 +138,145 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
 
         for (auto& pair : state.tracks) {
           Track* track = pair.second.get();
-          if (!track->record_armed || track->record_buffer.empty()) continue;
+          if (!track->record_armed) continue;
 
-          int rec_channels = track->input_stereo ? 2 : 1;
-          int sample_rate = track->input_device
-                                ? track->input_device->get_sample_rate()
-                                : 44100;
+          if (track->record_mode == Track::RECORD_MIDI) {
+            // Finalize MIDI recording
+            if (track->midi_record_buffer.empty()) continue;
 
-          // Generate filename
-          static int rec_counter = 0;
-          std::string filename = "recording_track" +
-                                 std::to_string(pair.first) + "_" +
-                                 std::to_string(++rec_counter) + ".wav";
-          std::string filepath =
-              (std::filesystem::path(out_dir) / filename).string();
+            double beats_per_sec = state.bpm / 60.0;
+            auto clip = std::make_unique<Clip>();
+            clip->type = Clip::Type::MIDI;
+            double max_beat = 0;
+            for (const auto& tev : track->midi_record_buffer) {
+              MidiEvent me;
+              me.beats =
+                  (tev.time_sec - state.record_start_sec) * beats_per_sec;
+              me.channel = tev.event.channel;
+              me.note = tev.event.pitch;
+              me.velocity = (uint8_t)(tev.event.velocity * 127.0f);
+              me.type = tev.event.isNoteOn ? 0x90 : 0x80;
+              clip->midi_events.push_back(me);
+              if (me.beats > max_beat) max_beat = me.beats;
+            }
+            // Snap duration up to next bar (4 beats)
+            double dur_beats = std::ceil(max_beat / 4.0) * 4.0;
+            if (dur_beats < 4.0) dur_beats = 4.0;
+            clip->duration_beats = dur_beats;
 
-          // Save WAV
-          SaveWav(filepath, track->record_buffer, rec_channels, sample_rate);
+            static int midi_rec_counter = 0;
+            std::string filename = "midi_rec_track" +
+                                   std::to_string(pair.first) + "_" +
+                                   std::to_string(++midi_rec_counter);
+            clip->name = filename;
 
-          // Create timeline clip from recorded audio
-          double duration_sec = (double)track->record_buffer.size() /
-                                (rec_channels * sample_rate);
-          auto clip = std::make_unique<Clip>();
-          clip->type = Clip::Type::AUDIO;
-          clip->audio_data = std::move(track->record_buffer);
-          clip->num_channels = rec_channels;
-          clip->sample_rate = sample_rate;
-          clip->duration_sec = duration_sec;
-          clip->path = filepath;
-          clip->name = filename;
-          // Generate waveform summary
-          int summary_size = 200;
-          clip->waveform_summary.resize(summary_size, 0.0f);
-          int samples_per_bucket =
-              (int)clip->audio_data.size() / (rec_channels * summary_size);
-          if (samples_per_bucket < 1) samples_per_bucket = 1;
-          for (int b = 0; b < summary_size; ++b) {
-            float peak = 0.0f;
-            for (int s = 0; s < samples_per_bucket; ++s) {
-              int idx = (b * samples_per_bucket + s) * rec_channels;
-              if (idx < (int)clip->audio_data.size()) {
-                peak = std::max(peak, std::abs(clip->audio_data[idx]));
+            // Generate MIDI preview waveform (note bars encoded as triplets)
+            std::vector<float> waveform;
+            for (const auto& me : clip->midi_events) {
+              if (me.type == 0x90 && me.velocity > 0) {
+                // Find matching note-off
+                double end_beat = dur_beats;
+                for (const auto& off : clip->midi_events) {
+                  if ((off.type == 0x80 ||
+                       (off.type == 0x90 && off.velocity == 0)) &&
+                      off.note == me.note && off.beats > me.beats) {
+                    end_beat = off.beats;
+                    break;
+                  }
+                }
+                float startRatio = (float)(me.beats / dur_beats);
+                float pitch = (float)me.note;
+                float durRatio = (float)((end_beat - me.beats) / dur_beats);
+                waveform.push_back(startRatio);
+                waveform.push_back(pitch);
+                waveform.push_back(durRatio);
               }
             }
-            clip->waveform_summary[b] = peak;
+            clip->waveform_summary = waveform;
+
+            double duration_sec = dur_beats / beats_per_sec;
+            auto tc = std::make_unique<TimelineClip>();
+            tc->start_time_sec = state.record_start_sec;
+            tc->duration_beats = dur_beats;
+            tc->duration_sec = duration_sec;
+            tc->clip = std::move(clip);
+            track->timeline_clips.push_back(std::move(tc));
+            int clip_idx = (int)track->timeline_clips.size() - 1;
+
+            sendTimelineClipInfo(
+                pair.first, clip_idx, filename, "",
+                (float)state.record_start_sec, (float)duration_sec,
+                track->timeline_clips[clip_idx]->clip->waveform_summary);
+
+            track->midi_record_buffer.clear();
+          } else {
+            // Finalize audio recording
+            if (track->record_buffer.empty()) continue;
+
+            int rec_channels = track->input_stereo ? 2 : 1;
+            int sample_rate = track->input_device
+                                  ? track->input_device->get_sample_rate()
+                                  : 44100;
+
+            static int rec_counter = 0;
+            std::string filename = "recording_track" +
+                                   std::to_string(pair.first) + "_" +
+                                   std::to_string(++rec_counter) + ".wav";
+            std::string filepath =
+                (std::filesystem::path(out_dir) / filename).string();
+
+            SaveWav(filepath, track->record_buffer, rec_channels, sample_rate);
+
+            double duration_sec = (double)track->record_buffer.size() /
+                                  (rec_channels * sample_rate);
+            auto clip = std::make_unique<Clip>();
+            clip->type = Clip::Type::AUDIO;
+            clip->audio_data = std::move(track->record_buffer);
+            clip->num_channels = rec_channels;
+            clip->sample_rate = sample_rate;
+            clip->duration_sec = duration_sec;
+            clip->path = filepath;
+            clip->name = filename;
+            int summary_size = 200;
+            clip->waveform_summary.resize(summary_size, 0.0f);
+            int samples_per_bucket =
+                (int)clip->audio_data.size() / (rec_channels * summary_size);
+            if (samples_per_bucket < 1) samples_per_bucket = 1;
+            for (int b = 0; b < summary_size; ++b) {
+              float peak = 0.0f;
+              for (int s = 0; s < samples_per_bucket; ++s) {
+                int idx = (b * samples_per_bucket + s) * rec_channels;
+                if (idx < (int)clip->audio_data.size()) {
+                  peak = std::max(peak, std::abs(clip->audio_data[idx]));
+                }
+              }
+              clip->waveform_summary[b] = peak;
+            }
+
+            auto tc = std::make_unique<TimelineClip>();
+            tc->start_time_sec = state.record_start_sec;
+            tc->duration_sec = duration_sec;
+            tc->clip = std::move(clip);
+            track->timeline_clips.push_back(std::move(tc));
+            int clip_idx = (int)track->timeline_clips.size() - 1;
+
+            sendTimelineClipInfo(
+                pair.first, clip_idx, filename, filepath,
+                (float)state.record_start_sec, (float)duration_sec,
+                track->timeline_clips[clip_idx]->clip->waveform_summary);
+
+            pb::notifications::Notification notif;
+            auto* rf = notif.mutable_recording_finished();
+            rf->set_track_index(pair.first);
+            rf->set_path(filepath);
+            rf->set_clip_index(clip_idx);
+            std::string data;
+            notif.SerializeToString(&data);
+            sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
+                             data.size());
+
+            track->input_device.reset();
           }
-
-          auto tc = std::make_unique<TimelineClip>();
-          tc->start_time_sec = state.record_start_sec;
-          tc->duration_sec = duration_sec;
-          tc->clip = std::move(clip);
-          track->timeline_clips.push_back(std::move(tc));
-          int clip_idx = (int)track->timeline_clips.size() - 1;
-
-          sendTimelineClipInfo(
-              pair.first, clip_idx, filename, filepath,
-              (float)state.record_start_sec, (float)duration_sec,
-              track->timeline_clips[clip_idx]->clip->waveform_summary);
-
-          // Send recording finished notification
-          pb::notifications::Notification notif;
-          auto* rf = notif.mutable_recording_finished();
-          rf->set_track_index(pair.first);
-          rf->set_path(filepath);
-          rf->set_clip_index(clip_idx);
-          std::string data;
-          notif.SerializeToString(&data);
-          sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
-                           data.size());
-
-          // Release input device
-          track->input_device.reset();
         }
       }
 
@@ -225,19 +293,22 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
       // Create input devices for armed tracks
       for (auto& pair : state.tracks) {
         Track* track = pair.second.get();
-        if (track->record_armed && !track->input_device) {
-          int ch = track->input_stereo ? 2 : 1;
-          // Open device with max channels to support channel selection
-          track->input_device = SoundDevice::createInput(
-              track->input_device_id, (int)state.sample_rate, ch,
-              state.buffer_latency_ms);
-          if (!track->input_device->is_ready()) {
-            sendLog("Failed to open input device for track " +
-                    std::to_string(pair.first));
-            track->input_device.reset();
+        if (track->record_armed) {
+          if (track->record_mode == Track::RECORD_AUDIO &&
+              !track->input_device) {
+            int ch = track->input_stereo ? 2 : 1;
+            track->input_device = SoundDevice::createInput(
+                track->input_device_id, (int)state.sample_rate, ch,
+                state.buffer_latency_ms);
+            if (!track->input_device->is_ready()) {
+              sendLog("Failed to open input device for track " +
+                      std::to_string(pair.first));
+              track->input_device.reset();
+            }
           }
+          track->record_buffer.clear();
+          track->midi_record_buffer.clear();
         }
-        track->record_buffer.clear();
       }
       state.is_recording = true;
       state.is_timeline_playing = true;
@@ -385,6 +456,14 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       // Reset existing MIDI device so it reopens with new settings
       track->midi_input_device.reset();
       sendAck("SET_MIDI_INPUT", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_RECORD_MODE: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->record_mode =
+          cmd.record_mode() == 1 ? Track::RECORD_MIDI : Track::RECORD_AUDIO;
+      sendAck("SET_RECORD_MODE", true);
       break;
     }
     default:

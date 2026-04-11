@@ -183,3 +183,21 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "integration_test",
+    size = "medium",
+    srcs = ["integration_test.cc"],
+    data = ["//testdata"],
+    linkstatic = True,
+    deps = [
+        ":clip",
+        ":commands",
+        ":midi",
+        ":track",
+        "//engine:test_utils",
+        "//engine/ipc:ipc",
+        "//engine/vst3:vst3_host",
+        "//engine/vst3:vst3_host_stub",
+        "@googletest//:gtest_main",
+    ],
+)

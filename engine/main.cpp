@@ -204,6 +204,17 @@ void playback_thread(ProjectState& state) {
           // Capture MIDI events for recording (MIDI mode)
           if (state.is_recording && track->record_armed &&
               track->record_mode == Track::RECORD_MIDI) {
+            if (!allEvents.empty()) {
+              static int midi_cap_log_counter = 0;
+              if (midi_cap_log_counter++ % 1000 == 0) {
+                fprintf(stderr,
+                        "[MIDI_CAP] track=%d events=%d "
+                        "buf_size=%d playhead=%.3f\n",
+                        (int)pair.first, (int)allEvents.size(),
+                        (int)track->midi_record_buffer.size(),
+                        state.playhead_pos_sec);
+              }
+            }
             for (const auto& ev : allEvents) {
               Track::TimestampedMidiEvent tev;
               tev.time_sec =

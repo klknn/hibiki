@@ -623,11 +623,11 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     mouseHandler.install();
   }
 
-  /** Snap time to nearest bar boundary based on current BPM */
-  float snapToBar(float time) {
+  /** Snap time to nearest grid boundary based on current grid mode and BPM */
+  float snapToGrid(float time) {
     float secondsPerBeat = 60.0f / bpm;
-    float secondsPerBar = secondsPerBeat * 4; // 4/4 time signature
-    return Math.round(time / secondsPerBar) * secondsPerBar;
+    float snapInterval = getGridSnapSeconds(gridMode, secondsPerBeat);
+    return Math.round(time / snapInterval) * snapInterval;
   }
 
   /** Get the currently selected track index for plugin/clip operations (0-based) */
@@ -763,7 +763,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     JMenuItem createItem = new JMenuItem("Create New Clip");
     createItem.addActionListener(
         e -> {
-          float snapTime = snapToBar(clickTime);
+          float snapTime = snapToGrid(clickTime);
           BackendManager.getInstance().addTimelineClip(trackIdx, "", snapTime, 0);
         });
     menu.add(createItem);

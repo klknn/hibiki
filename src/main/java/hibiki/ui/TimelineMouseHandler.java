@@ -107,7 +107,7 @@ class TimelineMouseHandler {
         view.creatingTrackIdx = trackIdx;
         float startTime = e.getX() / view.getPixelsPerSecond();
         if (!e.isShiftDown()) {
-          startTime = view.snapToBar(startTime);
+          startTime = view.snapToGrid(startTime);
         }
         view.creatingStartTime = startTime;
         view.creatingClipRect = new TimelineView.ClipRect();
@@ -199,7 +199,7 @@ class TimelineMouseHandler {
 
     float newStartTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
     if (!e.isShiftDown()) {
-      newStartTime = view.snapToBar(newStartTime);
+      newStartTime = view.snapToGrid(newStartTime);
     }
 
     boolean isCopy = e.isAltDown();
@@ -256,7 +256,7 @@ class TimelineMouseHandler {
   private void completeResize(MouseEvent e) {
     float endTime = view.resizeClip.startTime + view.resizeClip.duration;
     if (!e.isShiftDown()) {
-      endTime = view.snapToBar(endTime);
+      endTime = view.snapToGrid(endTime);
     }
     float newDuration = Math.max(60.0f / view.bpm, endTime - view.resizeClip.startTime);
     view.resizeClip.duration = newDuration;
@@ -276,7 +276,7 @@ class TimelineMouseHandler {
     // Snap the left edge
     float leftEdge = view.resizeClip.startTime;
     if (!e.isShiftDown()) {
-      leftEdge = view.snapToBar(leftEdge);
+      leftEdge = view.snapToGrid(leftEdge);
     }
     float rightEdge = view.resizeClip.startTime + view.resizeClip.duration;
     float newDuration = Math.max(60.0f / view.bpm, rightEdge - leftEdge);
@@ -302,7 +302,7 @@ class TimelineMouseHandler {
   private void completeCreation(MouseEvent e) {
     float endTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
     if (!e.isShiftDown()) {
-      endTime = view.snapToBar(endTime);
+      endTime = view.snapToGrid(endTime);
     }
     float duration = endTime - view.creatingStartTime;
 
@@ -331,7 +331,7 @@ class TimelineMouseHandler {
       // Head-trim: move left edge, shrink duration, increase trim offset
       float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
       if (!e.isShiftDown()) {
-        mouseTime = view.snapToBar(mouseTime);
+        mouseTime = view.snapToGrid(mouseTime);
       }
       float rightEdge = view.resizeClip.startTime + view.resizeClip.duration;
       float minDuration = 60.0f / view.bpm; // 1 beat minimum
@@ -350,7 +350,7 @@ class TimelineMouseHandler {
         && view.creatingClipRect != null) {
       float endTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
       if (!e.isShiftDown()) {
-        endTime = view.snapToBar(endTime);
+        endTime = view.snapToGrid(endTime);
       }
       view.creatingClipRect.duration = Math.max(0, endTime - view.creatingStartTime);
       view.contentPanel.repaint();
@@ -366,7 +366,7 @@ class TimelineMouseHandler {
       if (view.dragMode == TimelineView.DragMode.MOVE_CLIP) {
         float newStartTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
         if (!e.isShiftDown()) {
-          newStartTime = view.snapToBar(newStartTime);
+          newStartTime = view.snapToGrid(newStartTime);
         }
         view.draggingClip.startTime = newStartTime;
         view.dragCurrentY = e.getY();

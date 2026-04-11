@@ -45,24 +45,26 @@ public class TimelineViewTest {
   public void testSnapToBar_120bpm() {
     TimelineView view = new TimelineView();
     view.bpm = 120.0f;
+    view.setGridMode(GridMode.BAR);
     // At 120 BPM: 1 beat = 0.5s, 1 bar = 2.0s
-    assertEquals(0.0f, view.snapToBar(0.1f), 0.001f);
-    assertEquals(2.0f, view.snapToBar(1.5f), 0.001f);
-    assertEquals(2.0f, view.snapToBar(2.0f), 0.001f);
-    assertEquals(4.0f, view.snapToBar(3.5f), 0.001f);
-    assertEquals(4.0f, view.snapToBar(4.0f), 0.001f);
+    assertEquals(0.0f, view.snapToGrid(0.1f), 0.001f);
+    assertEquals(2.0f, view.snapToGrid(1.5f), 0.001f);
+    assertEquals(2.0f, view.snapToGrid(2.0f), 0.001f);
+    assertEquals(4.0f, view.snapToGrid(3.5f), 0.001f);
+    assertEquals(4.0f, view.snapToGrid(4.0f), 0.001f);
   }
 
   @Test
   public void testSnapToBar_140bpm() {
     TimelineView view = new TimelineView();
     view.bpm = 140.0f;
+    view.setGridMode(GridMode.BAR);
     // At 140 BPM: 1 beat = 60/140s, 1 bar = 240/140 = ~1.714s
     float barLen = 240.0f / 140.0f;
-    assertEquals(0.0f, view.snapToBar(0.5f), 0.001f);
-    assertEquals(barLen, view.snapToBar(barLen - 0.1f), 0.001f);
-    assertEquals(barLen, view.snapToBar(barLen + 0.1f), 0.001f);
-    assertEquals(2 * barLen, view.snapToBar(2 * barLen), 0.001f);
+    assertEquals(0.0f, view.snapToGrid(0.5f), 0.001f);
+    assertEquals(barLen, view.snapToGrid(barLen - 0.1f), 0.001f);
+    assertEquals(barLen, view.snapToGrid(barLen + 0.1f), 0.001f);
+    assertEquals(2 * barLen, view.snapToGrid(2 * barLen), 0.001f);
   }
 
   @Test
@@ -289,11 +291,12 @@ public class TimelineViewTest {
   public void testSnapToBar_zeroBpm() {
     TimelineView view = new TimelineView();
     view.bpm = 60.0f;
+    view.setGridMode(GridMode.BAR);
     // At 60 BPM: 1 beat = 1.0s, 1 bar = 4.0s
-    assertEquals(0.0f, view.snapToBar(0.0f), 0.001f);
-    assertEquals(4.0f, view.snapToBar(3.5f), 0.001f);
-    assertEquals(4.0f, view.snapToBar(4.0f), 0.001f);
-    assertEquals(8.0f, view.snapToBar(7.0f), 0.001f);
+    assertEquals(0.0f, view.snapToGrid(0.0f), 0.001f);
+    assertEquals(4.0f, view.snapToGrid(3.5f), 0.001f);
+    assertEquals(4.0f, view.snapToGrid(4.0f), 0.001f);
+    assertEquals(8.0f, view.snapToGrid(7.0f), 0.001f);
   }
 
   @Test

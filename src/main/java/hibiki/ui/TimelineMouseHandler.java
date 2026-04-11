@@ -84,7 +84,12 @@ class TimelineMouseHandler {
       }
     } else if (SwingUtilities.isLeftMouseButton(e)) {
       TimelineView.ClipRect clip = view.findClipAtPosition(trackIdx, e.getX());
-      if (clip != null && view.isNearRightEdge(clip, e.getX())) {
+      if (clip != null && view.isNearLeftEdge(clip, e.getX())) {
+        view.dragMode = TimelineView.DragMode.TRIM_LEFT;
+        view.resizeClip = clip;
+        view.resizeTrackIdx = trackIdx;
+        view.resizeOriginalDuration = clip.duration;
+      } else if (clip != null && view.isNearRightEdge(clip, e.getX())) {
         view.dragMode = TimelineView.DragMode.RESIZE_CLIP;
         view.resizeClip = clip;
         view.resizeTrackIdx = trackIdx;
@@ -131,7 +136,7 @@ class TimelineMouseHandler {
       }
     }
 
-    // Handle clip resize completion
+    // Handle clip resize completion (right edge)
     if (view.dragMode == TimelineView.DragMode.RESIZE_CLIP && view.resizeClip != null) {
       if (view.resizeClip.isAutomation) {
         float durationBeats = view.resizeClip.duration * (view.bpm / 60.0f);
@@ -144,6 +149,11 @@ class TimelineMouseHandler {
       } else {
         completeResize(e);
       }
+    }
+
+    // Handle clip head-trim completion (left edge)
+    if (view.dragMode == TimelineView.DragMode.TRIM_LEFT && view.resizeClip != null) {
+      completeTrimLeft(e);
     }
 
     // Handle clip creation completion
@@ -256,7 +266,35 @@ class TimelineMouseHandler {
     int clipIndex = track.clips.indexOf(view.resizeClip);
     if (clipIndex >= 0) {
       BackendManager.getInstance()
-          .resizeTimelineClip(view.resizeTrackIdx, clipIndex, durationBeats);
+          .resizeTimelineClip(view.resizeTrackIdx, clipIndex, durationBeats,
+              view.resizeClip.trimStartBeats);
+    }
+    view.contentPanel.repaint();
+  }
+
+  private void completeTrimLeft(MouseEvent e) {
+    // Snap the left edge
+    float leftEdge = view.resizeClip.startTime;
+    if (!e.isShiftDown()) {
+      leftEdge = view.snapToBar(leftEdge);
+    }
+    float rightEdge = view.resizeClip.startTime + view.resizeClip.duration;
+    float newDuration = Math.max(60.0f / view.bpm, rightEdge - leftEdge);
+    view.resizeClip.startTime = rightEdge - newDuration;
+    view.resizeClip.duration = newDuration;
+
+    float durationBeats = newDuration * (view.bpm / 60.0f);
+
+    TimelineView.TrackTimeline track = view.tracks.get(view.resizeTrackIdx);
+    int clipIndex = track.clips.indexOf(view.resizeClip);
+    if (clipIndex >= 0) {
+      // Send resize with trim offset, then move for new start position
+      BackendManager.getInstance()
+          .resizeTimelineClip(view.resizeTrackIdx, clipIndex, durationBeats,
+              view.resizeClip.trimStartBeats);
+      BackendManager.getInstance()
+          .moveTimelineClip(view.resizeTrackIdx, clipIndex,
+              view.resizeClip.startTime, view.resizeTrackIdx);
     }
     view.contentPanel.repaint();
   }
@@ -286,8 +324,24 @@ class TimelineMouseHandler {
     if (e.getY() < scaleTimeRuler
         && view.draggingClip == null
         && view.dragMode != TimelineView.DragMode.CREATE_CLIP
-        && view.dragMode != TimelineView.DragMode.RESIZE_CLIP) {
+        && view.dragMode != TimelineView.DragMode.RESIZE_CLIP
+        && view.dragMode != TimelineView.DragMode.TRIM_LEFT) {
       view.updatePlayhead(e.getX());
+    } else if (view.dragMode == TimelineView.DragMode.TRIM_LEFT && view.resizeClip != null) {
+      // Head-trim: move left edge, shrink duration, increase trim offset
+      float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
+      if (!e.isShiftDown()) {
+        mouseTime = view.snapToBar(mouseTime);
+      }
+      float rightEdge = view.resizeClip.startTime + view.resizeClip.duration;
+      float minDuration = 60.0f / view.bpm; // 1 beat minimum
+      mouseTime = Math.min(mouseTime, rightEdge - minDuration);
+      float delta = mouseTime - view.resizeClip.startTime;
+      view.resizeClip.startTime = mouseTime;
+      view.resizeClip.duration = rightEdge - mouseTime;
+      view.resizeClip.trimStartBeats += delta * (view.bpm / 60.0f);
+      view.resizeClip.trimStartBeats = Math.max(0, view.resizeClip.trimStartBeats);
+      view.contentPanel.repaint();
     } else if (view.dragMode == TimelineView.DragMode.RESIZE_CLIP && view.resizeClip != null) {
       float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
       float newDuration = Math.max(60.0f / view.bpm, mouseTime - view.resizeClip.startTime);
@@ -332,7 +386,10 @@ class TimelineMouseHandler {
     if (trackIdx < 0 || trackIdx >= view.tracks.size()) return;
 
     TimelineView.ClipRect clip = view.findClipAtPosition(trackIdx, e.getX());
-    if (clip != null && view.isNearRightEdge(clip, e.getX())) {
+    if (clip != null && view.isNearLeftEdge(clip, e.getX())) {
+      view.contentPanel.setCursor(
+          java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.W_RESIZE_CURSOR));
+    } else if (clip != null && view.isNearRightEdge(clip, e.getX())) {
       view.contentPanel.setCursor(
           java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.E_RESIZE_CURSOR));
     } else {

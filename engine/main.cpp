@@ -148,9 +148,11 @@ void playback_thread(ProjectState& state) {
               double clip_local_time =
                   state.playhead_pos_sec - tc->start_time_sec;
               double beats_per_sec = state.bpm / 60.0;
-              double window_start_beats = clip_local_time * beats_per_sec;
+              double window_start_beats =
+                  clip_local_time * beats_per_sec + tc->trim_start_beats;
               double window_end_beats =
-                  (clip_local_time + time_per_block) * beats_per_sec;
+                  (clip_local_time + time_per_block) * beats_per_sec +
+                  tc->trim_start_beats;
               for (const auto& me : tc->clip->midi_events) {
                 if (me.beats >= window_start_beats &&
                     me.beats < window_end_beats) {

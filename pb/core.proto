@@ -89,6 +89,7 @@ message Clip {
   repeated float waveform_summary = 9;  // Downsampled peaks for display
   repeated AutomationPoint automation_points =
       10;  // Present when type=AUTOMATION
+  float trim_start_beats = 11;  // Head-trim offset into clip content
 }
 
 // A clip placed on the timeline at a specific position.

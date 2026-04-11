@@ -423,7 +423,8 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
     }
     case pb::commands::TrackCmd::ACTION_RESIZE_TIMELINE_CLIP: {
       int cidx = cmd.target().timeline_clip();
-      float dur_beats = cmd.value();
+      float dur_beats = cmd.clip_data().duration_beats();
+      float trim_start = cmd.clip_data().trim_start_beats();
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       history.pushState(CaptureProjectState(state));
       if (state.tracks.count(tidx)) {
@@ -431,10 +432,12 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
         if (cidx >= 0 && cidx < (int)track->timeline_clips.size() &&
             track->timeline_clips[cidx]) {
           auto& tc = track->timeline_clips[cidx];
-          tc->duration_beats = dur_beats;
-          if (tc->clip) tc->clip->duration_beats = dur_beats;
-          float duration_for_gui =
-              (float)(dur_beats * 60.0 / (state.bpm > 0 ? state.bpm : 120.0));
+          if (dur_beats > 0) {
+            tc->duration_beats = dur_beats;
+          }
+          tc->trim_start_beats = trim_start;
+          float duration_for_gui = (float)(tc->duration_beats * 60.0 /
+                                           (state.bpm > 0 ? state.bpm : 120.0));
           std::string clipname = tc->clip ? tc->clip->path : "";
           if (clipname.empty()) clipname = "New Clip";
           size_t pos = clipname.find_last_of("/\\");

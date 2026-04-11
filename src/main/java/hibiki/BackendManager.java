@@ -408,7 +408,8 @@ public class BackendManager {
             .build());
   }
 
-  public void resizeTimelineClip(int trackIndex, int clipIndex, float durationBeats) {
+  public void resizeTimelineClip(
+      int trackIndex, int clipIndex, float durationBeats, float trimStartBeats) {
     sendRequest(
         Request.newBuilder()
             .setTrack(
@@ -416,7 +417,10 @@ public class BackendManager {
                     .setAction(TrackCmd.Action.ACTION_RESIZE_TIMELINE_CLIP)
                     .setTarget(
                         EntityRef.newBuilder().setTrackIndex(trackIndex).setTimelineClip(clipIndex))
-                    .setClipData(Clip.newBuilder().setDurationBeats(durationBeats)))
+                    .setClipData(
+                        Clip.newBuilder()
+                            .setDurationBeats(durationBeats)
+                            .setTrimStartBeats(trimStartBeats)))
             .build());
   }
 

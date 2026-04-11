@@ -132,7 +132,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     NONE,
     MOVE_CLIP,
     CREATE_CLIP,
-    RESIZE_CLIP
+    RESIZE_CLIP,
+    TRIM_LEFT
   }
 
   DragMode dragMode = DragMode.NONE;
@@ -685,6 +686,12 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     return Math.abs(x - rightEdgeX) <= TimelineConstants.RESIZE_EDGE_PX;
   }
 
+  /** Check if x position is near the left edge of a clip */
+  boolean isNearLeftEdge(ClipRect clip, int x) {
+    int leftEdgeX = (int) (clip.startTime * getPixelsPerSecond());
+    return Math.abs(x - leftEdgeX) <= TimelineConstants.RESIZE_EDGE_PX;
+  }
+
   /** Show context menu for a timeline clip */
   void showClipContextMenu(int trackIdx, ClipRect clip, int x, int y) {
     JPopupMenu menu = new JPopupMenu();
@@ -1213,6 +1220,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     String path;
     float startTime;
     float duration; // In seconds for audio, beats for MIDI and Automation
+    float trimStartBeats; // Head-trim offset into clip content
     float[] waveform;
     boolean isAutomation = false;
     List<AutomationEditor.AutoPoint> automationPoints = new ArrayList<>();

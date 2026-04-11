@@ -29,6 +29,7 @@ struct TimelineClip {
   double start_time_sec = 0.0;
   double duration_sec = 0.0;    // Duration in seconds (for audio clips)
   double duration_beats = 0.0;  // Duration in beats (for MIDI clips)
+  double trim_start_beats = 0.0;  // Head-trim offset into clip content
 };
 
 // Automation lane targeting a single plugin parameter

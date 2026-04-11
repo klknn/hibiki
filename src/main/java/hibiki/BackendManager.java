@@ -316,6 +316,54 @@ public class BackendManager {
             .build());
   }
 
+  /** Set track volume (0.0 – 2.0, 1.0 = unity) */
+  public void setTrackVolume(int trackIndex, float volume) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_VOLUME)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setValue(volume))
+            .build());
+  }
+
+  /** Set track pan (-1.0 left to 1.0 right, 0.0 = center) */
+  public void setTrackPan(int trackIndex, float pan) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_PAN)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setValue(pan))
+            .build());
+  }
+
+  /** Set track mute state */
+  public void setTrackMute(int trackIndex, boolean muted) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_MUTE)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setFlag(muted))
+            .build());
+  }
+
+  /** Set track solo state */
+  public void setTrackSolo(int trackIndex, boolean soloed) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_SOLO)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setFlag(soloed))
+            .build());
+  }
+
   /** Toggle play/stop state - triggered by Space key */
   public void togglePlay() {
     if (isPlaying) {
@@ -369,6 +417,22 @@ public class BackendManager {
                     .setTarget(
                         EntityRef.newBuilder().setTrackIndex(trackIndex).setTimelineClip(clipIndex))
                     .setClipData(Clip.newBuilder().setDurationBeats(durationBeats)))
+            .build());
+  }
+
+  public void moveTimelineClip(
+      int sourceTrackIndex, int clipIndex, float newStartTimeSec, int targetTrackIndex) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_MOVE_TIMELINE_CLIP)
+                    .setTarget(
+                        EntityRef.newBuilder()
+                            .setTrackIndex(sourceTrackIndex)
+                            .setTimelineClip(clipIndex))
+                    .setValue(newStartTimeSec)
+                    .setTargetTrackIndex(targetTrackIndex))
             .build());
   }
 

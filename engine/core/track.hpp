@@ -137,6 +137,12 @@ class Track {
 
   Track(int idx) : index(idx) {}
 
+  // Mixer state
+  float volume = 0.31623f;  // linear gain; default = -10 dB
+  float pan = 0.0f;  // -1.0 (full left) to 1.0 (full right), 0.0 = center
+  bool muted = false;
+  bool soloed = false;
+
   // Recording state
   enum RecordMode { RECORD_AUDIO = 0, RECORD_MIDI = 1 };
   RecordMode record_mode = RECORD_MIDI;  // Default to MIDI for new tracks

@@ -349,10 +349,22 @@ public class SessionView extends JPanel {
     volPanel.setOpaque(false);
 
     // Vol
-    JSlider volSlider = new JSlider(JSlider.VERTICAL, -70, 6, 0);
+    JSlider volSlider = new JSlider(JSlider.VERTICAL, -70, 6, -10);
     volSlider.setMaximumSize(
         new Dimension(Theme.getInstance().scale(30), Theme.getInstance().scale(100)));
     volSlider.setBackground(Theme.getInstance().PANEL_BG);
+    volSlider.addChangeListener(
+        e -> {
+          int db = volSlider.getValue();
+          float gain = db <= -70 ? 0.0f : (float) Math.pow(10, db / 20.0);
+          BackendManager.getInstance().setTrackVolume(trackIdx, Math.min(2.0f, gain));
+          // Sync with TimelineView
+          if (TimelineView.getInstance() != null
+              && trackIdx < TimelineView.getInstance().tracks.size()) {
+            TimelineView.getInstance().tracks.get(trackIdx).volume = gain;
+            TimelineView.getInstance().repaint();
+          }
+        });
     volPanel.add(volSlider);
 
     controls.add(Box.createHorizontalStrut(Theme.getInstance().scale(10)));
@@ -369,8 +381,92 @@ public class SessionView extends JPanel {
     panSlider.setMaximumSize(
         new Dimension(Theme.getInstance().scale(90), Theme.getInstance().scale(20)));
     panSlider.setBackground(Theme.getInstance().PANEL_BG);
+    panSlider.addChangeListener(
+        e -> {
+          float pan = panSlider.getValue() / 50.0f; // -1.0 to 1.0
+          BackendManager.getInstance().setTrackPan(trackIdx, pan);
+          // Sync with TimelineView
+          if (TimelineView.getInstance() != null
+              && trackIdx < TimelineView.getInstance().tracks.size()) {
+            TimelineView.getInstance().tracks.get(trackIdx).pan = pan;
+            TimelineView.getInstance().repaint();
+          }
+        });
+    // Pan value label
+    JLabel panLabel = new JLabel("C", SwingConstants.CENTER);
+    panLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+    panLabel.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(8)));
+    panLabel.setForeground(Theme.getInstance().TEXT_DIM);
+    panSlider.addChangeListener(
+        e -> {
+          int v = panSlider.getValue();
+          String txt = v == 0 ? "C" : (v < 0 ? "L" + (-v) : "R" + v);
+          panLabel.setText(txt);
+        });
     strip.add(createControlLabel("Pan"));
     strip.add(panSlider);
+    strip.add(panLabel);
+
+    // Vol value label (dB)
+    JLabel volLabel = new JLabel("-10.0 dB", SwingConstants.CENTER);
+    volLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+    volLabel.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(8)));
+    volLabel.setForeground(Theme.getInstance().TEXT_DIM);
+    volSlider.addChangeListener(
+        e -> {
+          int db = volSlider.getValue();
+          String txt = db <= -70 ? "-∞ dB" : (db >= 0 ? "+" + db + " dB" : db + " dB");
+          volLabel.setText(txt);
+        });
+    strip.add(volLabel);
+
+    // Solo / Mute buttons
+    JPanel smPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 0));
+    smPanel.setOpaque(false);
+    smPanel.setMaximumSize(
+        new Dimension(Theme.getInstance().scale(100), Theme.getInstance().scale(22)));
+
+    JButton soloBtn = new JButton("S");
+    soloBtn.setFont(Theme.getInstance().FONT_UI_BOLD);
+    soloBtn.setFocusPainted(false);
+    soloBtn.setPreferredSize(new Dimension(Theme.getInstance().scale(36), Theme.getInstance().scale(18)));
+    soloBtn.setBackground(new Color(50, 50, 55));
+    soloBtn.setForeground(new Color(160, 150, 60));
+    soloBtn.setBorder(BorderFactory.createLineBorder(Theme.getInstance().BORDER));
+    soloBtn.addActionListener(e -> {
+      boolean newState = soloBtn.getBackground().getRGB() != new Color(200, 180, 40).getRGB();
+      soloBtn.setBackground(newState ? new Color(200, 180, 40) : new Color(50, 50, 55));
+      soloBtn.setForeground(newState ? Color.BLACK : new Color(160, 150, 60));
+      BackendManager.getInstance().setTrackSolo(trackIdx, newState);
+      if (TimelineView.getInstance() != null
+          && trackIdx < TimelineView.getInstance().tracks.size()) {
+        TimelineView.getInstance().tracks.get(trackIdx).soloed = newState;
+        TimelineView.getInstance().repaint();
+      }
+    });
+    smPanel.add(soloBtn);
+
+    JButton muteBtn = new JButton("M");
+    muteBtn.setFont(Theme.getInstance().FONT_UI_BOLD);
+    muteBtn.setFocusPainted(false);
+    muteBtn.setPreferredSize(new Dimension(Theme.getInstance().scale(36), Theme.getInstance().scale(18)));
+    muteBtn.setBackground(new Color(50, 50, 55));
+    muteBtn.setForeground(new Color(160, 60, 60));
+    muteBtn.setBorder(BorderFactory.createLineBorder(Theme.getInstance().BORDER));
+    muteBtn.addActionListener(e -> {
+      boolean newState = muteBtn.getBackground().getRGB() != new Color(200, 60, 60).getRGB();
+      muteBtn.setBackground(newState ? new Color(200, 60, 60) : new Color(50, 50, 55));
+      muteBtn.setForeground(newState ? Color.WHITE : new Color(160, 60, 60));
+      BackendManager.getInstance().setTrackMute(trackIdx, newState);
+      if (TimelineView.getInstance() != null
+          && trackIdx < TimelineView.getInstance().tracks.size()) {
+        TimelineView.getInstance().tracks.get(trackIdx).muted = newState;
+        TimelineView.getInstance().repaint();
+      }
+    });
+    smPanel.add(muteBtn);
+    strip.add(Box.createVerticalStrut(Theme.getInstance().scale(3)));
+    strip.add(smPanel);
 
     // Activator
     JButton activeBtn = createFlatButton("" + trackIdx, e -> ipc.sendStopTrack(trackIdx));

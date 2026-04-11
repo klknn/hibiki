@@ -194,6 +194,10 @@ class TimelineMouseHandler {
 
     boolean isCopy = e.isAltDown();
 
+    // Find clip index in source track before modifying
+    TimelineView.TrackTimeline sourceTrack = view.tracks.get(view.dragSourceTrack);
+    int clipIndex = sourceTrack.clips.indexOf(view.draggingClip);
+
     if (isCopy) {
       TimelineView.ClipRect newClip = new TimelineView.ClipRect();
       newClip.name = view.draggingClip.name;
@@ -208,14 +212,13 @@ class TimelineMouseHandler {
 
       // Restore original clip position
       view.draggingClip.startTime = view.dragOriginalStartTime;
+      // TODO: copy needs a separate backend command (addTimelineClip w/ data)
     } else {
       if (targetTrackIdx != view.dragSourceTrack) {
-        TimelineView.TrackTimeline sourceTrack = view.tracks.get(view.dragSourceTrack);
         TimelineView.TrackTimeline targetTrack = view.tracks.get(targetTrackIdx);
 
-        int clipIdx = sourceTrack.clips.indexOf(view.draggingClip);
-        if (clipIdx >= 0) {
-          sourceTrack.clips.remove(clipIdx);
+        if (clipIndex >= 0) {
+          sourceTrack.clips.remove(clipIndex);
           sourceTrack.clipMap.clear();
           for (int i = 0; i < sourceTrack.clips.size(); i++) {
             sourceTrack.clipMap.put(i, sourceTrack.clips.get(i));
@@ -227,6 +230,12 @@ class TimelineMouseHandler {
         targetTrack.clipMap.put(targetTrack.clips.size() - 1, view.draggingClip);
       } else {
         view.draggingClip.startTime = newStartTime;
+      }
+
+      // Sync to engine
+      if (clipIndex >= 0) {
+        BackendManager.getInstance()
+            .moveTimelineClip(view.dragSourceTrack, clipIndex, newStartTime, targetTrackIdx);
       }
     }
 

@@ -47,6 +47,11 @@ message TrackCmd {
     ACTION_SET_INPUT_DEVICE = 10;
     ACTION_SET_MIDI_INPUT = 11;
     ACTION_SET_RECORD_MODE = 12;
+    ACTION_SET_VOLUME = 13;
+    ACTION_SET_PAN = 14;
+    ACTION_SET_MUTE = 15;
+    ACTION_SET_SOLO = 16;
+    ACTION_MOVE_TIMELINE_CLIP = 17;
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -58,6 +63,7 @@ message TrackCmd {
   bool input_stereo = 8;           // mono or stereo
   string midi_input_device_id = 9; // MIDI input device ID
   int32 record_mode = 10;           // 0 = audio, 1 = MIDI
+  int32 target_track_index = 11;    // For cross-track clip moves
 }
 
 message PluginCmd {

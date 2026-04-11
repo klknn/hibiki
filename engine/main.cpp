@@ -58,6 +58,16 @@ void playback_thread(ProjectState& state) {
 
     {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+
+      // Check if any track is soloed (once, outside per-track loop)
+      bool any_soloed = false;
+      for (const auto& sp : state.tracks) {
+        if (sp.second->soloed) {
+          any_soloed = true;
+          break;
+        }
+      }
+
       for (auto& pair : state.tracks) {
         Track* track = pair.second.get();
         std::fill(bufferL, bufferL + block_size, 0.0f);
@@ -125,9 +135,50 @@ void playback_thread(ProjectState& state) {
           track->current_time_sec += time_per_block;
         }
 
-        // 1b. Merge live MIDI + virtual MIDI, then process instrument once
+        // 1b. Collect timeline MIDI events (merged with allEvents below)
+        std::vector<MidiNoteEvent> timelineMidiEvents;
+        if (state.is_timeline_playing) {
+          for (const auto& tc : track->timeline_clips) {
+            if (!tc->clip || tc->clip->type != Clip::Type::MIDI) continue;
+            double clip_duration = (tc->duration_beats > 0)
+                                       ? tc->duration_beats * 60.0 / state.bpm
+                                       : tc->duration_sec;
+            if (state.playhead_pos_sec + time_per_block > tc->start_time_sec &&
+                state.playhead_pos_sec < tc->start_time_sec + clip_duration) {
+              double clip_local_time =
+                  state.playhead_pos_sec - tc->start_time_sec;
+              double beats_per_sec = state.bpm / 60.0;
+              double window_start_beats = clip_local_time * beats_per_sec;
+              double window_end_beats =
+                  (clip_local_time + time_per_block) * beats_per_sec;
+              for (const auto& me : tc->clip->midi_events) {
+                if (me.beats >= window_start_beats &&
+                    me.beats < window_end_beats) {
+                  MidiNoteEvent e;
+                  double event_local_sec =
+                      me.beats / beats_per_sec - clip_local_time;
+                  e.sampleOffset =
+                      std::max(0, (int)(event_local_sec * sample_rate));
+                  if (e.sampleOffset >= block_size)
+                    e.sampleOffset = block_size - 1;
+                  e.channel = me.channel;
+                  e.pitch = me.note;
+                  e.isNoteOn = hibiki::isNoteOn(me);
+                  e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+                  timelineMidiEvents.push_back(e);
+                }
+              }
+            }
+          }
+        }
+
+        // 1c. Merge live MIDI + virtual MIDI + timeline MIDI, process
+        // instrument once
         if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
           std::vector<MidiNoteEvent> allEvents(std::move(clipMidiEvents));
+          // Add timeline MIDI events
+          allEvents.insert(allEvents.end(), timelineMidiEvents.begin(),
+                           timelineMidiEvents.end());
 
           // Lazily create MIDI input device (only if one is configured)
           if (!track->midi_input_device &&
@@ -184,33 +235,8 @@ void playback_thread(ProjectState& state) {
                   state.playhead_pos_sec - tc->start_time_sec;
 
               if (tc->clip->type == Clip::Type::MIDI) {
-                std::vector<MidiNoteEvent> blockEvents;
-                double beats_per_sec = state.bpm / 60.0;
-                double window_start_beats = clip_local_time * beats_per_sec;
-                double window_end_beats =
-                    (clip_local_time + time_per_block) * beats_per_sec;
-                for (const auto& me : tc->clip->midi_events) {
-                  if (me.beats >= window_start_beats &&
-                      me.beats < window_end_beats) {
-                    MidiNoteEvent e;
-                    double event_local_sec =
-                        me.beats / beats_per_sec - clip_local_time;
-                    e.sampleOffset =
-                        std::max(0, (int)(event_local_sec * sample_rate));
-                    if (e.sampleOffset >= block_size)
-                      e.sampleOffset = block_size - 1;
-                    e.channel = me.channel;
-                    e.pitch = me.note;
-                    e.isNoteOn = hibiki::isNoteOn(me);
-                    e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
-                    blockEvents.push_back(e);
-                  }
-                }
-                if (!track->plugins.empty() &&
-                    track->plugins[0]->isInstrument()) {
-                  track->plugins[0]->process(nullptr, outChannels, block_size,
-                                             context, blockEvents);
-                }
+                // MIDI events already merged above in step 1b
+                // (no separate process() call needed)
               } else {
                 int start_sample = (int)(clip_local_time * sample_rate);
                 for (int i = 0; i < block_size; ++i) {
@@ -286,13 +312,22 @@ void playback_thread(ProjectState& state) {
                                      context, {});
         }
 
-        // 5. Track peak levels
+        // 5. Apply volume and pan, mix to master, compute peak levels
+        bool is_silenced = track->muted || (any_soloed && !track->soloed);
+        float vol = is_silenced ? 0.0f : track->volume;
+        // Constant-power pan: pan_angle maps [-1,1] to [0, pi/2]
+        float pan_angle = (track->pan + 1.0f) * 0.25f *
+                          3.14159265f;  // 0 = full left, pi/2 = full right
+        float panL = std::cos(pan_angle);
+        float panR = std::sin(pan_angle);
         float peakL = 0.0f, peakR = 0.0f;
         for (int i = 0; i < block_size; ++i) {
-          mixBufferL[i] += bufferL[i];
-          mixBufferR[i] += bufferR[i];
-          peakL = std::max(peakL, std::abs(bufferL[i]));
-          peakR = std::max(peakR, std::abs(bufferR[i]));
+          float l = bufferL[i] * vol * panL;
+          float r = bufferR[i] * vol * panR;
+          mixBufferL[i] += l;
+          mixBufferR[i] += r;
+          peakL = std::max(peakL, std::abs(l));
+          peakR = std::max(peakR, std::abs(r));
         }
         {
           std::lock_guard<std::mutex> llock(state.levels_mutex);

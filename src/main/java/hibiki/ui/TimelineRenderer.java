@@ -27,7 +27,6 @@ class TimelineRenderer {
     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
     int scaleTimeRuler = Theme.getInstance().scale(timeRulerHeight);
-    int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight());
     int scaleAutoLane = Theme.getInstance().scale(view.getAutomationLaneHeight());
     int scaleLabelWidth = Theme.getInstance().scale(labelWidth);
 
@@ -35,6 +34,7 @@ class TimelineRenderer {
     g2.fillRect(0, 0, scaleLabelWidth, scaleTimeRuler);
 
     for (int i = 0; i < tracks.size(); i++) {
+      int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight(i));
       int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
 
       // Main track label
@@ -136,15 +136,113 @@ class TimelineRenderer {
       int tw = fm.stringWidth("ARM");
       g2.drawString("ARM", armX + (armW - tw) / 2, row3Y + 13);
 
-      // Row 4: Device name (if armed)
-      if (track.recordArmed && track.inputDeviceId != null && !track.inputDeviceId.isEmpty()) {
-        g2.setColor(new Color(100, 180, 100));
-        g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(8.0f)));
-        String devName = track.inputDeviceId;
-        if (devName.length() > 16)
-          devName = devName.substring(0, 15) + "…";
-        g2.drawString(devName, 5, y + 63);
+      // Row 4: VOL and PAN knobs + S/M buttons
+      int row4Y = y + 55;
+      int knobD = 18; // diameter
+      int knobR = knobD / 2;
+
+      // ── VOL knob ──
+      int volX = 6;
+      int volCX = volX + knobR;
+      int volCY = row4Y + knobR;
+      g2.setColor(new Color(45, 45, 50));
+      g2.fillOval(volX, row4Y, knobD, knobD);
+      g2.setColor(new Color(65, 65, 70));
+      g2.drawOval(volX, row4Y, knobD, knobD);
+      // Map gain to dB, then to normalized knob position (0-1)
+      // dB range: -60 to +6 (66 dB span), gain=0 maps to 0
+      float volDb;
+      float volNorm;
+      if (track.volume <= 0.001f) {
+        volDb = -100; // effectively -inf
+        volNorm = 0;
+      } else {
+        volDb = (float) (20.0 * Math.log10(track.volume));
+        volNorm = Math.max(0, Math.min(1.0f, (volDb + 60.0f) / 66.0f));
       }
+      int volSweep = (int) (volNorm * 270);
+      if (volSweep > 0) {
+        g2.setColor(new Color(80, 180, 80));
+        g2.setStroke(new java.awt.BasicStroke(2.5f, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+        g2.drawArc(volX + 2, row4Y + 2, knobD - 4, knobD - 4, 225, -volSweep);
+        g2.setStroke(new java.awt.BasicStroke(1.0f));
+      }
+      double volAngle = Math.toRadians(225 - volNorm * 270);
+      int vix = volCX + (int) (Math.cos(volAngle) * (knobR - 3));
+      int viy = volCY - (int) (Math.sin(volAngle) * (knobR - 3));
+      g2.setColor(new Color(200, 200, 200));
+      g2.drawLine(volCX, volCY, vix, viy);
+      // dB label
+      g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(7.5f)));
+      g2.setColor(new Color(140, 140, 140));
+      String volStr = track.volume <= 0.001f ? "-∞"
+          : (volDb >= 0 ? String.format("+%.1f", volDb) : String.format("%.1f", volDb));
+      g2.drawString(volStr, volX + knobD + 2, row4Y + 13);
+
+      // ── PAN knob ──
+      int panX = scaleLabelWidth / 2 + 4;
+      int panCX = panX + knobR;
+      int panCY = row4Y + knobR;
+      g2.setColor(new Color(45, 45, 50));
+      g2.fillOval(panX, row4Y, knobD, knobD);
+      g2.setColor(new Color(65, 65, 70));
+      g2.drawOval(panX, row4Y, knobD, knobD);
+      // Pan value arc: -1..1 maps from center (12 o'clock) left or right
+      float panNorm = (track.pan + 1.0f) / 2.0f; // 0..1
+      int panSweep = (int) (panNorm * 270);
+      if (panSweep > 0) {
+        g2.setColor(new Color(80, 140, 220));
+        g2.setStroke(new java.awt.BasicStroke(2.5f, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+        g2.drawArc(panX + 2, row4Y + 2, knobD - 4, knobD - 4, 225, -panSweep);
+        g2.setStroke(new java.awt.BasicStroke(1.0f));
+      }
+      double panAngle = Math.toRadians(225 - panNorm * 270);
+      int pix = panCX + (int) (Math.cos(panAngle) * (knobR - 3));
+      int piy = panCY - (int) (Math.sin(panAngle) * (knobR - 3));
+      g2.setColor(new Color(200, 200, 200));
+      g2.drawLine(panCX, panCY, pix, piy);
+      // Label
+      g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(7.5f)));
+      g2.setColor(new Color(140, 140, 140));
+      String panStr = track.pan == 0 ? "C"
+          : (track.pan < 0 ? String.format("L%.0f", -track.pan * 100) : String.format("R%.0f", track.pan * 100));
+      g2.drawString(panStr, panX + knobD + 2, row4Y + 13);
+
+      // ── S (Solo) and M (Mute) buttons on Row 4, after PAN ──
+      int smW = 16;
+      int smBtnH = 16;
+      int smGap = 3;
+      int smY = row4Y + 1;
+      int soloX = panX + knobD + g2.getFontMetrics().stringWidth(panStr) + 6;
+      if (track.soloed) {
+        g2.setColor(new Color(200, 180, 40));
+        g2.fillRoundRect(soloX, smY, smW, smBtnH, 4, 4);
+        g2.setColor(Color.BLACK);
+      } else {
+        g2.setColor(new Color(50, 50, 55));
+        g2.fillRoundRect(soloX, smY, smW, smBtnH, 4, 4);
+        g2.setColor(new Color(80, 80, 85));
+        g2.drawRoundRect(soloX, smY, smW, smBtnH, 4, 4);
+        g2.setColor(new Color(160, 150, 60));
+      }
+      g2.setFont(Theme.getInstance().FONT_UI_BOLD.deriveFont(Theme.getInstance().scale(8.0f)));
+      int stw = g2.getFontMetrics().stringWidth("S");
+      g2.drawString("S", soloX + (smW - stw) / 2, smY + 12);
+
+      int muteX = soloX + smW + smGap;
+      if (track.muted) {
+        g2.setColor(new Color(200, 60, 60));
+        g2.fillRoundRect(muteX, smY, smW, smBtnH, 4, 4);
+        g2.setColor(Color.WHITE);
+      } else {
+        g2.setColor(new Color(50, 50, 55));
+        g2.fillRoundRect(muteX, smY, smW, smBtnH, 4, 4);
+        g2.setColor(new Color(80, 80, 85));
+        g2.drawRoundRect(muteX, smY, smW, smBtnH, 4, 4);
+        g2.setColor(new Color(160, 60, 60));
+      }
+      int mtw2 = g2.getFontMetrics().stringWidth("M");
+      g2.drawString("M", muteX + (smW - mtw2) / 2, smY + 12);
 
       // Automation expand/collapse indicator
       if (!track.automationLanes.isEmpty()) {
@@ -155,6 +253,32 @@ class TimelineRenderer {
             toggleSymbol + " Auto (" + track.automationLanes.size() + ")",
             5,
             y + scaleBaseTrack - 6);
+      }
+
+      // Level meter bars at right edge of track header
+      int meterW = 3;
+      int meterH = scaleBaseTrack - 8;
+      int meterX = scaleLabelWidth - meterW * 2 - 4;
+      int meterY = y + 4;
+      float peakL = Math.min(1.0f, track.peakL);
+      float peakR = Math.min(1.0f, track.peakR);
+      // Background
+      g2.setColor(new Color(20, 20, 20));
+      g2.fillRect(meterX, meterY, meterW, meterH);
+      g2.fillRect(meterX + meterW + 1, meterY, meterW, meterH);
+      // Left meter fill
+      int fillL = (int) (peakL * meterH);
+      if (fillL > 0) {
+        g2.setColor(
+            peakL > 0.9f ? new Color(220, 50, 50) : peakL > 0.7f ? new Color(220, 180, 50) : new Color(50, 200, 80));
+        g2.fillRect(meterX, meterY + meterH - fillL, meterW, fillL);
+      }
+      // Right meter fill
+      int fillR = (int) (peakR * meterH);
+      if (fillR > 0) {
+        g2.setColor(
+            peakR > 0.9f ? new Color(220, 50, 50) : peakR > 0.7f ? new Color(220, 180, 50) : new Color(50, 200, 80));
+        g2.fillRect(meterX + meterW + 1, meterY + meterH - fillR, meterW, fillR);
       }
 
       g2.setColor(Theme.getInstance().BORDER);
@@ -203,7 +327,6 @@ class TimelineRenderer {
     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
     int scaleTimeRuler = Theme.getInstance().scale(timeRulerHeight);
-    int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight());
     int scaleAutoLane = Theme.getInstance().scale(view.getAutomationLaneHeight());
     int scaleLabelWidth = 0;
     float pps = view.getPixelsPerSecond();
@@ -211,6 +334,7 @@ class TimelineRenderer {
 
     // Draw tracks background
     for (int i = 0; i < tracks.size(); i++) {
+      int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight(i));
       int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
       // Main clip area
       if (i == selectedTrack) {
@@ -225,8 +349,9 @@ class TimelineRenderer {
       // Automation lane backgrounds (when expanded)
       TimelineView.TrackTimeline track = tracks.get(i);
       if (track.automationExpanded) {
+        int scaleBaseTrackForAuto = Theme.getInstance().scale(view.getBaseTrackHeight(i));
         for (int j = 0; j < track.automationLanes.size(); j++) {
-          int autoY = y + scaleBaseTrack + j * scaleAutoLane;
+          int autoY = y + scaleBaseTrackForAuto + j * scaleAutoLane;
           g2.setColor(new Color(30, 30, 45));
           g2.fillRect(0, autoY, contentPanel.getWidth(), scaleAutoLane);
           g2.setColor(Theme.getInstance().BORDER);
@@ -258,11 +383,12 @@ class TimelineRenderer {
     // Draw ghost shadow of dragged clip
     if (isDragging && draggingClip != null && dragSourceTrack >= 0) {
       int ghostY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(dragSourceTrack));
+      int ghostBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight(dragSourceTrack));
       drawDragGhost(
           g2,
           ghostY,
-          scaleBaseTrack,
-          scaleLabelWidth,
+          ghostBaseTrack,
+              scaleLabelWidth,
           pps,
           dragOriginalStartTime,
           draggingClip.duration);
@@ -270,15 +396,16 @@ class TimelineRenderer {
 
     // Draw clips
     drawClips(
-        g2, tracks, scaleTimeRuler, scaleBaseTrack, scaleLabelWidth, pps, isDragging, draggingClip);
+        g2, tracks, scaleTimeRuler, scaleLabelWidth, pps, isDragging, draggingClip);
 
     // Draw automation curves (when expanded)
     for (int i = 0; i < tracks.size(); i++) {
       TimelineView.TrackTimeline track = tracks.get(i);
       if (!track.automationExpanded || track.automationLanes.isEmpty()) continue;
       int trackY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
+      int trackBaseH = Theme.getInstance().scale(view.getBaseTrackHeight(i));
       for (int j = 0; j < track.automationLanes.size(); j++) {
-        int autoY = trackY + scaleBaseTrack + j * scaleAutoLane;
+        int autoY = trackY + trackBaseH + j * scaleAutoLane;
         drawAutomationCurve(
             g2,
             track.automationLanes.get(j),
@@ -294,14 +421,15 @@ class TimelineRenderer {
     if (isDragging && draggingClip != null) {
       int targetTrackIdx = getTrackAtY(dragCurrentY - scaleTimeRuler, tracks);
       int targetY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(targetTrackIdx));
+      int targetBaseH = Theme.getInstance().scale(view.getBaseTrackHeight(targetTrackIdx));
       drawClipAt(
           g2,
           draggingClip,
           targetY + 5,
           scaleLabelWidth,
           pps,
-          scaleBaseTrack,
-          0.8f,
+          targetBaseH,
+              0.8f,
           Theme.getInstance().ACCENT_BLUE.brighter());
     }
 
@@ -310,10 +438,11 @@ class TimelineRenderer {
       int x = scaleLabelWidth + (int) (creatingClipRect.startTime * pps);
       int w = (int) (creatingClipRect.duration * pps);
       if (creatingAutoLaneIdx >= 0) {
+        int creatingBaseH = Theme.getInstance().scale(view.getBaseTrackHeight(creatingTrackIdx));
         int y =
             scaleTimeRuler
                 + Theme.getInstance().scale(view.getTrackY(creatingTrackIdx))
-                + scaleBaseTrack
+                + creatingBaseH
                 + creatingAutoLaneIdx * scaleAutoLane
                 + 4;
         int h = scaleAutoLane - 8;
@@ -323,8 +452,9 @@ class TimelineRenderer {
         g2.setColor(Color.WHITE);
         g2.drawRect(x, y, w, h);
       } else {
+        int creatingBaseH2 = Theme.getInstance().scale(view.getBaseTrackHeight(creatingTrackIdx));
         int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(creatingTrackIdx)) + 5;
-        int h = scaleBaseTrack - 10;
+        int h = creatingBaseH2 - 10;
         g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.6f));
         g2.setColor(new Color(100, 200, 100));
         g2.fillRoundRect(x, y, w, h, 8, 8);
@@ -443,13 +573,13 @@ class TimelineRenderer {
       Graphics2D g2,
       List<TimelineView.TrackTimeline> tracks,
       int scaleTimeRuler,
-      int scaleBaseTrack,
       int scaleLabelWidth,
       float pps,
       boolean isDragging,
       TimelineView.ClipRect draggingClip) {
     Color accentBlue = Theme.getInstance().ACCENT_BLUE;
     for (int i = 0; i < tracks.size(); i++) {
+      int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight(i));
       int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i)) + 5;
       for (TimelineView.ClipRect clip : tracks.get(i).clips) {
         if (isDragging && clip == draggingClip) continue;

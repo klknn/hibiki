@@ -169,3 +169,17 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "timeline_playback_test",
+    size = "small",
+    srcs = ["timeline_playback_test.cc"],
+    linkstatic = True,
+    deps = [
+        ":commands",
+        ":track",
+        "//engine/ipc:ipc",
+        "//engine/vst3:vst3_host_stub",
+        "@googletest//:gtest_main",
+    ],
+)
+

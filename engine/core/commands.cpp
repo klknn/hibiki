@@ -203,6 +203,23 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
             track->timeline_clips.push_back(std::move(tc));
             int clip_idx = (int)track->timeline_clips.size() - 1;
 
+            // Debug: log timing values for MIDI recording
+            {
+              auto& finalized = track->timeline_clips[clip_idx];
+              double first_beat = finalized->clip->midi_events.empty()
+                                      ? -1
+                                      : finalized->clip->midi_events[0].beats;
+              sendLog(
+                  "MIDI_REC track=" + std::to_string(pair.first) +
+                  " record_start=" + std::to_string(state.record_start_sec) +
+                  " clip_start=" + std::to_string(finalized->start_time_sec) +
+                  " dur_beats=" + std::to_string(dur_beats) +
+                  " dur_sec=" + std::to_string(duration_sec) +
+                  " first_event_beat=" + std::to_string(first_beat) +
+                  " max_beat=" + std::to_string(max_beat) + " n_events=" +
+                  std::to_string(finalized->clip->midi_events.size()));
+            }
+
             sendTimelineClipInfo(
                 pair.first, clip_idx, filename, "",
                 (float)state.record_start_sec, (float)duration_sec,
@@ -431,6 +448,32 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       sendAck("RESIZE_TIMELINE_CLIP", true);
       break;
     }
+    case pb::commands::TrackCmd::ACTION_MOVE_TIMELINE_CLIP: {
+      int cidx = cmd.target().timeline_clip();
+      float new_start_sec = cmd.value();
+      int target_tidx = cmd.target_track_index();
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
+      if (state.tracks.count(tidx)) {
+        auto& src_track = state.tracks[tidx];
+        if (cidx >= 0 && cidx < (int)src_track->timeline_clips.size() &&
+            src_track->timeline_clips[cidx]) {
+          if (target_tidx == tidx || !state.tracks.count(target_tidx)) {
+            // Same-track move: just update start time
+            src_track->timeline_clips[cidx]->start_time_sec = new_start_sec;
+          } else {
+            // Cross-track move: transfer clip to target track
+            auto tc = std::move(src_track->timeline_clips[cidx]);
+            src_track->timeline_clips.erase(src_track->timeline_clips.begin() +
+                                            cidx);
+            tc->start_time_sec = new_start_sec;
+            state.tracks[target_tidx]->timeline_clips.push_back(std::move(tc));
+          }
+        }
+      }
+      sendAck("MOVE_TIMELINE_CLIP", true);
+      break;
+    }
     case pb::commands::TrackCmd::ACTION_ARM_RECORD: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       auto track = GetOrCreateTrack(state, tidx);
@@ -464,6 +507,34 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       track->record_mode =
           cmd.record_mode() == 1 ? Track::RECORD_MIDI : Track::RECORD_AUDIO;
       sendAck("SET_RECORD_MODE", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_VOLUME: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->volume = std::max(0.0f, std::min(2.0f, cmd.value()));
+      sendAck("SET_VOLUME", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_PAN: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->pan = std::max(-1.0f, std::min(1.0f, cmd.value()));
+      sendAck("SET_PAN", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_MUTE: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->muted = cmd.flag();
+      sendAck("SET_MUTE", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_SOLO: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->soloed = cmd.flag();
+      sendAck("SET_SOLO", true);
       break;
     }
     default:

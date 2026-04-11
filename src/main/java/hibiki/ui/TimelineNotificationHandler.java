@@ -42,6 +42,9 @@ class TimelineNotificationHandler {
       case MIDI_INPUT_LIST:
         handleMidiInputList(n);
         break;
+      case TRACK_LEVELS:
+        handleTrackLevels(n);
+        break;
       default:
         break;
     }
@@ -182,6 +185,25 @@ class TimelineNotificationHandler {
     cachedMidiDevices.clear();
     for (int i = 0; i < list.getDevicesCount(); i++) {
       cachedMidiDevices.add(list.getDevices(i));
+    }
+  }
+
+  private long lastLevelRepaintMs = 0;
+
+  private void handleTrackLevels(Notification n) {
+    var tl = n.getTrackLevels();
+    for (int i = 0; i < tl.getLevelsCount(); i++) {
+      var l = tl.getLevels(i);
+      int tidx = l.getTrackIndex();
+      if (tidx >= 0 && tidx < view.tracks.size()) {
+        view.tracks.get(tidx).peakL = l.getPeakL();
+        view.tracks.get(tidx).peakR = l.getPeakR();
+      }
+    }
+    long now = System.currentTimeMillis();
+    if (now - lastLevelRepaintMs > 33) { // throttle to ~30fps
+      lastLevelRepaintMs = now;
+      javax.swing.SwingUtilities.invokeLater(() -> view.repaintRowHeader());
     }
   }
 }

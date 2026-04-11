@@ -1195,6 +1195,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       cr.path = info.getPath();
       cr.startTime = info.getStartTime();
       cr.duration = info.getDuration();
+      // Set content duration on first meaningful duration (original clip length)
+      if (cr.contentDuration <= 0 && cr.duration > 0) {
+        cr.contentDuration = cr.duration;
+      }
       // Extract waveform data
       int wfLen = info.getWaveformCount();
       if (wfLen > 0) {
@@ -1219,8 +1223,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     String name;
     String path;
     float startTime;
-    float duration; // In seconds for audio, beats for MIDI and Automation
-    float trimStartBeats; // Head-trim offset into clip content
+    float duration; // Visible window in seconds (changes with trim)
+    float contentDuration; // Original content duration in seconds (set once on first load)
+    float trimStartSec; // Head-trim offset in seconds
     float[] waveform;
     boolean isAutomation = false;
     List<AutomationEditor.AutoPoint> automationPoints = new ArrayList<>();

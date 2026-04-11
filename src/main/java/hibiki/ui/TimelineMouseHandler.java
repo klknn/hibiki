@@ -261,13 +261,13 @@ class TimelineMouseHandler {
     float newDuration = Math.max(60.0f / view.bpm, endTime - view.resizeClip.startTime);
     view.resizeClip.duration = newDuration;
     float durationBeats = newDuration * (view.bpm / 60.0f);
+    float trimStartBeats = view.resizeClip.trimStartSec * (view.bpm / 60.0f);
 
     TimelineView.TrackTimeline track = view.tracks.get(view.resizeTrackIdx);
     int clipIndex = track.clips.indexOf(view.resizeClip);
     if (clipIndex >= 0) {
       BackendManager.getInstance()
-          .resizeTimelineClip(view.resizeTrackIdx, clipIndex, durationBeats,
-              view.resizeClip.trimStartBeats);
+          .resizeTimelineClip(view.resizeTrackIdx, clipIndex, durationBeats, trimStartBeats);
     }
     view.contentPanel.repaint();
   }
@@ -284,17 +284,17 @@ class TimelineMouseHandler {
     view.resizeClip.duration = newDuration;
 
     float durationBeats = newDuration * (view.bpm / 60.0f);
+    float trimStartBeats = view.resizeClip.trimStartSec * (view.bpm / 60.0f);
 
     TimelineView.TrackTimeline track = view.tracks.get(view.resizeTrackIdx);
     int clipIndex = track.clips.indexOf(view.resizeClip);
     if (clipIndex >= 0) {
-      // Send resize with trim offset, then move for new start position
-      BackendManager.getInstance()
-          .resizeTimelineClip(view.resizeTrackIdx, clipIndex, durationBeats,
-              view.resizeClip.trimStartBeats);
+      // Send move FIRST so engine updates start_time before resize notification
       BackendManager.getInstance()
           .moveTimelineClip(view.resizeTrackIdx, clipIndex,
               view.resizeClip.startTime, view.resizeTrackIdx);
+      BackendManager.getInstance()
+          .resizeTimelineClip(view.resizeTrackIdx, clipIndex, durationBeats, trimStartBeats);
     }
     view.contentPanel.repaint();
   }
@@ -339,8 +339,7 @@ class TimelineMouseHandler {
       float delta = mouseTime - view.resizeClip.startTime;
       view.resizeClip.startTime = mouseTime;
       view.resizeClip.duration = rightEdge - mouseTime;
-      view.resizeClip.trimStartBeats += delta * (view.bpm / 60.0f);
-      view.resizeClip.trimStartBeats = Math.max(0, view.resizeClip.trimStartBeats);
+      view.resizeClip.trimStartSec += delta;
       view.contentPanel.repaint();
     } else if (view.dragMode == TimelineView.DragMode.RESIZE_CLIP && view.resizeClip != null) {
       float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());

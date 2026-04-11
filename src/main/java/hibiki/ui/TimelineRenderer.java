@@ -640,12 +640,29 @@ class TimelineRenderer {
     g2.setColor(new Color(255, 255, 255, 200));
     Shape oldClip = g2.getClip();
     g2.clipRect(x, y, w, h);
+
+    // Waveform ratios are normalized to [0,1] based on content duration.
+    // Compute content pixel width: if contentDuration > 0, use that; else fall back
+    // to visible.
+    float contentW;
+    float trimOffsetPx = 0;
+    if (clip.contentDuration > 0 && clip.duration > 0) {
+      // Both contentDuration and duration are in seconds.
+      // Content width = the pixel width the full content would occupy.
+      contentW = (clip.contentDuration / clip.duration) * w;
+      // Trim offset moves content left within the visible window.
+      trimOffsetPx = (clip.trimStartSec / clip.contentDuration) * contentW;
+    } else {
+      contentW = w;
+    }
+
     for (int nIdx = 0; nIdx + 2 < clip.waveform.length; nIdx += 3) {
       float startRatio = clip.waveform[nIdx];
       float pitch = clip.waveform[nIdx + 1];
       float durationRatio = clip.waveform[nIdx + 2];
-      int nx = x + (int) (startRatio * w);
-      int nw = (int) (durationRatio * w);
+      // Position notes relative to content width, shifted by trim offset.
+      int nx = x + (int) (startRatio * contentW - trimOffsetPx);
+      int nw = (int) (durationRatio * contentW);
       if (nw < 2) nw = 2;
       int minPitch = 21, maxPitch = 108;
       float normalizedPitch = (pitch - minPitch) / (float) (maxPitch - minPitch);
@@ -669,9 +686,23 @@ class TimelineRenderer {
     g2.clipRect(x, y, w, h);
     int midY = y + h / 2;
     int halfH = h / 2 - 4;
+
+    // Compute content pixel width for trim/pad support
+    float contentW;
+    float trimOffsetPx = 0;
+    if (clip.contentDuration > 0 && clip.duration > 0) {
+      contentW = (clip.contentDuration / clip.duration) * w;
+      trimOffsetPx = (clip.trimStartSec / clip.contentDuration) * contentW;
+    } else {
+      contentW = w;
+    }
+
     for (int px = 0; px < w; px++) {
-      int wfIdx = (int) ((float) px / w * clip.waveform.length);
-      if (wfIdx >= clip.waveform.length) wfIdx = clip.waveform.length - 1;
+      // Map pixel position to content position, accounting for trim offset
+      float contentPx = px + trimOffsetPx;
+      int wfIdx = (int) (contentPx / contentW * clip.waveform.length);
+      if (wfIdx < 0 || wfIdx >= clip.waveform.length)
+        continue; // padding = silence
       float amp = clip.waveform[wfIdx];
       int barH = (int) (amp * halfH);
       g2.drawLine(x + px, midY - barH, x + px, midY + barH);

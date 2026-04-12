@@ -35,7 +35,11 @@ cc_library(
 cc_library(
     name = "track",
     srcs = ["track.cpp"],
-    hdrs = ["track.hpp"],
+    hdrs = [
+        "builtin_compressor.hpp",
+        "builtin_eq.hpp",
+        "track.hpp",
+    ],
     deps = [
         ":clip",
         "//engine/audio:sound",

@@ -43,4 +43,13 @@ void sendParamValueChange(int track_idx, int plugin_idx, uint32_t param_id,
 void sendEditorFrameData(int track_idx, int plugin_idx, int width, int height,
                          const std::vector<uint8_t>& rgba);
 
+// Send plugin spectrum data for EQ visualization
+void sendPluginSpectrumData(int track_idx, int plugin_idx,
+                            const float* input_db, const float* output_db,
+                            int num_bins);
+
+// Send plugin metering data for compressor visualization
+void sendPluginMeteringData(int track_idx, int plugin_idx, float input_db,
+                            float output_db, float gain_reduction_db);
+
 }  // namespace hibiki

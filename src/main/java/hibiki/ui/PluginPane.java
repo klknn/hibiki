@@ -18,6 +18,9 @@ public class PluginPane extends JPanel {
   private final JPanel deviceChainContent;
   // Per-track cache: trackIndex -> (pluginIndex -> DevicePanel)
   private final Map<Integer, Map<Integer, DevicePanel>> trackDevicePanels = new TreeMap<>();
+  // Built-in device panels (EQ, Compressor) keyed by trackIndex -> pluginIndex ->
+  // panel
+  private final Map<Integer, Map<Integer, JPanel>> builtinPanels = new TreeMap<>();
   private final WaveformPanel waveformPanel = new WaveformPanel();
   private int selectedTrack = 0; // Currently selected track to display
 
@@ -94,6 +97,25 @@ public class PluginPane extends JPanel {
                         pvc.getValue());
                     break;
                   }
+                case PLUGIN_SPECTRUM: {
+                  var spec = notification.getPluginSpectrum();
+                  handlePluginSpectrum(
+                      spec.getTrackIndex(),
+                      spec.getPluginIndex(),
+                      spec.getInputMagnitudesList(),
+                      spec.getOutputMagnitudesList());
+                  break;
+                }
+                case PLUGIN_METERING: {
+                  var meter = notification.getPluginMetering();
+                  handlePluginMetering(
+                      meter.getTrackIndex(),
+                      meter.getPluginIndex(),
+                      meter.getInputDb(),
+                      meter.getOutputDb(),
+                      meter.getGainReductionDb());
+                  break;
+                }
                 default:
                   break;
               }
@@ -113,6 +135,18 @@ public class PluginPane extends JPanel {
   private void handleParamValueChange(int trackIdx, int pluginIdx, int paramId, float value) {
     SwingUtilities.invokeLater(
         () -> {
+          // Check built-in panels first
+          Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
+          if (builtins != null) {
+            JPanel bp = builtins.get(pluginIdx);
+            if (bp instanceof EqDevicePanel) {
+              ((EqDevicePanel) bp).updateParam(paramId, value);
+              return;
+            } else if (bp instanceof CompressorDevicePanel) {
+              ((CompressorDevicePanel) bp).updateParam(paramId, value);
+              return;
+            }
+          }
           Map<Integer, DevicePanel> panels = trackDevicePanels.get(trackIdx);
           if (panels == null) return;
           DevicePanel dp = panels.get(pluginIdx);
@@ -121,37 +155,85 @@ public class PluginPane extends JPanel {
         });
   }
 
+  /** Handle plugin spectrum data for EQ visualization. */
+  private void handlePluginSpectrum(int trackIdx, int pluginIdx,
+      List<Float> inputMags, List<Float> outputMags) {
+    SwingUtilities.invokeLater(() -> {
+      Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
+      if (builtins == null)
+        return;
+      JPanel bp = builtins.get(pluginIdx);
+      if (bp instanceof EqDevicePanel) {
+        ((EqDevicePanel) bp).setSpectrumData(inputMags, outputMags);
+      }
+    });
+  }
+
+  /** Handle plugin metering data for compressor visualization. */
+  private void handlePluginMetering(int trackIdx, int pluginIdx,
+      float inputDb, float outputDb, float gainReductionDb) {
+    SwingUtilities.invokeLater(() -> {
+      Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
+      if (builtins == null)
+        return;
+      JPanel bp = builtins.get(pluginIdx);
+      if (bp instanceof CompressorDevicePanel) {
+        CompressorDevicePanel comp = (CompressorDevicePanel) bp;
+        comp.setInputOutputLevel(inputDb, outputDb);
+        comp.setGainReduction(gainReductionDb);
+      }
+    });
+  }
+
   public void updateParams(ParamList paramList) {
     SwingUtilities.invokeLater(
         () -> {
           int trackIdx = paramList.getTrackIndex();
           int pIdx = paramList.getPluginIndex();
+          String pluginName = paramList.getPluginName();
 
-          // Get or create the device panel map for this track
-          Map<Integer, DevicePanel> devicePanels =
-              trackDevicePanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
-
-          if (paramList.getPluginName().isEmpty()) {
-            devicePanels.remove(pIdx);
-            if (trackIdx == selectedTrack) {
+          // Handle removal
+          if (pluginName.isEmpty()) {
+            trackDevicePanels.computeIfAbsent(trackIdx, k -> new TreeMap<>()).remove(pIdx);
+            Map<Integer, JPanel> bi = builtinPanels.get(trackIdx);
+            if (bi != null)
+              bi.remove(pIdx);
+            if (trackIdx == selectedTrack)
               rebuildDeviceChain();
-            }
             return;
           }
 
+          // Detect built-in devices and create specialized panels
+          if ("EQ Eight".equals(pluginName)) {
+            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
+            if (!(bi.get(pIdx) instanceof EqDevicePanel)) {
+              bi.put(pIdx, new EqDevicePanel(trackIdx, pIdx));
+            }
+            if (trackIdx == selectedTrack)
+              rebuildDeviceChain();
+            return;
+          }
+          if ("Compressor".equals(pluginName)) {
+            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
+            if (!(bi.get(pIdx) instanceof CompressorDevicePanel)) {
+              bi.put(pIdx, new CompressorDevicePanel(trackIdx, pIdx));
+            }
+            if (trackIdx == selectedTrack)
+              rebuildDeviceChain();
+            return;
+          }
+
+          // Standard VST3 device panel
+          Map<Integer, DevicePanel> devicePanels = trackDevicePanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
           DevicePanel panel = devicePanels.get(pIdx);
-          if (panel == null || !panel.pluginName.equals(paramList.getPluginName())) {
-            panel =
-                new DevicePanel(
-                    trackIdx, pIdx, paramList.getPluginName(), paramList.getIsInstrument());
+          if (panel == null || !panel.pluginName.equals(pluginName)) {
+            panel = new DevicePanel(trackIdx, pIdx, pluginName, paramList.getIsInstrument());
             devicePanels.put(pIdx, panel);
           }
           panel.setParams(paramList);
 
-          // Only rebuild UI if this is the selected track
-          if (trackIdx == selectedTrack) {
+          if (trackIdx == selectedTrack)
             rebuildDeviceChain();
-          }
         });
   }
 
@@ -171,13 +253,21 @@ public class PluginPane extends JPanel {
     // Get device panels for the selected track
     Map<Integer, DevicePanel> devicePanels =
         trackDevicePanels.getOrDefault(selectedTrack, java.util.Collections.emptyMap());
-    List<DevicePanel> panels = new ArrayList<>(devicePanels.values());
+    Map<Integer, JPanel> builtins = builtinPanels.getOrDefault(selectedTrack, java.util.Collections.emptyMap());
 
-    // Find instrument
-    DevicePanel instrument = null;
-    List<DevicePanel> effects = new ArrayList<>();
-    for (DevicePanel p : panels) {
-      if (p.isInstrument) {
+    // Merge all panels by plugin index order
+    TreeMap<Integer, JPanel> allPanels = new TreeMap<>();
+    for (var e : devicePanels.entrySet())
+      allPanels.put(e.getKey(), e.getValue());
+    for (var e : builtins.entrySet())
+      allPanels.put(e.getKey(), e.getValue());
+
+    // Separate instrument from effects
+    JPanel instrument = null;
+    List<JPanel> effects = new ArrayList<>();
+    for (var entry : allPanels.entrySet()) {
+      JPanel p = entry.getValue();
+      if (p instanceof DevicePanel && ((DevicePanel) p).isInstrument) {
         instrument = p;
       } else {
         effects.add(p);
@@ -189,13 +279,13 @@ public class PluginPane extends JPanel {
       deviceChainContent.add(waveformPanel);
     }
 
-    // Add instrument if any (removed placeholder)
+    // Add instrument if any
     if (instrument != null) {
       deviceChainContent.add(instrument);
     }
 
-    // Add effects in their original order
-    for (DevicePanel p : effects) {
+    // Add effects (VST3 + built-in) in plugin index order
+    for (JPanel p : effects) {
       deviceChainContent.add(p);
     }
 

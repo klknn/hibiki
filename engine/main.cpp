@@ -15,6 +15,8 @@
 
 #include "engine/audio/sound.hpp"
 #include "engine/core/audio_file.hpp"
+#include "engine/core/builtin_compressor.hpp"
+#include "engine/core/builtin_eq.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/core/commands.hpp"
 #include "engine/core/history.hpp"
@@ -389,6 +391,29 @@ void notification_thread(ProjectState& state) {
     notification.SerializeToString(&data);
     sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
                      data.size());
+
+    // Send builtin plugin metering data (~30Hz)
+    {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      for (auto& pair : state.tracks) {
+        auto& track = pair.second;
+        int track_idx = pair.first;
+        for (size_t p = 0; p < track->plugins.size(); ++p) {
+          auto& plugin = track->plugins[p];
+          if (!plugin) continue;
+          if (auto* eq = dynamic_cast<BuiltinEq*>(plugin.get())) {
+            auto spec = eq->getSpectrumData();
+            sendPluginSpectrumData(track_idx, (int)p, spec.input_db,
+                                   spec.output_db, BuiltinEq::kSpectrumBins);
+          } else if (auto* comp =
+                         dynamic_cast<BuiltinCompressor*>(plugin.get())) {
+            sendPluginMeteringData(track_idx, (int)p, comp->getInputDb(),
+                                   comp->getOutputDb(),
+                                   comp->getGainReductionDb());
+          }
+        }
+      }
+    }
 
     // Live waveform updates during recording (~5Hz)
     static int wf_counter = 0;

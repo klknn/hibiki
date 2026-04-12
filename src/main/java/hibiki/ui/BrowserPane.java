@@ -251,6 +251,17 @@ public class BrowserPane extends JPanel {
     pluginsNode = new DefaultMutableTreeNode("Plugins");
     midiNode = new DefaultMutableTreeNode("MIDI Files");
     audioNode = new DefaultMutableTreeNode("Audio Clips");
+
+    // Built-in effects node (always at the top)
+    DefaultMutableTreeNode builtinNode = new DefaultMutableTreeNode("Built-in");
+    FileItem eqItem = new FileItem(new File("builtin"), "builtin", "EQ Eight", "Hibiki", 0);
+    eqItem.rawPath = "builtin://eq";
+    builtinNode.add(new DefaultMutableTreeNode(eqItem));
+    FileItem compItem = new FileItem(new File("builtin"), "builtin", "Compressor", "Hibiki", 0);
+    compItem.rawPath = "builtin://compressor";
+    builtinNode.add(new DefaultMutableTreeNode(compItem));
+    root.add(builtinNode);
+
     root.add(pluginsNode);
     root.add(midiNode);
     root.add(audioNode);
@@ -373,7 +384,9 @@ public class BrowserPane extends JPanel {
     Object userObject = node.getUserObject();
     if (userObject instanceof FileItem) {
       FileItem item = (FileItem) userObject;
-      if ("vst".equals(item.type)) {
+      if ("builtin".equals(item.type)) {
+        sendLoadPlugin(item.rawPath, 0);
+      } else if ("vst".equals(item.type)) {
         sendLoadPlugin(item.file.getAbsolutePath(), item.pluginIndex);
       } else if ("remote-vst".equals(item.type)) {
         // For remote plugins, use getPath() not getAbsolutePath() to avoid
@@ -433,6 +446,7 @@ public class BrowserPane extends JPanel {
     public String vendor;
     public int pluginIndex;
     public String remoteHost; // non-empty for remote plugins ("host:port")
+    public String rawPath; // for builtin:// paths that File would mangle
 
     public FileItem(File file, String type, String displayName) {
       this(file, type, displayName, "", 0, "");

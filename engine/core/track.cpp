@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <iostream>
 
+#include "engine/core/builtin_compressor.hpp"
+#include "engine/core/builtin_eq.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/commands.pb.h"
 #include "pb/core.pb.h"
@@ -16,7 +18,14 @@ int Track::LoadPlugin(const std::string& path, int plugin_index,
   std::lock_guard<DummyMutex> lock(mutex);
   std::unique_ptr<IPlugin> plugin;
 
-  if (!remote_host.empty()) {
+  // Built-in devices: create native IPlugin implementations
+  if (path == BuiltinEq::kPath) {
+    plugin = std::make_unique<BuiltinEq>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinCompressor::kPath) {
+    plugin = std::make_unique<BuiltinCompressor>();
+    plugin->load(path, 0, sample_rate);
+  } else if (!remote_host.empty()) {
     // Per-load remote host — always use TCP proxy
     std::string host = remote_host;
     int port = 9100;
@@ -26,6 +35,9 @@ int Track::LoadPlugin(const std::string& path, int plugin_index,
       port = std::stoi(remote_host.substr(colon + 1));
     }
     plugin = std::make_unique<PluginProxy>(host, port);
+    if (!plugin->load(path, plugin_index, sample_rate)) {
+      return -1;
+    }
   } else {
     // Local plugin — use configured host mode
     switch (host_mode) {
@@ -37,9 +49,9 @@ int Track::LoadPlugin(const std::string& path, int plugin_index,
         plugin = std::make_unique<Vst3Plugin>();
         break;
     }
-  }
-  if (!plugin->load(path, plugin_index, sample_rate)) {
-    return -1;
+    if (!plugin->load(path, plugin_index, sample_rate)) {
+      return -1;
+    }
   }
 
   bool is_instrument = plugin->isInstrument();

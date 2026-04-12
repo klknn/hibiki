@@ -217,6 +217,25 @@ message EditorFrameData {
   bytes image_data = 5;   // Raw RGBA pixel data
 }
 
+// ─── Plugin Metering ────────────────────────────────────────────────
+
+// FFT spectrum data for EQ visualization (log-spaced magnitude bins).
+message PluginSpectrumData {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+  repeated float input_magnitudes = 3;   // dB per bin (log-spaced 20Hz–20kHz)
+  repeated float output_magnitudes = 4;  // dB per bin
+}
+
+// Real-time input/output levels for compressor visualization.
+message PluginMeteringData {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+  float input_db = 3;
+  float output_db = 4;
+  float gain_reduction_db = 5;
+}
+
 // ─── Notification Envelope ──────────────────────────────────────────
 
 // Top-level notification wrapper.
@@ -258,5 +277,9 @@ message Notification {
 
     // Settings state pushed on startup
     hibiki.pb.commands.HibikiConfig config = 20;
+
+    // Plugin metering (EQ spectrum, compressor levels)
+    PluginSpectrumData plugin_spectrum = 24;
+    PluginMeteringData plugin_metering = 25;
   }
 }

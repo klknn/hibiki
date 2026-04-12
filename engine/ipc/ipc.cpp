@@ -221,4 +221,30 @@ void sendEditorFrameData(int track_idx, int plugin_idx, int width, int height,
   sendProto(notification);
 }
 
+void sendPluginSpectrumData(int track_idx, int plugin_idx,
+                            const float* input_db, const float* output_db,
+                            int num_bins) {
+  hibiki::pb::notifications::Notification notification;
+  auto* spec = notification.mutable_plugin_spectrum();
+  spec->set_track_index(track_idx);
+  spec->set_plugin_index(plugin_idx);
+  for (int i = 0; i < num_bins; ++i) {
+    spec->add_input_magnitudes(input_db[i]);
+    spec->add_output_magnitudes(output_db[i]);
+  }
+  sendProto(notification);
+}
+
+void sendPluginMeteringData(int track_idx, int plugin_idx, float input_db,
+                            float output_db, float gain_reduction_db) {
+  hibiki::pb::notifications::Notification notification;
+  auto* meter = notification.mutable_plugin_metering();
+  meter->set_track_index(track_idx);
+  meter->set_plugin_index(plugin_idx);
+  meter->set_input_db(input_db);
+  meter->set_output_db(output_db);
+  meter->set_gain_reduction_db(gain_reduction_db);
+  sendProto(notification);
+}
+
 }  // namespace hibiki

@@ -116,6 +116,15 @@ public class PluginPane extends JPanel {
                       meter.getGainReductionDb());
                   break;
                 }
+                case PLUGIN_SAMPLE_DATA: {
+                  var sd = notification.getPluginSampleData();
+                  handlePluginSampleData(
+                      sd.getTrackIndex(),
+                      sd.getPluginIndex(),
+                      sd.getWaveformList(),
+                      sd.getSampleName());
+                  break;
+                }
                 default:
                   break;
               }
@@ -144,6 +153,12 @@ public class PluginPane extends JPanel {
               return;
             } else if (bp instanceof CompressorDevicePanel) {
               ((CompressorDevicePanel) bp).updateParam(paramId, value);
+              return;
+            } else if (bp instanceof ThreeOscDevicePanel) {
+              ((ThreeOscDevicePanel) bp).handleParamChange(paramId, value);
+              return;
+            } else if (bp instanceof SamplerDevicePanel) {
+              ((SamplerDevicePanel) bp).handleParamChange(paramId, value);
               return;
             }
           }
@@ -185,6 +200,20 @@ public class PluginPane extends JPanel {
     });
   }
 
+  /** Handle sample waveform data for sampler visualization. */
+  private void handlePluginSampleData(int trackIdx, int pluginIdx,
+      List<Float> waveform, String sampleName) {
+    SwingUtilities.invokeLater(() -> {
+      Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
+      if (builtins == null)
+        return;
+      JPanel bp = builtins.get(pluginIdx);
+      if (bp instanceof SamplerDevicePanel) {
+        ((SamplerDevicePanel) bp).updateWaveform(waveform, sampleName);
+      }
+    });
+  }
+
   public void updateParams(ParamList paramList) {
     SwingUtilities.invokeLater(
         () -> {
@@ -217,6 +246,24 @@ public class PluginPane extends JPanel {
             Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
             if (!(bi.get(pIdx) instanceof CompressorDevicePanel)) {
               bi.put(pIdx, new CompressorDevicePanel(trackIdx, pIdx));
+            }
+            if (trackIdx == selectedTrack)
+              rebuildDeviceChain();
+            return;
+          }
+          if ("3xOsc".equals(pluginName)) {
+            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
+            if (!(bi.get(pIdx) instanceof ThreeOscDevicePanel)) {
+              bi.put(pIdx, new ThreeOscDevicePanel(trackIdx, pIdx));
+            }
+            if (trackIdx == selectedTrack)
+              rebuildDeviceChain();
+            return;
+          }
+          if ("Sampler".equals(pluginName)) {
+            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
+            if (!(bi.get(pIdx) instanceof SamplerDevicePanel)) {
+              bi.put(pIdx, new SamplerDevicePanel(trackIdx, pIdx));
             }
             if (trackIdx == selectedTrack)
               rebuildDeviceChain();

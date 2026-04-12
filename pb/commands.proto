@@ -77,6 +77,7 @@ message PluginCmd {
     ACTION_GET_EDITOR_FRAME = 6;
     ACTION_SEND_EDITOR_INPUT = 7;
     ACTION_STOP_GUI = 8;
+    ACTION_LOAD_SAMPLE = 9;
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -92,6 +93,7 @@ message PluginCmd {
   int32 input_delta = 11;
   string remote_host = 12;  // if set, load via TCP to this "host:port"
   repeated string paths = 13;  // batch bundle paths for ACTION_LIST
+  string sample_path = 14;  // WAV path for ACTION_LOAD_SAMPLE (Sampler)
 }
 
 message AutomationCmd {

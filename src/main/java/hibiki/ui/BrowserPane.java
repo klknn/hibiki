@@ -260,6 +260,12 @@ public class BrowserPane extends JPanel {
     FileItem compItem = new FileItem(new File("builtin"), "builtin", "Compressor", "Hibiki", 0);
     compItem.rawPath = "builtin://compressor";
     builtinNode.add(new DefaultMutableTreeNode(compItem));
+    FileItem oscItem = new FileItem(new File("builtin"), "builtin", "3xOsc", "Hibiki", 0);
+    oscItem.rawPath = "builtin://3xosc";
+    builtinNode.add(new DefaultMutableTreeNode(oscItem));
+    FileItem samplerItem = new FileItem(new File("builtin"), "builtin", "Sampler", "Hibiki", 0);
+    samplerItem.rawPath = "builtin://sampler";
+    builtinNode.add(new DefaultMutableTreeNode(samplerItem));
     root.add(builtinNode);
 
     root.add(pluginsNode);

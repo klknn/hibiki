@@ -281,5 +281,17 @@ message Notification {
     // Plugin metering (EQ spectrum, compressor levels)
     PluginSpectrumData plugin_spectrum = 24;
     PluginMeteringData plugin_metering = 25;
+
+    // Sampler waveform data
+    PluginSampleData plugin_sample_data = 26;
   }
+}
+
+// Sampler waveform summary sent after sample load.
+message PluginSampleData {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+  repeated float waveform = 3;       // Waveform summary (128 points, 0..1)
+  string sample_name = 4;            // Filename of loaded sample
+  double sample_duration_sec = 5;    // Duration in seconds
 }

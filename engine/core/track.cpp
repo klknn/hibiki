@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <iostream>
 
+#include "engine/core/builtin_3xosc.hpp"
 #include "engine/core/builtin_compressor.hpp"
 #include "engine/core/builtin_eq.hpp"
+#include "engine/core/builtin_sampler.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/commands.pb.h"
 #include "pb/core.pb.h"
@@ -24,6 +26,12 @@ int Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinCompressor::kPath) {
     plugin = std::make_unique<BuiltinCompressor>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == Builtin3xOsc::kPath) {
+    plugin = std::make_unique<Builtin3xOsc>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinSampler::kPath) {
+    plugin = std::make_unique<BuiltinSampler>();
     plugin->load(path, 0, sample_rate);
   } else if (!remote_host.empty()) {
     // Per-load remote host — always use TCP proxy

@@ -14,6 +14,7 @@
 
 #include "engine/audio/midi_input.hpp"
 #include "engine/core/audio_file.hpp"
+#include "engine/core/builtin_sampler.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/core/midi.hpp"
 #include "engine/core/track.hpp"
@@ -722,6 +723,42 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
           sendAck("STOP_PLUGIN_GUI", false);
       } else
         sendAck("STOP_PLUGIN_GUI", false);
+      break;
+    }
+    case pb::commands::PluginCmd::ACTION_LOAD_SAMPLE: {
+      int pidx = cmd.target().plugin_index();
+      std::string sample_path = cmd.sample_path();
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      if (state.tracks.count(tidx)) {
+        auto& plugins = state.tracks[tidx]->plugins;
+        if (pidx >= 0 && pidx < (int)plugins.size()) {
+          auto* sampler = dynamic_cast<BuiltinSampler*>(plugins[pidx].get());
+          if (sampler && sampler->loadSample(sample_path)) {
+            pb::notifications::Notification notification;
+            auto* sd = notification.mutable_plugin_sample_data();
+            sd->set_track_index(tidx);
+            sd->set_plugin_index(pidx);
+            for (float v : sampler->getWaveformSummary()) {
+              sd->add_waveform(v);
+            }
+            auto slash = sample_path.rfind('/');
+            sd->set_sample_name(slash != std::string::npos
+                                    ? sample_path.substr(slash + 1)
+                                    : sample_path);
+            std::string data;
+            notification.SerializeToString(&data);
+            sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
+                             data.size());
+            sendAck("LOAD_SAMPLE", true);
+          } else {
+            sendAck("LOAD_SAMPLE", false);
+          }
+        } else {
+          sendAck("LOAD_SAMPLE", false);
+        }
+      } else {
+        sendAck("LOAD_SAMPLE", false);
+      }
       break;
     }
     default:

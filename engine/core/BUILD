@@ -36,11 +36,16 @@ cc_library(
     name = "track",
     srcs = ["track.cpp"],
     hdrs = [
+        "adsr.hpp",
+        "biquad_filter.hpp",
+        "builtin_3xosc.hpp",
         "builtin_compressor.hpp",
         "builtin_eq.hpp",
+        "builtin_sampler.hpp",
         "track.hpp",
     ],
     deps = [
+        ":audio_file",
         ":clip",
         "//engine/audio:sound",
         "//engine/ipc:ipc",

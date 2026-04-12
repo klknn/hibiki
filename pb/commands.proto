@@ -188,6 +188,24 @@ message SendVirtualMidi {
   bool note_on = 4;      // true = note-on, false = note-off
 }
 
+message ModulationCmd {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_ADD = 1;        // Add modulator to a device slot
+    ACTION_REMOVE = 2;     // Remove modulator from slot
+    ACTION_CONFIGURE = 3;  // Update waveform/rate/depth/sync
+    ACTION_ASSIGN = 4;     // Assign modulator to target param
+  }
+  Action action = 1;
+  hibiki.pb.core.EntityRef target = 2;  // track + plugin index
+  int32 slot_index = 3;           // 0-2 modulator slot
+  int32 waveform = 4;             // 0=sin, 1=saw, 2=square, 3=random
+  float rate_hz = 5;              // LFO frequency (Hz, or beats if synced)
+  float depth = 6;                // -1.0 to 1.0
+  uint32 target_param_id = 7;     // assigned parameter ID
+  bool sync_to_tempo = 8;         // if true, rate is in beat divisions
+}
+
 // ─── Request Envelope ───────────────────────────────────────────────
 
 // Contains the new domain-grouped commands.
@@ -205,5 +223,6 @@ message Request {
     ListAudioInputs list_audio_inputs = 49;
     ListMidiInputs list_midi_inputs = 50;
     SendVirtualMidi send_virtual_midi = 51;
+    ModulationCmd modulation = 52;
   }
 }

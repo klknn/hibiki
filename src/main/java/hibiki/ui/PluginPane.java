@@ -4,6 +4,7 @@ import hibiki.BackendManager;
 import hibiki.pb.commands.*;
 import hibiki.pb.core.EntityRef;
 import hibiki.pb.notifications.*;
+import hibiki.pb.notifications.ModulationSlotInfo;
 import hibiki.pb.notifications.ParamInfo;
 import java.awt.*;
 import java.awt.event.*;
@@ -123,6 +124,14 @@ public class PluginPane extends JPanel {
                       sd.getPluginIndex(),
                       sd.getWaveformList(),
                       sd.getSampleName());
+                  break;
+                }
+                case MODULATION_INFO: {
+                  var mi = notification.getModulationInfo();
+                  handleModulationInfo(
+                      mi.getTrackIndex(),
+                      mi.getPluginIndex(),
+                      mi.getSlotsList());
                   break;
                 }
                 default:
@@ -294,6 +303,65 @@ public class PluginPane extends JPanel {
     }
   }
 
+  /**
+   * Wraps a device panel + a ModulationPanel side-by-side.
+   * The modPanel starts hidden and is toggled by the Mod button.
+   */
+  private static class DeviceWrapper extends JPanel {
+    final JPanel device;
+    final ModulationPanel modPanel;
+    final int trackIndex;
+    final int pluginIndex;
+
+    DeviceWrapper(JPanel device, int trackIndex, int pluginIndex) {
+      this.device = device;
+      this.trackIndex = trackIndex;
+      this.pluginIndex = pluginIndex;
+      this.modPanel = new ModulationPanel(trackIndex, pluginIndex);
+      modPanel.setVisible(false);
+
+      setLayout(new FlowLayout(FlowLayout.LEFT, 0, 0));
+      setOpaque(false);
+      add(device);
+      add(modPanel);
+    }
+
+    void toggleMod() {
+      modPanel.setVisible(!modPanel.isVisible());
+      revalidate();
+      repaint();
+    }
+  }
+
+  /**
+   * Find the DeviceWrapper for a given track+plugin in the current device chain.
+   */
+  private DeviceWrapper findWrapper(int trackIndex, int pluginIndex) {
+    for (Component c : deviceChainContent.getComponents()) {
+      if (c instanceof DeviceWrapper) {
+        DeviceWrapper w = (DeviceWrapper) c;
+        if (w.trackIndex == trackIndex && w.pluginIndex == pluginIndex)
+          return w;
+      }
+    }
+    return null;
+  }
+
+  private JPanel wrapDevice(JPanel device, int trackIndex, int pluginIndex) {
+    DeviceWrapper wrapper = new DeviceWrapper(device, trackIndex, pluginIndex);
+
+    // Wire the Mod button callback
+    if (device instanceof DevicePanel) {
+      ((DevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof EqDevicePanel) {
+      ((EqDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof CompressorDevicePanel) {
+      ((CompressorDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    }
+
+    return wrapper;
+  }
+
   private void rebuildDeviceChain() {
     deviceChainContent.removeAll();
 
@@ -311,13 +379,15 @@ public class PluginPane extends JPanel {
 
     // Separate instrument from effects
     JPanel instrument = null;
-    List<JPanel> effects = new ArrayList<>();
+    int instrumentIdx = -1;
+    List<java.util.Map.Entry<Integer, JPanel>> effects = new ArrayList<>();
     for (var entry : allPanels.entrySet()) {
       JPanel p = entry.getValue();
       if (p instanceof DevicePanel && ((DevicePanel) p).isInstrument) {
         instrument = p;
+        instrumentIdx = entry.getKey();
       } else {
-        effects.add(p);
+        effects.add(entry);
       }
     }
 
@@ -328,12 +398,12 @@ public class PluginPane extends JPanel {
 
     // Add instrument if any
     if (instrument != null) {
-      deviceChainContent.add(instrument);
+      deviceChainContent.add(wrapDevice(instrument, selectedTrack, instrumentIdx));
     }
 
     // Add effects (VST3 + built-in) in plugin index order
-    for (JPanel p : effects) {
-      deviceChainContent.add(p);
+    for (var entry : effects) {
+      deviceChainContent.add(wrapDevice(entry.getValue(), selectedTrack, entry.getKey()));
     }
 
     deviceChainContent.revalidate();
@@ -349,6 +419,7 @@ public class PluginPane extends JPanel {
     private final JTextField searchField;
     private final List<ParamPanel> allParams = new ArrayList<>();
     private final Map<Integer, JSlider> paramSliders = new TreeMap<>();
+    Runnable modToggleCallback;
     private boolean updatingFromBackend = false;
 
     DevicePanel(int trackIndex, int pluginIndex, String pluginName, boolean isInstrument) {
@@ -375,6 +446,13 @@ public class PluginPane extends JPanel {
 
       JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
       btnPanel.setOpaque(false);
+
+      JButton modBtn = new JButton("Mod");
+      modBtn.addActionListener(e -> {
+        if (modToggleCallback != null)
+          modToggleCallback.run();
+      });
+      btnPanel.add(modBtn);
 
       JButton editBtn = new JButton("Edit");
       editBtn.addActionListener(e -> sendShowGui());
@@ -577,6 +655,14 @@ public class PluginPane extends JPanel {
 
     private void sendParamChange(int trackIndex, int pluginIndex, int paramId, float value) {
       lastTouched = new LastTouchedParam(trackIndex, pluginIndex, paramId, name);
+
+      // If a ModulationPanel is in assign mode, complete the assignment instead
+      DeviceWrapper wrapper = findWrapper(trackIndex, pluginIndex);
+      if (wrapper != null && wrapper.modPanel.isAssigning()) {
+        wrapper.modPanel.completeAssign(paramId, name);
+        return;
+      }
+
       BackendManager.getInstance()
           .sendRequest(
               Request.newBuilder()
@@ -591,5 +677,16 @@ public class PluginPane extends JPanel {
                           .setParamValue(value))
                   .build());
     }
+  }
+
+  /** Handle modulation info notification: update the wrapper's modPanel */
+  private void handleModulationInfo(int trackIndex, int pluginIndex,
+      java.util.List<ModulationSlotInfo> slots) {
+    SwingUtilities.invokeLater(() -> {
+      DeviceWrapper wrapper = findWrapper(trackIndex, pluginIndex);
+      if (wrapper != null) {
+        wrapper.modPanel.updateFromNotification(slots);
+      }
+    });
   }
 }

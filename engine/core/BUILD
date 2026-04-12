@@ -36,6 +36,7 @@ cc_library(
     name = "track",
     srcs = ["track.cpp"],
     hdrs = [
+        "modulator.hpp",
         "track.hpp",
     ],
     copts = ["-fexceptions"],

@@ -284,6 +284,9 @@ message Notification {
 
     // Sampler waveform data
     PluginSampleData plugin_sample_data = 26;
+
+    // Modulation state
+    ModulationInfo modulation_info = 27;
   }
 }
 
@@ -294,4 +297,23 @@ message PluginSampleData {
   repeated float waveform = 3;       // Waveform summary (128 points, 0..1)
   string sample_name = 4;            // Filename of loaded sample
   double sample_duration_sec = 5;    // Duration in seconds
+}
+
+// Per-slot modulator state.
+message ModulationSlotInfo {
+  int32 slot_index = 1;
+  int32 waveform = 2;         // 0=sin, 1=saw, 2=square, 3=random
+  float rate_hz = 3;
+  float depth = 4;            // -1.0 to 1.0
+  uint32 target_param_id = 5;
+  string target_param_name = 6;
+  bool assigned = 7;
+  bool sync_to_tempo = 8;
+}
+
+// Modulation state for a plugin, sent after any modulation change.
+message ModulationInfo {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+  repeated ModulationSlotInfo slots = 3;
 }

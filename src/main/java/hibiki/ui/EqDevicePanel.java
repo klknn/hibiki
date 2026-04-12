@@ -46,6 +46,9 @@ public class EqDevicePanel extends JPanel {
   private final JComboBox<String>[] typeDropdowns;
   private boolean updatingFromBackend = false;
 
+  /** Callback invoked when user clicks Mod button; set by PluginPane wrapper. */
+  public Runnable modToggleCallback;
+
   // FFT spectrum data (64 bins, log-spaced 20Hz-20kHz)
   private float[] spectrumInputDb = null;
   private float[] spectrumOutputDb = null;
@@ -86,6 +89,14 @@ public class EqDevicePanel extends JPanel {
 
     JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
     btnPanel.setOpaque(false);
+
+    JButton modBtn = new JButton("Mod");
+    modBtn.addActionListener(e -> {
+      if (modToggleCallback != null)
+        modToggleCallback.run();
+    });
+    btnPanel.add(modBtn);
+
     JToggleButton enableBtn = new JToggleButton("On", enabled);
     enableBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     enableBtn.setFocusPainted(false);

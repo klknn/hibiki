@@ -320,6 +320,20 @@ void playback_thread(ProjectState& state) {
           }
         }
 
+        // 3b. Apply Modulation — additive LFO offsets to parameters
+        for (auto& [pidx, pmod] : track->modulations) {
+          if (pidx < 0 || pidx >= (int)track->plugins.size()) continue;
+          auto* plugin = track->plugins[pidx].get();
+          for (int s = 0; s < Modulator::kMaxSlots; ++s) {
+            auto& mod = pmod.slots[s];
+            if (!mod.assigned || mod.depth == 0.0f) continue;
+            double base = plugin->getParameterValue(mod.param_id);
+            float offset = mod.tick(block_size, state.sample_rate, state.bpm);
+            double modulated = std::clamp(base + (double)offset, 0.0, 1.0);
+            plugin->setParameterValue(mod.param_id, modulated);
+          }
+        }
+
         // 4. Process effects (skip instrument at slot 0 — already used above)
         for (size_t i = 0; i < track->plugins.size(); ++i) {
           if (i == 0 && track->plugins[i]->isInstrument()) continue;
@@ -543,6 +557,9 @@ void run_ipc_loop(ProjectState& state) {
         break;
       case hibiki::pb::commands::Request::kSendVirtualMidi:
         handleSendVirtualMidi(request.send_virtual_midi(), state);
+        break;
+      case hibiki::pb::commands::Request::kModulation:
+        handleModulationCmd(request.modulation(), state);
         break;
     }
     if (state.quit) break;

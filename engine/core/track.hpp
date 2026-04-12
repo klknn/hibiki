@@ -10,6 +10,7 @@
 #include "engine/audio/midi_input.hpp"
 #include "engine/audio/sound.hpp"
 #include "engine/core/clip.hpp"
+#include "engine/core/modulator.hpp"
 #include "engine/plugin/iplugin.hpp"
 #include "engine/plugin/plugin_proxy.hpp"
 #include "engine/vst3/vst3_host.hpp"
@@ -131,6 +132,7 @@ class Track {
   std::map<int, std::unique_ptr<Clip>> clips;
   std::vector<std::unique_ptr<TimelineClip>> timeline_clips;
   std::vector<AutomationLane> automation_lanes;
+  std::map<int, PluginModulation> modulations;  // key = plugin_idx
 
   int playing_slot = -1;
   double current_time_sec = 0.0;

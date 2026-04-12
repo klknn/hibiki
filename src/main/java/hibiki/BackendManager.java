@@ -408,6 +408,74 @@ public class BackendManager {
             .build());
   }
 
+  /** Add a modulator to a device slot */
+  public void addModulator(int trackIndex, int pluginIndex, int slotIndex,
+      int waveform, float rateHz, float depth, boolean syncToTempo) {
+    sendRequest(
+        Request.newBuilder()
+            .setModulation(
+                ModulationCmd.newBuilder()
+                    .setAction(ModulationCmd.Action.ACTION_ADD)
+                    .setTarget(EntityRef.newBuilder()
+                        .setTrackIndex(trackIndex)
+                        .setPluginIndex(pluginIndex))
+                    .setSlotIndex(slotIndex)
+                    .setWaveform(waveform)
+                    .setRateHz(rateHz)
+                    .setDepth(depth)
+                    .setSyncToTempo(syncToTempo))
+            .build());
+  }
+
+  /** Remove a modulator from a device slot */
+  public void removeModulator(int trackIndex, int pluginIndex, int slotIndex) {
+    sendRequest(
+        Request.newBuilder()
+            .setModulation(
+                ModulationCmd.newBuilder()
+                    .setAction(ModulationCmd.Action.ACTION_REMOVE)
+                    .setTarget(EntityRef.newBuilder()
+                        .setTrackIndex(trackIndex)
+                        .setPluginIndex(pluginIndex))
+                    .setSlotIndex(slotIndex))
+            .build());
+  }
+
+  /** Configure modulator parameters (rate, depth, waveform, sync) */
+  public void configureModulator(int trackIndex, int pluginIndex, int slotIndex,
+      int waveform, float rateHz, float depth, boolean syncToTempo) {
+    sendRequest(
+        Request.newBuilder()
+            .setModulation(
+                ModulationCmd.newBuilder()
+                    .setAction(ModulationCmd.Action.ACTION_CONFIGURE)
+                    .setTarget(EntityRef.newBuilder()
+                        .setTrackIndex(trackIndex)
+                        .setPluginIndex(pluginIndex))
+                    .setSlotIndex(slotIndex)
+                    .setWaveform(waveform)
+                    .setRateHz(rateHz)
+                    .setDepth(depth)
+                    .setSyncToTempo(syncToTempo))
+            .build());
+  }
+
+  /** Assign a modulator to a target parameter */
+  public void assignModulator(int trackIndex, int pluginIndex, int slotIndex,
+      int targetParamId) {
+    sendRequest(
+        Request.newBuilder()
+            .setModulation(
+                ModulationCmd.newBuilder()
+                    .setAction(ModulationCmd.Action.ACTION_ASSIGN)
+                    .setTarget(EntityRef.newBuilder()
+                        .setTrackIndex(trackIndex)
+                        .setPluginIndex(pluginIndex))
+                    .setSlotIndex(slotIndex)
+                    .setTargetParamId(targetParamId))
+            .build());
+  }
+
   public void resizeTimelineClip(
       int trackIndex, int clipIndex, float durationBeats, float trimStartBeats) {
     sendRequest(

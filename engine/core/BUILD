@@ -3,10 +3,25 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "status",
+    hdrs = ["status.hpp"],
+    deps = [
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+    ],
+)
+
+cc_library(
     name = "audio_file",
     srcs = ["audio_file.cpp"],
     hdrs = ["audio_file.hpp"],
     includes = ["."],
+    deps = [
+        ":status",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:absl_log",
+        "@abseil-cpp//absl/strings",
+    ],
 )
 
 cc_library(
@@ -43,6 +58,7 @@ cc_library(
     deps = [
         ":audio_file",
         ":clip",
+        ":status",
         "//engine/audio:sound",
         "//engine/effects:effects",
         "//engine/instruments:instruments",
@@ -50,6 +66,8 @@ cc_library(
         "//engine/plugin:plugin_proxy",
         "//engine/vst3:vst3_host",
         "//pb:commands_cc_proto",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:absl_log",
     ],
 )
 
@@ -59,11 +77,15 @@ cc_library(
     hdrs = ["project.hpp"],
     deps = [
         ":audio_file",
+        ":status",
         ":track",
         "//engine/ipc:ipc",
         "//engine/plugin:iplugin",
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:absl_log",
+        "@abseil-cpp//absl/strings",
     ],
 )
 
@@ -76,6 +98,7 @@ cc_library(
         ":clip",
         ":history",
         ":project",
+        ":status",
         ":track",
         "//engine/audio:sound",
         "//engine/ipc:ipc",
@@ -86,6 +109,8 @@ cc_library(
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",
         "//pb:plugin_worker_cc_proto",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:absl_log",
         "@protobuf//:protobuf",
     ],
 )

@@ -14,9 +14,9 @@ TEST(AudioFileTest, LoadWav) {
   std::vector<float> data;
   int channels;
   double duration;
-  bool success = hibiki::LoadWav(hibiki::find_test_file("testdata/loop140.wav"),
-                                 data, channels, duration);
-  EXPECT_TRUE(success);
+  auto status = hibiki::LoadWav(hibiki::find_test_file("testdata/loop140.wav"),
+                                data, channels, duration);
+  EXPECT_TRUE(status.ok()) << status.message();
   EXPECT_GT(data.size(), 0);
   EXPECT_GT(channels, 0);
   EXPECT_GT(duration, 0.0);
@@ -34,16 +34,16 @@ TEST(AudioFileTest, SaveAndLoadWav) {
   }
 
   std::string tmp_file = "test_save.wav";
-  bool save_success = hibiki::SaveWav(tmp_file, data, channels, sample_rate);
-  ASSERT_TRUE(save_success);
+  auto save_status = hibiki::SaveWav(tmp_file, data, channels, sample_rate);
+  ASSERT_TRUE(save_status.ok()) << save_status.message();
 
   std::vector<float> loaded_data;
   int loaded_channels;
   double loaded_duration;
-  bool load_success =
+  auto load_status =
       hibiki::LoadWav(tmp_file, loaded_data, loaded_channels, loaded_duration);
 
-  ASSERT_TRUE(load_success);
+  ASSERT_TRUE(load_status.ok()) << load_status.message();
   EXPECT_EQ(loaded_channels, channels);
   EXPECT_EQ(loaded_data.size(), num_samples * channels)
       << "LoadWav returns interleaved samples * channels";

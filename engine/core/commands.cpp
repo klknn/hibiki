@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 
+#include "absl/log/log.h"
 #include "engine/audio/midi_input.hpp"
 #include "engine/core/audio_file.hpp"
 #include "engine/core/clip.hpp"
@@ -61,16 +62,22 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
           }
         }
       }
-      SaveProject(state, project_path);
-      sendAck("SAVE_PROJECT", true);
+      auto save_status = SaveProject(state, project_path);
+      if (!save_status.ok()) {
+        LOG(ERROR) << "Save failed: " << save_status.message();
+      }
+      sendAck("SAVE_PROJECT", save_status.ok());
       break;
     }
     case pb::commands::ProjectCmd::ACTION_LOAD: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       history.pushState(CaptureProjectState(state));
-      LoadProject(state, cmd.path());
+      auto load_status = LoadProject(state, cmd.path());
+      if (!load_status.ok()) {
+        LOG(ERROR) << "Load failed: " << load_status.message();
+      }
       SyncProjectToGui(state);
-      sendAck("LOAD_PROJECT", true);
+      sendAck("LOAD_PROJECT", load_status.ok());
       break;
     }
     case pb::commands::ProjectCmd::ACTION_BOUNCE: {
@@ -244,7 +251,11 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
             std::string filepath =
                 (std::filesystem::path(out_dir) / filename).string();
 
-            SaveWav(filepath, track->record_buffer, rec_channels, sample_rate);
+            auto wav_status = SaveWav(filepath, track->record_buffer,
+                                      rec_channels, sample_rate);
+            if (!wav_status.ok()) {
+              LOG(ERROR) << "Record save failed: " << wav_status.message();
+            }
 
             double duration_sec = (double)track->record_buffer.size() /
                                   (rec_channels * sample_rate);

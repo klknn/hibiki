@@ -23,6 +23,9 @@ cc_binary(
         "//engine/core:project",
         "//engine/core:track",
         "//engine/ipc:ipc",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:absl_log",
+        "@abseil-cpp//absl/log:initialize",
     ] + select({
         "@platforms//os:windows": ["//engine/vst3:vst3_host_win32"],
         "@platforms//os:macos": ["//engine/vst3:vst3_host_mac"],

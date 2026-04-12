@@ -5,8 +5,9 @@
 #include <string>
 #include <vector>
 
-#include "engine/plugin/iplugin.hpp"
+#include "absl/status/status.h"
 #include "engine/core/track.hpp"
+#include "engine/plugin/iplugin.hpp"
 
 namespace hibiki {
 
@@ -43,11 +44,12 @@ struct ProjectState {
 // Returns a pointer to the track, creating it if it doesn't exist
 Track* GetOrCreateTrack(ProjectState& state, int track_index);
 
-bool SaveProject(const ProjectState& state, const std::string& path);
-bool LoadProject(ProjectState& state, const std::string& path);
+absl::Status SaveProject(const ProjectState& state, const std::string& path);
+absl::Status LoadProject(ProjectState& state, const std::string& path);
 
 std::vector<uint8_t> CaptureProjectState(const ProjectState& state);
-bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data);
+absl::Status ApplyProjectState(ProjectState& state,
+                               const std::vector<uint8_t>& data);
 void SyncProjectToGui(const ProjectState& state);
 double GetProjectDuration(const ProjectState& state);
 void BounceProject(ProjectState& live_state, const std::string& path);

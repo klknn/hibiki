@@ -1,8 +1,8 @@
 #include "engine/core/project.hpp"
 
 #include <fstream>
-#include <iostream>
 
+#include "absl/log/log.h"
 #include "engine/core/audio_file.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/core.pb.h"
@@ -159,32 +159,36 @@ static void LoadTracksFromProto(ProjectState& state,
   }
 }
 
-bool SaveProject(const ProjectState& state, const std::string& path) {
+absl::Status SaveProject(const ProjectState& state, const std::string& path) {
   hibiki::pb::core::Project project = BuildProjectProto(state);
 
   std::ofstream out(path, std::ios::binary);
   if (!out) {
-    std::cerr << "Failed to open project file for writing: " << path << "\n";
-    return false;
+    return absl::PermissionDeniedError(
+        absl::StrCat("Failed to open project file for writing: ", path));
   }
-  return project.SerializeToOstream(&out);
+  if (!project.SerializeToOstream(&out)) {
+    return absl::InternalError(
+        absl::StrCat("Failed to serialize project to: ", path));
+  }
+  return absl::OkStatus();
 }
 
-bool LoadProject(ProjectState& state, const std::string& path) {
+absl::Status LoadProject(ProjectState& state, const std::string& path) {
   std::ifstream in(path, std::ios::binary);
   if (!in) {
-    std::cerr << "Failed to open project file for reading: " << path << "\n";
-    return false;
+    return absl::NotFoundError(
+        absl::StrCat("Failed to open project file for reading: ", path));
   }
 
   hibiki::pb::core::Project project;
   if (!project.ParseFromIstream(&in)) {
-    std::cerr << "Failed to parse project file: " << path << "\n";
-    return false;
+    return absl::DataLossError(
+        absl::StrCat("Failed to parse project file: ", path));
   }
 
   LoadTracksFromProto(state, project);
-  return true;
+  return absl::OkStatus();
 }
 
 std::vector<uint8_t> CaptureProjectState(const ProjectState& state) {
@@ -194,12 +198,15 @@ std::vector<uint8_t> CaptureProjectState(const ProjectState& state) {
   return std::vector<uint8_t>(data.begin(), data.end());
 }
 
-bool ApplyProjectState(ProjectState& state, const std::vector<uint8_t>& data) {
-  if (data.empty()) return false;
+absl::Status ApplyProjectState(ProjectState& state,
+                               const std::vector<uint8_t>& data) {
+  if (data.empty())
+    return absl::InvalidArgumentError("Empty project state data");
   hibiki::pb::core::Project project;
-  if (!project.ParseFromArray(data.data(), data.size())) return false;
+  if (!project.ParseFromArray(data.data(), data.size()))
+    return absl::DataLossError("Failed to parse project state from snapshot");
   LoadTracksFromProto(state, project);
-  return true;
+  return absl::OkStatus();
 }
 
 void SyncProjectToGui(const ProjectState& state) {
@@ -408,8 +415,11 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
     context.projectTimeMusic = state.playhead_pos_sec * (context.tempo / 60.0);
   }
 
-  bool success = SaveWav(path, output_buffer, actual_channels, sample_rate);
-  hibiki::sendBounceFinished(path, success);
+  auto status = SaveWav(path, output_buffer, actual_channels, sample_rate);
+  if (!status.ok()) {
+    LOG(ERROR) << "Bounce save failed: " << status.message();
+  }
+  hibiki::sendBounceFinished(path, status.ok());
 }
 
 void sendAutomationLanesData(

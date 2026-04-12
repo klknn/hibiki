@@ -10,6 +10,7 @@ bazel_dep(name = "rules_java", version = "9.0.3")
 bazel_dep(name = "rules_jvm_external", version = "6.7")
 bazel_dep(name = "googletest", version = "1.17.0.bcr.2")
 bazel_dep(name = "protobuf", version = "29.3")
+bazel_dep(name = "abseil-cpp", version = "20250814.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")

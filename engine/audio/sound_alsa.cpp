@@ -1,7 +1,6 @@
 #include <alsa/asoundlib.h>
 
-#include <iostream>
-
+#include "absl/log/log.h"
 #include "engine/audio/sound.hpp"
 
 namespace hibiki {
@@ -23,15 +22,14 @@ class SoundDeviceAlsa : public SoundDevice {
     impl = std::make_unique<Impl>();
     if (snd_pcm_open(&impl->pcm_handle, "default", SND_PCM_STREAM_PLAYBACK, 0) <
         0) {
-      std::cerr << "Cannot open ALSA audio device" << std::endl;
+      LOG(ERROR) << "Cannot open ALSA audio device";
       return;
     }
     snd_pcm_info_t* info;
     snd_pcm_info_alloca(&info);
     if (snd_pcm_info(impl->pcm_handle, info) == 0) {
-      std::cerr << "ALSA Audio Device: " << snd_pcm_info_get_id(info) << " ("
-                << snd_pcm_info_get_name(info) << ")\n"
-                << std::flush;
+      LOG(INFO) << "ALSA Audio Device: " << snd_pcm_info_get_id(info) << " ("
+                << snd_pcm_info_get_name(info) << ")";
     }
 
     int err =
@@ -40,8 +38,7 @@ class SoundDeviceAlsa : public SoundDevice {
                            1,                   // allow resampling
                            latency_ms * 1000);  // convert ms to us
     if (err < 0) {
-      std::cerr << "ALSA parameter setting failed: " << snd_strerror(err)
-                << std::endl;
+      LOG(ERROR) << "ALSA parameter setting failed: " << snd_strerror(err);
     }
   }
 
@@ -65,7 +62,7 @@ class SoundDeviceAlsa : public SoundDevice {
     if (frames < 0) {
       frames = snd_pcm_recover(impl->pcm_handle, frames, 0);
       if (frames < 0) {
-        std::cerr << "ALSA write failed: " << snd_strerror(frames) << std::endl;
+        LOG(ERROR) << "ALSA write failed: " << snd_strerror(frames);
       }
     }
   }
@@ -88,15 +85,14 @@ class SoundDeviceAlsaInput : public SoundDevice {
     std::string dev = device_id.empty() ? "default" : device_id;
     if (snd_pcm_open(&impl->pcm_handle, dev.c_str(), SND_PCM_STREAM_CAPTURE,
                      0) < 0) {
-      std::cerr << "Cannot open ALSA capture device: " << dev << std::endl;
+      LOG(ERROR) << "Cannot open ALSA capture device: " << dev;
       return;
     }
     snd_pcm_info_t* info;
     snd_pcm_info_alloca(&info);
     if (snd_pcm_info(impl->pcm_handle, info) == 0) {
-      std::cerr << "ALSA Capture Device: " << snd_pcm_info_get_id(info) << " ("
-                << snd_pcm_info_get_name(info) << ")\n"
-                << std::flush;
+      LOG(INFO) << "ALSA Capture Device: " << snd_pcm_info_get_id(info) << " ("
+                << snd_pcm_info_get_name(info) << ")";
     }
 
     int err =
@@ -105,8 +101,8 @@ class SoundDeviceAlsaInput : public SoundDevice {
                            1,                   // allow resampling
                            latency_ms * 1000);  // convert ms to us
     if (err < 0) {
-      std::cerr << "ALSA capture parameter setting failed: "
-                << snd_strerror(err) << std::endl;
+      LOG(ERROR) << "ALSA capture parameter setting failed: "
+                 << snd_strerror(err);
       snd_pcm_close(impl->pcm_handle);
       impl->pcm_handle = nullptr;
     }
@@ -134,7 +130,7 @@ class SoundDeviceAlsaInput : public SoundDevice {
     if (frames < 0) {
       frames = snd_pcm_recover(impl->pcm_handle, frames, 0);
       if (frames < 0) {
-        std::cerr << "ALSA read failed: " << snd_strerror(frames) << std::endl;
+        LOG(ERROR) << "ALSA read failed: " << snd_strerror(frames);
         return false;
       }
       // Retry after recovery
@@ -163,7 +159,7 @@ std::vector<AudioInputInfo> SoundDevice::listInputDevices() {
   std::vector<AudioInputInfo> result;
   void** hints = nullptr;
   if (snd_device_name_hint(-1, "pcm", &hints) < 0) {
-    std::cerr << "[Input] snd_device_name_hint failed" << std::endl;
+    LOG(ERROR) << "[Input] snd_device_name_hint failed";
     return result;
   }
 
@@ -218,8 +214,8 @@ std::vector<AudioInputInfo> SoundDevice::listInputDevices() {
     }
     snd_pcm_close(pcm);
 
-    std::cerr << "[Input] Found: " << info.id << " (" << info.name << ", "
-              << info.channel_count << " ch)" << std::endl;
+    LOG(INFO) << "[Input] Found: " << info.id << " (" << info.name << ", "
+              << info.channel_count << " ch)";
     result.push_back(std::move(info));
 
     if (name) free(name);
@@ -227,7 +223,7 @@ std::vector<AudioInputInfo> SoundDevice::listInputDevices() {
     if (ioid) free(ioid);
   }
   snd_device_name_free_hint(hints);
-  std::cerr << "[Input] Total devices found: " << result.size() << std::endl;
+  LOG(INFO) << "[Input] Total devices found: " << result.size();
   return result;
 }
 

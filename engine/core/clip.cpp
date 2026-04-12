@@ -26,8 +26,9 @@ std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
   clip.is_loop = is_loop;
 
   if (path.size() > 4 && path.substr(path.size() - 4) == ".wav") {
-    if (!LoadWav(path, clip.audio_data, clip.num_channels, clip.duration_sec)) {
-      return nullptr;  // std::unexpected("Cannot load wav: " + path);
+    if (!LoadWav(path, clip.audio_data, clip.num_channels, clip.duration_sec)
+             .ok()) {
+      return nullptr;
     }
     clip.type = Clip::Type::AUDIO;
 

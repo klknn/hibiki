@@ -3,19 +3,24 @@
 #include <cstdint>
 #include <fstream>
 
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
+
 namespace hibiki {
 
-bool LoadWav(const std::string& path, std::vector<float>& out_data,
-             int& out_channels, double& out_duration_sec) {
+absl::Status LoadWav(const std::string& path, std::vector<float>& out_data,
+                     int& out_channels, double& out_duration_sec) {
   std::ifstream f(path, std::ios::binary);
-  if (!f) return false;
+  if (!f) return absl::NotFoundError(absl::StrCat("Cannot open file: ", path));
 
   char chunkId[4];
   f.read(chunkId, 4);
-  if (std::string(chunkId, 4) != "RIFF") return false;
+  if (std::string(chunkId, 4) != "RIFF")
+    return absl::InvalidArgumentError(absl::StrCat("Not a RIFF file: ", path));
   f.seekg(4, std::ios::cur);  // Skip size
   f.read(chunkId, 4);
-  if (std::string(chunkId, 4) != "WAVE") return false;
+  if (std::string(chunkId, 4) != "WAVE")
+    return absl::InvalidArgumentError(absl::StrCat("Not a WAVE file: ", path));
 
   int sample_rate = 0;
   int bits_per_sample = 0;
@@ -27,14 +32,18 @@ bool LoadWav(const std::string& path, std::vector<float>& out_data,
     if (std::string(chunkId, 4) == "fmt ") {
       uint16_t format;
       f.read((char*)&format, 2);
-      if (format != 1) return false;  // Only PCM supported
+      if (format != 1)
+        return absl::UnimplementedError(
+            absl::StrCat("Non-PCM format (", format, ") in: ", path));
       uint16_t chans;
       f.read((char*)&chans, 2);
       channels = chans;
       f.read((char*)&sample_rate, 4);
       f.seekg(6, std::ios::cur);  // Skip byte rate and block align
       f.read((char*)&bits_per_sample, 2);
-      if (bits_per_sample != 16) return false;  // Only 16-bit supported
+      if (bits_per_sample != 16)
+        return absl::UnimplementedError(absl::StrCat(
+            "Only 16-bit PCM supported, got ", bits_per_sample, " in: ", path));
       if (size > 16) f.seekg(size - 16, std::ios::cur);
     } else if (std::string(chunkId, 4) == "data") {
       int num_samples = size / 2;
@@ -53,21 +62,25 @@ bool LoadWav(const std::string& path, std::vector<float>& out_data,
 
       out_channels = channels;
       out_duration_sec = (double)num_samples / (channels * sample_rate);
-      return true;
+      return absl::OkStatus();
     } else {
       f.seekg(size, std::ios::cur);
     }
   }
-  return false;
+  return absl::DataLossError(absl::StrCat("No 'data' chunk found in: ", path));
 }
 
-bool SaveWav(const std::string& path,
-             const std::vector<float>& interleaved_data, int channels,
-             int sample_rate) {
-  if (channels <= 0 || sample_rate <= 0) return false;
+absl::Status SaveWav(const std::string& path,
+                     const std::vector<float>& interleaved_data, int channels,
+                     int sample_rate) {
+  if (channels <= 0 || sample_rate <= 0)
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Invalid params: channels=", channels, " rate=", sample_rate));
 
   std::ofstream out(path, std::ios::binary);
-  if (!out) return false;
+  if (!out)
+    return absl::PermissionDeniedError(
+        absl::StrCat("Cannot open file for writing: ", path));
 
   int num_samples = interleaved_data.size() / channels;
   int bits_per_sample = 16;
@@ -100,7 +113,7 @@ bool SaveWav(const std::string& path,
     int16_t sample = static_cast<int16_t>(f * 32767.0f);
     out.write(reinterpret_cast<const char*>(&sample), 2);
   }
-  return true;
+  return absl::OkStatus();
 }
 
 }  // namespace hibiki

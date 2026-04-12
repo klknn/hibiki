@@ -56,14 +56,14 @@ TEST_F(ProjectTest, SaveAndLoad) {
   std::string tmp_file = std::tmpnam(nullptr);
 
   // Save
-  hibiki::SaveProject(state, tmp_file);
+  ASSERT_TRUE(hibiki::SaveProject(state, tmp_file).ok());
 
   // Modify state before load
   state.bpm = 140.0;
   state.tracks.clear();
 
   // Load
-  hibiki::LoadProject(state, tmp_file);
+  ASSERT_TRUE(hibiki::LoadProject(state, tmp_file).ok());
 
   EXPECT_DOUBLE_EQ(state.bpm, 120.0);
   auto loaded_track = hibiki::GetOrCreateTrack(state, 0);
@@ -86,13 +86,13 @@ TEST_F(ProjectTest, SaveAndLoadTrackName) {
   std::string tmp_file = std::tmpnam(nullptr);
 
   // Save
-  hibiki::SaveProject(state, tmp_file);
+  ASSERT_TRUE(hibiki::SaveProject(state, tmp_file).ok());
 
   // Modify state before load
   state.tracks.clear();
 
   // Load
-  hibiki::LoadProject(state, tmp_file);
+  ASSERT_TRUE(hibiki::LoadProject(state, tmp_file).ok());
 
   auto loaded_track0 = hibiki::GetOrCreateTrack(state, 0);
   EXPECT_EQ(loaded_track0->name, "Drums");
@@ -125,9 +125,10 @@ TEST_F(ProjectTest, BounceProjectWithDexed) {
   std::vector<float> audio_data;
   int channels = 0;
   double duration = 0.0;
-  bool loaded = hibiki::LoadWav(tmp_wav, audio_data, channels, duration);
+  auto loaded_status = hibiki::LoadWav(tmp_wav, audio_data, channels, duration);
 
-  EXPECT_TRUE(loaded) << "Should load the generated wav file";
+  EXPECT_TRUE(loaded_status.ok())
+      << "Should load the generated wav file: " << loaded_status.message();
   EXPECT_GT(audio_data.size(), 0) << "Should have written some audio frames";
 
   float max_amp = 0.0f;
@@ -160,12 +161,13 @@ TEST_F(ProjectTest, LoadProjectWithTimelineClips) {
 
   // Save the project
   std::string tmp_file = std::tmpnam(nullptr);
-  ASSERT_TRUE(hibiki::SaveProject(state, tmp_file));
+  ASSERT_TRUE(hibiki::SaveProject(state, tmp_file).ok());
 
   // Clear state and reload
   state.tracks.clear();
-  bool result = hibiki::LoadProject(state, tmp_file);
-  ASSERT_TRUE(result) << "Failed to load saved project";
+  auto load_result = hibiki::LoadProject(state, tmp_file);
+  ASSERT_TRUE(load_result.ok())
+      << "Failed to load saved project: " << load_result.message();
 
   // Verify BPM was loaded
   EXPECT_FLOAT_EQ(state.bpm, 140.0f) << "BPM should be 140";
@@ -212,11 +214,11 @@ TEST_F(ProjectTest, SaveAndLoadCorrectProjectStructure) {
 
   // Save the project
   std::string tmp_file = "test_correct_project.hbk";
-  ASSERT_TRUE(hibiki::SaveProject(state, tmp_file));
+  ASSERT_TRUE(hibiki::SaveProject(state, tmp_file).ok());
 
   // Clear and reload
   state.tracks.clear();
-  ASSERT_TRUE(hibiki::LoadProject(state, tmp_file));
+  ASSERT_TRUE(hibiki::LoadProject(state, tmp_file).ok());
 
   // Verify structure is correct
   EXPECT_EQ(state.bpm, 120.0);

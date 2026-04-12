@@ -54,7 +54,7 @@ class BuiltinSampler : public IPlugin {
     std::vector<float> data;
     int channels = 0;
     double dur = 0;
-    if (!LoadWav(path, data, channels, dur)) return false;
+    if (!LoadWav(path, data, channels, dur).ok()) return false;
 
     sample_data_ = std::move(data);
     sample_channels_ = channels;

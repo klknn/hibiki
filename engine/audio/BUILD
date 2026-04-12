@@ -25,6 +25,7 @@ cc_library(
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:absl_log",
         "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/strings",
     ],
 )
 

@@ -2,6 +2,7 @@
 
 #include "engine/audio/midi_input.hpp"
 
+#include "absl/strings/numbers.h"
 #include <CoreMIDI/CoreMIDI.h>
 
 #include <cstdio>
@@ -47,9 +48,7 @@ class MidiInputCoreMidi : public MidiInput {
     } else {
       // Find source by unique ID
       int uid = 0;
-      try {
-        uid = std::stoi(device_id);
-      } catch (...) {
+      if (!absl::SimpleAtoi(device_id, &uid)) {
         fprintf(stderr, "[MIDI Input] Invalid device ID: %s\n",
                 device_id.c_str());
         close();
@@ -155,19 +154,6 @@ class MidiInputCoreMidi : public MidiInput {
     }
   }
 
-  static std::string getEndpointName(MIDIEndpointRef endpoint) {
-    CFStringRef name = nullptr;
-    MIDIObjectGetStringProperty(endpoint, kMIDIPropertyDisplayName, &name);
-    if (!name) {
-      MIDIObjectGetStringProperty(endpoint, kMIDIPropertyName, &name);
-    }
-    if (!name) return "(unknown)";
-    char buf[256];
-    CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8);
-    CFRelease(name);
-    return std::string(buf);
-  }
-
   MIDIClientRef client_ = 0;
   MIDIPortRef port_ = 0;
   std::string device_id_;
@@ -178,6 +164,19 @@ class MidiInputCoreMidi : public MidiInput {
 // Factory
 std::unique_ptr<MidiInput> MidiInput::create() {
   return std::make_unique<MidiInputCoreMidi>();
+}
+
+static std::string getEndpointName(MIDIEndpointRef endpoint) {
+  CFStringRef name = nullptr;
+  MIDIObjectGetStringProperty(endpoint, kMIDIPropertyDisplayName, &name);
+  if (!name) {
+    MIDIObjectGetStringProperty(endpoint, kMIDIPropertyName, &name);
+  }
+  if (!name) return "(unknown)";
+  char buf[256];
+  CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8);
+  CFRelease(name);
+  return std::string(buf);
 }
 
 // Enumerate MIDI input devices
@@ -193,7 +192,7 @@ std::vector<MidiInputInfo> MidiInput::listDevices() {
     SInt32 uid = 0;
     MIDIObjectGetIntegerProperty(src, kMIDIPropertyUniqueID, &uid);
 
-    std::string name = MidiInputCoreMidi::getEndpointName(src);
+    std::string name = getEndpointName(src);
     std::string id = std::to_string(uid);
 
     result.push_back({id, name, 1});

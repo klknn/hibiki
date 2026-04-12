@@ -123,6 +123,11 @@ java_test(
 
 java_test(
     name = "plugin_worker_test",
+    target_compatible_with = [
+        # TODO macos support.
+        "@platforms//os:windows",
+        "@platforms//os:linux",
+    ],
     srcs = ["src/test/java/hibiki/PluginWorkerTest.java"],
     data = [
         "//engine:hbk-play",

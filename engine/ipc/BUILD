@@ -27,6 +27,7 @@ cc_library(
     ],
     linkopts = select({
         "@platforms//os:windows": [],
+        "@platforms//os:macos": [],
         "//conditions:default": ["-lrt"],
     }),
 )
@@ -68,10 +69,16 @@ cc_test(
 
 cc_test(
     name = "worker_channel_test",
+    target_compatible_with = [
+        # TODO macos support.
+        "@platforms//os:windows",
+        "@platforms//os:linux",
+    ],
     size = "small",
     srcs = ["worker_channel_test.cc"],
     linkopts = select({
         "@platforms//os:windows": [],
+        "@platforms//os:macos": [],
         "//conditions:default": ["-lrt"],
     }),
     deps = [

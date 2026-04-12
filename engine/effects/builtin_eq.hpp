@@ -4,6 +4,7 @@
 #include <cmath>
 #include <complex>
 #include <string>
+#include <numbers>
 #include <vector>
 
 #include "engine/plugin/iplugin.hpp"
@@ -173,7 +174,7 @@ class BuiltinEq : public IPlugin {
   float getMagnitudeDb(float freq) const {
     if (!enabled_) return 0.0f;
     float total_db = 0.0f;
-    double w = 2.0 * M_PI * freq / sample_rate_;
+    double w = 2.0 * std::numbers::pi_v<double> * freq / sample_rate_;
     double cos_w = std::cos(w);
     double cos_2w = std::cos(2.0 * w);
     double sin_w = std::sin(w);
@@ -293,7 +294,7 @@ class BuiltinEq : public IPlugin {
       return;
     }
 
-    double w0 = 2.0 * M_PI * bp.freq / sample_rate_;
+    double w0 = 2.0 * std::numbers::pi_v<double> * bp.freq / sample_rate_;
     double cos_w0 = std::cos(w0);
     double sin_w0 = std::sin(w0);
     double alpha = sin_w0 / (2.0 * bp.q);
@@ -401,7 +402,7 @@ class BuiltinEq : public IPlugin {
     // Pre-compute Hann window
     for (int i = 0; i < kFftSize; ++i) {
       hann_window_[i] =
-          0.5f * (1.0f - std::cos(2.0f * (float)M_PI * i / (kFftSize - 1)));
+          0.5f * (1.0f - std::cos(2.0f * std::numbers::pi_v<float> * i / (kFftSize - 1)));
     }
     // Log-spaced bin edges from 20 Hz to 20 kHz
     const double log_min = std::log(20.0);

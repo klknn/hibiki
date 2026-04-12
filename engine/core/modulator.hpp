@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <random>
+#include <numbers>
 #include <string>
 
 namespace hibiki {
@@ -48,7 +49,7 @@ struct Modulator {
     float val = 0.0f;
     switch (waveform) {
       case SINE:
-        val = (float)std::sin(phase * 2.0 * M_PI);
+        val = (float)std::sin(phase * 2.0 * std::numbers::pi_v<double>);
         break;
       case SAW:
         val = (float)(2.0 * phase - 1.0);

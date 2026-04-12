@@ -4,12 +4,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
+#include "engine/vst3/vst3_host_impl.hpp"
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
@@ -21,7 +23,6 @@
 #include "public.sdk/source/vst/hosting/hostclasses.h"
 #include "public.sdk/source/vst/hosting/module.h"
 #include "public.sdk/source/vst/hosting/plugprovider.h"
-#include "engine/vst3/vst3_host_impl.hpp"
 
 namespace hibiki {
 
@@ -188,7 +189,7 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index,
   std::string error;
   impl->module = VST3::Hosting::Module::create(path, error);
   if (!impl->module) {
-    std::cerr << "Failed to load VST3 module: " << error << std::endl;
+    LOG(ERROR) << "Failed to load VST3 module '" << path << "': " << error;
     return false;
   }
 
@@ -200,10 +201,11 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index,
       audioEffects.push_back(info);
     }
   }
+  CHECK(!audioEffects.empty()) << "No audio effects found in '" << path << "'";
 
   if (plugin_index < 0 || plugin_index >= (int)audioEffects.size()) {
-    std::cerr << "Plugin index " << plugin_index << " out of range (found "
-              << audioEffects.size() << " audio effects)\n";
+    LOG(ERROR) << "Plugin index " << plugin_index << " out of range (found "
+               << audioEffects.size() << " audio effects)";
     return false;
   }
 
@@ -221,7 +223,7 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index,
   impl->component =
       factory.createInstance<Steinberg::Vst::IComponent>(info.ID());
   if (!impl->component) {
-    std::cerr << "Failed to create IComponent for " << info.name() << std::endl;
+    LOG(ERROR) << "Failed to create IComponent for " << info.name();
     return false;
   }
 
@@ -233,15 +235,14 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index,
   }
 
   if (!impl->processor) {
-    std::cerr << "Failed to create IAudioProcessor for " << info.name()
-              << std::endl;
+    LOG(ERROR) << "Failed to create IAudioProcessor for " << info.name();
     return false;
   }
 
   impl->hostContext = Steinberg::owned(new Vst3HostContext());
   if (impl->component->initialize(impl->hostContext) !=
       Steinberg::kResultTrue) {
-    std::cerr << "Failed to initialize component" << std::endl;
+    LOG(ERROR) << "Failed to initialize component for '" << impl->name << "'";
     return false;
   }
 
@@ -258,9 +259,8 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index,
     }
 
     if (!impl->controller) {
-      std::cerr << "Failed to get IEditController from component, trying "
-                   "factory as fallback..."
-                << std::endl;
+      LOG(WARNING) << "Failed to get IEditController from component '"
+                   << impl->name << "', trying factory as fallback...";
       impl->controller =
           factory.createInstance<Steinberg::Vst::IEditController>(info.ID());
     }
@@ -292,13 +292,14 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index,
     // Sync state
     Steinberg::MemoryStream stream;
     if (impl->component->getState(&stream) == Steinberg::kResultTrue) {
-      std::cerr << "Vst3Plugin::load: Syncing state to controller..."
-                << std::endl;
+      LOG(INFO) << "Vst3Plugin::load: Syncing state to controller for '"
+                << impl->name << "'";
       stream.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
       impl->controller->setComponentState(&stream);
     }
   } else {
-    std::cerr << "Vst3Plugin::load: No controller available." << std::endl;
+    LOG(WARNING) << "Vst3Plugin::load: No controller available for '"
+                 << impl->name << "'";
   }
 
   // Activate audio buses
@@ -324,7 +325,7 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index,
   }
 
   if (impl->component->setActive(true) != Steinberg::kResultTrue) {
-    std::cerr << "Failed to activate component" << std::endl;
+    LOG(ERROR) << "Failed to activate component for '" << impl->name << "'";
     return false;
   }
 
@@ -335,14 +336,14 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index,
   setup.sampleRate = sample_rate;
 
   if (impl->processor->setupProcessing(setup) != Steinberg::kResultTrue) {
-    std::cerr << "Failed to setup processing" << std::endl;
+    LOG(ERROR) << "Failed to setup processing for '" << impl->name << "'";
     impl->component->setActive(false);
     return false;
   }
 
-  std::cerr << "Plugin: " << info.name()
-            << " - Audio Buses - In: " << numInBuses << ", Out: " << numOutBuses
-            << "\n";
+  LOG(INFO) << "Plugin: " << info.name()
+            << " - Audio Buses - In: " << numInBuses
+            << ", Out: " << numOutBuses;
 
   impl->processor->setProcessing(true);
 
@@ -351,12 +352,12 @@ bool Vst3Plugin::load(const std::string& path, int plugin_index,
 
 std::vector<PluginDescription> Vst3Plugin::listPlugins(
     const std::string& path) {
-  std::cerr << "BACKEND: Listing plugins in " << path << std::endl;
+  LOG(INFO) << "BACKEND: Listing plugins in " << path;
   std::vector<PluginDescription> plugins;
   std::string error;
   auto mod = VST3::Hosting::Module::create(path, error);
   if (!mod) {
-    std::cerr << "Error: " << error << std::endl;
+    LOG(ERROR) << "Failed to list VST3 plugins in '" << path << "': " << error;
     return plugins;
   }
 
@@ -427,6 +428,8 @@ void Vst3Plugin::process(float** inputs, float** outputs, int numSamples,
   data.outputEvents = nullptr;
   data.processContext = &vstContext;
 
+  CHECK(impl->processor != nullptr)
+      << "process() called on unloaded plugin '" << impl->name << "'";
   impl->processor->process(data);
 }
 

@@ -8,6 +8,10 @@
 #include <thread>
 #include <vector>
 
+#include "absl/log/check.h"
+#include "absl/log/initialize.h"
+#include "absl/log/log.h"
+
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
@@ -32,12 +36,17 @@ namespace hibiki {
 
 void playback_thread(ProjectState& state) {
   auto audio = SoundDevice::create(44100, 2, state.buffer_latency_ms);
+  CHECK(audio != nullptr) << "Failed to create SoundDevice";
   float sample_rate = (float)audio->get_sample_rate();
   int actual_channels = audio->get_channels();
+  CHECK_GT(sample_rate, 0.0f) << "Invalid sample rate from audio device";
+  CHECK_GT(actual_channels, 0) << "Invalid channel count from audio device";
   state.sample_rate = (double)sample_rate;
   if (!audio->is_ready()) return;
 
   int block_size = 512;
+  CHECK_GT(block_size, 0);
+  CHECK_LE(block_size, 4096) << "Block size unreasonably large";
 
   alignas(32) float bufferL[512];
   alignas(32) float bufferR[512];
@@ -50,7 +59,9 @@ void playback_thread(ProjectState& state) {
   context.continuousTimeSamples = 0;
   context.projectTimeMusic = 0;
   context.tempo = state.bpm;
+  CHECK(!std::isnan(state.bpm)) << "BPM must be initialized before playback";
   double time_per_block = block_size / (double)sample_rate;
+  CHECK_GT(time_per_block, 0.0);
 
   while (!state.quit) {
     std::vector<float> mixBufferL(block_size, 0.0f);
@@ -209,15 +220,11 @@ void playback_thread(ProjectState& state) {
           if (state.is_recording && track->record_armed &&
               track->record_mode == Track::RECORD_MIDI) {
             if (!allEvents.empty()) {
-              static int midi_cap_log_counter = 0;
-              if (midi_cap_log_counter++ % 1000 == 0) {
-                fprintf(stderr,
-                        "[MIDI_CAP] track=%d events=%d "
-                        "buf_size=%d playhead=%.3f\n",
-                        (int)pair.first, (int)allEvents.size(),
-                        (int)track->midi_record_buffer.size(),
-                        state.playhead_pos_sec);
-              }
+              LOG_EVERY_N_SEC(INFO, 1)
+                  << "[MIDI_CAP] track=" << pair.first
+                  << " events=" << allEvents.size()
+                  << " buf_size=" << track->midi_record_buffer.size()
+                  << " playhead=" << state.playhead_pos_sec;
             }
             for (const auto& ev : allEvents) {
               Track::TimestampedMidiEvent tev;
@@ -371,6 +378,7 @@ void playback_thread(ProjectState& state) {
       interleaved[i * actual_channels] = mixBufferL[i];
       interleaved[i * actual_channels + 1] = mixBufferR[i];
     }
+    CHECK_GE((int)interleaved.size(), block_size * actual_channels);
     audio->write(interleaved, block_size);
 
     if (state.is_timeline_playing) {
@@ -495,29 +503,25 @@ void run_ipc_loop(ProjectState& state) {
     std::cin.read(reinterpret_cast<char*>(&msg_size), sizeof(msg_size));
     if (std::cin.eof()) break;
     if (std::cin.fail()) {
-      std::cerr << "BACKEND ERROR: Failed to read message size from stdin"
-                << std::endl;
+      LOG(ERROR) << "BACKEND ERROR: Failed to read message size from stdin";
       break;
     }
 
     if (msg_size > 1024 * 1024) {  // 1MB limit for safety
-      std::cerr << "BACKEND ERROR: Message size too large: " << msg_size
-                << std::endl;
+      LOG(ERROR) << "BACKEND ERROR: Message size too large: " << msg_size;
       break;
     }
 
     std::unique_ptr<uint8_t[]> buffer(new uint8_t[msg_size]);
     std::cin.read(reinterpret_cast<char*>(buffer.get()), msg_size);
     if (std::cin.fail()) {
-      std::cerr << "BACKEND ERROR: Failed to read message payload from stdin"
-                << std::endl;
+      LOG(ERROR) << "BACKEND ERROR: Failed to read message payload from stdin";
       break;
     }
 
     hibiki::pb::commands::Request request;
     if (!request.ParseFromArray(buffer.get(), msg_size)) {
-      std::cerr << "BACKEND ERROR: Failed to parse protobuf request"
-                << std::endl;
+      LOG(ERROR) << "BACKEND ERROR: Failed to parse protobuf request";
       continue;
     }
 
@@ -584,9 +588,13 @@ int main(int argc, char** argv) {
   _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
+  absl::InitializeLog();
+
   hibiki::ProjectState state;
   state.bpm = 140.0;            // Explicitly set default BPM
   state.sample_rate = 44100.0;  // Explicitly set default sample rate
+  CHECK(!std::isnan(state.bpm));
+  CHECK(!std::isnan(state.sample_rate));
   hibiki::loadConfig(
       state);  // Load persisted settings from .hibikirc.textproto
   std::thread audio_thread(hibiki::playback_thread, std::ref(state));

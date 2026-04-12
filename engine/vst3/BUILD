@@ -15,6 +15,8 @@ cc_library(
     }),
     deps = [
         "//engine/plugin:iplugin",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:check",
         "@vst3sdk",
     ],
 )

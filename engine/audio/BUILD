@@ -5,8 +5,8 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "sound",
     srcs = select({
-        "@platforms//os:windows": ["sound_win32.cpp"],
-        "@platforms//os:macos": ["sound_coreaudio.cpp"],
+        "@platforms//os:windows": ["sound_win32.cpp", "midi_input_stub.cpp"],
+        "@platforms//os:macos": ["sound_coreaudio.cpp", "midi_input_stub.cpp"],
         "//conditions:default": ["sound_alsa.cpp", "midi_input_alsa.cpp"],
     }),
     hdrs = ["sound.hpp", "midi_input.hpp"],

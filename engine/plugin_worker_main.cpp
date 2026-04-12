@@ -9,6 +9,9 @@
 
 #ifndef _WIN32
 #include <signal.h>
+#endif
+
+#ifdef __linux__
 #include <sys/prctl.h>
 #endif
 
@@ -17,9 +20,9 @@
 #include <memory>
 #include <string>
 
-#include "pb/plugin_worker.pb.h"
-#include "engine/vst3/vst3_host.hpp"
 #include "engine/ipc/worker_channel_local.hpp"
+#include "engine/vst3/vst3_host.hpp"
+#include "pb/plugin_worker.pb.h"
 
 namespace hibiki {}  // namespace hibiki
 

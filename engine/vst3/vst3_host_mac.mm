@@ -16,7 +16,7 @@
 }
 @end
 
-void Vst3Plugin::runMainLoop() {
+void hibiki::Vst3Plugin::runMainLoop() {
     @autoreleasepool {
         std::cerr << "BACKEND: Starting macOS main loop..." << std::endl;
         [NSApplication sharedApplication];
@@ -26,7 +26,7 @@ void Vst3Plugin::runMainLoop() {
     }
 }
 
-void Vst3Plugin::showEditor() {
+void hibiki::Vst3Plugin::showEditor() {
     if (!impl->controller) {
         std::cerr << "No controller available for showing editor" << std::endl;
         return;
@@ -98,7 +98,7 @@ void Vst3Plugin::showEditor() {
     });
 }
 
-void Vst3Plugin::stopEditor() {
+void hibiki::Vst3Plugin::stopEditor() {
     if (!impl->editorRunning) return;
     
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -121,7 +121,7 @@ void Vst3Plugin::stopEditor() {
     });
 }
 
-std::vector<std::string> Vst3Plugin::getDefaultVst3Dirs() {
+std::vector<std::string> hibiki::Vst3Plugin::getDefaultVst3Dirs() {
   std::vector<std::string> dirs;
   dirs.push_back("/Library/Audio/Plug-ins/VST3");
   const char* home = getenv("HOME");
@@ -132,13 +132,13 @@ std::vector<std::string> Vst3Plugin::getDefaultVst3Dirs() {
   return dirs;
 }
 
-bool Vst3Plugin::captureEditorFrame(std::vector<uint8_t>& /*rgba*/, int& /*w*/,
+bool hibiki::Vst3Plugin::captureEditorFrame(std::vector<uint8_t>& /*rgba*/, int& /*w*/,
                                     int& /*h*/) {
   // TODO: Implement macOS framebuffer capture using CGWindowListCreateImage
   return false;
 }
 
-void Vst3Plugin::sendEditorInput(int /*type*/, int /*x*/, int /*y*/,
+void hibiki::Vst3Plugin::sendEditorInput(int /*type*/, int /*x*/, int /*y*/,
                                  int /*button*/, int /*key_code*/,
                                  int /*delta*/) {
   // TODO: Implement macOS input forwarding

@@ -34,6 +34,9 @@ public class ThreeOscDevicePanel extends JPanel {
   private final double[] params = new double[TOTAL_PARAMS];
   private boolean enabled = true;
 
+  /** Callback invoked when user clicks Mod button; set by PluginPane wrapper. */
+  public Runnable modToggleCallback;
+
   public ThreeOscDevicePanel(int trackIndex, int pluginIndex) {
     this.trackIndex = trackIndex;
     this.pluginIndex = pluginIndex;
@@ -71,6 +74,14 @@ public class ThreeOscDevicePanel extends JPanel {
 
     JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
     btnPanel.setOpaque(false);
+
+    JButton modBtn = new JButton("Mod");
+    modBtn.addActionListener(e -> {
+      if (modToggleCallback != null)
+        modToggleCallback.run();
+    });
+    btnPanel.add(modBtn);
+
     JToggleButton enableBtn = new JToggleButton("On", enabled);
     enableBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     enableBtn.setFocusPainted(false);

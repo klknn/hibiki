@@ -357,6 +357,10 @@ public class PluginPane extends JPanel {
       ((EqDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     } else if (device instanceof CompressorDevicePanel) {
       ((CompressorDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof ThreeOscDevicePanel) {
+      ((ThreeOscDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof SamplerDevicePanel) {
+      ((SamplerDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     }
 
     return wrapper;

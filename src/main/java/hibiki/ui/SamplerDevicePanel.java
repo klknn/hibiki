@@ -40,6 +40,9 @@ public class SamplerDevicePanel extends JPanel {
   private String sampleName = "(no sample)";
   private final WaveformPanel waveformPanel;
 
+  /** Callback invoked when user clicks Mod button; set by PluginPane wrapper. */
+  public Runnable modToggleCallback;
+
   public SamplerDevicePanel(int trackIndex, int pluginIndex) {
     this.trackIndex = trackIndex;
     this.pluginIndex = pluginIndex;
@@ -71,6 +74,13 @@ public class SamplerDevicePanel extends JPanel {
 
     JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
     btnPanel.setOpaque(false);
+
+    JButton modBtn = new JButton("Mod");
+    modBtn.addActionListener(e -> {
+      if (modToggleCallback != null)
+        modToggleCallback.run();
+    });
+    btnPanel.add(modBtn);
 
     JButton loadBtn = new JButton("Load");
     loadBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));

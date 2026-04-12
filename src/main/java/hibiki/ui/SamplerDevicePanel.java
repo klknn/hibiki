@@ -4,8 +4,11 @@ import hibiki.BackendManager;
 import hibiki.pb.commands.*;
 import hibiki.pb.core.EntityRef;
 import java.awt.*;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.dnd.*;
 import java.awt.event.*;
 import java.awt.geom.*;
+import java.io.File;
 import java.util.List;
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -128,17 +131,24 @@ public class SamplerDevicePanel extends JPanel {
     JFileChooser fc = new JFileChooser(".");
     fc.setFileFilter(new FileNameExtensionFilter("WAV Audio", "wav"));
     if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-      String path = fc.getSelectedFile().getAbsolutePath();
-      BackendManager.getInstance().sendRequest(
-          Request.newBuilder()
-              .setPlugin(PluginCmd.newBuilder()
-                  .setAction(PluginCmd.Action.ACTION_LOAD_SAMPLE)
-                  .setTarget(EntityRef.newBuilder()
-                      .setTrackIndex(trackIndex)
-                      .setPluginIndex(pluginIndex))
-                  .setSamplePath(path))
-              .build());
+      sendLoadSample(fc.getSelectedFile().getAbsolutePath());
     }
+  }
+
+  /**
+   * Send ACTION_LOAD_SAMPLE to backend. Used by both file chooser and drop
+   * handler.
+   */
+  void sendLoadSample(String path) {
+    BackendManager.getInstance().sendRequest(
+        Request.newBuilder()
+            .setPlugin(PluginCmd.newBuilder()
+                .setAction(PluginCmd.Action.ACTION_LOAD_SAMPLE)
+                .setTarget(EntityRef.newBuilder()
+                    .setTrackIndex(trackIndex)
+                    .setPluginIndex(pluginIndex))
+                .setSamplePath(path))
+            .build());
   }
 
   /** Called by PluginPane when PluginSampleData notification arrives */
@@ -161,10 +171,12 @@ public class SamplerDevicePanel extends JPanel {
   private class WaveformPanel extends JPanel {
     private int dragging = -1; // 0=start, 1=end
     private static final int HANDLE_W = 6;
+    private final javax.swing.border.Border normalBorder = BorderFactory.createLineBorder(new Color(0x333355));
+    private final javax.swing.border.Border dropBorder = BorderFactory.createLineBorder(new Color(0x55AAFF), 2);
 
     WaveformPanel() {
       setBackground(new Color(0x1A1A2E));
-      setBorder(BorderFactory.createLineBorder(new Color(0x333355)));
+      setBorder(normalBorder);
 
       addMouseListener(new MouseAdapter() {
         @Override public void mousePressed(MouseEvent e) {
@@ -190,6 +202,66 @@ public class SamplerDevicePanel extends JPanel {
           repaint();
         }
       });
+
+      // Drop target for audio files from browser, timeline, and OS file manager
+      if (!java.awt.GraphicsEnvironment.isHeadless()) {
+        new DropTarget(this, new DropTargetAdapter() {
+          @Override
+          public void dragEnter(DropTargetDragEvent dtde) {
+            if (dtde.isDataFlavorSupported(DataFlavor.stringFlavor)
+                || dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+              dtde.acceptDrag(DnDConstants.ACTION_COPY);
+              setBorder(dropBorder);
+            } else {
+              dtde.rejectDrag();
+            }
+          }
+
+          @Override
+          public void dragExit(DropTargetEvent dte) {
+            setBorder(normalBorder);
+          }
+
+          @Override
+          public void drop(DropTargetDropEvent dtde) {
+            setBorder(normalBorder);
+            try {
+              // String flavor: browser drag ("audio:/path") or timeline ("audio:/path")
+              if (dtde.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                String data = (String) dtde.getTransferable()
+                    .getTransferData(DataFlavor.stringFlavor);
+                dtde.dropComplete(true);
+                String[] parts = data.split(":", 2);
+                if (parts.length == 2 && "audio".equals(parts[0])) {
+                  sendLoadSample(parts[1]);
+                }
+                return;
+              }
+              // File list flavor: OS file manager drag
+              if (dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                @SuppressWarnings("unchecked")
+                java.util.List<File> files = (java.util.List<File>) dtde.getTransferable()
+                    .getTransferData(DataFlavor.javaFileListFlavor);
+                dtde.dropComplete(true);
+                for (File f : files) {
+                  String name = f.getName().toLowerCase();
+                  if (name.endsWith(".wav") || name.endsWith(".aiff") || name.endsWith(".flac")) {
+                    sendLoadSample(f.getAbsolutePath());
+                    break;
+                  }
+                }
+                return;
+              }
+              dtde.rejectDrop();
+            } catch (Exception ex) {
+              ex.printStackTrace();
+              dtde.rejectDrop();
+            }
+          }
+        });
+      }
     }
 
     @Override

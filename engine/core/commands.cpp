@@ -14,10 +14,10 @@
 
 #include "engine/audio/midi_input.hpp"
 #include "engine/core/audio_file.hpp"
-#include "engine/core/builtin_sampler.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/core/midi.hpp"
 #include "engine/core/track.hpp"
+#include "engine/instruments/builtin_sampler.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "engine/ipc/tcp.hpp"
 #include "engine/plugin/plugin_scanner.hpp"

@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <iostream>
 
-#include "engine/core/builtin_3xosc.hpp"
-#include "engine/core/builtin_compressor.hpp"
-#include "engine/core/builtin_eq.hpp"
-#include "engine/core/builtin_sampler.hpp"
+#include "engine/effects/builtin_compressor.hpp"
+#include "engine/effects/builtin_eq.hpp"
+#include "engine/instruments/builtin_3xosc.hpp"
+#include "engine/instruments/builtin_sampler.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/commands.pb.h"
 #include "pb/core.pb.h"

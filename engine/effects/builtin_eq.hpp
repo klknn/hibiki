@@ -2,10 +2,12 @@
 
 #include <atomic>
 #include <cmath>
+#include <complex>
 #include <string>
 #include <vector>
 
 #include "engine/plugin/iplugin.hpp"
+#include "pocketfft_hdronly.h"
 
 namespace hibiki {
 
@@ -57,11 +59,12 @@ class BuiltinEq : public IPlugin {
     }
 
     // Accumulate input spectrum (before EQ processing)
-    accumulateSpectrum(outL, outR, num_samples, input_rms_accum_);
+    accumulateToRing(outL, outR, num_samples, input_ring_);
 
     if (!enabled_) {
       // Still accumulate output = input when bypassed
-      accumulateSpectrum(outL, outR, num_samples, output_rms_accum_);
+      accumulateToRing(outL, outR, num_samples, output_ring_);
+      ring_pos_ = (ring_pos_ + num_samples) & (kFftSize - 1);
       spectrum_sample_count_ += num_samples;
       maybeUpdateSpectrum();
       return;
@@ -98,7 +101,8 @@ class BuiltinEq : public IPlugin {
     }
 
     // Accumulate output spectrum (after EQ processing)
-    accumulateSpectrum(outL, outR, num_samples, output_rms_accum_);
+    accumulateToRing(outL, outR, num_samples, output_ring_);
+    ring_pos_ = (ring_pos_ + num_samples) & (kFftSize - 1);
     spectrum_sample_count_ += num_samples;
     maybeUpdateSpectrum();
   }
@@ -369,20 +373,37 @@ class BuiltinEq : public IPlugin {
   }
   static double qToNorm(float q) { return std::log(q / 0.1) / std::log(180.0); }
 
-  // --- Spectrum analysis helpers ---
+  // --- FFT-based spectrum analysis ---
+  static constexpr int kFftSize = 1024;
+  static constexpr int kFftComplex = kFftSize / 2 + 1;  // 513 bins
 
-  // Edges of the 64 log-spaced bins (Hz)
-  float bin_edges_[kSpectrumBins + 1] = {};
-  // Running RMS accumulators per bin
-  double input_rms_accum_[kSpectrumBins] = {};
-  double output_rms_accum_[kSpectrumBins] = {};
+  // Circular buffers for input and output mono samples
+  float input_ring_[kFftSize] = {};
+  float output_ring_[kFftSize] = {};
+  int ring_pos_ = 0;
   int spectrum_sample_count_ = 0;
+
+  // Pre-computed Hann window
+  float hann_window_[kFftSize] = {};
+
+  // Pre-allocated FFT work buffers (avoid audio-thread allocations)
+  double fft_in_[kFftSize] = {};
+  std::complex<double> fft_out_[kFftComplex] = {};
+
+  // Log-spaced bin edges for mapping FFT bins → display bins
+  float bin_edges_[kSpectrumBins + 1] = {};
+
   // Output spectrum (read from notification thread)
   std::atomic<float> spectrum_input_db_[kSpectrumBins];
   std::atomic<float> spectrum_output_db_[kSpectrumBins];
 
   void initSpectrumBins() {
-    // Log-spaced bins from 20 Hz to 20 kHz
+    // Pre-compute Hann window
+    for (int i = 0; i < kFftSize; ++i) {
+      hann_window_[i] =
+          0.5f * (1.0f - std::cos(2.0f * (float)M_PI * i / (kFftSize - 1)));
+    }
+    // Log-spaced bin edges from 20 Hz to 20 kHz
     const double log_min = std::log(20.0);
     const double log_max = std::log(20000.0);
     for (int i = 0; i <= kSpectrumBins; ++i) {
@@ -390,45 +411,69 @@ class BuiltinEq : public IPlugin {
           (float)std::exp(log_min + (log_max - log_min) * i / kSpectrumBins);
     }
     for (int i = 0; i < kSpectrumBins; ++i) {
-      input_rms_accum_[i] = 0;
-      output_rms_accum_[i] = 0;
       spectrum_input_db_[i].store(-100.0f, std::memory_order_relaxed);
       spectrum_output_db_[i].store(-100.0f, std::memory_order_relaxed);
     }
+    ring_pos_ = 0;
     spectrum_sample_count_ = 0;
   }
 
-  // Simple energy-based spectrum estimation:
-  // For each sample, compute instantaneous power and distribute it across
-  // frequency bins based on the energy distribution (approximated by
-  // applying each band's biquad transfer function magnitude to the
-  // total signal power). This is cheaper than a real FFT.
-  void accumulateSpectrum(const float* L, const float* R, int n,
-                          double* rms_accum) {
+  // Write mono samples into a ring buffer without advancing ring_pos_
+  void accumulateToRing(const float* L, const float* R, int n, float* ring) {
+    int pos = ring_pos_;
     for (int i = 0; i < n; ++i) {
-      float mono = (L[i] + R[i]) * 0.5f;
-      float power = mono * mono;
-      // Distribute power evenly across bins (simple broadband estimate)
-      for (int b = 0; b < kSpectrumBins; ++b) {
-        rms_accum[b] += power;
+      ring[pos] = (L[i] + R[i]) * 0.5f;
+      pos = (pos + 1) & (kFftSize - 1);
+    }
+  }
+
+  // Run real FFT on a ring buffer and write dB values into spectrum atomics
+  void computeSpectrum(const float* ring, std::atomic<float>* out_db) {
+    // Copy ring buffer with Hann window into fft_in_, unwrapping from ring_pos_
+    for (int i = 0; i < kFftSize; ++i) {
+      int idx = (ring_pos_ + i) & (kFftSize - 1);
+      fft_in_[i] = (double)ring[idx] * hann_window_[i];
+    }
+
+    // Run pocketfft real-to-complex FFT
+    pocketfft::shape_t shape = {(size_t)kFftSize};
+    pocketfft::stride_t stride_in = {(ptrdiff_t)sizeof(double)};
+    pocketfft::stride_t stride_out = {(ptrdiff_t)sizeof(std::complex<double>)};
+    pocketfft::r2c(shape, stride_in, stride_out, /*axes=*/{0},
+                   pocketfft::FORWARD, fft_in_, fft_out_, 1.0);
+
+    // Map FFT bins to log-spaced display bins
+    double freq_per_bin = sample_rate_ / kFftSize;
+    for (int b = 0; b < kSpectrumBins; ++b) {
+      float f_lo = bin_edges_[b];
+      float f_hi = bin_edges_[b + 1];
+      int k_lo = std::max(1, (int)(f_lo / freq_per_bin));
+      int k_hi = std::min(kFftComplex - 1, (int)(f_hi / freq_per_bin) + 1);
+
+      double sum_mag_sq = 0;
+      int count = 0;
+      for (int k = k_lo; k < k_hi; ++k) {
+        double re = fft_out_[k].real();
+        double im = fft_out_[k].imag();
+        sum_mag_sq += re * re + im * im;
+        count++;
       }
+
+      float db = -100.0f;
+      if (count > 0) {
+        // Normalize: 2/N for one-sided spectrum, average over bins
+        double mag = std::sqrt(sum_mag_sq / count) * (2.0 / kFftSize);
+        if (mag > 1e-10) db = 20.0f * (float)std::log10(mag);
+      }
+      out_db[b].store(db, std::memory_order_relaxed);
     }
   }
 
   void maybeUpdateSpectrum() {
-    // Update every ~2048 samples (~21Hz at 44100)
-    if (spectrum_sample_count_ < 2048) return;
-    double inv_n = 1.0 / spectrum_sample_count_;
-    for (int i = 0; i < kSpectrumBins; ++i) {
-      float in_rms = (float)std::sqrt(input_rms_accum_[i] * inv_n);
-      float out_rms = (float)std::sqrt(output_rms_accum_[i] * inv_n);
-      float in_db = (in_rms > 1e-10f) ? 20.0f * std::log10(in_rms) : -100.0f;
-      float out_db = (out_rms > 1e-10f) ? 20.0f * std::log10(out_rms) : -100.0f;
-      spectrum_input_db_[i].store(in_db, std::memory_order_relaxed);
-      spectrum_output_db_[i].store(out_db, std::memory_order_relaxed);
-      input_rms_accum_[i] = 0;
-      output_rms_accum_[i] = 0;
-    }
+    // Update every kFftSize samples (~23 Hz at 44100)
+    if (spectrum_sample_count_ < kFftSize) return;
+    computeSpectrum(input_ring_, spectrum_input_db_);
+    computeSpectrum(output_ring_, spectrum_output_db_);
     spectrum_sample_count_ = 0;
   }
 };

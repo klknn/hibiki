@@ -54,3 +54,10 @@ http_archive(
     strip_prefix = "VST_SDK/vst3sdk",
     url = "https://download.steinberg.net/sdk_downloads/vst-sdk_3.8.0_build-66_2025-10-20.zip",
 )
+
+http_archive(
+    name = "pocketfft",
+    build_file = "//third_party:pocketfft.BUILD",
+    strip_prefix = "pocketfft-cpp",
+    url = "https://github.com/mreineck/pocketfft/archive/refs/heads/cpp.zip",
+)

@@ -597,6 +597,28 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             }
           }
         });
+
+    // Alt+drag on audio clips → export for cross-panel DnD (e.g. to sampler)
+    java.awt.dnd.DragSource ds = java.awt.dnd.DragSource.getDefaultDragSource();
+    ds.createDefaultDragGestureRecognizer(
+        contentPanel,
+        java.awt.dnd.DnDConstants.ACTION_COPY,
+        dge -> {
+          if (!dge.getTriggerEvent().isAltDown())
+            return;
+          Point p = dge.getDragOrigin();
+          int trackIdx = getTrackIdxAtY(p.y - Theme.getInstance().scale(TIME_RULER_HEIGHT));
+          if (trackIdx < 0 || trackIdx >= tracks.size())
+            return;
+          ClipRect clip = findClipAtPosition(trackIdx, p.x);
+          if (clip == null || clip.path == null || clip.path.isEmpty())
+            return;
+          if (clip.isAutomation)
+            return;
+          dge.startDrag(
+              java.awt.dnd.DragSource.DefaultCopyDrop,
+              new java.awt.datatransfer.StringSelection("audio:" + clip.path));
+        });
   }
 
   void updateContentSize() {
@@ -650,6 +672,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       // Notify PluginPane about track selection change
       if (PluginPane.getInstance() != null) {
         PluginPane.getInstance().setSelectedTrack(trackIdx);
+      }
+      // Update virtual keyboard target track
+      if (TopBar.getInstance() != null) {
+        TopBar.getInstance().getVirtualKeyboard().setTargetTrackIndex(trackIdx);
       }
       repaint();
     }

@@ -9,6 +9,15 @@ import java.awt.*;
 import javax.swing.*;
 
 public class TopBar extends JPanel {
+  private static TopBar instance;
+
+  public static TopBar getInstance() {
+    return instance;
+  }
+
+  public VirtualKeyboard getVirtualKeyboard() {
+    return virtualKeyboard;
+  }
   private JTextField bpmField;
   private JLabel timeSigLabel;
   private JLabel positionLabel;
@@ -41,6 +50,7 @@ public class TopBar extends JPanel {
   }
 
   public TopBar() {
+    instance = this;
     setLayout(new BorderLayout());
     setBackground(Theme.getInstance().BG_DARK);
     setPreferredSize(new Dimension(Integer.MAX_VALUE, Theme.getInstance().scale(40)));

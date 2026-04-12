@@ -11,6 +11,7 @@ cc_library(
 cc_binary(
     name = "hbk-play",
     srcs = ["main.cpp"],
+    copts = ["-fexceptions"],
     linkstatic = True,
     visibility = ["//visibility:public"],
     deps = [

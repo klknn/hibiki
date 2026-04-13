@@ -25,8 +25,15 @@ class SoundDeviceCoreAudio : public SoundDevice {
     std::atomic<size_t> writePtr{0};
     size_t capacity;
 
-    Impl(int rate, int ch) : sampleRate(rate), channels(ch) {
-      capacity = rate * ch;  // 1 second buffer
+    Impl(int rate, int ch, int latency_ms) : sampleRate(rate), channels(ch) {
+      // Use a buffer size that is a multiple of the requested latency.
+      // 3x latency is usually a safe bet for stable audio on macOS.
+      size_t frames_needed = (static_cast<size_t>(rate) * latency_ms) / 1000;
+      capacity = frames_needed * ch * 3;
+      
+      // Ensure a reasonable minimum size (e.g., 2048 samples)
+      if (capacity < 2048) capacity = 2048;
+
       ringBuffer.resize(capacity, 0.0f);
     }
 
@@ -92,9 +99,9 @@ class SoundDeviceCoreAudio : public SoundDevice {
   }
 
  public:
-  SoundDeviceCoreAudio(int rate, int ch, int /*latency_ms*/)
+  SoundDeviceCoreAudio(int rate, int ch, int latency_ms)
       : sample_rate(rate), channels(ch) {
-    impl = std::make_unique<Impl>(rate, ch);
+    impl = std::make_unique<Impl>(rate, ch, latency_ms);
     AudioComponentDescription desc;
     desc.componentType = kAudioUnitType_Output;
     desc.componentSubType = kAudioUnitSubType_DefaultOutput;

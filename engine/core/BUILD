@@ -123,6 +123,7 @@ cc_test(
     deps = [
         ":audio_file",
         "//engine:test_utils",
+        "@abseil-cpp//absl/status:status_matchers",
         "@googletest//:gtest_main",
     ],
 )
@@ -184,6 +185,8 @@ cc_test(
         ":project",
         "//engine:test_utils",
         "//engine/vst3:vst3_host_stub",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/status:status_matchers",
         "@googletest//:gtest_main",
     ],
 )

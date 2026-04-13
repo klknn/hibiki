@@ -2,12 +2,17 @@
 
 #include <gtest/gtest.h>
 
-#include <cmath>
 #include <cstdio>
+#include <fstream>
 
+#include "absl/log/log.h"
+#include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "engine/core/audio_file.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "engine/test_utils.hpp"
+
+using ::absl_testing::IsOk;
 
 namespace hibiki {
 
@@ -56,14 +61,14 @@ TEST_F(ProjectTest, SaveAndLoad) {
   std::string tmp_file = std::tmpnam(nullptr);
 
   // Save
-  ASSERT_TRUE(hibiki::SaveProject(state, tmp_file).ok());
+  ASSERT_THAT(hibiki::SaveProject(state, tmp_file), IsOk());
 
   // Modify state before load
   state.bpm = 140.0;
   state.tracks.clear();
 
   // Load
-  ASSERT_TRUE(hibiki::LoadProject(state, tmp_file).ok());
+  ASSERT_THAT(hibiki::LoadProject(state, tmp_file), IsOk());
 
   EXPECT_DOUBLE_EQ(state.bpm, 120.0);
   auto loaded_track = hibiki::GetOrCreateTrack(state, 0);
@@ -86,13 +91,13 @@ TEST_F(ProjectTest, SaveAndLoadTrackName) {
   std::string tmp_file = std::tmpnam(nullptr);
 
   // Save
-  ASSERT_TRUE(hibiki::SaveProject(state, tmp_file).ok());
+  ASSERT_THAT(hibiki::SaveProject(state, tmp_file), IsOk());
 
   // Modify state before load
   state.tracks.clear();
 
   // Load
-  ASSERT_TRUE(hibiki::LoadProject(state, tmp_file).ok());
+  ASSERT_THAT(hibiki::LoadProject(state, tmp_file), IsOk());
 
   auto loaded_track0 = hibiki::GetOrCreateTrack(state, 0);
   EXPECT_EQ(loaded_track0->name, "Drums");
@@ -127,8 +132,7 @@ TEST_F(ProjectTest, BounceProjectWithDexed) {
   double duration = 0.0;
   auto loaded_status = hibiki::LoadWav(tmp_wav, audio_data, channels, duration);
 
-  EXPECT_TRUE(loaded_status.ok())
-      << "Should load the generated wav file: " << loaded_status.message();
+  EXPECT_THAT(loaded_status, IsOk());
   EXPECT_GT(audio_data.size(), 0) << "Should have written some audio frames";
 
   float max_amp = 0.0f;
@@ -161,13 +165,12 @@ TEST_F(ProjectTest, LoadProjectWithTimelineClips) {
 
   // Save the project
   std::string tmp_file = std::tmpnam(nullptr);
-  ASSERT_TRUE(hibiki::SaveProject(state, tmp_file).ok());
+  ASSERT_THAT(hibiki::SaveProject(state, tmp_file), IsOk());
 
   // Clear state and reload
   state.tracks.clear();
   auto load_result = hibiki::LoadProject(state, tmp_file);
-  ASSERT_TRUE(load_result.ok())
-      << "Failed to load saved project: " << load_result.message();
+  ASSERT_THAT(load_result, IsOk());
 
   // Verify BPM was loaded
   EXPECT_FLOAT_EQ(state.bpm, 140.0f) << "BPM should be 140";
@@ -214,11 +217,11 @@ TEST_F(ProjectTest, SaveAndLoadCorrectProjectStructure) {
 
   // Save the project
   std::string tmp_file = "test_correct_project.hbk";
-  ASSERT_TRUE(hibiki::SaveProject(state, tmp_file).ok());
+  ASSERT_THAT(hibiki::SaveProject(state, tmp_file), IsOk());
 
   // Clear and reload
   state.tracks.clear();
-  ASSERT_TRUE(hibiki::LoadProject(state, tmp_file).ok());
+  ASSERT_THAT(hibiki::LoadProject(state, tmp_file), IsOk());
 
   // Verify structure is correct
   EXPECT_EQ(state.bpm, 120.0);
@@ -234,9 +237,8 @@ TEST_F(ProjectTest, SaveAndLoadCorrectProjectStructure) {
         << "Plugin should be instrument";
     EXPECT_EQ(loaded_track->timeline_clips[0]->clip->type,
               hibiki::Clip::Type::MIDI);
-    std::cerr << "Correct structure: Track 1 has both Dexed plugin and MIDI "
-                 "timeline clip"
-              << std::endl;
+    LOG(INFO) << "Correct structure: Track 1 has both Dexed plugin and MIDI "
+                 "timeline clip";
   }
 
   // Clean up
@@ -271,6 +273,35 @@ TEST_F(ProjectTest, DeletePluginThenLoadNew) {
 
   // Clean up
   state.tracks.clear();
+}
+
+// ── Error case tests ────────────────────────────────────────────────
+
+TEST_F(ProjectTest, LoadProjectFileNotFound) {
+  hibiki::ProjectState state;
+  EXPECT_THAT(hibiki::LoadProject(state, "/nonexistent/path/to/project.hbk"),
+              absl_testing::StatusIs(absl::StatusCode::kNotFound));
+}
+
+TEST_F(ProjectTest, SaveProjectUnwritablePath) {
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  EXPECT_THAT(hibiki::SaveProject(state, "/nonexistent/dir/project.hbk"),
+              absl_testing::StatusIs(absl::StatusCode::kPermissionDenied));
+}
+
+TEST_F(ProjectTest, LoadProjectCorruptedFile) {
+  // Create a file with garbage content
+  std::string tmp = "test_corrupt_project.hbk";
+  {
+    std::ofstream out(tmp, std::ios::binary);
+    out << "THIS_IS_NOT_A_VALID_PROJECT_FILE";
+  }
+  hibiki::ProjectState state;
+  auto status = hibiki::LoadProject(state, tmp);
+  EXPECT_THAT(status, ::testing::Not(IsOk()))
+      << "LoadProject should fail on corrupted file";
+  std::remove(tmp.c_str());
 }
 
 }  // namespace hibiki

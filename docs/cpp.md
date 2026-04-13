@@ -108,3 +108,23 @@ code that links against it. Instead:
 - **LOG(ERROR)** for API call failures (non-zero `tresult`)
 - **Null checks** before every COM interface dereference
 - Plugin crashes in out-of-process workers are isolated by design
+
+## 6. Testing with `absl::Status`
+
+Use `absl/status/status_matchers.h` with gmock matchers for clean status assertions:
+
+```cpp
+#include "absl/status/status_matchers.h"
+
+using ::absl_testing::IsOk;
+
+TEST(MyTest, FunctionReturnsOk) {
+  EXPECT_THAT(LoadWav(path, data, channels, dur), IsOk());
+  ASSERT_THAT(SaveProject(state, file), IsOk());
+}
+```
+
+**BUILD dep:**
+```python
+"@abseil-cpp//absl/status:status_matchers",
+```

@@ -20,10 +20,11 @@
 
 namespace hibiki {
 
-struct DummyMutex {
-  void lock() {}
-  void unlock() {}
-};
+// struct DummyMutex {
+//   void lock() {}
+//   void unlock() {}
+// };
+using DummyMutex = std::mutex;
 
 struct TimelineClip {
   std::unique_ptr<Clip> clip;

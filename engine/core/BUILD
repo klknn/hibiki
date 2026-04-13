@@ -12,6 +12,16 @@ cc_library(
 )
 
 cc_library(
+    name = "fft",
+    srcs = ["fft.cpp"],
+    hdrs = ["fft.hpp"],
+    copts = ["-fexceptions"],
+    deps = [
+        "@pocketfft",
+    ],
+)
+
+cc_library(
     name = "audio_file",
     srcs = ["audio_file.cpp"],
     hdrs = ["audio_file.hpp"],
@@ -233,6 +243,17 @@ cc_test(
         "//engine/ipc:ipc",
         "//engine/vst3:vst3_host",
         "//engine/vst3:vst3_host_stub",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "fft_test",
+    srcs = ["fft_test.cpp"],
+    copts = ["-fexceptions"],
+    linkstatic = True,
+    deps = [
+        ":fft",
         "@googletest//:gtest_main",
     ],
 )

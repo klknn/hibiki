@@ -429,41 +429,45 @@ public class SessionView extends JPanel {
     JButton soloBtn = new JButton("S");
     soloBtn.setFont(Theme.getInstance().FONT_UI_BOLD);
     soloBtn.setFocusPainted(false);
-    soloBtn.setPreferredSize(new Dimension(Theme.getInstance().scale(36), Theme.getInstance().scale(18)));
+    soloBtn.setPreferredSize(
+        new Dimension(Theme.getInstance().scale(36), Theme.getInstance().scale(18)));
     soloBtn.setBackground(new Color(50, 50, 55));
     soloBtn.setForeground(new Color(160, 150, 60));
     soloBtn.setBorder(BorderFactory.createLineBorder(Theme.getInstance().BORDER));
-    soloBtn.addActionListener(e -> {
-      boolean newState = soloBtn.getBackground().getRGB() != new Color(200, 180, 40).getRGB();
-      soloBtn.setBackground(newState ? new Color(200, 180, 40) : new Color(50, 50, 55));
-      soloBtn.setForeground(newState ? Color.BLACK : new Color(160, 150, 60));
-      BackendManager.getInstance().setTrackSolo(trackIdx, newState);
-      if (TimelineView.getInstance() != null
-          && trackIdx < TimelineView.getInstance().tracks.size()) {
-        TimelineView.getInstance().tracks.get(trackIdx).soloed = newState;
-        TimelineView.getInstance().repaint();
-      }
-    });
+    soloBtn.addActionListener(
+        e -> {
+          boolean newState = soloBtn.getBackground().getRGB() != new Color(200, 180, 40).getRGB();
+          soloBtn.setBackground(newState ? new Color(200, 180, 40) : new Color(50, 50, 55));
+          soloBtn.setForeground(newState ? Color.BLACK : new Color(160, 150, 60));
+          BackendManager.getInstance().setTrackSolo(trackIdx, newState);
+          if (TimelineView.getInstance() != null
+              && trackIdx < TimelineView.getInstance().tracks.size()) {
+            TimelineView.getInstance().tracks.get(trackIdx).soloed = newState;
+            TimelineView.getInstance().repaint();
+          }
+        });
     smPanel.add(soloBtn);
 
     JButton muteBtn = new JButton("M");
     muteBtn.setFont(Theme.getInstance().FONT_UI_BOLD);
     muteBtn.setFocusPainted(false);
-    muteBtn.setPreferredSize(new Dimension(Theme.getInstance().scale(36), Theme.getInstance().scale(18)));
+    muteBtn.setPreferredSize(
+        new Dimension(Theme.getInstance().scale(36), Theme.getInstance().scale(18)));
     muteBtn.setBackground(new Color(50, 50, 55));
     muteBtn.setForeground(new Color(160, 60, 60));
     muteBtn.setBorder(BorderFactory.createLineBorder(Theme.getInstance().BORDER));
-    muteBtn.addActionListener(e -> {
-      boolean newState = muteBtn.getBackground().getRGB() != new Color(200, 60, 60).getRGB();
-      muteBtn.setBackground(newState ? new Color(200, 60, 60) : new Color(50, 50, 55));
-      muteBtn.setForeground(newState ? Color.WHITE : new Color(160, 60, 60));
-      BackendManager.getInstance().setTrackMute(trackIdx, newState);
-      if (TimelineView.getInstance() != null
-          && trackIdx < TimelineView.getInstance().tracks.size()) {
-        TimelineView.getInstance().tracks.get(trackIdx).muted = newState;
-        TimelineView.getInstance().repaint();
-      }
-    });
+    muteBtn.addActionListener(
+        e -> {
+          boolean newState = muteBtn.getBackground().getRGB() != new Color(200, 60, 60).getRGB();
+          muteBtn.setBackground(newState ? new Color(200, 60, 60) : new Color(50, 50, 55));
+          muteBtn.setForeground(newState ? Color.WHITE : new Color(160, 60, 60));
+          BackendManager.getInstance().setTrackMute(trackIdx, newState);
+          if (TimelineView.getInstance() != null
+              && trackIdx < TimelineView.getInstance().tracks.size()) {
+            TimelineView.getInstance().tracks.get(trackIdx).muted = newState;
+            TimelineView.getInstance().repaint();
+          }
+        });
     smPanel.add(muteBtn);
     strip.add(Box.createVerticalStrut(Theme.getInstance().scale(3)));
     strip.add(smPanel);

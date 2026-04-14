@@ -254,10 +254,7 @@ public class BackendManager {
 
   /** Request list of available audio input devices */
   public void requestAudioInputs() {
-    sendRequest(
-        Request.newBuilder()
-            .setListAudioInputs(ListAudioInputs.newBuilder())
-            .build());
+    sendRequest(Request.newBuilder().setListAudioInputs(ListAudioInputs.newBuilder()).build());
   }
 
   /** Get the default input device ID set in Settings */
@@ -285,8 +282,7 @@ public class BackendManager {
             .setTrack(
                 TrackCmd.newBuilder()
                     .setAction(TrackCmd.Action.ACTION_SET_MIDI_INPUT)
-                    .setTarget(
-                        hibiki.pb.core.EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setTarget(hibiki.pb.core.EntityRef.newBuilder().setTrackIndex(trackIndex))
                     .setMidiInputDeviceId(midiDeviceId))
             .build());
   }
@@ -409,16 +405,23 @@ public class BackendManager {
   }
 
   /** Add a modulator to a device slot */
-  public void addModulator(int trackIndex, int pluginIndex, int slotIndex,
-      int waveform, float rateHz, float depth, boolean syncToTempo) {
+  public void addModulator(
+      int trackIndex,
+      int pluginIndex,
+      int slotIndex,
+      int waveform,
+      float rateHz,
+      float depth,
+      boolean syncToTempo) {
     sendRequest(
         Request.newBuilder()
             .setModulation(
                 ModulationCmd.newBuilder()
                     .setAction(ModulationCmd.Action.ACTION_ADD)
-                    .setTarget(EntityRef.newBuilder()
-                        .setTrackIndex(trackIndex)
-                        .setPluginIndex(pluginIndex))
+                    .setTarget(
+                        EntityRef.newBuilder()
+                            .setTrackIndex(trackIndex)
+                            .setPluginIndex(pluginIndex))
                     .setSlotIndex(slotIndex)
                     .setWaveform(waveform)
                     .setRateHz(rateHz)
@@ -434,24 +437,32 @@ public class BackendManager {
             .setModulation(
                 ModulationCmd.newBuilder()
                     .setAction(ModulationCmd.Action.ACTION_REMOVE)
-                    .setTarget(EntityRef.newBuilder()
-                        .setTrackIndex(trackIndex)
-                        .setPluginIndex(pluginIndex))
+                    .setTarget(
+                        EntityRef.newBuilder()
+                            .setTrackIndex(trackIndex)
+                            .setPluginIndex(pluginIndex))
                     .setSlotIndex(slotIndex))
             .build());
   }
 
   /** Configure modulator parameters (rate, depth, waveform, sync) */
-  public void configureModulator(int trackIndex, int pluginIndex, int slotIndex,
-      int waveform, float rateHz, float depth, boolean syncToTempo) {
+  public void configureModulator(
+      int trackIndex,
+      int pluginIndex,
+      int slotIndex,
+      int waveform,
+      float rateHz,
+      float depth,
+      boolean syncToTempo) {
     sendRequest(
         Request.newBuilder()
             .setModulation(
                 ModulationCmd.newBuilder()
                     .setAction(ModulationCmd.Action.ACTION_CONFIGURE)
-                    .setTarget(EntityRef.newBuilder()
-                        .setTrackIndex(trackIndex)
-                        .setPluginIndex(pluginIndex))
+                    .setTarget(
+                        EntityRef.newBuilder()
+                            .setTrackIndex(trackIndex)
+                            .setPluginIndex(pluginIndex))
                     .setSlotIndex(slotIndex)
                     .setWaveform(waveform)
                     .setRateHz(rateHz)
@@ -461,16 +472,16 @@ public class BackendManager {
   }
 
   /** Assign a modulator to a target parameter */
-  public void assignModulator(int trackIndex, int pluginIndex, int slotIndex,
-      int targetParamId) {
+  public void assignModulator(int trackIndex, int pluginIndex, int slotIndex, int targetParamId) {
     sendRequest(
         Request.newBuilder()
             .setModulation(
                 ModulationCmd.newBuilder()
                     .setAction(ModulationCmd.Action.ACTION_ASSIGN)
-                    .setTarget(EntityRef.newBuilder()
-                        .setTrackIndex(trackIndex)
-                        .setPluginIndex(pluginIndex))
+                    .setTarget(
+                        EntityRef.newBuilder()
+                            .setTrackIndex(trackIndex)
+                            .setPluginIndex(pluginIndex))
                     .setSlotIndex(slotIndex)
                     .setTargetParamId(targetParamId))
             .build());
@@ -602,9 +613,7 @@ public class BackendManager {
   private String findBinary(String binaryName) {
     // Try simple relative (prefer engine/ first since it's the canonical location)
     if (new File("./engine/" + binaryName).exists()) return "./engine/" + binaryName;
-    if (new File("./" + binaryName).exists())
-      return "./" + binaryName;
-
+    if (new File("./" + binaryName).exists()) return "./" + binaryName;
 
     // Search up for bazel-bin or root
     File dir = new File(".").getAbsoluteFile();
@@ -616,8 +625,7 @@ public class BackendManager {
       File binEngine = new File(dir, "bazel-bin/engine/" + binaryName);
       if (binEngine.exists()) return binEngine.getAbsolutePath();
       File bin = new File(dir, "bazel-bin/" + binaryName);
-      if (bin.exists())
-        return bin.getAbsolutePath();
+      if (bin.exists()) return bin.getAbsolutePath();
 
       // Try in bazel-out
       File outWin = new File(dir, "bazel-out/x64_windows-opt/bin/engine/" + binaryName);

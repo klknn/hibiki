@@ -69,17 +69,17 @@ cc_test(
 
 cc_test(
     name = "worker_channel_test",
-    target_compatible_with = select({
-        # TODO macos support.
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     size = "small",
     srcs = ["worker_channel_test.cc"],
     linkopts = select({
         "@platforms//os:windows": [],
         "@platforms//os:macos": [],
         "//conditions:default": ["-lrt"],
+    }),
+    target_compatible_with = select({
+        # TODO macos support.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
     }),
     deps = [
         ":worker_channel",
@@ -96,4 +96,3 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
-

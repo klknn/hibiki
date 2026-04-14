@@ -59,7 +59,7 @@ public class PluginPane extends JPanel {
     setPreferredSize(new Dimension(0, Theme.getInstance().scale(200)));
 
     deviceChainContent = new JPanel();
-    deviceChainContent.setLayout(new FlowLayout(FlowLayout.LEFT, 5, 5));
+    deviceChainContent.setLayout(new BoxLayout(deviceChainContent, BoxLayout.X_AXIS));
     deviceChainContent.setBackground(Theme.getInstance().BG_DARK);
 
     JScrollPane scrollPane = new JScrollPane(deviceChainContent);
@@ -98,42 +98,44 @@ public class PluginPane extends JPanel {
                         pvc.getValue());
                     break;
                   }
-                case PLUGIN_SPECTRUM: {
-                  var spec = notification.getPluginSpectrum();
-                  handlePluginSpectrum(
-                      spec.getTrackIndex(),
-                      spec.getPluginIndex(),
-                      spec.getInputMagnitudesList(),
-                      spec.getOutputMagnitudesList());
-                  break;
-                }
-                case PLUGIN_METERING: {
-                  var meter = notification.getPluginMetering();
-                  handlePluginMetering(
-                      meter.getTrackIndex(),
-                      meter.getPluginIndex(),
-                      meter.getInputDb(),
-                      meter.getOutputDb(),
-                      meter.getGainReductionDb());
-                  break;
-                }
-                case PLUGIN_SAMPLE_DATA: {
-                  var sd = notification.getPluginSampleData();
-                  handlePluginSampleData(
-                      sd.getTrackIndex(),
-                      sd.getPluginIndex(),
-                      sd.getWaveformList(),
-                      sd.getSampleName());
-                  break;
-                }
-                case MODULATION_INFO: {
-                  var mi = notification.getModulationInfo();
-                  handleModulationInfo(
-                      mi.getTrackIndex(),
-                      mi.getPluginIndex(),
-                      mi.getSlotsList());
-                  break;
-                }
+                case PLUGIN_SPECTRUM:
+                  {
+                    var spec = notification.getPluginSpectrum();
+                    handlePluginSpectrum(
+                        spec.getTrackIndex(),
+                        spec.getPluginIndex(),
+                        spec.getInputMagnitudesList(),
+                        spec.getOutputMagnitudesList());
+                    break;
+                  }
+                case PLUGIN_METERING:
+                  {
+                    var meter = notification.getPluginMetering();
+                    handlePluginMetering(
+                        meter.getTrackIndex(),
+                        meter.getPluginIndex(),
+                        meter.getInputDb(),
+                        meter.getOutputDb(),
+                        meter.getGainReductionDb());
+                    break;
+                  }
+                case PLUGIN_SAMPLE_DATA:
+                  {
+                    var sd = notification.getPluginSampleData();
+                    handlePluginSampleData(
+                        sd.getTrackIndex(),
+                        sd.getPluginIndex(),
+                        sd.getWaveformList(),
+                        sd.getSampleName());
+                    break;
+                  }
+                case MODULATION_INFO:
+                  {
+                    var mi = notification.getModulationInfo();
+                    handleModulationInfo(
+                        mi.getTrackIndex(), mi.getPluginIndex(), mi.getSlotsList());
+                    break;
+                  }
                 default:
                   break;
               }
@@ -180,47 +182,47 @@ public class PluginPane extends JPanel {
   }
 
   /** Handle plugin spectrum data for EQ visualization. */
-  private void handlePluginSpectrum(int trackIdx, int pluginIdx,
-      List<Float> inputMags, List<Float> outputMags) {
-    SwingUtilities.invokeLater(() -> {
-      Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
-      if (builtins == null)
-        return;
-      JPanel bp = builtins.get(pluginIdx);
-      if (bp instanceof EqDevicePanel) {
-        ((EqDevicePanel) bp).setSpectrumData(inputMags, outputMags);
-      }
-    });
+  private void handlePluginSpectrum(
+      int trackIdx, int pluginIdx, List<Float> inputMags, List<Float> outputMags) {
+    SwingUtilities.invokeLater(
+        () -> {
+          Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
+          if (builtins == null) return;
+          JPanel bp = builtins.get(pluginIdx);
+          if (bp instanceof EqDevicePanel) {
+            ((EqDevicePanel) bp).setSpectrumData(inputMags, outputMags);
+          }
+        });
   }
 
   /** Handle plugin metering data for compressor visualization. */
-  private void handlePluginMetering(int trackIdx, int pluginIdx,
-      float inputDb, float outputDb, float gainReductionDb) {
-    SwingUtilities.invokeLater(() -> {
-      Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
-      if (builtins == null)
-        return;
-      JPanel bp = builtins.get(pluginIdx);
-      if (bp instanceof CompressorDevicePanel) {
-        CompressorDevicePanel comp = (CompressorDevicePanel) bp;
-        comp.setInputOutputLevel(inputDb, outputDb);
-        comp.setGainReduction(gainReductionDb);
-      }
-    });
+  private void handlePluginMetering(
+      int trackIdx, int pluginIdx, float inputDb, float outputDb, float gainReductionDb) {
+    SwingUtilities.invokeLater(
+        () -> {
+          Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
+          if (builtins == null) return;
+          JPanel bp = builtins.get(pluginIdx);
+          if (bp instanceof CompressorDevicePanel) {
+            CompressorDevicePanel comp = (CompressorDevicePanel) bp;
+            comp.setInputOutputLevel(inputDb, outputDb);
+            comp.setGainReduction(gainReductionDb);
+          }
+        });
   }
 
   /** Handle sample waveform data for sampler visualization. */
-  private void handlePluginSampleData(int trackIdx, int pluginIdx,
-      List<Float> waveform, String sampleName) {
-    SwingUtilities.invokeLater(() -> {
-      Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
-      if (builtins == null)
-        return;
-      JPanel bp = builtins.get(pluginIdx);
-      if (bp instanceof SamplerDevicePanel) {
-        ((SamplerDevicePanel) bp).updateWaveform(waveform, sampleName);
-      }
-    });
+  private void handlePluginSampleData(
+      int trackIdx, int pluginIdx, List<Float> waveform, String sampleName) {
+    SwingUtilities.invokeLater(
+        () -> {
+          Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
+          if (builtins == null) return;
+          JPanel bp = builtins.get(pluginIdx);
+          if (bp instanceof SamplerDevicePanel) {
+            ((SamplerDevicePanel) bp).updateWaveform(waveform, sampleName);
+          }
+        });
   }
 
   public void updateParams(ParamList paramList) {
@@ -234,10 +236,8 @@ public class PluginPane extends JPanel {
           if (pluginName.isEmpty()) {
             trackDevicePanels.computeIfAbsent(trackIdx, k -> new TreeMap<>()).remove(pIdx);
             Map<Integer, JPanel> bi = builtinPanels.get(trackIdx);
-            if (bi != null)
-              bi.remove(pIdx);
-            if (trackIdx == selectedTrack)
-              rebuildDeviceChain();
+            if (bi != null) bi.remove(pIdx);
+            if (trackIdx == selectedTrack) rebuildDeviceChain();
             return;
           }
 
@@ -247,8 +247,7 @@ public class PluginPane extends JPanel {
             if (!(bi.get(pIdx) instanceof EqDevicePanel)) {
               bi.put(pIdx, new EqDevicePanel(trackIdx, pIdx));
             }
-            if (trackIdx == selectedTrack)
-              rebuildDeviceChain();
+            if (trackIdx == selectedTrack) rebuildDeviceChain();
             return;
           }
           if ("Compressor".equals(pluginName)) {
@@ -256,8 +255,7 @@ public class PluginPane extends JPanel {
             if (!(bi.get(pIdx) instanceof CompressorDevicePanel)) {
               bi.put(pIdx, new CompressorDevicePanel(trackIdx, pIdx));
             }
-            if (trackIdx == selectedTrack)
-              rebuildDeviceChain();
+            if (trackIdx == selectedTrack) rebuildDeviceChain();
             return;
           }
           if ("3xOsc".equals(pluginName)) {
@@ -265,8 +263,7 @@ public class PluginPane extends JPanel {
             if (!(bi.get(pIdx) instanceof ThreeOscDevicePanel)) {
               bi.put(pIdx, new ThreeOscDevicePanel(trackIdx, pIdx));
             }
-            if (trackIdx == selectedTrack)
-              rebuildDeviceChain();
+            if (trackIdx == selectedTrack) rebuildDeviceChain();
             return;
           }
           if ("Sampler".equals(pluginName)) {
@@ -274,13 +271,37 @@ public class PluginPane extends JPanel {
             if (!(bi.get(pIdx) instanceof SamplerDevicePanel)) {
               bi.put(pIdx, new SamplerDevicePanel(trackIdx, pIdx));
             }
-            if (trackIdx == selectedTrack)
-              rebuildDeviceChain();
+            if (trackIdx == selectedTrack) rebuildDeviceChain();
+            return;
+          }
+          if ("Delay".equals(pluginName)) {
+            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
+            if (!(bi.get(pIdx) instanceof DelayDevicePanel)) {
+              bi.put(pIdx, new DelayDevicePanel(trackIdx, pIdx));
+            }
+            if (trackIdx == selectedTrack) rebuildDeviceChain();
+            return;
+          }
+          if ("Reverb".equals(pluginName)) {
+            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
+            if (!(bi.get(pIdx) instanceof ReverbDevicePanel)) {
+              bi.put(pIdx, new ReverbDevicePanel(trackIdx, pIdx));
+            }
+            if (trackIdx == selectedTrack) rebuildDeviceChain();
+            return;
+          }
+          if ("Limiter".equals(pluginName)) {
+            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
+            if (!(bi.get(pIdx) instanceof LimiterDevicePanel)) {
+              bi.put(pIdx, new LimiterDevicePanel(trackIdx, pIdx));
+            }
+            if (trackIdx == selectedTrack) rebuildDeviceChain();
             return;
           }
 
           // Standard VST3 device panel
-          Map<Integer, DevicePanel> devicePanels = trackDevicePanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
+          Map<Integer, DevicePanel> devicePanels =
+              trackDevicePanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
           DevicePanel panel = devicePanels.get(pIdx);
           if (panel == null || !panel.pluginName.equals(pluginName)) {
             panel = new DevicePanel(trackIdx, pIdx, pluginName, paramList.getIsInstrument());
@@ -288,8 +309,7 @@ public class PluginPane extends JPanel {
           }
           panel.setParams(paramList);
 
-          if (trackIdx == selectedTrack)
-            rebuildDeviceChain();
+          if (trackIdx == selectedTrack) rebuildDeviceChain();
         });
   }
 
@@ -304,8 +324,8 @@ public class PluginPane extends JPanel {
   }
 
   /**
-   * Wraps a device panel + a ModulationPanel side-by-side.
-   * The modPanel starts hidden and is toggled by the Mod button.
+   * Wraps a device panel + a ModulationPanel side-by-side. The modPanel starts hidden and is
+   * toggled by the Mod button.
    */
   private static class DeviceWrapper extends JPanel {
     final JPanel device;
@@ -320,9 +340,10 @@ public class PluginPane extends JPanel {
       this.modPanel = new ModulationPanel(trackIndex, pluginIndex);
       modPanel.setVisible(false);
 
-      setLayout(new FlowLayout(FlowLayout.LEFT, 0, 0));
+      setLayout(new BoxLayout(this, BoxLayout.X_AXIS));
       setOpaque(false);
       add(device);
+      add(Box.createHorizontalStrut(5));
       add(modPanel);
     }
 
@@ -333,15 +354,12 @@ public class PluginPane extends JPanel {
     }
   }
 
-  /**
-   * Find the DeviceWrapper for a given track+plugin in the current device chain.
-   */
+  /** Find the DeviceWrapper for a given track+plugin in the current device chain. */
   private DeviceWrapper findWrapper(int trackIndex, int pluginIndex) {
     for (Component c : deviceChainContent.getComponents()) {
       if (c instanceof DeviceWrapper) {
         DeviceWrapper w = (DeviceWrapper) c;
-        if (w.trackIndex == trackIndex && w.pluginIndex == pluginIndex)
-          return w;
+        if (w.trackIndex == trackIndex && w.pluginIndex == pluginIndex) return w;
       }
     }
     return null;
@@ -361,6 +379,12 @@ public class PluginPane extends JPanel {
       ((ThreeOscDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     } else if (device instanceof SamplerDevicePanel) {
       ((SamplerDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof DelayDevicePanel) {
+      ((DelayDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof ReverbDevicePanel) {
+      ((ReverbDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof LimiterDevicePanel) {
+      ((LimiterDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     }
 
     return wrapper;
@@ -372,14 +396,13 @@ public class PluginPane extends JPanel {
     // Get device panels for the selected track
     Map<Integer, DevicePanel> devicePanels =
         trackDevicePanels.getOrDefault(selectedTrack, java.util.Collections.emptyMap());
-    Map<Integer, JPanel> builtins = builtinPanels.getOrDefault(selectedTrack, java.util.Collections.emptyMap());
+    Map<Integer, JPanel> builtins =
+        builtinPanels.getOrDefault(selectedTrack, java.util.Collections.emptyMap());
 
     // Merge all panels by plugin index order
     TreeMap<Integer, JPanel> allPanels = new TreeMap<>();
-    for (var e : devicePanels.entrySet())
-      allPanels.put(e.getKey(), e.getValue());
-    for (var e : builtins.entrySet())
-      allPanels.put(e.getKey(), e.getValue());
+    for (var e : devicePanels.entrySet()) allPanels.put(e.getKey(), e.getValue());
+    for (var e : builtins.entrySet()) allPanels.put(e.getKey(), e.getValue());
 
     // Separate instrument from effects
     JPanel instrument = null;
@@ -435,6 +458,7 @@ public class PluginPane extends JPanel {
       setLayout(new BorderLayout());
       setPreferredSize(
           new Dimension(Theme.getInstance().scale(250), Theme.getInstance().scale(220)));
+      setMaximumSize(new Dimension(Theme.getInstance().scale(250), Short.MAX_VALUE));
       setBackground(Theme.getInstance().BG_MEDIUM);
       setBorder(BorderFactory.createLineBorder(Theme.getInstance().BORDER));
 
@@ -452,10 +476,10 @@ public class PluginPane extends JPanel {
       btnPanel.setOpaque(false);
 
       JButton modBtn = new JButton("Mod");
-      modBtn.addActionListener(e -> {
-        if (modToggleCallback != null)
-          modToggleCallback.run();
-      });
+      modBtn.addActionListener(
+          e -> {
+            if (modToggleCallback != null) modToggleCallback.run();
+          });
       btnPanel.add(modBtn);
 
       JButton editBtn = new JButton("Edit");
@@ -684,13 +708,14 @@ public class PluginPane extends JPanel {
   }
 
   /** Handle modulation info notification: update the wrapper's modPanel */
-  private void handleModulationInfo(int trackIndex, int pluginIndex,
-      java.util.List<ModulationSlotInfo> slots) {
-    SwingUtilities.invokeLater(() -> {
-      DeviceWrapper wrapper = findWrapper(trackIndex, pluginIndex);
-      if (wrapper != null) {
-        wrapper.modPanel.updateFromNotification(slots);
-      }
-    });
+  private void handleModulationInfo(
+      int trackIndex, int pluginIndex, java.util.List<ModulationSlotInfo> slots) {
+    SwingUtilities.invokeLater(
+        () -> {
+          DeviceWrapper wrapper = findWrapper(trackIndex, pluginIndex);
+          if (wrapper != null) {
+            wrapper.modPanel.updateFromNotification(slots);
+          }
+        });
   }
 }

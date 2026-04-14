@@ -10,9 +10,9 @@ import java.util.List;
 import javax.swing.*;
 
 /**
- * Ableton Live-style EQ Eight device panel. Shows an interactive frequency
- * response curve with draggable band handles, shift-drag Q control,
- * double-click to create bands, and real-time FFT spectrum overlay.
+ * Ableton Live-style EQ Eight device panel. Shows an interactive frequency response curve with
+ * draggable band handles, shift-drag Q control, double-click to create bands, and real-time FFT
+ * spectrum overlay.
  */
 public class EqDevicePanel extends JPanel {
   private static final int NUM_BANDS = 8;
@@ -26,15 +26,15 @@ public class EqDevicePanel extends JPanel {
   private static final int TYPE_HIGH_SHELF = 4;
   private static final int TYPE_BELL = 5;
 
-  private static final String[] TYPE_NAMES = { "Off", "LP", "HP", "LS", "HS", "Bell" };
+  private static final String[] TYPE_NAMES = {"Off", "LP", "HP", "LS", "HS", "Bell"};
   // Normalized values for each type (matching C++ thresholds)
-  private static final double[] TYPE_NORM = { 0.0, 0.2, 0.4, 0.6, 0.8, 1.0 };
+  private static final double[] TYPE_NORM = {0.0, 0.2, 0.4, 0.6, 0.8, 1.0};
 
   // Band colors (Ableton-style rainbow)
   private static final Color[] BAND_COLORS = {
-      new Color(0xE04040), new Color(0xE07020), new Color(0xD0C020),
-      new Color(0x40B040), new Color(0x30A0A0), new Color(0x4080E0),
-      new Color(0x8060D0), new Color(0xC050A0),
+    new Color(0xE04040), new Color(0xE07020), new Color(0xD0C020),
+    new Color(0x40B040), new Color(0x30A0A0), new Color(0x4080E0),
+    new Color(0x8060D0), new Color(0xC050A0),
   };
 
   private final int trackIndex;
@@ -59,7 +59,7 @@ public class EqDevicePanel extends JPanel {
     this.pluginIndex = pluginIndex;
 
     // Initialize default params
-    double[] defaultFreqs = { 30, 80, 250, 700, 2000, 5000, 10000, 16000 };
+    double[] defaultFreqs = {30, 80, 250, 700, 2000, 5000, 10000, 16000};
     for (int b = 0; b < NUM_BANDS; b++) {
       params[b] = 0.0; // OFF
       params[b + NUM_BANDS] = freqToNorm(defaultFreqs[b]);
@@ -71,6 +71,7 @@ public class EqDevicePanel extends JPanel {
     setLayout(new BorderLayout());
     Theme theme = Theme.getInstance();
     setPreferredSize(new Dimension(theme.scale(360), theme.scale(230)));
+    setMaximumSize(new Dimension(theme.scale(360), Short.MAX_VALUE));
     setBackground(theme.BG_MEDIUM);
     setBorder(BorderFactory.createLineBorder(theme.BORDER));
 
@@ -91,20 +92,21 @@ public class EqDevicePanel extends JPanel {
     btnPanel.setOpaque(false);
 
     JButton modBtn = new JButton("Mod");
-    modBtn.addActionListener(e -> {
-      if (modToggleCallback != null)
-        modToggleCallback.run();
-    });
+    modBtn.addActionListener(
+        e -> {
+          if (modToggleCallback != null) modToggleCallback.run();
+        });
     btnPanel.add(modBtn);
 
     JToggleButton enableBtn = new JToggleButton("On", enabled);
     enableBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     enableBtn.setFocusPainted(false);
-    enableBtn.addActionListener(e -> {
-      enabled = enableBtn.isSelected();
-      sendParam(NUM_BANDS * PARAMS_PER_BAND, enabled ? 1.0 : 0.0);
-      curvePanel.repaint();
-    });
+    enableBtn.addActionListener(
+        e -> {
+          enabled = enableBtn.isSelected();
+          sendParam(NUM_BANDS * PARAMS_PER_BAND, enabled ? 1.0 : 0.0);
+          curvePanel.repaint();
+        });
     btnPanel.add(enableBtn);
 
     JButton delBtn = new JButton("\u274C");
@@ -139,14 +141,14 @@ public class EqDevicePanel extends JPanel {
       JComboBox<String> typeBox = new JComboBox<>(TYPE_NAMES);
       typeBox.setFont(theme.FONT_UI.deriveFont(theme.scale(9.5f)));
       typeBox.setSelectedIndex(0);
-      typeBox.addActionListener(e -> {
-        if (updatingFromBackend)
-          return;
-        int sel = typeBox.getSelectedIndex();
-        params[band] = TYPE_NORM[sel];
-        sendParam(band, TYPE_NORM[sel]);
-        curvePanel.repaint();
-      });
+      typeBox.addActionListener(
+          e -> {
+            if (updatingFromBackend) return;
+            int sel = typeBox.getSelectedIndex();
+            params[band] = TYPE_NORM[sel];
+            sendParam(band, TYPE_NORM[sel]);
+            curvePanel.repaint();
+          });
       typeDropdowns[b] = typeBox;
       topRow.add(typeBox);
       bp.add(topRow, BorderLayout.NORTH);
@@ -164,8 +166,7 @@ public class EqDevicePanel extends JPanel {
 
   /** Update a parameter from backend notification. */
   public void updateParam(int paramId, float value) {
-    if (paramId < 0 || paramId >= params.length)
-      return;
+    if (paramId < 0 || paramId >= params.length) return;
     updatingFromBackend = true;
     params[paramId] = value;
 
@@ -186,28 +187,21 @@ public class EqDevicePanel extends JPanel {
   public void setSpectrumData(List<Float> inputMags, List<Float> outputMags) {
     if (inputMags != null && !inputMags.isEmpty()) {
       spectrumInputDb = new float[inputMags.size()];
-      for (int i = 0; i < inputMags.size(); i++)
-        spectrumInputDb[i] = inputMags.get(i);
+      for (int i = 0; i < inputMags.size(); i++) spectrumInputDb[i] = inputMags.get(i);
     }
     if (outputMags != null && !outputMags.isEmpty()) {
       spectrumOutputDb = new float[outputMags.size()];
-      for (int i = 0; i < outputMags.size(); i++)
-        spectrumOutputDb[i] = outputMags.get(i);
+      for (int i = 0; i < outputMags.size(); i++) spectrumOutputDb[i] = outputMags.get(i);
     }
     curvePanel.repaint();
   }
 
   private int normToTypeIndex(double norm) {
-    if (norm < 0.1)
-      return 0;
-    if (norm < 0.3)
-      return 1;
-    if (norm < 0.5)
-      return 2;
-    if (norm < 0.7)
-      return 3;
-    if (norm < 0.9)
-      return 4;
+    if (norm < 0.1) return 0;
+    if (norm < 0.3) return 1;
+    if (norm < 0.5) return 2;
+    if (norm < 0.7) return 3;
+    if (norm < 0.9) return 4;
     return 5;
   }
 
@@ -238,13 +232,13 @@ public class EqDevicePanel extends JPanel {
       // Grid lines
       g2.setColor(new Color(255, 255, 255, 20));
       g2.setStroke(new BasicStroke(0.5f));
-      for (float freq : new float[] { 100, 1000, 10000 }) {
+      for (float freq : new float[] {100, 1000, 10000}) {
         int x = freqToX(freq, w);
         g2.drawLine(x, 0, x, h);
       }
       int y0 = dbToY(0, h);
       g2.drawLine(0, y0, w, y0);
-      for (float db : new float[] { -12, 12 }) {
+      for (float db : new float[] {-12, 12}) {
         int y = dbToY(db, h);
         g2.setColor(new Color(255, 255, 255, 12));
         g2.drawLine(0, y, w, y);
@@ -270,8 +264,7 @@ public class EqDevicePanel extends JPanel {
 
       // Per-band curves (subtle)
       for (int b = 0; b < NUM_BANDS; b++) {
-        if (normToTypeIndex(params[b]) == 0)
-          continue;
+        if (normToTypeIndex(params[b]) == 0) continue;
         Color bc = BAND_COLORS[b];
         g2.setColor(new Color(bc.getRed(), bc.getGreen(), bc.getBlue(), 40));
         g2.setStroke(new BasicStroke(1.0f));
@@ -286,10 +279,8 @@ public class EqDevicePanel extends JPanel {
         float freq = xToFreq(px, w);
         float db = getCompositeMagnitudeDb(freq);
         int y = dbToY(db, h);
-        if (px == 0)
-          path.moveTo(px, y);
-        else
-          path.lineTo(px, y);
+        if (px == 0) path.moveTo(px, y);
+        else path.lineTo(px, y);
       }
       g2.draw(path);
 
@@ -303,8 +294,7 @@ public class EqDevicePanel extends JPanel {
 
       // Band handle dots
       for (int b = 0; b < NUM_BANDS; b++) {
-        if (normToTypeIndex(params[b]) == 0)
-          continue;
+        if (normToTypeIndex(params[b]) == 0) continue;
         float freq = normToFreq(params[b + NUM_BANDS]);
         float gain = (float) (params[b + NUM_BANDS * 2] - 0.5) * 48;
         int bx = freqToX(freq, w);
@@ -329,8 +319,7 @@ public class EqDevicePanel extends JPanel {
     private void drawSpectrumOverlay(Graphics2D g2, int w, int h) {
       float[] inDb = spectrumInputDb;
       float[] outDb = spectrumOutputDb;
-      if (inDb == null && outDb == null)
-        return;
+      if (inDb == null && outDb == null) return;
 
       int numBins = 64;
       // Log-spaced bin center frequencies
@@ -339,18 +328,24 @@ public class EqDevicePanel extends JPanel {
 
       // Input spectrum (blue)
       if (inDb != null && inDb.length >= numBins) {
-        drawSpectrumCurve(g2, inDb, numBins, logMin, logMax, w, h,
-            new Color(0x4080E0, true), 50);
+        drawSpectrumCurve(g2, inDb, numBins, logMin, logMax, w, h, new Color(0x4080E0, true), 50);
       }
       // Output spectrum (yellow-orange)
       if (outDb != null && outDb.length >= numBins) {
-        drawSpectrumCurve(g2, outDb, numBins, logMin, logMax, w, h,
-            new Color(0xE0C040, true), 60);
+        drawSpectrumCurve(g2, outDb, numBins, logMin, logMax, w, h, new Color(0xE0C040, true), 60);
       }
     }
 
-    private void drawSpectrumCurve(Graphics2D g2, float[] bins, int numBins,
-        double logMin, double logMax, int w, int h, Color color, int alpha) {
+    private void drawSpectrumCurve(
+        Graphics2D g2,
+        float[] bins,
+        int numBins,
+        double logMin,
+        double logMax,
+        int w,
+        int h,
+        Color color,
+        int alpha) {
       GeneralPath path = new GeneralPath();
       boolean first = true;
       for (int i = 0; i < numBins; i++) {
@@ -364,8 +359,7 @@ public class EqDevicePanel extends JPanel {
         if (first) {
           path.moveTo(x, y);
           first = false;
-        } else
-          path.lineTo(x, y);
+        } else path.lineTo(x, y);
       }
 
       // Fill under curve
@@ -388,10 +382,8 @@ public class EqDevicePanel extends JPanel {
         float freq = xToFreq(px, w);
         float db = getBandMagnitudeDb(band, freq);
         int y = dbToY(db, h);
-        if (px == 0)
-          path.moveTo(px, y);
-        else
-          path.lineTo(px, y);
+        if (px == 0) path.moveTo(px, y);
+        else path.lineTo(px, y);
       }
       g2.draw(path);
     }
@@ -404,8 +396,7 @@ public class EqDevicePanel extends JPanel {
       dragBand = -1;
       shiftDrag = false;
       for (int b = 0; b < NUM_BANDS; b++) {
-        if (normToTypeIndex(params[b]) == 0)
-          continue;
+        if (normToTypeIndex(params[b]) == 0) continue;
         float freq = normToFreq(params[b + NUM_BANDS]);
         float gain = (float) (params[b + NUM_BANDS * 2] - 0.5) * 48;
         int bx = freqToX(freq, w);
@@ -424,8 +415,7 @@ public class EqDevicePanel extends JPanel {
 
     @Override
     public void mouseDragged(MouseEvent e) {
-      if (dragBand < 0)
-        return;
+      if (dragBand < 0) return;
       int w = getWidth(), h = getHeight();
 
       if (shiftDrag) {
@@ -476,8 +466,7 @@ public class EqDevicePanel extends JPanel {
             break;
           }
         }
-        if (offBand < 0)
-          return; // all bands active
+        if (offBand < 0) return; // all bands active
 
         // Set to Bell type at clicked position
         double freqNorm = freqToNorm(freq);
@@ -506,16 +495,13 @@ public class EqDevicePanel extends JPanel {
     }
 
     @Override
-    public void mouseEntered(MouseEvent e) {
-    }
+    public void mouseEntered(MouseEvent e) {}
 
     @Override
-    public void mouseExited(MouseEvent e) {
-    }
+    public void mouseExited(MouseEvent e) {}
 
     @Override
-    public void mouseMoved(MouseEvent e) {
-    }
+    public void mouseMoved(MouseEvent e) {}
 
     // ─── Coordinate transforms ─────────────────────────────────────
 
@@ -550,8 +536,7 @@ public class EqDevicePanel extends JPanel {
 
   private float getBandMagnitudeDb(int band, float freq) {
     int typeIdx = normToTypeIndex(params[band]);
-    if (typeIdx == TYPE_OFF)
-      return 0;
+    if (typeIdx == TYPE_OFF) return 0;
 
     float bFreq = normToFreq(params[band + NUM_BANDS]);
     float bGain = (float) (params[band + NUM_BANDS * 2] - 0.5) * 48;
@@ -582,26 +567,28 @@ public class EqDevicePanel extends JPanel {
         a1 = -2 * cosW0;
         a2 = 1 - alpha;
         break;
-      case TYPE_LOW_SHELF: {
-        double sqA = Math.sqrt(A), tsa = 2 * sqA * alpha;
-        b0 = A * ((A + 1) - (A - 1) * cosW0 + tsa);
-        b1 = 2 * A * ((A - 1) - (A + 1) * cosW0);
-        b2 = A * ((A + 1) - (A - 1) * cosW0 - tsa);
-        a0 = (A + 1) + (A - 1) * cosW0 + tsa;
-        a1 = -2 * ((A - 1) + (A + 1) * cosW0);
-        a2 = (A + 1) + (A - 1) * cosW0 - tsa;
-        break;
-      }
-      case TYPE_HIGH_SHELF: {
-        double sqA = Math.sqrt(A), tsa = 2 * sqA * alpha;
-        b0 = A * ((A + 1) + (A - 1) * cosW0 + tsa);
-        b1 = -2 * A * ((A - 1) + (A + 1) * cosW0);
-        b2 = A * ((A + 1) + (A - 1) * cosW0 - tsa);
-        a0 = (A + 1) - (A - 1) * cosW0 + tsa;
-        a1 = 2 * ((A - 1) - (A + 1) * cosW0);
-        a2 = (A + 1) - (A - 1) * cosW0 - tsa;
-        break;
-      }
+      case TYPE_LOW_SHELF:
+        {
+          double sqA = Math.sqrt(A), tsa = 2 * sqA * alpha;
+          b0 = A * ((A + 1) - (A - 1) * cosW0 + tsa);
+          b1 = 2 * A * ((A - 1) - (A + 1) * cosW0);
+          b2 = A * ((A + 1) - (A - 1) * cosW0 - tsa);
+          a0 = (A + 1) + (A - 1) * cosW0 + tsa;
+          a1 = -2 * ((A - 1) + (A + 1) * cosW0);
+          a2 = (A + 1) + (A - 1) * cosW0 - tsa;
+          break;
+        }
+      case TYPE_HIGH_SHELF:
+        {
+          double sqA = Math.sqrt(A), tsa = 2 * sqA * alpha;
+          b0 = A * ((A + 1) + (A - 1) * cosW0 + tsa);
+          b1 = -2 * A * ((A - 1) + (A + 1) * cosW0);
+          b2 = A * ((A + 1) + (A - 1) * cosW0 - tsa);
+          a0 = (A + 1) - (A - 1) * cosW0 + tsa;
+          a1 = 2 * ((A - 1) - (A + 1) * cosW0);
+          a2 = (A + 1) - (A - 1) * cosW0 - tsa;
+          break;
+        }
       default: // BELL
         b0 = 1 + alpha * A;
         b1 = -2 * cosW0;
@@ -644,34 +631,39 @@ public class EqDevicePanel extends JPanel {
   }
 
   private static String formatFreq(double freq) {
-    if (freq >= 1000)
-      return String.format("%.1fk", freq / 1000);
+    if (freq >= 1000) return String.format("%.1fk", freq / 1000);
     return String.format("%.0f", freq);
   }
 
   // ─── Backend communication ──────────────────────────────────────
 
   private void sendParam(int paramId, double value) {
-    BackendManager.getInstance().sendRequest(
-        Request.newBuilder()
-            .setPlugin(PluginCmd.newBuilder()
-                .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-                .setTarget(EntityRef.newBuilder()
-                    .setTrackIndex(trackIndex)
-                    .setPluginIndex(pluginIndex))
-                .setParamId(paramId)
-                .setParamValue((float) value))
-            .build());
+    BackendManager.getInstance()
+        .sendRequest(
+            Request.newBuilder()
+                .setPlugin(
+                    PluginCmd.newBuilder()
+                        .setAction(PluginCmd.Action.ACTION_SET_PARAM)
+                        .setTarget(
+                            EntityRef.newBuilder()
+                                .setTrackIndex(trackIndex)
+                                .setPluginIndex(pluginIndex))
+                        .setParamId(paramId)
+                        .setParamValue((float) value))
+                .build());
   }
 
   private void sendRemove() {
-    BackendManager.getInstance().sendRequest(
-        Request.newBuilder()
-            .setPlugin(PluginCmd.newBuilder()
-                .setAction(PluginCmd.Action.ACTION_REMOVE)
-                .setTarget(EntityRef.newBuilder()
-                    .setTrackIndex(trackIndex)
-                    .setPluginIndex(pluginIndex)))
-            .build());
+    BackendManager.getInstance()
+        .sendRequest(
+            Request.newBuilder()
+                .setPlugin(
+                    PluginCmd.newBuilder()
+                        .setAction(PluginCmd.Action.ACTION_REMOVE)
+                        .setTarget(
+                            EntityRef.newBuilder()
+                                .setTrackIndex(trackIndex)
+                                .setPluginIndex(pluginIndex)))
+                .build());
   }
 }

@@ -167,7 +167,8 @@ class TimelineNotificationHandler {
   }
 
   /** Cached audio input device list for dialogs */
-  static java.util.List<hibiki.pb.notifications.AudioInputDevice> cachedInputDevices = new java.util.ArrayList<>();
+  static java.util.List<hibiki.pb.notifications.AudioInputDevice> cachedInputDevices =
+      new java.util.ArrayList<>();
 
   private void handleAudioInputList(Notification n) {
     var list = n.getAudioInputList();
@@ -178,7 +179,8 @@ class TimelineNotificationHandler {
   }
 
   /** Cached MIDI input device list for dropdowns */
-  static java.util.List<hibiki.pb.notifications.MidiInputDevice> cachedMidiDevices = new java.util.ArrayList<>();
+  static java.util.List<hibiki.pb.notifications.MidiInputDevice> cachedMidiDevices =
+      new java.util.ArrayList<>();
 
   private void handleMidiInputList(Notification n) {
     var list = n.getMidiInputList();

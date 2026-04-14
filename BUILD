@@ -12,8 +12,6 @@ pom_file(
     target = "//:hibiki-gui-java",
 )
 
-
-
 java_library(
     name = "hibiki-gui-lib",
     srcs = glob(
@@ -124,17 +122,17 @@ java_test(
 
 java_test(
     name = "plugin_worker_test",
-    target_compatible_with = select({
-        # TODO macos support.
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     srcs = ["src/test/java/hibiki/PluginWorkerTest.java"],
     data = [
         "//engine:hbk-play",
         "//engine:hbk-plugin-worker",
         "//testdata",
     ],
+    target_compatible_with = select({
+        # TODO macos support.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     test_class = "hibiki.PluginWorkerTest",
     deps = [
         ":hibiki-gui-lib",

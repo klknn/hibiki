@@ -88,7 +88,7 @@ message Clip {
   repeated MidiEvent midi_events = 8;   // Present when type=MIDI (lazy-loaded)
   repeated float waveform_summary = 9;  // Downsampled peaks for display
   repeated AutomationPoint automation_points =
-      10;  // Present when type=AUTOMATION
+      10;                       // Present when type=AUTOMATION
   float trim_start_beats = 11;  // Head-trim offset into clip content
 }
 
@@ -113,13 +113,14 @@ message Track {
   repeated SessionSlot session_slots = 4;
   repeated TimelineClip timeline_clips = 5;
   repeated AutomationLane automation_lanes = 6;
-  float peak_l = 7;  // Live meter: left channel peak [0.0, 1.0]
-  float peak_r = 8;  // Live meter: right channel peak [0.0, 1.0]
-  bool record_armed = 9;          // Track is armed for recording
-  string input_device_id = 10;    // Selected audio input device ID
-  uint32 input_channel_start = 11; // 0-based start channel on the input device
-  bool input_stereo = 12;          // true = stereo (ch, ch+1), false = mono
-  string midi_input_device_id = 13; // Selected MIDI input device ID ("__global__" = all)
+  float peak_l = 7;                 // Live meter: left channel peak [0.0, 1.0]
+  float peak_r = 8;                 // Live meter: right channel peak [0.0, 1.0]
+  bool record_armed = 9;            // Track is armed for recording
+  string input_device_id = 10;      // Selected audio input device ID
+  uint32 input_channel_start = 11;  // 0-based start channel on the input device
+  bool input_stereo = 12;           // true = stereo (ch, ch+1), false = mono
+  string midi_input_device_id =
+      13;  // Selected MIDI input device ID ("__global__" = all)
 }
 
 // Transport state enum. Prefer enum over bool `is_playing`

@@ -88,22 +88,23 @@ public class ReplPanel extends JPanel {
               try {
                 // Bootstrap Clojure runtime
                 Class.forName("clojure.lang.RT");
-
-                // require clojure.main so read-string and eval are available
-                Object requireFn = clojureVar("clojure.core", "require");
-                clojureInvoke(requireFn, clojureRead("'clojure.main"));
+                // TODO: fix this raising an exception.
+                // // require clojure.main so read-string and eval are available
+                // Object requireFn = clojureVar("clojure.core", "require");
+                // clojureInvoke(requireFn, clojureRead("'clojure.main"));
 
                 // Auto-import DAW classes
                 String importExpr =
                     "(do "
                         + "(import '[hibiki BackendManager]"
-                        + "        '[hibiki.ui SessionView TimelineView PluginPane Theme MainView]"
-                        + "        '[hibiki.pb.commands Request]"
-                        + "        '[hibiki.pb.notifications Notification])"
+                        + " '[hibiki.ui SessionView TimelineView PluginPane Theme MainView]"
+                        + " '[hibiki.pb.commands Request]"
+                        + " '[hibiki.pb.notifications Notification])"
+                        + "(require '[hibiki.echo.prelude :as hbk])"
                         + "(def bm (hibiki.BackendManager/getInstance)))";
                 clojureEval(importExpr);
-                appendOutput("Ready. `bm` and all protobuf classes are available.\n");
-                appendOutput("Try: (+ 1 2)\n\n");
+                appendOutput("Ready. `bm`, `hbk/*`, and all protobuf classes are available.\n");
+                appendOutput("Try: (hbk/theme! :solarized-dark)\n\n");
               } catch (Throwable t) {
                 appendOutput("Auto-import warning: " + t.getMessage() + "\n\n");
               }

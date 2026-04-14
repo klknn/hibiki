@@ -8,9 +8,8 @@ import java.awt.event.*;
 import javax.swing.*;
 
 /**
- * FL Studio 3xOSC-style synthesizer panel.
- * 3 oscillators (sin/saw/square/tri) with coarse/fine tune, volume, pan.
- * Global gain ADSR + filter (LP/HP/BP) with ADSR modulation.
+ * FL Studio 3xOSC-style synthesizer panel. 3 oscillators (sin/saw/square/tri) with coarse/fine
+ * tune, volume, pan. Global gain ADSR + filter (LP/HP/BP) with ADSR modulation.
  */
 public class ThreeOscDevicePanel extends JPanel {
   private static final int NUM_OSC = 3;
@@ -42,14 +41,16 @@ public class ThreeOscDevicePanel extends JPanel {
     this.pluginIndex = pluginIndex;
 
     // Set defaults
-    params[3] = 1.0;   // osc1 vol
-    params[4] = 0.5;   // osc1 pan center
-    params[1] = 0.5;   // osc1 coarse center
-    params[2] = 0.5;   // osc1 fine center
-    params[6] = 0.5;   params[7] = 0.5;  // osc2 coarse/fine
-    params[9] = 0.5;   // osc2 pan
-    params[11] = 0.5;  params[12] = 0.5; // osc3 coarse/fine
-    params[14] = 0.5;  // osc3 pan
+    params[3] = 1.0; // osc1 vol
+    params[4] = 0.5; // osc1 pan center
+    params[1] = 0.5; // osc1 coarse center
+    params[2] = 0.5; // osc1 fine center
+    params[6] = 0.5;
+    params[7] = 0.5; // osc2 coarse/fine
+    params[9] = 0.5; // osc2 pan
+    params[11] = 0.5;
+    params[12] = 0.5; // osc3 coarse/fine
+    params[14] = 0.5; // osc3 pan
     params[P_GAIN_S] = 0.7;
     params[P_GAIN_R] = 0.3;
     params[P_FILT_CUT] = 1.0;
@@ -60,6 +61,7 @@ public class ThreeOscDevicePanel extends JPanel {
     setLayout(new BorderLayout());
     Theme theme = Theme.getInstance();
     setPreferredSize(new Dimension(theme.scale(440), theme.scale(340)));
+    setMaximumSize(new Dimension(theme.scale(440), Short.MAX_VALUE));
     setBackground(theme.BG_MEDIUM);
     setBorder(BorderFactory.createLineBorder(theme.BORDER));
 
@@ -76,19 +78,20 @@ public class ThreeOscDevicePanel extends JPanel {
     btnPanel.setOpaque(false);
 
     JButton modBtn = new JButton("Mod");
-    modBtn.addActionListener(e -> {
-      if (modToggleCallback != null)
-        modToggleCallback.run();
-    });
+    modBtn.addActionListener(
+        e -> {
+          if (modToggleCallback != null) modToggleCallback.run();
+        });
     btnPanel.add(modBtn);
 
     JToggleButton enableBtn = new JToggleButton("On", enabled);
     enableBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     enableBtn.setFocusPainted(false);
-    enableBtn.addActionListener(e -> {
-      enabled = enableBtn.isSelected();
-      sendParam(P_ENABLE, enabled ? 1.0 : 0.0);
-    });
+    enableBtn.addActionListener(
+        e -> {
+          enabled = enableBtn.isSelected();
+          sendParam(P_ENABLE, enabled ? 1.0 : 0.0);
+        });
     btnPanel.add(enableBtn);
     header.add(btnPanel, BorderLayout.EAST);
     add(header, BorderLayout.NORTH);
@@ -128,9 +131,10 @@ public class ThreeOscDevicePanel extends JPanel {
     int base = osc * PARAMS_PER_OSC;
     JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(4), theme.scale(2)));
     row.setBackground(theme.BG_DARK);
-    row.setBorder(BorderFactory.createCompoundBorder(
-        BorderFactory.createMatteBorder(0, theme.scale(3), 0, 0, color),
-        BorderFactory.createEmptyBorder(2, 6, 2, 6)));
+    row.setBorder(
+        BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, theme.scale(3), 0, 0, color),
+            BorderFactory.createEmptyBorder(2, 6, 2, 6)));
 
     // Label
     JLabel l = new JLabel(label);
@@ -152,10 +156,11 @@ public class ThreeOscDevicePanel extends JPanel {
       if (w == 0 && osc == 0) btn.setSelected(true);
       final int waveIdx = w;
       final int paramBase = base;
-      btn.addActionListener(e -> {
-        params[paramBase] = WAVE_NORMS[waveIdx];
-        sendParam(paramBase, WAVE_NORMS[waveIdx]);
-      });
+      btn.addActionListener(
+          e -> {
+            params[paramBase] = WAVE_NORMS[waveIdx];
+            sendParam(paramBase, WAVE_NORMS[waveIdx]);
+          });
       bg.add(btn);
       wavePanel.add(btn);
     }
@@ -173,9 +178,10 @@ public class ThreeOscDevicePanel extends JPanel {
   private JPanel createAdsrSection(String title, int aParam, Theme theme) {
     JPanel p = new JPanel(new BorderLayout());
     p.setBackground(theme.BG_DARK);
-    p.setBorder(BorderFactory.createCompoundBorder(
-        BorderFactory.createLineBorder(theme.BORDER),
-        BorderFactory.createEmptyBorder(3, 6, 3, 6)));
+    p.setBorder(
+        BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(theme.BORDER),
+            BorderFactory.createEmptyBorder(3, 6, 3, 6)));
 
     JLabel lbl = new JLabel(title);
     lbl.setForeground(new Color(0xBBBBBB));
@@ -196,9 +202,10 @@ public class ThreeOscDevicePanel extends JPanel {
   private JPanel createFilterSection(Theme theme) {
     JPanel p = new JPanel(new BorderLayout());
     p.setBackground(theme.BG_DARK);
-    p.setBorder(BorderFactory.createCompoundBorder(
-        BorderFactory.createLineBorder(theme.BORDER),
-        BorderFactory.createEmptyBorder(3, 6, 3, 6)));
+    p.setBorder(
+        BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(theme.BORDER),
+            BorderFactory.createEmptyBorder(3, 6, 3, 6)));
 
     JLabel lbl = new JLabel("FILTER");
     lbl.setForeground(new Color(0xBBBBBB));
@@ -212,13 +219,14 @@ public class ThreeOscDevicePanel extends JPanel {
     JComboBox<String> typeCombo = new JComboBox<>(FILT_NAMES);
     typeCombo.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     typeCombo.setPreferredSize(new Dimension(theme.scale(42), theme.scale(20)));
-    typeCombo.addActionListener(e -> {
-      int sel = typeCombo.getSelectedIndex();
-      if (sel >= 0 && sel < FILT_NORMS.length) {
-        params[P_FILT_TYPE] = FILT_NORMS[sel];
-        sendParam(P_FILT_TYPE, FILT_NORMS[sel]);
-      }
-    });
+    typeCombo.addActionListener(
+        e -> {
+          int sel = typeCombo.getSelectedIndex();
+          if (sel >= 0 && sel < FILT_NORMS.length) {
+            params[P_FILT_TYPE] = FILT_NORMS[sel];
+            sendParam(P_FILT_TYPE, FILT_NORMS[sel]);
+          }
+        });
     row1.add(typeCombo);
     row1.add(createKnob("Cut", P_FILT_CUT, 1.0, theme));
     row1.add(createKnob("Res", P_FILT_RES, 0.0, theme));
@@ -267,16 +275,19 @@ public class ThreeOscDevicePanel extends JPanel {
   }
 
   private void sendParam(int paramId, double value) {
-    BackendManager.getInstance().sendRequest(
-        Request.newBuilder()
-            .setPlugin(PluginCmd.newBuilder()
-                .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-                .setTarget(EntityRef.newBuilder()
-                    .setTrackIndex(trackIndex)
-                    .setPluginIndex(pluginIndex))
-                .setParamId(paramId)
-                .setParamValue((float) value))
-            .build());
+    BackendManager.getInstance()
+        .sendRequest(
+            Request.newBuilder()
+                .setPlugin(
+                    PluginCmd.newBuilder()
+                        .setAction(PluginCmd.Action.ACTION_SET_PARAM)
+                        .setTarget(
+                            EntityRef.newBuilder()
+                                .setTrackIndex(trackIndex)
+                                .setPluginIndex(pluginIndex))
+                        .setParamId(paramId)
+                        .setParamValue((float) value))
+                .build());
   }
 
   // ── Mini arc-knob ─────────────────────────────────────────
@@ -292,19 +303,25 @@ public class ThreeOscDevicePanel extends JPanel {
       setPreferredSize(new Dimension(30, 30));
       setCursor(Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR));
 
-      addMouseListener(new MouseAdapter() {
-        @Override public void mousePressed(MouseEvent e) { dragStartY = e.getY(); }
-      });
-      addMouseMotionListener(new MouseMotionAdapter() {
-        @Override public void mouseDragged(MouseEvent e) {
-          int dy = dragStartY - e.getY();
-          dragStartY = e.getY();
-          value = Math.max(0.0, Math.min(1.0, value + dy * 0.005));
-          params[paramId] = value;
-          sendParam(paramId, value);
-          repaint();
-        }
-      });
+      addMouseListener(
+          new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+              dragStartY = e.getY();
+            }
+          });
+      addMouseMotionListener(
+          new MouseMotionAdapter() {
+            @Override
+            public void mouseDragged(MouseEvent e) {
+              int dy = dragStartY - e.getY();
+              dragStartY = e.getY();
+              value = Math.max(0.0, Math.min(1.0, value + dy * 0.005));
+              params[paramId] = value;
+              sendParam(paramId, value);
+              repaint();
+            }
+          });
     }
 
     @Override
@@ -328,7 +345,7 @@ public class ThreeOscDevicePanel extends JPanel {
 
       // Center dot
       g2.setColor(new Color(0xDDDDDD));
-      double angle = Math.toRadians(225 + 270 * value);
+      double angle = Math.toRadians(225 - 270 * value);
       int cx = x + size / 2 + (int) ((size / 2 - 2) * Math.cos(angle));
       int cy = y + size / 2 - (int) ((size / 2 - 2) * Math.sin(angle));
       g2.fillOval(cx - 2, cy - 2, 4, 4);

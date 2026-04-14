@@ -5,9 +5,7 @@ import javax.swing.*;
 import javax.swing.Timer;
 
 public class SettingsDialog extends JDialog {
-  private static final String[] HOST_MODES = {
-      "In-Process", "Out-of-Process (Sandbox)"
-  };
+  private static final String[] HOST_MODES = {"In-Process", "Out-of-Process (Sandbox)"};
 
   public SettingsDialog(Frame owner) {
     super(owner, "Settings", true);
@@ -68,11 +66,13 @@ public class SettingsDialog extends JDialog {
     gbc.gridx = 0;
     gbc.gridy = row;
     gbc.gridwidth = 2;
-    JLabel desc = new JLabel("<html><small>"
-        + "Lower values = less latency but more glitches.<br>"
-        + "Higher values = more stable but more latency.<br>"
-        + "Recommended: 50ms (local), 200ms+ (remote plugins)"
-        + "</small></html>");
+    JLabel desc =
+        new JLabel(
+            "<html><small>"
+                + "Lower values = less latency but more glitches.<br>"
+                + "Higher values = more stable but more latency.<br>"
+                + "Recommended: 50ms (local), 200ms+ (remote plugins)"
+                + "</small></html>");
     desc.setFont(Theme.getInstance().FONT_UI.deriveFont(11.0f));
     p.add(desc, gbc);
     gbc.gridwidth = 1;
@@ -82,17 +82,18 @@ public class SettingsDialog extends JDialog {
     gbc.gridx = 1;
     gbc.gridy = row;
     JButton applyBtn = new JButton("Apply");
-    applyBtn.addActionListener(e -> {
-      int ms = (Integer) bufferSpinner.getValue();
-      hibiki.pb.commands.Request request = hibiki.pb.commands.Request.newBuilder()
-          .setSetAudioBufferSize(
-              hibiki.pb.commands.SetAudioBufferSize.newBuilder()
-                  .setBufferSizeMs(ms))
-          .build();
-      hibiki.BackendManager.getInstance().sendRequest(request);
-      JOptionPane.showMessageDialog(this,
-          "Audio buffer set to " + ms + " ms.\nRestart the app to apply.");
-    });
+    applyBtn.addActionListener(
+        e -> {
+          int ms = (Integer) bufferSpinner.getValue();
+          hibiki.pb.commands.Request request =
+              hibiki.pb.commands.Request.newBuilder()
+                  .setSetAudioBufferSize(
+                      hibiki.pb.commands.SetAudioBufferSize.newBuilder().setBufferSizeMs(ms))
+                  .build();
+          hibiki.BackendManager.getInstance().sendRequest(request);
+          JOptionPane.showMessageDialog(
+              this, "Audio buffer set to " + ms + " ms.\nRestart the app to apply.");
+        });
     p.add(applyBtn, gbc);
 
     // ── Audio Input Device ──
@@ -114,7 +115,8 @@ public class SettingsDialog extends JDialog {
     inputCombo.setPrototypeDisplayValue("ALSA Input Device Name (16 ch)");
 
     // Populate from cache
-    java.util.List<hibiki.pb.notifications.AudioInputDevice> devices = TimelineNotificationHandler.cachedInputDevices;
+    java.util.List<hibiki.pb.notifications.AudioInputDevice> devices =
+        TimelineNotificationHandler.cachedInputDevices;
     String currentDefault = hibiki.BackendManager.getInstance().getDefaultInputDeviceId();
     int selectedIdx = -1;
     for (int i = 0; i < devices.size(); i++) {
@@ -134,16 +136,19 @@ public class SettingsDialog extends JDialog {
     p.add(inputCombo, gbc);
 
     // Auto-refresh after backend responds (request was sent in constructor)
-    Timer autoRefresh = new Timer(500, ev -> {
-      var freshDevs = TimelineNotificationHandler.cachedInputDevices;
-      if (!freshDevs.isEmpty()) {
-        inputCombo.removeAllItems();
-        for (int i = 0; i < freshDevs.size(); i++) {
-          var d = freshDevs.get(i);
-          inputCombo.addItem(d.getName() + " (" + d.getChannelCount() + " ch)");
-        }
-      }
-    });
+    Timer autoRefresh =
+        new Timer(
+            500,
+            ev -> {
+              var freshDevs = TimelineNotificationHandler.cachedInputDevices;
+              if (!freshDevs.isEmpty()) {
+                inputCombo.removeAllItems();
+                for (int i = 0; i < freshDevs.size(); i++) {
+                  var d = freshDevs.get(i);
+                  inputCombo.addItem(d.getName() + " (" + d.getChannelCount() + " ch)");
+                }
+              }
+            });
     autoRefresh.setRepeats(false);
     autoRefresh.start();
 
@@ -152,36 +157,41 @@ public class SettingsDialog extends JDialog {
     gbc.gridy = row;
     JPanel inputBtnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
     JButton refreshBtn = new JButton("Refresh");
-    refreshBtn.addActionListener(e -> {
-      hibiki.BackendManager.getInstance().requestAudioInputs();
-      // Re-populate after a short delay to let the notification arrive
-      Timer timer = new Timer(500, ev -> {
-        inputCombo.removeAllItems();
-        var devs = TimelineNotificationHandler.cachedInputDevices;
-        for (int i = 0; i < devs.size(); i++) {
-          var d = devs.get(i);
-          inputCombo.addItem(d.getName() + " (" + d.getChannelCount() + " ch)");
-        }
-        if (devs.isEmpty()) {
-          inputCombo.addItem("(no devices found)");
-        }
-      });
-      timer.setRepeats(false);
-      timer.start();
-    });
+    refreshBtn.addActionListener(
+        e -> {
+          hibiki.BackendManager.getInstance().requestAudioInputs();
+          // Re-populate after a short delay to let the notification arrive
+          Timer timer =
+              new Timer(
+                  500,
+                  ev -> {
+                    inputCombo.removeAllItems();
+                    var devs = TimelineNotificationHandler.cachedInputDevices;
+                    for (int i = 0; i < devs.size(); i++) {
+                      var d = devs.get(i);
+                      inputCombo.addItem(d.getName() + " (" + d.getChannelCount() + " ch)");
+                    }
+                    if (devs.isEmpty()) {
+                      inputCombo.addItem("(no devices found)");
+                    }
+                  });
+          timer.setRepeats(false);
+          timer.start();
+        });
     inputBtnPanel.add(refreshBtn);
 
     JButton selectBtn = new JButton("Set Default");
-    selectBtn.addActionListener(e -> {
-      int idx = inputCombo.getSelectedIndex();
-      var devs = TimelineNotificationHandler.cachedInputDevices;
-      if (idx >= 0 && idx < devs.size()) {
-        String devId = devs.get(idx).getId();
-        hibiki.BackendManager.getInstance().setDefaultInputDeviceId(devId);
-        JOptionPane.showMessageDialog(this,
-            "Default input device set to: " + devs.get(idx).getName());
-      }
-    });
+    selectBtn.addActionListener(
+        e -> {
+          int idx = inputCombo.getSelectedIndex();
+          var devs = TimelineNotificationHandler.cachedInputDevices;
+          if (idx >= 0 && idx < devs.size()) {
+            String devId = devs.get(idx).getId();
+            hibiki.BackendManager.getInstance().setDefaultInputDeviceId(devId);
+            JOptionPane.showMessageDialog(
+                this, "Default input device set to: " + devs.get(idx).getName());
+          }
+        });
     inputBtnPanel.add(selectBtn);
     p.add(inputBtnPanel, gbc);
 
@@ -207,7 +217,9 @@ public class SettingsDialog extends JDialog {
     gbc.gridwidth = 2;
     JComboBox<String> modeCombo = new JComboBox<>(HOST_MODES);
     // Pre-select from backend config
-    if (pcfg != null && pcfg.getPluginHostMode() == hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX) {
+    if (pcfg != null
+        && pcfg.getPluginHostMode()
+            == hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX) {
       modeCombo.setSelectedIndex(1);
     }
     p.add(modeCombo, gbc);
@@ -246,33 +258,35 @@ public class SettingsDialog extends JDialog {
     gbc.gridy = row;
     JPanel hostBtnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
     JButton addBtn = new JButton("+");
-    addBtn.addActionListener(e -> {
-      String host = JOptionPane.showInputDialog(this, "Enter host:port", "localhost:9100");
-      if (host != null && !host.isEmpty()) {
-        hostListModel.addElement(host);
-      }
-    });
+    addBtn.addActionListener(
+        e -> {
+          String host = JOptionPane.showInputDialog(this, "Enter host:port", "localhost:9100");
+          if (host != null && !host.isEmpty()) {
+            hostListModel.addElement(host);
+          }
+        });
     JButton removeBtn = new JButton("−");
-    removeBtn.addActionListener(e -> {
-      int sel = hostList.getSelectedIndex();
-      if (sel >= 0)
-        hostListModel.remove(sel);
-    });
+    removeBtn.addActionListener(
+        e -> {
+          int sel = hostList.getSelectedIndex();
+          if (sel >= 0) hostListModel.remove(sel);
+        });
     hostBtnPanel.add(addBtn);
     hostBtnPanel.add(removeBtn);
     p.add(hostBtnPanel, gbc);
-
 
     // Description
     row++;
     gbc.gridx = 0;
     gbc.gridy = row;
     gbc.gridwidth = 3;
-    JLabel desc = new JLabel("<html><small>"
-        + "In-Process: plugins run in the audio engine (lowest latency)<br>"
-        + "Sandbox: isolated process per plugin (crash protection)<br>"
-        + "Remote hosts: plugins from other machines via TCP (always available)"
-        + "</small></html>");
+    JLabel desc =
+        new JLabel(
+            "<html><small>"
+                + "In-Process: plugins run in the audio engine (lowest latency)<br>"
+                + "Sandbox: isolated process per plugin (crash protection)<br>"
+                + "Remote hosts: plugins from other machines via TCP (always available)"
+                + "</small></html>");
     desc.setFont(Theme.getInstance().FONT_UI.deriveFont(11.0f));
     p.add(desc, gbc);
     gbc.gridwidth = 1;
@@ -283,46 +297,48 @@ public class SettingsDialog extends JDialog {
     gbc.gridy = row;
     JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
     JButton applyBtn = new JButton("Apply");
-    applyBtn.addActionListener(e -> {
-      int idx = modeCombo.getSelectedIndex();
-      hibiki.pb.commands.PluginHostMode mode;
-      switch (idx) {
-        case 1:
-          mode = hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX;
-          break;
-        default:
-          mode = hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_IN_PROCESS;
-          break;
-      }
+    applyBtn.addActionListener(
+        e -> {
+          int idx = modeCombo.getSelectedIndex();
+          hibiki.pb.commands.PluginHostMode mode;
+          switch (idx) {
+            case 1:
+              mode = hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX;
+              break;
+            default:
+              mode = hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_IN_PROCESS;
+              break;
+          }
 
-      // Always send remote hosts alongside the local mode
-      hibiki.pb.commands.SetPluginHostMode.Builder builder = hibiki.pb.commands.SetPluginHostMode.newBuilder()
-          .setMode(mode);
-      for (int i = 0; i < hostListModel.size(); i++) {
-        builder.addRemoteHosts(hostListModel.get(i));
-      }
+          // Always send remote hosts alongside the local mode
+          hibiki.pb.commands.SetPluginHostMode.Builder builder =
+              hibiki.pb.commands.SetPluginHostMode.newBuilder().setMode(mode);
+          for (int i = 0; i < hostListModel.size(); i++) {
+            builder.addRemoteHosts(hostListModel.get(i));
+          }
 
-      hibiki.pb.commands.Request request = hibiki.pb.commands.Request.newBuilder()
-          .setSetPluginHostMode(builder.build())
-          .build();
-      hibiki.BackendManager.getInstance().sendRequest(request);
+          hibiki.pb.commands.Request request =
+              hibiki.pb.commands.Request.newBuilder().setSetPluginHostMode(builder.build()).build();
+          hibiki.BackendManager.getInstance().sendRequest(request);
 
-      JOptionPane.showMessageDialog(this,
-          "Plugin hosting mode set to: " + HOST_MODES[idx]);
-    });
+          JOptionPane.showMessageDialog(this, "Plugin hosting mode set to: " + HOST_MODES[idx]);
+        });
     actionPanel.add(applyBtn);
 
     JButton scanBtn = new JButton("Scan Remote");
-    scanBtn.addActionListener(e -> {
-      hibiki.pb.commands.ScanRemotePlugins.Builder scanBuilder = hibiki.pb.commands.ScanRemotePlugins.newBuilder();
-      for (int i = 0; i < hostListModel.size(); i++) {
-        scanBuilder.addRemoteHosts(hostListModel.get(i));
-      }
-      hibiki.pb.commands.Request request = hibiki.pb.commands.Request.newBuilder()
-          .setScanRemotePlugins(scanBuilder.build())
-          .build();
-      hibiki.BackendManager.getInstance().sendRequest(request);
-    });
+    scanBtn.addActionListener(
+        e -> {
+          hibiki.pb.commands.ScanRemotePlugins.Builder scanBuilder =
+              hibiki.pb.commands.ScanRemotePlugins.newBuilder();
+          for (int i = 0; i < hostListModel.size(); i++) {
+            scanBuilder.addRemoteHosts(hostListModel.get(i));
+          }
+          hibiki.pb.commands.Request request =
+              hibiki.pb.commands.Request.newBuilder()
+                  .setScanRemotePlugins(scanBuilder.build())
+                  .build();
+          hibiki.BackendManager.getInstance().sendRequest(request);
+        });
     actionPanel.add(scanBtn);
     p.add(actionPanel, gbc);
 

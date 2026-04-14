@@ -202,9 +202,8 @@ public class BrowserPane extends JPanel {
       DefaultMutableTreeNode hostNode = new DefaultMutableTreeNode("\uD83D\uDCE1 " + host);
       for (PluginMetadata meta : entry.getValue()) {
         // Use the real .vst3 bundle path from the remote daemon, fall back to host
-        File bundleFile = (meta.path != null && !meta.path.isEmpty())
-            ? new File(meta.path)
-            : new File(host);
+        File bundleFile =
+            (meta.path != null && !meta.path.isEmpty()) ? new File(meta.path) : new File(host);
         hostNode.add(
             new DefaultMutableTreeNode(
                 new FileItem(bundleFile, "remote-vst", meta.name, meta.vendor, meta.index, host)));
@@ -266,6 +265,15 @@ public class BrowserPane extends JPanel {
     FileItem samplerItem = new FileItem(new File("builtin"), "builtin", "Sampler", "Hibiki", 0);
     samplerItem.rawPath = "builtin://sampler";
     builtinNode.add(new DefaultMutableTreeNode(samplerItem));
+    FileItem delayItem = new FileItem(new File("builtin"), "builtin", "Delay", "Hibiki", 0);
+    delayItem.rawPath = "builtin://delay";
+    builtinNode.add(new DefaultMutableTreeNode(delayItem));
+    FileItem reverbItem = new FileItem(new File("builtin"), "builtin", "Reverb", "Hibiki", 0);
+    reverbItem.rawPath = "builtin://reverb";
+    builtinNode.add(new DefaultMutableTreeNode(reverbItem));
+    FileItem limiterItem = new FileItem(new File("builtin"), "builtin", "Limiter", "Hibiki", 0);
+    limiterItem.rawPath = "builtin://limiter";
+    builtinNode.add(new DefaultMutableTreeNode(limiterItem));
     root.add(builtinNode);
 
     root.add(pluginsNode);
@@ -333,15 +341,12 @@ public class BrowserPane extends JPanel {
   }
 
   private void requestPluginsInBundles(java.util.List<String> paths) {
-    if (paths.isEmpty())
-      return;
-    PluginCmd.Builder cmd = PluginCmd.newBuilder()
-        .setAction(PluginCmd.Action.ACTION_LIST);
+    if (paths.isEmpty()) return;
+    PluginCmd.Builder cmd = PluginCmd.newBuilder().setAction(PluginCmd.Action.ACTION_LIST);
     for (String p : paths) {
       cmd.addPaths(p);
     }
-    BackendManager.getInstance()
-        .sendRequest(Request.newBuilder().setPlugin(cmd).build());
+    BackendManager.getInstance().sendRequest(Request.newBuilder().setPlugin(cmd).build());
   }
 
   private void scanDirectory(
@@ -413,21 +418,15 @@ public class BrowserPane extends JPanel {
   private void sendLoadPlugin(String path, int pluginIndex, String remoteHost) {
     int trackIndex =
         SessionView.getInstance() != null ? SessionView.getInstance().getSelectedTrack() : 0;
-    PluginCmd.Builder pluginCmd = PluginCmd.newBuilder()
-        .setAction(PluginCmd.Action.ACTION_LOAD)
-        .setTarget(
-            EntityRef.newBuilder()
-                .setTrackIndex(trackIndex)
-                .setPluginIndex(pluginIndex))
-        .setPath(path);
+    PluginCmd.Builder pluginCmd =
+        PluginCmd.newBuilder()
+            .setAction(PluginCmd.Action.ACTION_LOAD)
+            .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex).setPluginIndex(pluginIndex))
+            .setPath(path);
     if (remoteHost != null && !remoteHost.isEmpty()) {
       pluginCmd.setRemoteHost(remoteHost);
     }
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(pluginCmd)
-                .build());
+    BackendManager.getInstance().sendRequest(Request.newBuilder().setPlugin(pluginCmd).build());
   }
 
   private void sendLoadClip(String path, boolean isLoop) {
@@ -462,7 +461,13 @@ public class BrowserPane extends JPanel {
       this(file, type, displayName, vendor, pluginIndex, "");
     }
 
-    public FileItem(File file, String type, String displayName, String vendor, int pluginIndex, String remoteHost) {
+    public FileItem(
+        File file,
+        String type,
+        String displayName,
+        String vendor,
+        int pluginIndex,
+        String remoteHost) {
       this.file = file;
       this.type = type;
       this.displayName = displayName;

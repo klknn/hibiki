@@ -51,8 +51,7 @@ class TimelineRenderer {
       g2.setColor(Theme.getInstance().TEXT_BRIGHT);
       g2.setFont(Theme.getInstance().FONT_UI_BOLD);
       String displayName = track.getDisplayName();
-      if (displayName.length() > 14)
-        displayName = displayName.substring(0, 13) + "…";
+      if (displayName.length() > 14) displayName = displayName.substring(0, 13) + "…";
       g2.drawString(displayName, 5, y + 14);
 
       // Row 2: Plugin name
@@ -61,8 +60,7 @@ class TimelineRenderer {
         g2.setColor(
             track.isInstrument ? Theme.getInstance().ACCENT_ORANGE : Theme.getInstance().TEXT_DIM);
         String pname = track.pluginName;
-        if (pname.length() > 14)
-          pname = pname.substring(0, 13) + "…";
+        if (pname.length() > 14) pname = pname.substring(0, 13) + "…";
         g2.drawString(pname, 5, y + 27);
       } else {
         g2.setColor(Theme.getInstance().TEXT_DIM);
@@ -95,8 +93,8 @@ class TimelineRenderer {
       // Dropdown arrow ▼
       g2.setColor(Theme.getInstance().TEXT_DIM);
       int ax = gap + inputW - 12;
-      int[] xPts = { ax, ax + 8, ax + 4 };
-      int[] yPts = { row3Y + 7, row3Y + 7, row3Y + 12 };
+      int[] xPts = {ax, ax + 8, ax + 4};
+      int[] yPts = {row3Y + 7, row3Y + 7, row3Y + 12};
       g2.fillPolygon(xPts, yPts, 3);
 
       // ── MIDI/AUD toggle button ──
@@ -163,7 +161,9 @@ class TimelineRenderer {
       int volSweep = (int) (volNorm * 270);
       if (volSweep > 0) {
         g2.setColor(new Color(80, 180, 80));
-        g2.setStroke(new java.awt.BasicStroke(2.5f, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+        g2.setStroke(
+            new java.awt.BasicStroke(
+                2.5f, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
         g2.drawArc(volX + 2, row4Y + 2, knobD - 4, knobD - 4, 225, -volSweep);
         g2.setStroke(new java.awt.BasicStroke(1.0f));
       }
@@ -175,8 +175,10 @@ class TimelineRenderer {
       // dB label
       g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(7.5f)));
       g2.setColor(new Color(140, 140, 140));
-      String volStr = track.volume <= 0.001f ? "-∞"
-          : (volDb >= 0 ? String.format("+%.1f", volDb) : String.format("%.1f", volDb));
+      String volStr =
+          track.volume <= 0.001f
+              ? "-∞"
+              : (volDb >= 0 ? String.format("+%.1f", volDb) : String.format("%.1f", volDb));
       g2.drawString(volStr, volX + knobD + 2, row4Y + 13);
 
       // ── PAN knob ──
@@ -192,7 +194,9 @@ class TimelineRenderer {
       int panSweep = (int) (panNorm * 270);
       if (panSweep > 0) {
         g2.setColor(new Color(80, 140, 220));
-        g2.setStroke(new java.awt.BasicStroke(2.5f, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+        g2.setStroke(
+            new java.awt.BasicStroke(
+                2.5f, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
         g2.drawArc(panX + 2, row4Y + 2, knobD - 4, knobD - 4, 225, -panSweep);
         g2.setStroke(new java.awt.BasicStroke(1.0f));
       }
@@ -204,8 +208,12 @@ class TimelineRenderer {
       // Label
       g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(7.5f)));
       g2.setColor(new Color(140, 140, 140));
-      String panStr = track.pan == 0 ? "C"
-          : (track.pan < 0 ? String.format("L%.0f", -track.pan * 100) : String.format("R%.0f", track.pan * 100));
+      String panStr =
+          track.pan == 0
+              ? "C"
+              : (track.pan < 0
+                  ? String.format("L%.0f", -track.pan * 100)
+                  : String.format("R%.0f", track.pan * 100));
       g2.drawString(panStr, panX + knobD + 2, row4Y + 13);
 
       // ── S (Solo) and M (Mute) buttons on Row 4, after PAN ──
@@ -270,14 +278,18 @@ class TimelineRenderer {
       int fillL = (int) (peakL * meterH);
       if (fillL > 0) {
         g2.setColor(
-            peakL > 0.9f ? new Color(220, 50, 50) : peakL > 0.7f ? new Color(220, 180, 50) : new Color(50, 200, 80));
+            peakL > 0.9f
+                ? new Color(220, 50, 50)
+                : peakL > 0.7f ? new Color(220, 180, 50) : new Color(50, 200, 80));
         g2.fillRect(meterX, meterY + meterH - fillL, meterW, fillL);
       }
       // Right meter fill
       int fillR = (int) (peakR * meterH);
       if (fillR > 0) {
         g2.setColor(
-            peakR > 0.9f ? new Color(220, 50, 50) : peakR > 0.7f ? new Color(220, 180, 50) : new Color(50, 200, 80));
+            peakR > 0.9f
+                ? new Color(220, 50, 50)
+                : peakR > 0.7f ? new Color(220, 180, 50) : new Color(50, 200, 80));
         g2.fillRect(meterX + meterW + 1, meterY + meterH - fillR, meterW, fillR);
       }
 
@@ -388,15 +400,14 @@ class TimelineRenderer {
           g2,
           ghostY,
           ghostBaseTrack,
-              scaleLabelWidth,
+          scaleLabelWidth,
           pps,
           dragOriginalStartTime,
           draggingClip.duration);
     }
 
     // Draw clips
-    drawClips(
-        g2, tracks, scaleTimeRuler, scaleLabelWidth, pps, isDragging, draggingClip);
+    drawClips(g2, tracks, scaleTimeRuler, scaleLabelWidth, pps, isDragging, draggingClip);
 
     // Draw automation curves (when expanded)
     for (int i = 0; i < tracks.size(); i++) {
@@ -429,7 +440,7 @@ class TimelineRenderer {
           scaleLabelWidth,
           pps,
           targetBaseH,
-              0.8f,
+          0.8f,
           Theme.getInstance().ACCENT_BLUE.brighter());
     }
 
@@ -701,8 +712,7 @@ class TimelineRenderer {
       // Map pixel position to content position, accounting for trim offset
       float contentPx = px + trimOffsetPx;
       int wfIdx = (int) (contentPx / contentW * clip.waveform.length);
-      if (wfIdx < 0 || wfIdx >= clip.waveform.length)
-        continue; // padding = silence
+      if (wfIdx < 0 || wfIdx >= clip.waveform.length) continue; // padding = silence
       float amp = clip.waveform[wfIdx];
       int barH = (int) (amp * halfH);
       g2.drawLine(x + px, midY - barH, x + px, midY + barH);

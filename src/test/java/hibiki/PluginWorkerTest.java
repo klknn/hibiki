@@ -32,8 +32,7 @@ public class PluginWorkerTest {
     // Send quit to cleanly stop backend
     backend.sendRequest(
         Request.newBuilder()
-            .setProject(
-                ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_QUIT))
+            .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_QUIT))
             .build());
   }
 
@@ -46,8 +45,7 @@ public class PluginWorkerTest {
     backend.sendRequest(
         Request.newBuilder()
             .setSetPluginHostMode(
-                SetPluginHostMode.newBuilder()
-                    .setMode(PluginHostMode.PLUGIN_HOST_IN_PROCESS))
+                SetPluginHostMode.newBuilder().setMode(PluginHostMode.PLUGIN_HOST_IN_PROCESS))
             .build());
 
     Acknowledge ack = ackFuture.get(5, TimeUnit.SECONDS);
@@ -61,8 +59,7 @@ public class PluginWorkerTest {
     sendAndWaitAck(
         Request.newBuilder()
             .setSetPluginHostMode(
-                SetPluginHostMode.newBuilder()
-                    .setMode(PluginHostMode.PLUGIN_HOST_IN_PROCESS))
+                SetPluginHostMode.newBuilder().setMode(PluginHostMode.PLUGIN_HOST_IN_PROCESS))
             .build(),
         "SET_PLUGIN_HOST_MODE");
 
@@ -95,8 +92,7 @@ public class PluginWorkerTest {
       assertNotNull("Should receive ParamList for in-process plugin", params);
       assertTrue("Should have parameters", params.getParamsCount() > 0);
       assertEquals("Track index should match", 0, params.getTrackIndex());
-      System.out.println(
-          "In-process: loaded with " + params.getParamsCount() + " parameters");
+      System.out.println("In-process: loaded with " + params.getParamsCount() + " parameters");
     } catch (TimeoutException e) {
       fail("Timed out waiting for in-process plugin load");
     }
@@ -111,8 +107,7 @@ public class PluginWorkerTest {
     backend.sendRequest(
         Request.newBuilder()
             .setSetPluginHostMode(
-                SetPluginHostMode.newBuilder()
-                    .setMode(PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX))
+                SetPluginHostMode.newBuilder().setMode(PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX))
             .build());
 
     Acknowledge ack = ackFuture.get(5, TimeUnit.SECONDS);
@@ -126,8 +121,7 @@ public class PluginWorkerTest {
     sendAndWaitAck(
         Request.newBuilder()
             .setSetPluginHostMode(
-                SetPluginHostMode.newBuilder()
-                    .setMode(PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX))
+                SetPluginHostMode.newBuilder().setMode(PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX))
             .build(),
         "SET_PLUGIN_HOST_MODE");
 
@@ -323,8 +317,7 @@ public class PluginWorkerTest {
     sendAndWaitAck(
         Request.newBuilder()
             .setSetPluginHostMode(
-                SetPluginHostMode.newBuilder()
-                    .setMode(PluginHostMode.PLUGIN_HOST_IN_PROCESS))
+                SetPluginHostMode.newBuilder().setMode(PluginHostMode.PLUGIN_HOST_IN_PROCESS))
             .build(),
         "SET_PLUGIN_HOST_MODE");
     System.out.println("Backend survived connection failure gracefully");
@@ -407,4 +400,3 @@ public class PluginWorkerTest {
     return new File(path);
   }
 }
-

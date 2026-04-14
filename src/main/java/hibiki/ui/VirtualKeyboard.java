@@ -12,14 +12,13 @@ import java.util.Set;
 /**
  * Virtual MIDI keyboard that maps PC keyboard keys to MIDI notes.
  *
- * <p>
- * Layout (1 octave, DAW-style):
- * 
+ * <p>Layout (1 octave, DAW-style):
+ *
  * <pre>
  *   White keys: A=C, S=D, D=E, F=F, G=G, H=A, J=B
  *   Black keys: W=C#, E=D#, T=F#, Y=G#, U=A#
  * </pre>
- * 
+ *
  * Special keys: Z=octave−1, X=octave+1, C=velocity−10, V=velocity+10
  */
 public class VirtualKeyboard implements KeyEventDispatcher {
@@ -51,16 +50,14 @@ public class VirtualKeyboard implements KeyEventDispatcher {
   private final Set<Integer> activeNotes = new HashSet<>();
 
   public VirtualKeyboard() {
-    KeyboardFocusManager.getCurrentKeyboardFocusManager()
-        .addKeyEventDispatcher(this);
+    KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(this);
   }
 
   public void setEnabled(boolean enabled) {
     if (!enabled) {
       // Send note-off for all active notes
       for (int note : activeNotes) {
-        BackendManager.getInstance()
-            .sendVirtualMidi(targetTrackIndex, note, 0, false);
+        BackendManager.getInstance().sendVirtualMidi(targetTrackIndex, note, 0, false);
       }
       activeNotes.clear();
     }
@@ -85,10 +82,8 @@ public class VirtualKeyboard implements KeyEventDispatcher {
 
   @Override
   public boolean dispatchKeyEvent(KeyEvent e) {
-    if (!enabled)
-      return false;
-    if (e.getID() != KeyEvent.KEY_PRESSED && e.getID() != KeyEvent.KEY_RELEASED)
-      return false;
+    if (!enabled) return false;
+    if (e.getID() != KeyEvent.KEY_PRESSED && e.getID() != KeyEvent.KEY_RELEASED) return false;
 
     int keyCode = e.getKeyCode();
 
@@ -112,24 +107,19 @@ public class VirtualKeyboard implements KeyEventDispatcher {
 
     // Map key to MIDI note
     Integer semitone = NOTE_KEYS.get(keyCode);
-    if (semitone == null)
-      return false;
+    if (semitone == null) return false;
     int midiNote = (octave * 12) + semitone;
 
     if (e.getID() == KeyEvent.KEY_PRESSED) {
       // Avoid key-repeat duplicates
-      if (activeNotes.contains(midiNote))
-        return true;
+      if (activeNotes.contains(midiNote)) return true;
       activeNotes.add(midiNote);
-      BackendManager.getInstance()
-          .sendVirtualMidi(targetTrackIndex, midiNote, velocity, true);
+      BackendManager.getInstance().sendVirtualMidi(targetTrackIndex, midiNote, velocity, true);
       return true;
     } else if (e.getID() == KeyEvent.KEY_RELEASED) {
-      if (!activeNotes.contains(midiNote))
-        return true;
+      if (!activeNotes.contains(midiNote)) return true;
       activeNotes.remove(midiNote);
-      BackendManager.getInstance()
-          .sendVirtualMidi(targetTrackIndex, midiNote, 0, false);
+      BackendManager.getInstance().sendVirtualMidi(targetTrackIndex, midiNote, 0, false);
       return true;
     }
     return false;

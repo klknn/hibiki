@@ -22,7 +22,7 @@ cc_binary(
         "//engine/core:midi",
         "//engine/core:project",
         "//engine/core:track",
-        "//engine/ipc:ipc",
+        "//engine/ipc",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:absl_log",
         "@abseil-cpp//absl/log:check",
@@ -37,11 +37,14 @@ cc_binary(
 cc_binary(
     name = "hbk-plugin-worker",
     srcs = ["plugin_worker_main.cpp"],
-    visibility = ["//visibility:public"],
     linkopts = select({
         "@platforms//os:windows": [],
-        "//conditions:default": ["-lpthread", "-ldl"],
+        "//conditions:default": [
+            "-lpthread",
+            "-ldl",
+        ],
     }),
+    visibility = ["//visibility:public"],
     deps = [
         "//engine/ipc:worker_channel",
         "//engine/vst3:vst3_host",
@@ -56,11 +59,14 @@ cc_binary(
 cc_binary(
     name = "hbk-worker-daemon",
     srcs = ["worker_daemon_main.cpp"],
-    visibility = ["//visibility:public"],
     linkopts = select({
         "@platforms//os:windows": [],
-        "//conditions:default": ["-lpthread", "-ldl"],
+        "//conditions:default": [
+            "-lpthread",
+            "-ldl",
+        ],
     }),
+    visibility = ["//visibility:public"],
     deps = [
         "//engine/ipc:worker_channel_tcp",
         "//engine/plugin:plugin_scanner",
@@ -92,4 +98,3 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
-

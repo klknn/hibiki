@@ -59,9 +59,9 @@ message TrackCmd {
   float value = 4;
   bool flag = 5;
   string input_device_id = 6;
-  uint32 input_channel_start = 7;  // 0-based start channel
-  bool input_stereo = 8;           // mono or stereo
-  string midi_input_device_id = 9; // MIDI input device ID
+  uint32 input_channel_start = 7;   // 0-based start channel
+  bool input_stereo = 8;            // mono or stereo
+  string midi_input_device_id = 9;  // MIDI input device ID
   int32 record_mode = 10;           // 0 = audio, 1 = MIDI
   int32 target_track_index = 11;    // For cross-track clip moves
 }
@@ -85,15 +85,15 @@ message PluginCmd {
   uint32 param_id = 4;
   float param_value = 5;
   // Editor input fields (for ACTION_SEND_EDITOR_INPUT)
-  int32 input_type = 6;   // 0=move, 1=down, 2=up, 3=key_down, 4=key_up, 5=wheel
+  int32 input_type = 6;  // 0=move, 1=down, 2=up, 3=key_down, 4=key_up, 5=wheel
   int32 input_x = 7;
   int32 input_y = 8;
   int32 input_button = 9;
   int32 input_key = 10;
   int32 input_delta = 11;
-  string remote_host = 12;  // if set, load via TCP to this "host:port"
+  string remote_host = 12;     // if set, load via TCP to this "host:port"
   repeated string paths = 13;  // batch bundle paths for ACTION_LIST
-  string sample_path = 14;  // WAV path for ACTION_LOAD_SAMPLE (Sampler)
+  string sample_path = 14;     // WAV path for ACTION_LOAD_SAMPLE (Sampler)
 }
 
 message AutomationCmd {
@@ -183,9 +183,9 @@ message ListMidiInputs {}
 // Send a live virtual MIDI event (from PC keyboard or on-screen piano).
 message SendVirtualMidi {
   int32 track_index = 1;
-  uint32 note = 2;       // MIDI note number [0, 127]
-  uint32 velocity = 3;   // Note-on velocity [0, 127]
-  bool note_on = 4;      // true = note-on, false = note-off
+  uint32 note = 2;      // MIDI note number [0, 127]
+  uint32 velocity = 3;  // Note-on velocity [0, 127]
+  bool note_on = 4;     // true = note-on, false = note-off
 }
 
 message ModulationCmd {
@@ -198,12 +198,12 @@ message ModulationCmd {
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;  // track + plugin index
-  int32 slot_index = 3;           // 0-2 modulator slot
-  int32 waveform = 4;             // 0=sin, 1=saw, 2=square, 3=random
-  float rate_hz = 5;              // LFO frequency (Hz, or beats if synced)
-  float depth = 6;                // -1.0 to 1.0
-  uint32 target_param_id = 7;     // assigned parameter ID
-  bool sync_to_tempo = 8;         // if true, rate is in beat divisions
+  int32 slot_index = 3;                 // 0-2 modulator slot
+  int32 waveform = 4;                   // 0=sin, 1=saw, 2=square, 3=random
+  float rate_hz = 5;           // LFO frequency (Hz, or beats if synced)
+  float depth = 6;             // -1.0 to 1.0
+  uint32 target_param_id = 7;  // assigned parameter ID
+  bool sync_to_tempo = 8;      // if true, rate is in beat divisions
 }
 
 // ─── Request Envelope ───────────────────────────────────────────────

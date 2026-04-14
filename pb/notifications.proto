@@ -164,8 +164,8 @@ message RecordingFinished {
 
 // A single audio input device.
 message AudioInputDevice {
-  string id = 1;    // Platform device ID
-  string name = 2;  // Human-readable name
+  string id = 1;            // Platform device ID
+  string name = 2;          // Human-readable name
   int32 channel_count = 3;  // Number of input channels
 }
 
@@ -176,8 +176,8 @@ message AudioInputList {
 
 // A single MIDI input device.
 message MidiInputDevice {
-  string id = 1;    // Platform device ID (or "__global__" for all)
-  string name = 2;  // Human-readable name
+  string id = 1;         // Platform device ID (or "__global__" for all)
+  string name = 2;       // Human-readable name
   int32 port_count = 3;  // Number of MIDI ports
 }
 
@@ -214,7 +214,7 @@ message EditorFrameData {
   int32 plugin_index = 2;
   int32 width = 3;
   int32 height = 4;
-  bytes image_data = 5;   // Raw RGBA pixel data
+  bytes image_data = 5;  // Raw RGBA pixel data
 }
 
 // ─── Plugin Metering ────────────────────────────────────────────────
@@ -294,17 +294,17 @@ message Notification {
 message PluginSampleData {
   int32 track_index = 1;
   int32 plugin_index = 2;
-  repeated float waveform = 3;       // Waveform summary (128 points, 0..1)
-  string sample_name = 4;            // Filename of loaded sample
-  double sample_duration_sec = 5;    // Duration in seconds
+  repeated float waveform = 3;     // Waveform summary (128 points, 0..1)
+  string sample_name = 4;          // Filename of loaded sample
+  double sample_duration_sec = 5;  // Duration in seconds
 }
 
 // Per-slot modulator state.
 message ModulationSlotInfo {
   int32 slot_index = 1;
-  int32 waveform = 2;         // 0=sin, 1=saw, 2=square, 3=random
+  int32 waveform = 2;  // 0=sin, 1=saw, 2=square, 3=random
   float rate_hz = 3;
-  float depth = 4;            // -1.0 to 1.0
+  float depth = 4;  // -1.0 to 1.0
   uint32 target_param_id = 5;
   string target_param_name = 6;
   bool assigned = 7;

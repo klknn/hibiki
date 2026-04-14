@@ -44,8 +44,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   int getBaseTrackHeight(int trackIdx) {
     if (trackIdx >= 0 && trackIdx < tracks.size()) {
       int custom = tracks.get(trackIdx).customHeight;
-      if (custom > 0)
-        return custom;
+      if (custom > 0) return custom;
     }
     return getBaseTrackHeight();
   }
@@ -222,26 +221,28 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                   final int ti = i;
                   final int startY = e.getYOnScreen();
                   final int startH = getBaseTrackHeight(i);
-                  javax.swing.event.MouseInputAdapter heightAdapter = new javax.swing.event.MouseInputAdapter() {
-                    @Override
-                    public void mouseDragged(MouseEvent de) {
-                      int dy = de.getYOnScreen() - startY;
-                      int unscaledDy = (int) (dy / Theme.getInstance().getScaling());
-                      tracks.get(ti).customHeight = Math.max(50, Math.min(300, startH + unscaledDy));
-                      rowHeader.revalidate();
-                      rowHeader.repaint();
-                      contentPanel.revalidate();
-                      contentPanel.repaint();
-                      updateContentSize();
-                    }
+                  javax.swing.event.MouseInputAdapter heightAdapter =
+                      new javax.swing.event.MouseInputAdapter() {
+                        @Override
+                        public void mouseDragged(MouseEvent de) {
+                          int dy = de.getYOnScreen() - startY;
+                          int unscaledDy = (int) (dy / Theme.getInstance().getScaling());
+                          tracks.get(ti).customHeight =
+                              Math.max(50, Math.min(300, startH + unscaledDy));
+                          rowHeader.revalidate();
+                          rowHeader.repaint();
+                          contentPanel.revalidate();
+                          contentPanel.repaint();
+                          updateContentSize();
+                        }
 
-                    @Override
-                    public void mouseReleased(MouseEvent re) {
-                      rowHeader.removeMouseMotionListener(this);
-                      rowHeader.removeMouseListener(this);
-                      rowHeader.setCursor(Cursor.getDefaultCursor());
-                    }
-                  };
+                        @Override
+                        public void mouseReleased(MouseEvent re) {
+                          rowHeader.removeMouseMotionListener(this);
+                          rowHeader.removeMouseListener(this);
+                          rowHeader.setCursor(Cursor.getDefaultCursor());
+                        }
+                      };
                   rowHeader.addMouseMotionListener(heightAdapter);
                   rowHeader.addMouseListener(heightAdapter);
                   rowHeader.setCursor(Cursor.getPredefinedCursor(Cursor.S_RESIZE_CURSOR));
@@ -254,24 +255,25 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             if (e.getX() >= scaleLabelWidth - 4) {
               final int startX = e.getXOnScreen();
               final int startWidth = trackLabelWidth;
-              javax.swing.event.MouseInputAdapter resizeAdapter = new javax.swing.event.MouseInputAdapter() {
-                @Override
-                public void mouseDragged(MouseEvent de) {
-                  int dx = de.getXOnScreen() - startX;
-                  int unscaledDx = (int) (dx / Theme.getInstance().getScaling());
-                  trackLabelWidth = Math.max(100, Math.min(300, startWidth + unscaledDx));
-                  rowHeader.revalidate();
-                  rowHeader.repaint();
-                  contentPanel.repaint();
-                }
+              javax.swing.event.MouseInputAdapter resizeAdapter =
+                  new javax.swing.event.MouseInputAdapter() {
+                    @Override
+                    public void mouseDragged(MouseEvent de) {
+                      int dx = de.getXOnScreen() - startX;
+                      int unscaledDx = (int) (dx / Theme.getInstance().getScaling());
+                      trackLabelWidth = Math.max(100, Math.min(300, startWidth + unscaledDx));
+                      rowHeader.revalidate();
+                      rowHeader.repaint();
+                      contentPanel.repaint();
+                    }
 
-                @Override
-                public void mouseReleased(MouseEvent re) {
-                  rowHeader.removeMouseMotionListener(this);
-                  rowHeader.removeMouseListener(this);
-                  rowHeader.setCursor(Cursor.getDefaultCursor());
-                }
-              };
+                    @Override
+                    public void mouseReleased(MouseEvent re) {
+                      rowHeader.removeMouseMotionListener(this);
+                      rowHeader.removeMouseListener(this);
+                      rowHeader.setCursor(Cursor.getDefaultCursor());
+                    }
+                  };
               rowHeader.addMouseMotionListener(resizeAdapter);
               rowHeader.addMouseListener(resizeAdapter);
               rowHeader.setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
@@ -335,8 +337,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
                 // Check if click is on the ARM button
                 int armX = gap + inputW + gap + modeW + gap;
-                if (e.getX() >= armX && e.getX() <= armX + armW
-                    && clickYInTrack >= row3Y && clickYInTrack <= row3Y + btnH) {
+                if (e.getX() >= armX
+                    && e.getX() <= armX + armW
+                    && clickYInTrack >= row3Y
+                    && clickYInTrack <= row3Y + btnH) {
                   track.recordArmed = !track.recordArmed;
                   BackendManager.getInstance().armTrack(trackIdx);
                   rowHeader.repaint();
@@ -346,8 +350,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
                 // Check if click is on the MIDI/AUD toggle button
                 int modeX = gap + inputW + gap;
-                if (e.getX() >= modeX && e.getX() <= modeX + modeW
-                    && clickYInTrack >= row3Y && clickYInTrack <= row3Y + btnH) {
+                if (e.getX() >= modeX
+                    && e.getX() <= modeX + modeW
+                    && clickYInTrack >= row3Y
+                    && clickYInTrack <= row3Y + btnH) {
                   track.midiRecordMode = !track.midiRecordMode;
                   BackendManager.getInstance().setRecordMode(trackIdx, track.midiRecordMode);
                   rowHeader.repaint();
@@ -364,8 +370,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 int smY = row4Y + 1;
                 // Approximate soloX position (matches renderer)
                 int soloX = panKnobX + knobD + 20;
-                if (e.getX() >= soloX && e.getX() <= soloX + smW
-                    && clickYInTrack >= smY && clickYInTrack <= smY + smBtnH) {
+                if (e.getX() >= soloX
+                    && e.getX() <= soloX + smW
+                    && clickYInTrack >= smY
+                    && clickYInTrack <= smY + smBtnH) {
                   track.soloed = !track.soloed;
                   BackendManager.getInstance().setTrackSolo(trackIdx, track.soloed);
                   rowHeader.repaint();
@@ -374,8 +382,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
                 // Check if click is on the M (Mute) button
                 int muteX = soloX + smW + smGap;
-                if (e.getX() >= muteX && e.getX() <= muteX + smW
-                    && clickYInTrack >= smY && clickYInTrack <= smY + smBtnH) {
+                if (e.getX() >= muteX
+                    && e.getX() <= muteX + smW
+                    && clickYInTrack >= smY
+                    && clickYInTrack <= smY + smBtnH) {
                   track.muted = !track.muted;
                   BackendManager.getInstance().setTrackMute(trackIdx, track.muted);
                   rowHeader.repaint();
@@ -384,54 +394,65 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
                 // Check if click is on a knob (VOL or PAN) — starts drag
                 int volKnobX = 6;
-                boolean onVolKnob = e.getX() >= volKnobX && e.getX() <= volKnobX + knobD
-                    && clickYInTrack >= row4Y && clickYInTrack <= row4Y + knobD;
-                boolean onPanKnob = e.getX() >= panKnobX && e.getX() <= panKnobX + knobD
-                    && clickYInTrack >= row4Y && clickYInTrack <= row4Y + knobD;
+                boolean onVolKnob =
+                    e.getX() >= volKnobX
+                        && e.getX() <= volKnobX + knobD
+                        && clickYInTrack >= row4Y
+                        && clickYInTrack <= row4Y + knobD;
+                boolean onPanKnob =
+                    e.getX() >= panKnobX
+                        && e.getX() <= panKnobX + knobD
+                        && clickYInTrack >= row4Y
+                        && clickYInTrack <= row4Y + knobD;
                 if (onVolKnob || onPanKnob) {
                   final boolean isDragVol = onVolKnob;
                   final int dragTrackIdx = trackIdx;
                   final int startY = e.getYOnScreen();
                   final float startVal = isDragVol ? track.volume : track.pan;
                   // For volume: convert to dB for the drag start reference
-                  final float startDb = isDragVol
-                      ? (startVal <= 0.001f ? -60.0f : (float) (20.0 * Math.log10(startVal)))
-                      : 0;
+                  final float startDb =
+                      isDragVol
+                          ? (startVal <= 0.001f ? -60.0f : (float) (20.0 * Math.log10(startVal)))
+                          : 0;
                   final TrackTimeline dragTrack = track;
-                  javax.swing.event.MouseInputAdapter dragAdapter = new javax.swing.event.MouseInputAdapter() {
-                    @Override
-                    public void mouseDragged(java.awt.event.MouseEvent de) {
-                      int dy = startY - de.getYOnScreen(); // up = positive
-                      if (isDragVol) {
-                        // Drag in dB space: 0.5 dB per pixel
-                        float newDb = startDb + dy * 0.5f;
-                        newDb = Math.max(-60.0f, Math.min(6.0f, newDb));
-                        float newVol = newDb <= -60.0f ? 0.0f
-                            : (float) Math.pow(10, newDb / 20.0);
-                        dragTrack.volume = Math.min(2.0f, newVol);
-                        BackendManager.getInstance().setTrackVolume(dragTrackIdx, dragTrack.volume);
-                      } else {
-                        float newPan = Math.max(-1.0f, Math.min(1.0f, startVal + dy * 0.01f));
-                        dragTrack.pan = newPan;
-                        BackendManager.getInstance().setTrackPan(dragTrackIdx, newPan);
-                      }
-                      rowHeader.repaint();
-                    }
+                  javax.swing.event.MouseInputAdapter dragAdapter =
+                      new javax.swing.event.MouseInputAdapter() {
+                        @Override
+                        public void mouseDragged(java.awt.event.MouseEvent de) {
+                          int dy = startY - de.getYOnScreen(); // up = positive
+                          if (isDragVol) {
+                            // Drag in dB space: 0.5 dB per pixel
+                            float newDb = startDb + dy * 0.5f;
+                            newDb = Math.max(-60.0f, Math.min(6.0f, newDb));
+                            float newVol =
+                                newDb <= -60.0f ? 0.0f : (float) Math.pow(10, newDb / 20.0);
+                            dragTrack.volume = Math.min(2.0f, newVol);
+                            BackendManager.getInstance()
+                                .setTrackVolume(dragTrackIdx, dragTrack.volume);
+                          } else {
+                            float newPan = Math.max(-1.0f, Math.min(1.0f, startVal + dy * 0.01f));
+                            dragTrack.pan = newPan;
+                            BackendManager.getInstance().setTrackPan(dragTrackIdx, newPan);
+                          }
+                          rowHeader.repaint();
+                        }
 
-                    @Override
-                    public void mouseReleased(java.awt.event.MouseEvent re) {
-                      rowHeader.removeMouseMotionListener(this);
-                      rowHeader.removeMouseListener(this);
-                    }
-                  };
+                        @Override
+                        public void mouseReleased(java.awt.event.MouseEvent re) {
+                          rowHeader.removeMouseMotionListener(this);
+                          rowHeader.removeMouseListener(this);
+                        }
+                      };
                   rowHeader.addMouseMotionListener(dragAdapter);
                   rowHeader.addMouseListener(dragAdapter);
                   return;
                 }
 
                 // Check if click is on the Input dropdown button
-                if (e.getX() >= gap && e.getX() <= gap + inputW
-                    && clickYInTrack >= row3Y && clickYInTrack <= row3Y + btnH) {
+                if (e.getX() >= gap
+                    && e.getX() <= gap + inputW
+                    && clickYInTrack >= row3Y
+                    && clickYInTrack <= row3Y + btnH) {
                   showInputChannelPopup(trackIdx, e);
                   return;
                 }
@@ -504,10 +525,13 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     BackendManager.getInstance().requestAudioInputs();
     BackendManager.getInstance().requestMidiInputs();
     // Retry after 1s in case backend wasn't ready yet
-    javax.swing.Timer startupRetry = new javax.swing.Timer(1000, ev -> {
-      BackendManager.getInstance().requestAudioInputs();
-      BackendManager.getInstance().requestMidiInputs();
-    });
+    javax.swing.Timer startupRetry =
+        new javax.swing.Timer(
+            1000,
+            ev -> {
+              BackendManager.getInstance().requestAudioInputs();
+              BackendManager.getInstance().requestMidiInputs();
+            });
     startupRetry.setRepeats(false);
     startupRetry.start();
 
@@ -604,17 +628,13 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         contentPanel,
         java.awt.dnd.DnDConstants.ACTION_COPY,
         dge -> {
-          if (!dge.getTriggerEvent().isAltDown())
-            return;
+          if (!dge.getTriggerEvent().isAltDown()) return;
           Point p = dge.getDragOrigin();
           int trackIdx = getTrackIdxAtY(p.y - Theme.getInstance().scale(TIME_RULER_HEIGHT));
-          if (trackIdx < 0 || trackIdx >= tracks.size())
-            return;
+          if (trackIdx < 0 || trackIdx >= tracks.size()) return;
           ClipRect clip = findClipAtPosition(trackIdx, p.x);
-          if (clip == null || clip.path == null || clip.path.isEmpty())
-            return;
-          if (clip.isAutomation)
-            return;
+          if (clip == null || clip.path == null || clip.path.isEmpty()) return;
+          if (clip.isAutomation) return;
           dge.startDrag(
               java.awt.dnd.DragSource.DefaultCopyDrop,
               new java.awt.datatransfer.StringSelection("audio:" + clip.path));
@@ -840,13 +860,15 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     menu.addSeparator();
 
     // Record arm toggle
-    JMenuItem armItem = new JMenuItem(track.recordArmed ? "✓ Disarm Recording" : "Arm for Recording");
-    armItem.addActionListener(ev -> {
-      track.recordArmed = !track.recordArmed;
-      BackendManager.getInstance().armTrack(trackIdx);
-      rowHeader.repaint();
-      contentPanel.repaint();
-    });
+    JMenuItem armItem =
+        new JMenuItem(track.recordArmed ? "✓ Disarm Recording" : "Arm for Recording");
+    armItem.addActionListener(
+        ev -> {
+          track.recordArmed = !track.recordArmed;
+          BackendManager.getInstance().armTrack(trackIdx);
+          rowHeader.repaint();
+          contentPanel.repaint();
+        });
     menu.add(armItem);
 
     // Set Input Device
@@ -861,18 +883,20 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     ButtonGroup chGroup = new ButtonGroup();
     chGroup.add(stereoItem);
     chGroup.add(monoItem);
-    stereoItem.addActionListener(ev -> {
-      track.inputStereo = true;
-      BackendManager.getInstance().setInputDevice(
-          trackIdx, track.inputDeviceId, track.inputChannelStart, true);
-      rowHeader.repaint();
-    });
-    monoItem.addActionListener(ev -> {
-      track.inputStereo = false;
-      BackendManager.getInstance().setInputDevice(
-          trackIdx, track.inputDeviceId, track.inputChannelStart, false);
-      rowHeader.repaint();
-    });
+    stereoItem.addActionListener(
+        ev -> {
+          track.inputStereo = true;
+          BackendManager.getInstance()
+              .setInputDevice(trackIdx, track.inputDeviceId, track.inputChannelStart, true);
+          rowHeader.repaint();
+        });
+    monoItem.addActionListener(
+        ev -> {
+          track.inputStereo = false;
+          BackendManager.getInstance()
+              .setInputDevice(trackIdx, track.inputDeviceId, track.inputChannelStart, false);
+          rowHeader.repaint();
+        });
     chMenu.add(stereoItem);
     chMenu.add(monoItem);
     chMenu.addSeparator();
@@ -880,16 +904,15 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     JMenu offsetMenu = new JMenu("Start Channel");
     for (int ch = 0; ch < 8; ch++) {
       final int chStart = ch;
-      String label = track.inputStereo
-          ? "Ch " + (ch + 1) + "-" + (ch + 2)
-          : "Ch " + (ch + 1);
+      String label = track.inputStereo ? "Ch " + (ch + 1) + "-" + (ch + 2) : "Ch " + (ch + 1);
       JRadioButtonMenuItem chItem = new JRadioButtonMenuItem(label, ch == track.inputChannelStart);
-      chItem.addActionListener(ev -> {
-        track.inputChannelStart = chStart;
-        BackendManager.getInstance().setInputDevice(
-            trackIdx, track.inputDeviceId, chStart, track.inputStereo);
-        rowHeader.repaint();
-      });
+      chItem.addActionListener(
+          ev -> {
+            track.inputChannelStart = chStart;
+            BackendManager.getInstance()
+                .setInputDevice(trackIdx, track.inputDeviceId, chStart, track.inputStereo);
+            rowHeader.repaint();
+          });
       offsetMenu.add(chItem);
     }
     chMenu.add(offsetMenu);
@@ -970,15 +993,16 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       for (int i = 0; i < devices.size(); i++) {
         var dev = devices.get(i);
         String label = dev.getName() + " (" + dev.getChannelCount() + " ch)";
-        JRadioButtonMenuItem item = new JRadioButtonMenuItem(
-            label, dev.getId().equals(track.inputDeviceId));
+        JRadioButtonMenuItem item =
+            new JRadioButtonMenuItem(label, dev.getId().equals(track.inputDeviceId));
         final String devId = dev.getId();
-        item.addActionListener(ev -> {
-          track.inputDeviceId = devId;
-          BackendManager.getInstance().setInputDevice(
-              trackIdx, devId, track.inputChannelStart, track.inputStereo);
-          rowHeader.repaint();
-        });
+        item.addActionListener(
+            ev -> {
+              track.inputDeviceId = devId;
+              BackendManager.getInstance()
+                  .setInputDevice(trackIdx, devId, track.inputChannelStart, track.inputStereo);
+              rowHeader.repaint();
+            });
         deviceMenu.add(item);
       }
     }
@@ -996,14 +1020,15 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       for (int i = 0; i < midiDevices.size(); i++) {
         var mdev = midiDevices.get(i);
         String mlabel = mdev.getName();
-        JRadioButtonMenuItem mitem = new JRadioButtonMenuItem(
-            mlabel, mdev.getId().equals(track.midiInputDeviceId));
+        JRadioButtonMenuItem mitem =
+            new JRadioButtonMenuItem(mlabel, mdev.getId().equals(track.midiInputDeviceId));
         final String mdevId = mdev.getId();
-        mitem.addActionListener(ev -> {
-          track.midiInputDeviceId = mdevId;
-          BackendManager.getInstance().setMidiInput(trackIdx, mdevId);
-          rowHeader.repaint();
-        });
+        mitem.addActionListener(
+            ev -> {
+              track.midiInputDeviceId = mdevId;
+              BackendManager.getInstance().setMidiInput(trackIdx, mdevId);
+              rowHeader.repaint();
+            });
         midiMenu.add(mitem);
       }
     }
@@ -1016,18 +1041,20 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     ButtonGroup chGroup = new ButtonGroup();
     chGroup.add(stereoItem);
     chGroup.add(monoItem);
-    stereoItem.addActionListener(ev -> {
-      track.inputStereo = true;
-      BackendManager.getInstance().setInputDevice(
-          trackIdx, track.inputDeviceId, track.inputChannelStart, true);
-      rowHeader.repaint();
-    });
-    monoItem.addActionListener(ev -> {
-      track.inputStereo = false;
-      BackendManager.getInstance().setInputDevice(
-          trackIdx, track.inputDeviceId, track.inputChannelStart, false);
-      rowHeader.repaint();
-    });
+    stereoItem.addActionListener(
+        ev -> {
+          track.inputStereo = true;
+          BackendManager.getInstance()
+              .setInputDevice(trackIdx, track.inputDeviceId, track.inputChannelStart, true);
+          rowHeader.repaint();
+        });
+    monoItem.addActionListener(
+        ev -> {
+          track.inputStereo = false;
+          BackendManager.getInstance()
+              .setInputDevice(trackIdx, track.inputDeviceId, track.inputChannelStart, false);
+          rowHeader.repaint();
+        });
     popup.add(stereoItem);
     popup.add(monoItem);
     popup.addSeparator();
@@ -1035,16 +1062,15 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     // Channel offset (1-8)
     for (int ch = 0; ch < 8; ch++) {
       final int chStart = ch;
-      String label = track.inputStereo
-          ? "Ch " + (ch + 1) + "-" + (ch + 2)
-          : "Ch " + (ch + 1);
+      String label = track.inputStereo ? "Ch " + (ch + 1) + "-" + (ch + 2) : "Ch " + (ch + 1);
       JRadioButtonMenuItem chItem = new JRadioButtonMenuItem(label, ch == track.inputChannelStart);
-      chItem.addActionListener(ev -> {
-        track.inputChannelStart = chStart;
-        BackendManager.getInstance().setInputDevice(
-            trackIdx, track.inputDeviceId, chStart, track.inputStereo);
-        rowHeader.repaint();
-      });
+      chItem.addActionListener(
+          ev -> {
+            track.inputChannelStart = chStart;
+            BackendManager.getInstance()
+                .setInputDevice(trackIdx, track.inputDeviceId, chStart, track.inputStereo);
+            rowHeader.repaint();
+          });
       popup.add(chItem);
     }
 
@@ -1058,9 +1084,11 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     // Use cached list (will be populated from notification)
     var devices = TimelineNotificationHandler.cachedInputDevices;
     if (devices.isEmpty()) {
-      JOptionPane.showMessageDialog(this,
+      JOptionPane.showMessageDialog(
+          this,
           "No audio input devices found.\nTry again in a moment after the device list loads.",
-          "Input Devices", JOptionPane.INFORMATION_MESSAGE);
+          "Input Devices",
+          JOptionPane.INFORMATION_MESSAGE);
       return;
     }
 
@@ -1070,10 +1098,16 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       deviceNames[i] = dev.getName() + " (" + dev.getChannelCount() + " ch)";
     }
 
-    String selected = (String) JOptionPane.showInputDialog(this,
-        "Select audio input device:", "Input Device",
-        JOptionPane.PLAIN_MESSAGE, null, deviceNames,
-        deviceNames.length > 0 ? deviceNames[0] : null);
+    String selected =
+        (String)
+            JOptionPane.showInputDialog(
+                this,
+                "Select audio input device:",
+                "Input Device",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                deviceNames,
+                deviceNames.length > 0 ? deviceNames[0] : null);
 
     if (selected != null) {
       for (int i = 0; i < deviceNames.length; i++) {
@@ -1081,8 +1115,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
           var dev = devices.get(i);
           TrackTimeline track = tracks.get(trackIdx);
           track.inputDeviceId = dev.getId();
-          BackendManager.getInstance().setInputDevice(
-              trackIdx, dev.getId(), track.inputChannelStart, track.inputStereo);
+          BackendManager.getInstance()
+              .setInputDevice(trackIdx, dev.getId(), track.inputChannelStart, track.inputStereo);
           break;
         }
       }
@@ -1134,8 +1168,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   }
 
   void repaintRowHeader() {
-    if (rowHeader != null)
-      rowHeader.repaint();
+    if (rowHeader != null) rowHeader.repaint();
   }
 
   private void drawTrackLabels(Graphics g) {

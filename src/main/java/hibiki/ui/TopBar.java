@@ -18,6 +18,7 @@ public class TopBar extends JPanel {
   public VirtualKeyboard getVirtualKeyboard() {
     return virtualKeyboard;
   }
+
   private JTextField bpmField;
   private JLabel timeSigLabel;
   private JLabel positionLabel;
@@ -102,11 +103,7 @@ public class TopBar extends JPanel {
     JButton stopBtn = Theme.getInstance().createButton("■", e -> sendStop());
     stopBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
 
-    recordButton =
-        Theme.getInstance()
-            .createButton(
-                "●",
-                e -> sendRecord());
+    recordButton = Theme.getInstance().createButton("●", e -> sendRecord());
     recordButton.setForeground(new Color(200, 50, 50));
     recordButton.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
     recordButton.setToolTipText("Record");
@@ -149,13 +146,18 @@ public class TopBar extends JPanel {
     settingsBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
 
     // Virtual keyboard toggle
-    pianoBtn = Theme.getInstance().createButton("🎹", e -> {
-      boolean nowEnabled = !virtualKeyboard.isEnabled();
-      virtualKeyboard.setEnabled(nowEnabled);
-      pianoBtn.setForeground(nowEnabled ? Theme.getInstance().ACCENT_GREEN : Color.LIGHT_GRAY);
-      octaveLabel.setVisible(nowEnabled);
-      octaveLabel.setText("C" + virtualKeyboard.getOctave());
-    });
+    pianoBtn =
+        Theme.getInstance()
+            .createButton(
+                "🎹",
+                e -> {
+                  boolean nowEnabled = !virtualKeyboard.isEnabled();
+                  virtualKeyboard.setEnabled(nowEnabled);
+                  pianoBtn.setForeground(
+                      nowEnabled ? Theme.getInstance().ACCENT_GREEN : Color.LIGHT_GRAY);
+                  octaveLabel.setVisible(nowEnabled);
+                  octaveLabel.setText("C" + virtualKeyboard.getOctave());
+                });
     pianoBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
     pianoBtn.setForeground(Color.LIGHT_GRAY);
     pianoBtn.setToolTipText("Virtual MIDI Keyboard (PC keys → notes)");

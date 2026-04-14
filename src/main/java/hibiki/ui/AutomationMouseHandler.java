@@ -363,8 +363,7 @@ class AutomationMouseHandler {
     view.creatingTrackIdx = trackIdx;
     view.creatingAutoLaneIdx = laneIdx;
     float snapTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
-    if (!e.isShiftDown())
-      snapTime = view.snapToGrid(snapTime);
+    if (!e.isShiftDown()) snapTime = view.snapToGrid(snapTime);
     view.creatingStartTime = snapTime;
     view.creatingClipRect = new TimelineView.ClipRect();
     view.creatingClipRect.startTime = snapTime;

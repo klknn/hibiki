@@ -5,13 +5,28 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "sound",
     srcs = select({
-        "@platforms//os:windows": ["sound_win32.cpp", "midi_input_winmm.cpp"],
-        "@platforms//os:macos": ["sound_coreaudio.cpp", "midi_input_coremidi.cpp"],
-        "//conditions:default": ["sound_alsa.cpp", "midi_input_alsa.cpp"],
+        "@platforms//os:windows": [
+            "midi_input_winmm.cpp",
+            "sound_win32.cpp",
+        ],
+        "@platforms//os:macos": [
+            "midi_input_coremidi.cpp",
+            "sound_coreaudio.cpp",
+        ],
+        "//conditions:default": [
+            "midi_input_alsa.cpp",
+            "sound_alsa.cpp",
+        ],
     }),
-    hdrs = ["sound.hpp", "midi_input.hpp"],
+    hdrs = [
+        "midi_input.hpp",
+        "sound.hpp",
+    ],
     linkopts = select({
-        "@platforms//os:windows": ["-DEFAULTLIB:ole32", "-DEFAULTLIB:winmm"],
+        "@platforms//os:windows": [
+            "-DEFAULTLIB:ole32",
+            "-DEFAULTLIB:winmm",
+        ],
         "@platforms//os:macos": [
             "-framework CoreAudio",
             "-framework AudioUnit",
@@ -28,4 +43,3 @@ cc_library(
         "@abseil-cpp//absl/strings",
     ],
 )
-

@@ -11,7 +11,8 @@
      (set-bpm! 140)
      (write-midi! 0 0 480 [{:tick 0 :pitch 60 :dur 480 :vel 100}])
      (save! \"/tmp/my-project.hbk\")"
-  (:require [hibiki.echo :as echo])
+  (:require [clojure.core.server]
+            [hibiki.echo :as echo])
   (:import [hibiki.ui SessionView TimelineView Theme Theme$Preset]
            [hibiki.pb.commands Request TransportCmd TrackCmd PluginCmd
                               AutomationCmd MidiCmd ProjectCmd

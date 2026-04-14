@@ -14,9 +14,8 @@ import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
- * Ableton Simpler-style single-waveform sampler panel.
- * Top: waveform display with draggable start/end markers.
- * Bottom: root note, gain ADSR, filter section.
+ * Ableton Simpler-style single-waveform sampler panel. Top: waveform display with draggable
+ * start/end markers. Bottom: root note, gain ADSR, filter section.
  */
 public class SamplerDevicePanel extends JPanel {
   private static final int TOTAL_PARAMS = 17;
@@ -30,7 +29,9 @@ public class SamplerDevicePanel extends JPanel {
 
   private static final String[] FILT_NAMES = {"LP", "HP", "BP"};
   private static final double[] FILT_NORMS = {0.0, 0.5, 1.0};
-  private static final String[] NOTE_NAMES = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
+  private static final String[] NOTE_NAMES = {
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+  };
 
   private final int trackIndex;
   private final int pluginIndex;
@@ -60,6 +61,7 @@ public class SamplerDevicePanel extends JPanel {
     setLayout(new BorderLayout());
     Theme theme = Theme.getInstance();
     setPreferredSize(new Dimension(theme.scale(440), theme.scale(330)));
+    setMaximumSize(new Dimension(theme.scale(440), Short.MAX_VALUE));
     setBackground(theme.BG_MEDIUM);
     setBorder(BorderFactory.createLineBorder(theme.BORDER));
 
@@ -76,10 +78,10 @@ public class SamplerDevicePanel extends JPanel {
     btnPanel.setOpaque(false);
 
     JButton modBtn = new JButton("Mod");
-    modBtn.addActionListener(e -> {
-      if (modToggleCallback != null)
-        modToggleCallback.run();
-    });
+    modBtn.addActionListener(
+        e -> {
+          if (modToggleCallback != null) modToggleCallback.run();
+        });
     btnPanel.add(modBtn);
 
     JButton loadBtn = new JButton("Load");
@@ -91,10 +93,11 @@ public class SamplerDevicePanel extends JPanel {
     JToggleButton enableBtn = new JToggleButton("On", enabled);
     enableBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     enableBtn.setFocusPainted(false);
-    enableBtn.addActionListener(e -> {
-      enabled = enableBtn.isSelected();
-      sendParam(P_ENABLE, enabled ? 1.0 : 0.0);
-    });
+    enableBtn.addActionListener(
+        e -> {
+          enabled = enableBtn.isSelected();
+          sendParam(P_ENABLE, enabled ? 1.0 : 0.0);
+        });
     btnPanel.add(enableBtn);
     header.add(btnPanel, BorderLayout.EAST);
     add(header, BorderLayout.NORTH);
@@ -145,20 +148,20 @@ public class SamplerDevicePanel extends JPanel {
     }
   }
 
-  /**
-   * Send ACTION_LOAD_SAMPLE to backend. Used by both file chooser and drop
-   * handler.
-   */
+  /** Send ACTION_LOAD_SAMPLE to backend. Used by both file chooser and drop handler. */
   void sendLoadSample(String path) {
-    BackendManager.getInstance().sendRequest(
-        Request.newBuilder()
-            .setPlugin(PluginCmd.newBuilder()
-                .setAction(PluginCmd.Action.ACTION_LOAD_SAMPLE)
-                .setTarget(EntityRef.newBuilder()
-                    .setTrackIndex(trackIndex)
-                    .setPluginIndex(pluginIndex))
-                .setSamplePath(path))
-            .build());
+    BackendManager.getInstance()
+        .sendRequest(
+            Request.newBuilder()
+                .setPlugin(
+                    PluginCmd.newBuilder()
+                        .setAction(PluginCmd.Action.ACTION_LOAD_SAMPLE)
+                        .setTarget(
+                            EntityRef.newBuilder()
+                                .setTrackIndex(trackIndex)
+                                .setPluginIndex(pluginIndex))
+                        .setSamplePath(path))
+                .build());
   }
 
   /** Called by PluginPane when PluginSampleData notification arrives */
@@ -181,96 +184,111 @@ public class SamplerDevicePanel extends JPanel {
   private class WaveformPanel extends JPanel {
     private int dragging = -1; // 0=start, 1=end
     private static final int HANDLE_W = 6;
-    private final javax.swing.border.Border normalBorder = BorderFactory.createLineBorder(new Color(0x333355));
-    private final javax.swing.border.Border dropBorder = BorderFactory.createLineBorder(new Color(0x55AAFF), 2);
+    private final javax.swing.border.Border normalBorder =
+        BorderFactory.createLineBorder(new Color(0x333355));
+    private final javax.swing.border.Border dropBorder =
+        BorderFactory.createLineBorder(new Color(0x55AAFF), 2);
 
     WaveformPanel() {
       setBackground(new Color(0x1A1A2E));
       setBorder(normalBorder);
 
-      addMouseListener(new MouseAdapter() {
-        @Override public void mousePressed(MouseEvent e) {
-          int w = getWidth();
-          int xStart = (int)(params[P_SAMPLE_START] * w);
-          int xEnd = (int)(params[P_SAMPLE_END] * w);
-          if (Math.abs(e.getX() - xStart) < HANDLE_W + 2) dragging = 0;
-          else if (Math.abs(e.getX() - xEnd) < HANDLE_W + 2) dragging = 1;
-        }
-        @Override public void mouseReleased(MouseEvent e) { dragging = -1; }
-      });
-      addMouseMotionListener(new MouseMotionAdapter() {
-        @Override public void mouseDragged(MouseEvent e) {
-          if (dragging < 0) return;
-          double norm = Math.max(0, Math.min(1.0, (double)e.getX() / getWidth()));
-          if (dragging == 0) {
-            params[P_SAMPLE_START] = Math.min(norm, params[P_SAMPLE_END] - 0.01);
-            sendParam(P_SAMPLE_START, params[P_SAMPLE_START]);
-          } else {
-            params[P_SAMPLE_END] = Math.max(norm, params[P_SAMPLE_START] + 0.01);
-            sendParam(P_SAMPLE_END, params[P_SAMPLE_END]);
-          }
-          repaint();
-        }
-      });
+      addMouseListener(
+          new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+              int w = getWidth();
+              int xStart = (int) (params[P_SAMPLE_START] * w);
+              int xEnd = (int) (params[P_SAMPLE_END] * w);
+              if (Math.abs(e.getX() - xStart) < HANDLE_W + 2) dragging = 0;
+              else if (Math.abs(e.getX() - xEnd) < HANDLE_W + 2) dragging = 1;
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+              dragging = -1;
+            }
+          });
+      addMouseMotionListener(
+          new MouseMotionAdapter() {
+            @Override
+            public void mouseDragged(MouseEvent e) {
+              if (dragging < 0) return;
+              double norm = Math.max(0, Math.min(1.0, (double) e.getX() / getWidth()));
+              if (dragging == 0) {
+                params[P_SAMPLE_START] = Math.min(norm, params[P_SAMPLE_END] - 0.01);
+                sendParam(P_SAMPLE_START, params[P_SAMPLE_START]);
+              } else {
+                params[P_SAMPLE_END] = Math.max(norm, params[P_SAMPLE_START] + 0.01);
+                sendParam(P_SAMPLE_END, params[P_SAMPLE_END]);
+              }
+              repaint();
+            }
+          });
 
       // Drop target for audio files from browser, timeline, and OS file manager
       if (!java.awt.GraphicsEnvironment.isHeadless()) {
-        new DropTarget(this, new DropTargetAdapter() {
-          @Override
-          public void dragEnter(DropTargetDragEvent dtde) {
-            if (dtde.isDataFlavorSupported(DataFlavor.stringFlavor)
-                || dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
-              dtde.acceptDrag(DnDConstants.ACTION_COPY);
-              setBorder(dropBorder);
-            } else {
-              dtde.rejectDrag();
-            }
-          }
-
-          @Override
-          public void dragExit(DropTargetEvent dte) {
-            setBorder(normalBorder);
-          }
-
-          @Override
-          public void drop(DropTargetDropEvent dtde) {
-            setBorder(normalBorder);
-            try {
-              // String flavor: browser drag ("audio:/path") or timeline ("audio:/path")
-              if (dtde.isDataFlavorSupported(DataFlavor.stringFlavor)) {
-                dtde.acceptDrop(DnDConstants.ACTION_COPY);
-                String data = (String) dtde.getTransferable()
-                    .getTransferData(DataFlavor.stringFlavor);
-                dtde.dropComplete(true);
-                String[] parts = data.split(":", 2);
-                if (parts.length == 2 && "audio".equals(parts[0])) {
-                  sendLoadSample(parts[1]);
+        new DropTarget(
+            this,
+            new DropTargetAdapter() {
+              @Override
+              public void dragEnter(DropTargetDragEvent dtde) {
+                if (dtde.isDataFlavorSupported(DataFlavor.stringFlavor)
+                    || dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                  dtde.acceptDrag(DnDConstants.ACTION_COPY);
+                  setBorder(dropBorder);
+                } else {
+                  dtde.rejectDrag();
                 }
-                return;
               }
-              // File list flavor: OS file manager drag
-              if (dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
-                dtde.acceptDrop(DnDConstants.ACTION_COPY);
-                @SuppressWarnings("unchecked")
-                java.util.List<File> files = (java.util.List<File>) dtde.getTransferable()
-                    .getTransferData(DataFlavor.javaFileListFlavor);
-                dtde.dropComplete(true);
-                for (File f : files) {
-                  String name = f.getName().toLowerCase();
-                  if (name.endsWith(".wav") || name.endsWith(".aiff") || name.endsWith(".flac")) {
-                    sendLoadSample(f.getAbsolutePath());
-                    break;
+
+              @Override
+              public void dragExit(DropTargetEvent dte) {
+                setBorder(normalBorder);
+              }
+
+              @Override
+              public void drop(DropTargetDropEvent dtde) {
+                setBorder(normalBorder);
+                try {
+                  // String flavor: browser drag ("audio:/path") or timeline ("audio:/path")
+                  if (dtde.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                    dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                    String data =
+                        (String) dtde.getTransferable().getTransferData(DataFlavor.stringFlavor);
+                    dtde.dropComplete(true);
+                    String[] parts = data.split(":", 2);
+                    if (parts.length == 2 && "audio".equals(parts[0])) {
+                      sendLoadSample(parts[1]);
+                    }
+                    return;
                   }
+                  // File list flavor: OS file manager drag
+                  if (dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                    dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                    @SuppressWarnings("unchecked")
+                    java.util.List<File> files =
+                        (java.util.List<File>)
+                            dtde.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+                    dtde.dropComplete(true);
+                    for (File f : files) {
+                      String name = f.getName().toLowerCase();
+                      if (name.endsWith(".wav")
+                          || name.endsWith(".aiff")
+                          || name.endsWith(".flac")) {
+                        sendLoadSample(f.getAbsolutePath());
+                        break;
+                      }
+                    }
+                    return;
+                  }
+                  dtde.rejectDrop();
+                } catch (Exception ex) {
+                  ex.printStackTrace();
+                  dtde.rejectDrop();
                 }
-                return;
               }
-              dtde.rejectDrop();
-            } catch (Exception ex) {
-              ex.printStackTrace();
-              dtde.rejectDrop();
-            }
-          }
-        });
+            });
       }
     }
 
@@ -284,7 +302,8 @@ public class SamplerDevicePanel extends JPanel {
       if (waveform == null || waveform.length == 0) {
         g2.setColor(new Color(0x555577));
         g2.setFont(getFont().deriveFont(12.0f));
-        String msg = sampleName.equals("(no sample)") ? "Click 'Load' to load a WAV sample" : sampleName;
+        String msg =
+            sampleName.equals("(no sample)") ? "Click 'Load' to load a WAV sample" : sampleName;
         FontMetrics fm = g2.getFontMetrics();
         g2.drawString(msg, (w - fm.stringWidth(msg)) / 2, h / 2);
         g2.dispose();
@@ -292,8 +311,8 @@ public class SamplerDevicePanel extends JPanel {
       }
 
       // Draw waveform
-      int startX = (int)(params[P_SAMPLE_START] * w);
-      int endX = (int)(params[P_SAMPLE_END] * w);
+      int startX = (int) (params[P_SAMPLE_START] * w);
+      int endX = (int) (params[P_SAMPLE_END] * w);
 
       // Inactive regions (darker)
       g2.setColor(new Color(0x0D0D1A));
@@ -303,7 +322,7 @@ public class SamplerDevicePanel extends JPanel {
       // Waveform bars
       for (int i = 0; i < waveform.length; i++) {
         int x = i * w / waveform.length;
-        int barH = (int)(waveform[i] * h * 0.9f);
+        int barH = (int) (waveform[i] * h * 0.9f);
         boolean active = x >= startX && x <= endX;
         g2.setColor(active ? new Color(0x5599DD) : new Color(0x334455));
         g2.fillRect(x, (h - barH) / 2, Math.max(1, w / waveform.length - 1), barH);
@@ -330,16 +349,17 @@ public class SamplerDevicePanel extends JPanel {
 
   // ── Shared helpers ────────────────────────────────────────
   private String noteNameFromNorm(double norm) {
-    int midi = Math.max(0, Math.min(127, (int)(norm * 127)));
+    int midi = Math.max(0, Math.min(127, (int) (norm * 127)));
     return NOTE_NAMES[midi % 12] + (midi / 12 - 1);
   }
 
   private JPanel createAdsrSection(String title, int aParam, Theme theme) {
     JPanel p = new JPanel(new BorderLayout());
     p.setBackground(theme.BG_DARK);
-    p.setBorder(BorderFactory.createCompoundBorder(
-        BorderFactory.createLineBorder(theme.BORDER),
-        BorderFactory.createEmptyBorder(3, 6, 3, 6)));
+    p.setBorder(
+        BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(theme.BORDER),
+            BorderFactory.createEmptyBorder(3, 6, 3, 6)));
     JLabel lbl = new JLabel(title);
     lbl.setForeground(new Color(0xBBBBBB));
     lbl.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
@@ -357,9 +377,10 @@ public class SamplerDevicePanel extends JPanel {
   private JPanel createFilterSection(Theme theme) {
     JPanel p = new JPanel(new BorderLayout());
     p.setBackground(theme.BG_DARK);
-    p.setBorder(BorderFactory.createCompoundBorder(
-        BorderFactory.createLineBorder(theme.BORDER),
-        BorderFactory.createEmptyBorder(3, 6, 3, 6)));
+    p.setBorder(
+        BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(theme.BORDER),
+            BorderFactory.createEmptyBorder(3, 6, 3, 6)));
     JLabel lbl = new JLabel("FILTER");
     lbl.setForeground(new Color(0xBBBBBB));
     lbl.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
@@ -369,13 +390,14 @@ public class SamplerDevicePanel extends JPanel {
     JComboBox<String> typeCombo = new JComboBox<>(FILT_NAMES);
     typeCombo.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
     typeCombo.setPreferredSize(new Dimension(theme.scale(36), theme.scale(18)));
-    typeCombo.addActionListener(e -> {
-      int sel = typeCombo.getSelectedIndex();
-      if (sel >= 0 && sel < FILT_NORMS.length) {
-        params[P_FILT_TYPE] = FILT_NORMS[sel];
-        sendParam(P_FILT_TYPE, FILT_NORMS[sel]);
-      }
-    });
+    typeCombo.addActionListener(
+        e -> {
+          int sel = typeCombo.getSelectedIndex();
+          if (sel >= 0 && sel < FILT_NORMS.length) {
+            params[P_FILT_TYPE] = FILT_NORMS[sel];
+            sendParam(P_FILT_TYPE, FILT_NORMS[sel]);
+          }
+        });
     knobs.add(typeCombo);
     knobs.add(createKnob("Cut", P_FILT_CUT, 1.0, theme));
     knobs.add(createKnob("Res", P_FILT_RES, 0.0, theme));
@@ -411,16 +433,18 @@ public class SamplerDevicePanel extends JPanel {
     return p;
   }
 
-  private JPanel createKnobWithLabel(String label, int paramId, double defaultVal,
-                                     Theme theme, JLabel displayLabel) {
+  private JPanel createKnobWithLabel(
+      String label, int paramId, double defaultVal, Theme theme, JLabel displayLabel) {
     JPanel p = new JPanel(new BorderLayout());
     p.setOpaque(false);
     p.setPreferredSize(new Dimension(theme.scale(40), theme.scale(52)));
-    KnobPanel knob = new KnobPanel(paramId, defaultVal) {
-      @Override protected void onValueChanged() {
-        displayLabel.setText("Root: " + noteNameFromNorm(value));
-      }
-    };
+    KnobPanel knob =
+        new KnobPanel(paramId, defaultVal) {
+          @Override
+          protected void onValueChanged() {
+            displayLabel.setText("Root: " + noteNameFromNorm(value));
+          }
+        };
     p.add(knob, BorderLayout.CENTER);
     JLabel l = new JLabel(label, SwingConstants.CENTER);
     l.setForeground(new Color(0x999999));
@@ -430,16 +454,19 @@ public class SamplerDevicePanel extends JPanel {
   }
 
   private void sendParam(int paramId, double value) {
-    BackendManager.getInstance().sendRequest(
-        Request.newBuilder()
-            .setPlugin(PluginCmd.newBuilder()
-                .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-                .setTarget(EntityRef.newBuilder()
-                    .setTrackIndex(trackIndex)
-                    .setPluginIndex(pluginIndex))
-                .setParamId(paramId)
-                .setParamValue((float) value))
-            .build());
+    BackendManager.getInstance()
+        .sendRequest(
+            Request.newBuilder()
+                .setPlugin(
+                    PluginCmd.newBuilder()
+                        .setAction(PluginCmd.Action.ACTION_SET_PARAM)
+                        .setTarget(
+                            EntityRef.newBuilder()
+                                .setTrackIndex(trackIndex)
+                                .setPluginIndex(pluginIndex))
+                        .setParamId(paramId)
+                        .setParamValue((float) value))
+                .build());
   }
 
   // ── Mini arc-knob ─────────────────────────────────────────
@@ -454,20 +481,26 @@ public class SamplerDevicePanel extends JPanel {
       setOpaque(false);
       setPreferredSize(new Dimension(30, 30));
       setCursor(Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR));
-      addMouseListener(new MouseAdapter() {
-        @Override public void mousePressed(MouseEvent e) { dragStartY = e.getY(); }
-      });
-      addMouseMotionListener(new MouseMotionAdapter() {
-        @Override public void mouseDragged(MouseEvent e) {
-          int dy = dragStartY - e.getY();
-          dragStartY = e.getY();
-          value = Math.max(0.0, Math.min(1.0, value + dy * 0.005));
-          params[paramId] = value;
-          sendParam(paramId, value);
-          onValueChanged();
-          repaint();
-        }
-      });
+      addMouseListener(
+          new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+              dragStartY = e.getY();
+            }
+          });
+      addMouseMotionListener(
+          new MouseMotionAdapter() {
+            @Override
+            public void mouseDragged(MouseEvent e) {
+              int dy = dragStartY - e.getY();
+              dragStartY = e.getY();
+              value = Math.max(0.0, Math.min(1.0, value + dy * 0.005));
+              params[paramId] = value;
+              sendParam(paramId, value);
+              onValueChanged();
+              repaint();
+            }
+          });
     }
 
     protected void onValueChanged() {}
@@ -487,7 +520,7 @@ public class SamplerDevicePanel extends JPanel {
       g2.setColor(new Color(0xE09040));
       g2.drawArc(x, y, size, size, 225, arcAngle);
       g2.setColor(new Color(0xDDDDDD));
-      double angle = Math.toRadians(225 + 270 * value);
+      double angle = Math.toRadians(225 - 270 * value);
       int cx = x + size / 2 + (int) ((size / 2 - 2) * Math.cos(angle));
       int cy = y + size / 2 - (int) ((size / 2 - 2) * Math.sin(angle));
       g2.fillOval(cx - 2, cy - 2, 4, 4);

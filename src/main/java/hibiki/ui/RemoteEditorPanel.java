@@ -13,11 +13,11 @@ import java.util.function.Consumer;
 import javax.swing.*;
 
 /**
- * Panel that displays a remote plugin's GUI by polling EditorFrame data from
- * the backend and forwarding mouse/keyboard events back.
+ * Panel that displays a remote plugin's GUI by polling EditorFrame data from the backend and
+ * forwarding mouse/keyboard events back.
  *
- * <p>Usage: {@code new RemoteEditorPanel(trackIndex, pluginIndex)} and add to
- * a JDialog. The panel starts polling when shown and stops when hidden.
+ * <p>Usage: {@code new RemoteEditorPanel(trackIndex, pluginIndex)} and add to a JDialog. The panel
+ * starts polling when shown and stops when hidden.
  */
 public class RemoteEditorPanel extends JPanel {
   private final int trackIndex;
@@ -42,56 +42,60 @@ public class RemoteEditorPanel extends JPanel {
     setFocusable(true);
 
     // Listen for editor frame notifications
-    listener = notification -> {
-      if (notification.hasEditorFrameData()) {
-        EditorFrameData frame = notification.getEditorFrameData();
-        if (frame.getTrackIndex() == trackIndex
-            && frame.getPluginIndex() == pluginIndex) {
-          updateFrame(frame);
-        }
-      }
-    };
+    listener =
+        notification -> {
+          if (notification.hasEditorFrameData()) {
+            EditorFrameData frame = notification.getEditorFrameData();
+            if (frame.getTrackIndex() == trackIndex && frame.getPluginIndex() == pluginIndex) {
+              updateFrame(frame);
+            }
+          }
+        };
 
     // Mouse listeners for input forwarding
-    addMouseListener(new MouseAdapter() {
-      @Override
-      public void mousePressed(MouseEvent e) {
-        sendInput(INPUT_DOWN, e.getX(), e.getY(), e.getButton(), 0, 0);
-      }
+    addMouseListener(
+        new MouseAdapter() {
+          @Override
+          public void mousePressed(MouseEvent e) {
+            sendInput(INPUT_DOWN, e.getX(), e.getY(), e.getButton(), 0, 0);
+          }
 
-      @Override
-      public void mouseReleased(MouseEvent e) {
-        sendInput(INPUT_UP, e.getX(), e.getY(), e.getButton(), 0, 0);
-      }
-    });
+          @Override
+          public void mouseReleased(MouseEvent e) {
+            sendInput(INPUT_UP, e.getX(), e.getY(), e.getButton(), 0, 0);
+          }
+        });
 
-    addMouseMotionListener(new MouseMotionAdapter() {
-      @Override
-      public void mouseMoved(MouseEvent e) {
-        sendInput(INPUT_MOVE, e.getX(), e.getY(), 0, 0, 0);
-      }
+    addMouseMotionListener(
+        new MouseMotionAdapter() {
+          @Override
+          public void mouseMoved(MouseEvent e) {
+            sendInput(INPUT_MOVE, e.getX(), e.getY(), 0, 0, 0);
+          }
 
-      @Override
-      public void mouseDragged(MouseEvent e) {
-        sendInput(INPUT_MOVE, e.getX(), e.getY(), e.getModifiersEx(), 0, 0);
-      }
-    });
+          @Override
+          public void mouseDragged(MouseEvent e) {
+            sendInput(INPUT_MOVE, e.getX(), e.getY(), e.getModifiersEx(), 0, 0);
+          }
+        });
 
-    addMouseWheelListener(e -> {
-      sendInput(INPUT_WHEEL, e.getX(), e.getY(), 0, 0, e.getWheelRotation());
-    });
+    addMouseWheelListener(
+        e -> {
+          sendInput(INPUT_WHEEL, e.getX(), e.getY(), 0, 0, e.getWheelRotation());
+        });
 
-    addKeyListener(new KeyAdapter() {
-      @Override
-      public void keyPressed(KeyEvent e) {
-        sendInput(INPUT_KEY_DOWN, 0, 0, 0, e.getKeyCode(), 0);
-      }
+    addKeyListener(
+        new KeyAdapter() {
+          @Override
+          public void keyPressed(KeyEvent e) {
+            sendInput(INPUT_KEY_DOWN, 0, 0, 0, e.getKeyCode(), 0);
+          }
 
-      @Override
-      public void keyReleased(KeyEvent e) {
-        sendInput(INPUT_KEY_UP, 0, 0, 0, e.getKeyCode(), 0);
-      }
-    });
+          @Override
+          public void keyReleased(KeyEvent e) {
+            sendInput(INPUT_KEY_UP, 0, 0, 0, e.getKeyCode(), 0);
+          }
+        });
   }
 
   /** Start polling for frames and register notification listener. */
@@ -99,16 +103,17 @@ public class RemoteEditorPanel extends JPanel {
     BackendManager.getInstance().addNotificationListener(listener);
 
     // Tell backend to show editor (headless for framebuffer capture)
-    BackendManager.getInstance().sendRequest(
-        Request.newBuilder()
-            .setPlugin(
-                PluginCmd.newBuilder()
-                    .setAction(PluginCmd.Action.ACTION_SHOW_GUI)
-                    .setTarget(
-                        EntityRef.newBuilder()
-                            .setTrackIndex(trackIndex)
-                            .setPluginIndex(pluginIndex)))
-            .build());
+    BackendManager.getInstance()
+        .sendRequest(
+            Request.newBuilder()
+                .setPlugin(
+                    PluginCmd.newBuilder()
+                        .setAction(PluginCmd.Action.ACTION_SHOW_GUI)
+                        .setTarget(
+                            EntityRef.newBuilder()
+                                .setTrackIndex(trackIndex)
+                                .setPluginIndex(pluginIndex)))
+                .build());
 
     // Poll for frames at ~30 fps
     pollTimer = new Timer(33, e -> requestFrame());
@@ -124,29 +129,31 @@ public class RemoteEditorPanel extends JPanel {
     BackendManager.getInstance().removeNotificationListener(listener);
 
     // Tell backend to stop the editor
-    BackendManager.getInstance().sendRequest(
-        Request.newBuilder()
-            .setPlugin(
-                PluginCmd.newBuilder()
-                    .setAction(PluginCmd.Action.ACTION_STOP_GUI)
-                    .setTarget(
-                        EntityRef.newBuilder()
-                            .setTrackIndex(trackIndex)
-                            .setPluginIndex(pluginIndex)))
-            .build());
+    BackendManager.getInstance()
+        .sendRequest(
+            Request.newBuilder()
+                .setPlugin(
+                    PluginCmd.newBuilder()
+                        .setAction(PluginCmd.Action.ACTION_STOP_GUI)
+                        .setTarget(
+                            EntityRef.newBuilder()
+                                .setTrackIndex(trackIndex)
+                                .setPluginIndex(pluginIndex)))
+                .build());
   }
 
   private void requestFrame() {
-    BackendManager.getInstance().sendRequest(
-        Request.newBuilder()
-            .setPlugin(
-                PluginCmd.newBuilder()
-                    .setAction(PluginCmd.Action.ACTION_GET_EDITOR_FRAME)
-                    .setTarget(
-                        EntityRef.newBuilder()
-                            .setTrackIndex(trackIndex)
-                            .setPluginIndex(pluginIndex)))
-            .build());
+    BackendManager.getInstance()
+        .sendRequest(
+            Request.newBuilder()
+                .setPlugin(
+                    PluginCmd.newBuilder()
+                        .setAction(PluginCmd.Action.ACTION_GET_EDITOR_FRAME)
+                        .setTarget(
+                            EntityRef.newBuilder()
+                                .setTrackIndex(trackIndex)
+                                .setPluginIndex(pluginIndex)))
+                .build());
   }
 
   private void updateFrame(EditorFrameData frame) {
@@ -171,33 +178,34 @@ public class RemoteEditorPanel extends JPanel {
     // Resize panel to match plugin window if needed
     if (getPreferredSize().width != w || getPreferredSize().height != h) {
       setPreferredSize(new Dimension(w, h));
-      SwingUtilities.invokeLater(() -> {
-        revalidate();
-        Window window = SwingUtilities.getWindowAncestor(this);
-        if (window != null) window.pack();
-      });
+      SwingUtilities.invokeLater(
+          () -> {
+            revalidate();
+            Window window = SwingUtilities.getWindowAncestor(this);
+            if (window != null) window.pack();
+          });
     }
     repaint();
   }
 
-  private void sendInput(int type, int x, int y, int button, int key,
-      int delta) {
-    BackendManager.getInstance().sendRequest(
-        Request.newBuilder()
-            .setPlugin(
-                PluginCmd.newBuilder()
-                    .setAction(PluginCmd.Action.ACTION_SEND_EDITOR_INPUT)
-                    .setTarget(
-                        EntityRef.newBuilder()
-                            .setTrackIndex(trackIndex)
-                            .setPluginIndex(pluginIndex))
-                    .setInputType(type)
-                    .setInputX(x)
-                    .setInputY(y)
-                    .setInputButton(button)
-                    .setInputKey(key)
-                    .setInputDelta(delta))
-            .build());
+  private void sendInput(int type, int x, int y, int button, int key, int delta) {
+    BackendManager.getInstance()
+        .sendRequest(
+            Request.newBuilder()
+                .setPlugin(
+                    PluginCmd.newBuilder()
+                        .setAction(PluginCmd.Action.ACTION_SEND_EDITOR_INPUT)
+                        .setTarget(
+                            EntityRef.newBuilder()
+                                .setTrackIndex(trackIndex)
+                                .setPluginIndex(pluginIndex))
+                        .setInputType(type)
+                        .setInputX(x)
+                        .setInputY(y)
+                        .setInputButton(button)
+                        .setInputKey(key)
+                        .setInputDelta(delta))
+                .build());
   }
 
   @Override
@@ -221,29 +229,29 @@ public class RemoteEditorPanel extends JPanel {
   }
 
   /** Show this panel in a modal-less dialog. */
-  public static JDialog showEditor(Component parent, int trackIndex,
-      int pluginIndex, String pluginName) {
-    JDialog dialog = new JDialog(
-        SwingUtilities.getWindowAncestor(parent),
-        pluginName + " (Remote Editor)");
+  public static JDialog showEditor(
+      Component parent, int trackIndex, int pluginIndex, String pluginName) {
+    JDialog dialog =
+        new JDialog(SwingUtilities.getWindowAncestor(parent), pluginName + " (Remote Editor)");
     RemoteEditorPanel panel = new RemoteEditorPanel(trackIndex, pluginIndex);
     dialog.setContentPane(panel);
     dialog.pack();
     dialog.setLocationRelativeTo(parent);
     dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
-    dialog.addWindowListener(new WindowAdapter() {
-      @Override
-      public void windowOpened(WindowEvent e) {
-        panel.startPolling();
-        panel.requestFocusInWindow();
-      }
+    dialog.addWindowListener(
+        new WindowAdapter() {
+          @Override
+          public void windowOpened(WindowEvent e) {
+            panel.startPolling();
+            panel.requestFocusInWindow();
+          }
 
-      @Override
-      public void windowClosing(WindowEvent e) {
-        panel.stopPolling();
-      }
-    });
+          @Override
+          public void windowClosing(WindowEvent e) {
+            panel.stopPolling();
+          }
+        });
 
     dialog.setVisible(true);
     return dialog;

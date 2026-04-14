@@ -4,7 +4,10 @@
 #include <iostream>
 
 #include "engine/effects/builtin_compressor.hpp"
+#include "engine/effects/builtin_delay.hpp"
 #include "engine/effects/builtin_eq.hpp"
+#include "engine/effects/builtin_limiter.hpp"
+#include "engine/effects/builtin_reverb.hpp"
 #include "engine/instruments/builtin_3xosc.hpp"
 #include "engine/instruments/builtin_sampler.hpp"
 #include "engine/ipc/ipc.hpp"
@@ -32,6 +35,15 @@ int Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinSampler::kPath) {
     plugin = std::make_unique<BuiltinSampler>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinDelay::kPath) {
+    plugin = std::make_unique<BuiltinDelay>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinReverb::kPath) {
+    plugin = std::make_unique<BuiltinReverb>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinLimiter::kPath) {
+    plugin = std::make_unique<BuiltinLimiter>();
     plugin->load(path, 0, sample_rate);
   } else if (!remote_host.empty()) {
     // Per-load remote host — always use TCP proxy

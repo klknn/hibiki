@@ -291,8 +291,8 @@ class TimelineMouseHandler {
     if (clipIndex >= 0) {
       // Send move FIRST so engine updates start_time before resize notification
       BackendManager.getInstance()
-          .moveTimelineClip(view.resizeTrackIdx, clipIndex,
-              view.resizeClip.startTime, view.resizeTrackIdx);
+          .moveTimelineClip(
+              view.resizeTrackIdx, clipIndex, view.resizeClip.startTime, view.resizeTrackIdx);
       BackendManager.getInstance()
           .resizeTimelineClip(view.resizeTrackIdx, clipIndex, durationBeats, trimStartBeats);
     }

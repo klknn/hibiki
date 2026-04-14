@@ -8,13 +8,13 @@ import java.util.List;
 import javax.swing.*;
 
 /**
- * Modulation panel shown below the device chain in PluginPane.
- * Provides 3 LFO modulator slots per plugin, each with waveform selection,
- * rate, depth (±1.0), and click-to-assign target parameter workflow.
+ * Modulation panel shown below the device chain in PluginPane. Provides 3 LFO modulator slots per
+ * plugin, each with waveform selection, rate, depth (±1.0), and click-to-assign target parameter
+ * workflow.
  */
 public class ModulationPanel extends JPanel {
   private static final int MAX_SLOTS = 3;
-  private static final String[] WAVEFORM_NAMES = { "Sin", "Saw", "Sqr", "Rnd" };
+  private static final String[] WAVEFORM_NAMES = {"Sin", "Saw", "Sqr", "Rnd"};
 
   private int trackIndex;
   private int pluginIndex;
@@ -29,9 +29,10 @@ public class ModulationPanel extends JPanel {
     Theme theme = Theme.getInstance();
     setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
     setBackground(theme.BG_DARK);
-    setBorder(BorderFactory.createCompoundBorder(
-        BorderFactory.createMatteBorder(1, 0, 0, 0, theme.BORDER),
-        BorderFactory.createEmptyBorder(4, 6, 4, 6)));
+    setBorder(
+        BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(1, 0, 0, 0, theme.BORDER),
+            BorderFactory.createEmptyBorder(4, 6, 4, 6)));
 
     // Header
     JLabel header = new JLabel("⬡ Modulation");
@@ -45,8 +46,7 @@ public class ModulationPanel extends JPanel {
       slots[i] = new ModSlot(i);
       slots[i].setAlignmentX(LEFT_ALIGNMENT);
       add(slots[i]);
-      if (i < MAX_SLOTS - 1)
-        add(Box.createVerticalStrut(2));
+      if (i < MAX_SLOTS - 1) add(Box.createVerticalStrut(2));
     }
   }
 
@@ -57,14 +57,12 @@ public class ModulationPanel extends JPanel {
 
   /** Complete assignment: bind the assigning slot to the given param. */
   public void completeAssign(long paramId, String paramName) {
-    if (assigningSlot < 0)
-      return;
+    if (assigningSlot < 0) return;
     int slot = assigningSlot;
     assigningSlot = -1;
     slots[slot].setAssignMode(false);
 
-    BackendManager.getInstance().assignModulator(
-        trackIndex, pluginIndex, slot, (int) paramId);
+    BackendManager.getInstance().assignModulator(trackIndex, pluginIndex, slot, (int) paramId);
     // Optimistically update label
     slots[slot].targetLabel.setText(paramName);
   }
@@ -81,8 +79,7 @@ public class ModulationPanel extends JPanel {
   public void updateFromNotification(List<ModulationSlotInfo> slotInfos) {
     for (ModulationSlotInfo info : slotInfos) {
       int idx = info.getSlotIndex();
-      if (idx < 0 || idx >= MAX_SLOTS)
-        continue;
+      if (idx < 0 || idx >= MAX_SLOTS) continue;
       ModSlot s = slots[idx];
       s.updateFromInfo(info);
     }
@@ -136,11 +133,11 @@ public class ModulationPanel extends JPanel {
       rateSlider = new JSlider(1, 2000, 100); // 0.01 to 20.00
       rateSlider.setPreferredSize(new Dimension(80, 18));
       rateSlider.setOpaque(false);
-      rateSlider.addChangeListener(e -> {
-        rateLabel.setText(String.format("%.1fHz", rateSlider.getValue() / 100f));
-        if (!rateSlider.getValueIsAdjusting())
-          sendConfigure();
-      });
+      rateSlider.addChangeListener(
+          e -> {
+            rateLabel.setText(String.format("%.1fHz", rateSlider.getValue() / 100f));
+            if (!rateSlider.getValueIsAdjusting()) sendConfigure();
+          });
       add(rateSlider);
       add(rateLabel);
 
@@ -153,11 +150,11 @@ public class ModulationPanel extends JPanel {
       depthSlider = new JSlider(-100, 100, 0);
       depthSlider.setPreferredSize(new Dimension(80, 18));
       depthSlider.setOpaque(false);
-      depthSlider.addChangeListener(e -> {
-        depthLabel.setText(String.format("%.2f", depthSlider.getValue() / 100f));
-        if (!depthSlider.getValueIsAdjusting())
-          sendConfigure();
-      });
+      depthSlider.addChangeListener(
+          e -> {
+            depthLabel.setText(String.format("%.2f", depthSlider.getValue() / 100f));
+            if (!depthSlider.getValueIsAdjusting()) sendConfigure();
+          });
       add(depthSlider);
       add(depthLabel);
 
@@ -174,20 +171,21 @@ public class ModulationPanel extends JPanel {
       assignBtn.setMargin(new Insets(0, 4, 0, 4));
       assignBtn.setPreferredSize(new Dimension(28, 20));
       assignBtn.setToolTipText("Assign to parameter");
-      assignBtn.addActionListener(e -> {
-        if (assigningSlot == slotIndex) {
-          cancelAssign();
-        } else {
-          cancelAssign(); // cancel any previous
-          if (!active) {
-            // Auto-add the modulator first
-            sendAdd();
-            active = true;
-          }
-          assigningSlot = slotIndex;
-          setAssignMode(true);
-        }
-      });
+      assignBtn.addActionListener(
+          e -> {
+            if (assigningSlot == slotIndex) {
+              cancelAssign();
+            } else {
+              cancelAssign(); // cancel any previous
+              if (!active) {
+                // Auto-add the modulator first
+                sendAdd();
+                active = true;
+              }
+              assigningSlot = slotIndex;
+              setAssignMode(true);
+            }
+          });
       add(assignBtn);
 
       // Remove button
@@ -196,14 +194,15 @@ public class ModulationPanel extends JPanel {
       removeBtn.setMargin(new Insets(0, 2, 0, 2));
       removeBtn.setPreferredSize(new Dimension(22, 20));
       removeBtn.setToolTipText("Remove modulator");
-      removeBtn.addActionListener(e -> {
-        BackendManager.getInstance().removeModulator(trackIndex, pluginIndex, slotIndex);
-        active = false;
-        targetLabel.setText("—");
-        depthSlider.setValue(0);
-        rateSlider.setValue(100);
-        waveformBox.setSelectedIndex(0);
-      });
+      removeBtn.addActionListener(
+          e -> {
+            BackendManager.getInstance().removeModulator(trackIndex, pluginIndex, slotIndex);
+            active = false;
+            targetLabel.setText("—");
+            depthSlider.setValue(0);
+            rateSlider.setValue(100);
+            waveformBox.setSelectedIndex(0);
+          });
       add(removeBtn);
     }
 
@@ -217,18 +216,17 @@ public class ModulationPanel extends JPanel {
       int wf = waveformBox.getSelectedIndex();
       float rate = rateSlider.getValue() / 100f;
       float depth = depthSlider.getValue() / 100f;
-      BackendManager.getInstance().addModulator(
-          trackIndex, pluginIndex, slotIndex, wf, rate, depth, false);
+      BackendManager.getInstance()
+          .addModulator(trackIndex, pluginIndex, slotIndex, wf, rate, depth, false);
     }
 
     void sendConfigure() {
-      if (!active)
-        return;
+      if (!active) return;
       int wf = waveformBox.getSelectedIndex();
       float rate = rateSlider.getValue() / 100f;
       float depth = depthSlider.getValue() / 100f;
-      BackendManager.getInstance().configureModulator(
-          trackIndex, pluginIndex, slotIndex, wf, rate, depth, false);
+      BackendManager.getInstance()
+          .configureModulator(trackIndex, pluginIndex, slotIndex, wf, rate, depth, false);
     }
 
     void updateFromInfo(ModulationSlotInfo info) {
@@ -250,8 +248,7 @@ public class ModulationPanel extends JPanel {
 
   /** Support loading modulator from browser DnD (modulation:waveform) */
   void handleModulationDrop(int slotIndex, String waveformName) {
-    if (slotIndex < 0 || slotIndex >= MAX_SLOTS)
-      return;
+    if (slotIndex < 0 || slotIndex >= MAX_SLOTS) return;
     int wf = 0;
     switch (waveformName.toLowerCase()) {
       case "sine":

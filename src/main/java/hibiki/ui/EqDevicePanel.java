@@ -70,14 +70,14 @@ public class EqDevicePanel extends JPanel {
 
     setLayout(new BorderLayout());
     Theme theme = Theme.getInstance();
-    setPreferredSize(new Dimension(theme.scale(350), theme.scale(220)));
+    setPreferredSize(new Dimension(theme.scale(360), theme.scale(230)));
     setBackground(theme.BG_MEDIUM);
     setBorder(BorderFactory.createLineBorder(theme.BORDER));
 
     // Header
     JPanel header = new JPanel(new BorderLayout());
     header.setBackground(new Color(0x2D5AA0));
-    header.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
+    header.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
 
     JLabel nameLabel = new JLabel("EQ Eight");
     nameLabel.setForeground(Color.WHITE);
@@ -118,7 +118,7 @@ public class EqDevicePanel extends JPanel {
     // Band controls at bottom
     bandControlsPanel = new JPanel(new GridLayout(1, NUM_BANDS, 1, 0));
     bandControlsPanel.setBackground(theme.BG_DARK);
-    bandControlsPanel.setPreferredSize(new Dimension(0, theme.scale(50)));
+    bandControlsPanel.setPreferredSize(new Dimension(0, theme.scale(65)));
 
     typeDropdowns = new JComboBox[NUM_BANDS];
     for (int b = 0; b < NUM_BANDS; b++) {
@@ -128,16 +128,16 @@ public class EqDevicePanel extends JPanel {
       bp.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, theme.BORDER));
 
       // Color indicator dot + type dropdown
-      JPanel topRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 1));
+      JPanel topRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 2));
       topRow.setOpaque(false);
 
       JLabel dot = new JLabel("\u25CF");
       dot.setForeground(BAND_COLORS[b]);
-      dot.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
+      dot.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
       topRow.add(dot);
 
       JComboBox<String> typeBox = new JComboBox<>(TYPE_NAMES);
-      typeBox.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
+      typeBox.setFont(theme.FONT_UI.deriveFont(theme.scale(9.5f)));
       typeBox.setSelectedIndex(0);
       typeBox.addActionListener(e -> {
         if (updatingFromBackend)
@@ -154,7 +154,7 @@ public class EqDevicePanel extends JPanel {
       // Freq label
       JLabel freqLabel = new JLabel(formatFreq(defaultFreqs[b]), SwingConstants.CENTER);
       freqLabel.setForeground(theme.TEXT_DIM);
-      freqLabel.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
+      freqLabel.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
       bp.add(freqLabel, BorderLayout.CENTER);
 
       bandControlsPanel.add(bp);

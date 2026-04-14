@@ -4,6 +4,7 @@ import hibiki.BackendManager;
 import hibiki.pb.commands.*;
 import hibiki.pb.core.EntityRef;
 import java.awt.*;
+import java.awt.event.*;
 import java.awt.geom.*;
 import javax.swing.*;
 import javax.swing.event.ChangeEvent;
@@ -60,7 +61,7 @@ public class CompressorDevicePanel extends JPanel {
 
     Theme theme = Theme.getInstance();
     setLayout(new BorderLayout());
-    setPreferredSize(new Dimension(theme.scale(350), theme.scale(220)));
+    setPreferredSize(new Dimension(theme.scale(360), theme.scale(240)));
     setBackground(theme.BG_MEDIUM);
     setBorder(BorderFactory.createLineBorder(theme.BORDER));
 
@@ -114,9 +115,10 @@ public class CompressorDevicePanel extends JPanel {
     add(centerPanel, BorderLayout.CENTER);
 
     // Bottom: knob row
-    JPanel knobRow = new JPanel(new GridLayout(1, 6, 2, 0));
+    JPanel knobRow = new JPanel(new GridLayout(1, 6, theme.scale(4), 0));
     knobRow.setBackground(theme.BG_DARK);
-    knobRow.setPreferredSize(new Dimension(0, theme.scale(55)));
+    knobRow.setPreferredSize(new Dimension(0, theme.scale(68)));
+    knobRow.setBorder(BorderFactory.createEmptyBorder(theme.scale(4), theme.scale(6), theme.scale(4), theme.scale(6)));
 
     for (int i = 0; i < 6; i++) {
       final int paramId = i;
@@ -311,10 +313,13 @@ public class CompressorDevicePanel extends JPanel {
 
   // ─── Knob panel ────────────────────────────────────────────────
 
-  private static class KnobPanel extends JPanel {
+  private class KnobPanel extends JPanel {
     private double value;
     private final String name;
     private final java.util.List<ChangeListener> listeners = new java.util.ArrayList<>();
+    private int dragStartY;
+    private final JLabel nameLabel;
+    private final JLabel valLabel;
 
     KnobPanel(String name, double initialValue) {
       this.name = name;
@@ -323,29 +328,70 @@ public class CompressorDevicePanel extends JPanel {
       setBackground(theme.BG_DARK);
       setLayout(new BorderLayout());
 
-      JLabel label = new JLabel(name, SwingConstants.CENTER);
-      label.setForeground(theme.TEXT_DIM);
-      label.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
-      add(label, BorderLayout.NORTH);
+      nameLabel = new JLabel(name, SwingConstants.CENTER);
+      nameLabel.setForeground(theme.TEXT_DIM);
+      nameLabel.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
+      add(nameLabel, BorderLayout.NORTH);
 
-      JSlider slider = new JSlider(0, 1000, (int) (initialValue * 1000));
-      slider.setBackground(theme.BG_DARK);
-      slider.setPreferredSize(new Dimension(0, theme.scale(20)));
-      slider.addChangeListener(e -> {
-        if (!slider.getValueIsAdjusting()) {
-          value = slider.getValue() / 1000.0;
+      // Arc knob canvas
+      JPanel knobCanvas = new JPanel() {
+        @Override
+        protected void paintComponent(Graphics g) {
+          super.paintComponent(g);
+          Graphics2D g2 = (Graphics2D) g.create();
+          g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+          int sz = Math.min(getWidth(), getHeight()) - 4;
+          int kx = (getWidth() - sz) / 2;
+          int ky = (getHeight() - sz) / 2;
+
+          // Background arc
+          g2.setColor(new Color(0x3A3A3A));
+          g2.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+          g2.drawArc(kx, ky, sz, sz, 225, -270);
+
+          // Value arc
+          int arcAngle = (int) (-270 * value);
+          g2.setColor(new Color(0xCD853F));
+          g2.drawArc(kx, ky, sz, sz, 225, arcAngle);
+
+          // Indicator dot
+          g2.setColor(new Color(0xEEEEEE));
+          double angle = Math.toRadians(225 + 270 * value);
+          int cx = kx + sz / 2 + (int) ((sz / 2 - 2) * Math.cos(angle));
+          int cy = ky + sz / 2 - (int) ((sz / 2 - 2) * Math.sin(angle));
+          g2.fillOval(cx - 2, cy - 2, 5, 5);
+
+          g2.dispose();
+        }
+      };
+      knobCanvas.setOpaque(false);
+      knobCanvas.setPreferredSize(new Dimension(theme.scale(32), theme.scale(32)));
+      knobCanvas.setCursor(Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR));
+      knobCanvas.addMouseListener(new MouseAdapter() {
+        @Override
+        public void mousePressed(MouseEvent e) {
+          dragStartY = e.getY();
+        }
+      });
+      knobCanvas.addMouseMotionListener(new MouseMotionAdapter() {
+        @Override
+        public void mouseDragged(MouseEvent e) {
+          int dy = dragStartY - e.getY();
+          dragStartY = e.getY();
+          value = Math.max(0.0, Math.min(1.0, value + dy * 0.005));
+          valLabel.setText(formatValue(value));
+          knobCanvas.repaint();
           for (ChangeListener l : listeners) {
             l.stateChanged(new ChangeEvent(KnobPanel.this));
           }
         }
       });
-      add(slider, BorderLayout.CENTER);
+      add(knobCanvas, BorderLayout.CENTER);
 
       // Value display
-      JLabel valLabel = new JLabel(formatValue(initialValue), SwingConstants.CENTER);
+      valLabel = new JLabel(formatValue(initialValue), SwingConstants.CENTER);
       valLabel.setForeground(theme.TEXT_LIGHT);
       valLabel.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
-      slider.addChangeListener(e -> valLabel.setText(formatValue(slider.getValue() / 1000.0)));
       add(valLabel, BorderLayout.SOUTH);
     }
 
@@ -355,12 +401,8 @@ public class CompressorDevicePanel extends JPanel {
 
     void setValue(double v) {
       this.value = v;
-      // Find slider child and update
-      for (Component c : getComponents()) {
-        if (c instanceof JSlider) {
-          ((JSlider) c).setValue((int) (v * 1000));
-        }
-      }
+      valLabel.setText(formatValue(v));
+      repaint();
     }
 
     void addChangeListener(ChangeListener l) {
@@ -385,7 +427,7 @@ public class CompressorDevicePanel extends JPanel {
       return String.format("%.2f", norm);
     }
 
-    private static float normToRatioStatic(double norm) {
+    private float normToRatioStatic(double norm) {
       if (norm >= 0.999)
         return 1000;
       return 1.0f / (1.0f - (float) norm);

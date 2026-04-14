@@ -59,7 +59,7 @@ public class ThreeOscDevicePanel extends JPanel {
 
     setLayout(new BorderLayout());
     Theme theme = Theme.getInstance();
-    setPreferredSize(new Dimension(theme.scale(420), theme.scale(300)));
+    setPreferredSize(new Dimension(theme.scale(440), theme.scale(340)));
     setBackground(theme.BG_MEDIUM);
     setBorder(BorderFactory.createLineBorder(theme.BORDER));
 
@@ -105,12 +105,12 @@ public class ThreeOscDevicePanel extends JPanel {
     }
 
     // Separator
-    content.add(Box.createVerticalStrut(theme.scale(2)));
+    content.add(Box.createVerticalStrut(theme.scale(4)));
 
     // ADSR + Filter section
     JPanel envPanel = new JPanel(new GridLayout(1, 2, theme.scale(4), 0));
     envPanel.setBackground(theme.BG_MEDIUM);
-    envPanel.setBorder(BorderFactory.createEmptyBorder(2, 4, 4, 4));
+    envPanel.setBorder(BorderFactory.createEmptyBorder(4, 6, 6, 6));
     envPanel.add(createAdsrSection("GAIN ENV", P_GAIN_A, theme));
     envPanel.add(createFilterSection(theme));
     content.add(envPanel);
@@ -126,17 +126,17 @@ public class ThreeOscDevicePanel extends JPanel {
 
   private JPanel createOscRow(int osc, String label, Color color, Theme theme) {
     int base = osc * PARAMS_PER_OSC;
-    JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(3), theme.scale(1)));
+    JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(4), theme.scale(2)));
     row.setBackground(theme.BG_DARK);
     row.setBorder(BorderFactory.createCompoundBorder(
         BorderFactory.createMatteBorder(0, theme.scale(3), 0, 0, color),
-        BorderFactory.createEmptyBorder(1, 4, 1, 4)));
+        BorderFactory.createEmptyBorder(2, 6, 2, 6)));
 
     // Label
     JLabel l = new JLabel(label);
     l.setForeground(color);
     l.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(9.0f)));
-    l.setPreferredSize(new Dimension(theme.scale(36), theme.scale(14)));
+    l.setPreferredSize(new Dimension(theme.scale(40), theme.scale(16)));
     row.add(l);
 
     // Waveform selector buttons
@@ -148,7 +148,7 @@ public class ThreeOscDevicePanel extends JPanel {
       btn.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
       btn.setFocusPainted(false);
       btn.setMargin(new Insets(0, 1, 0, 1));
-      btn.setPreferredSize(new Dimension(theme.scale(28), theme.scale(18)));
+      btn.setPreferredSize(new Dimension(theme.scale(30), theme.scale(20)));
       if (w == 0 && osc == 0) btn.setSelected(true);
       final int waveIdx = w;
       final int paramBase = base;
@@ -175,14 +175,14 @@ public class ThreeOscDevicePanel extends JPanel {
     p.setBackground(theme.BG_DARK);
     p.setBorder(BorderFactory.createCompoundBorder(
         BorderFactory.createLineBorder(theme.BORDER),
-        BorderFactory.createEmptyBorder(2, 4, 2, 4)));
+        BorderFactory.createEmptyBorder(3, 6, 3, 6)));
 
     JLabel lbl = new JLabel(title);
     lbl.setForeground(new Color(0xBBBBBB));
-    lbl.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
+    lbl.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     p.add(lbl, BorderLayout.NORTH);
 
-    JPanel knobs = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(2), 0));
+    JPanel knobs = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(4), 0));
     knobs.setOpaque(false);
     knobs.add(createKnob("A", aParam, 0.0, theme));
     knobs.add(createKnob("D", aParam + 1, 0.2, theme));
@@ -198,20 +198,20 @@ public class ThreeOscDevicePanel extends JPanel {
     p.setBackground(theme.BG_DARK);
     p.setBorder(BorderFactory.createCompoundBorder(
         BorderFactory.createLineBorder(theme.BORDER),
-        BorderFactory.createEmptyBorder(2, 4, 2, 4)));
+        BorderFactory.createEmptyBorder(3, 6, 3, 6)));
 
     JLabel lbl = new JLabel("FILTER");
     lbl.setForeground(new Color(0xBBBBBB));
-    lbl.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
+    lbl.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     p.add(lbl, BorderLayout.NORTH);
 
-    JPanel knobs = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(2), 0));
-    knobs.setOpaque(false);
+    // Row 1: Type, Cut, Res, Depth
+    JPanel row1 = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(4), 0));
+    row1.setOpaque(false);
 
-    // Type selector
     JComboBox<String> typeCombo = new JComboBox<>(FILT_NAMES);
-    typeCombo.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
-    typeCombo.setPreferredSize(new Dimension(theme.scale(36), theme.scale(18)));
+    typeCombo.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
+    typeCombo.setPreferredSize(new Dimension(theme.scale(42), theme.scale(20)));
     typeCombo.addActionListener(e -> {
       int sel = typeCombo.getSelectedIndex();
       if (sel >= 0 && sel < FILT_NORMS.length) {
@@ -219,16 +219,25 @@ public class ThreeOscDevicePanel extends JPanel {
         sendParam(P_FILT_TYPE, FILT_NORMS[sel]);
       }
     });
-    knobs.add(typeCombo);
+    row1.add(typeCombo);
+    row1.add(createKnob("Cut", P_FILT_CUT, 1.0, theme));
+    row1.add(createKnob("Res", P_FILT_RES, 0.0, theme));
+    row1.add(createKnob("Dep", P_FILT_DEPTH, 0.5, theme));
 
-    knobs.add(createKnob("Cut", P_FILT_CUT, 1.0, theme));
-    knobs.add(createKnob("Res", P_FILT_RES, 0.0, theme));
-    knobs.add(createKnob("A", P_FILT_A, 0.0, theme));
-    knobs.add(createKnob("D", P_FILT_D, 0.2, theme));
-    knobs.add(createKnob("S", P_FILT_S, 0.7, theme));
-    knobs.add(createKnob("R", P_FILT_R, 0.3, theme));
-    knobs.add(createKnob("Dep", P_FILT_DEPTH, 0.5, theme));
-    p.add(knobs, BorderLayout.CENTER);
+    // Row 2: ADSR
+    JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(4), 0));
+    row2.setOpaque(false);
+    row2.add(createKnob("A", P_FILT_A, 0.0, theme));
+    row2.add(createKnob("D", P_FILT_D, 0.2, theme));
+    row2.add(createKnob("S", P_FILT_S, 0.7, theme));
+    row2.add(createKnob("R", P_FILT_R, 0.3, theme));
+
+    JPanel rows = new JPanel();
+    rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
+    rows.setOpaque(false);
+    rows.add(row1);
+    rows.add(row2);
+    p.add(rows, BorderLayout.CENTER);
 
     return p;
   }
@@ -236,14 +245,14 @@ public class ThreeOscDevicePanel extends JPanel {
   private JPanel createKnob(String label, int paramId, double defaultVal, Theme theme) {
     JPanel p = new JPanel(new BorderLayout());
     p.setOpaque(false);
-    p.setPreferredSize(new Dimension(theme.scale(32), theme.scale(40)));
+    p.setPreferredSize(new Dimension(theme.scale(40), theme.scale(52)));
 
     KnobPanel knob = new KnobPanel(paramId, defaultVal);
     p.add(knob, BorderLayout.CENTER);
 
     JLabel l = new JLabel(label, SwingConstants.CENTER);
     l.setForeground(new Color(0x999999));
-    l.setFont(theme.FONT_UI.deriveFont(theme.scale(7.5f)));
+    l.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
     p.add(l, BorderLayout.SOUTH);
 
     return p;
@@ -280,7 +289,7 @@ public class ThreeOscDevicePanel extends JPanel {
       this.paramId = paramId;
       this.value = defaultVal;
       setOpaque(false);
-      setPreferredSize(new Dimension(24, 24));
+      setPreferredSize(new Dimension(30, 30));
       setCursor(Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR));
 
       addMouseListener(new MouseAdapter() {
@@ -309,7 +318,7 @@ public class ThreeOscDevicePanel extends JPanel {
 
       // Background arc
       g2.setColor(new Color(0x333333));
-      g2.setStroke(new BasicStroke(2.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+      g2.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
       g2.drawArc(x, y, size, size, 225, -270);
 
       // Value arc

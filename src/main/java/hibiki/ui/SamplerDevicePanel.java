@@ -59,7 +59,7 @@ public class SamplerDevicePanel extends JPanel {
 
     setLayout(new BorderLayout());
     Theme theme = Theme.getInstance();
-    setPreferredSize(new Dimension(theme.scale(420), theme.scale(300)));
+    setPreferredSize(new Dimension(theme.scale(440), theme.scale(330)));
     setBackground(theme.BG_MEDIUM);
     setBorder(BorderFactory.createLineBorder(theme.BORDER));
 
@@ -112,7 +112,7 @@ public class SamplerDevicePanel extends JPanel {
     JPanel controls = new JPanel();
     controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
     controls.setBackground(theme.BG_MEDIUM);
-    controls.setBorder(BorderFactory.createEmptyBorder(2, 4, 4, 4));
+    controls.setBorder(BorderFactory.createEmptyBorder(3, 6, 6, 6));
 
     // Root note + Volume row
     JPanel topRow = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(4), 0));
@@ -339,12 +339,12 @@ public class SamplerDevicePanel extends JPanel {
     p.setBackground(theme.BG_DARK);
     p.setBorder(BorderFactory.createCompoundBorder(
         BorderFactory.createLineBorder(theme.BORDER),
-        BorderFactory.createEmptyBorder(2, 4, 2, 4)));
+        BorderFactory.createEmptyBorder(3, 6, 3, 6)));
     JLabel lbl = new JLabel(title);
     lbl.setForeground(new Color(0xBBBBBB));
-    lbl.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
+    lbl.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     p.add(lbl, BorderLayout.NORTH);
-    JPanel knobs = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(2), 0));
+    JPanel knobs = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(4), 0));
     knobs.setOpaque(false);
     knobs.add(createKnob("A", aParam, 0.0, theme));
     knobs.add(createKnob("D", aParam + 1, 0.2, theme));
@@ -359,10 +359,10 @@ public class SamplerDevicePanel extends JPanel {
     p.setBackground(theme.BG_DARK);
     p.setBorder(BorderFactory.createCompoundBorder(
         BorderFactory.createLineBorder(theme.BORDER),
-        BorderFactory.createEmptyBorder(2, 4, 2, 4)));
+        BorderFactory.createEmptyBorder(3, 6, 3, 6)));
     JLabel lbl = new JLabel("FILTER");
     lbl.setForeground(new Color(0xBBBBBB));
-    lbl.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
+    lbl.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     p.add(lbl, BorderLayout.NORTH);
     JPanel knobs = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(2), 0));
     knobs.setOpaque(false);
@@ -379,24 +379,34 @@ public class SamplerDevicePanel extends JPanel {
     knobs.add(typeCombo);
     knobs.add(createKnob("Cut", P_FILT_CUT, 1.0, theme));
     knobs.add(createKnob("Res", P_FILT_RES, 0.0, theme));
-    knobs.add(createKnob("A", P_FILT_A, 0.0, theme));
-    knobs.add(createKnob("D", P_FILT_D, 0.2, theme));
-    knobs.add(createKnob("S", P_FILT_S, 0.7, theme));
-    knobs.add(createKnob("R", P_FILT_R, 0.3, theme));
     knobs.add(createKnob("Dep", P_FILT_DEPTH, 0.5, theme));
-    p.add(knobs, BorderLayout.CENTER);
+
+    // Row 2: ADSR
+    JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(4), 0));
+    row2.setOpaque(false);
+    row2.add(createKnob("A", P_FILT_A, 0.0, theme));
+    row2.add(createKnob("D", P_FILT_D, 0.2, theme));
+    row2.add(createKnob("S", P_FILT_S, 0.7, theme));
+    row2.add(createKnob("R", P_FILT_R, 0.3, theme));
+
+    JPanel rows = new JPanel();
+    rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
+    rows.setOpaque(false);
+    rows.add(knobs);
+    rows.add(row2);
+    p.add(rows, BorderLayout.CENTER);
     return p;
   }
 
   private JPanel createKnob(String label, int paramId, double defaultVal, Theme theme) {
     JPanel p = new JPanel(new BorderLayout());
     p.setOpaque(false);
-    p.setPreferredSize(new Dimension(theme.scale(32), theme.scale(40)));
+    p.setPreferredSize(new Dimension(theme.scale(40), theme.scale(52)));
     KnobPanel knob = new KnobPanel(paramId, defaultVal);
     p.add(knob, BorderLayout.CENTER);
     JLabel l = new JLabel(label, SwingConstants.CENTER);
     l.setForeground(new Color(0x999999));
-    l.setFont(theme.FONT_UI.deriveFont(theme.scale(7.5f)));
+    l.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
     p.add(l, BorderLayout.SOUTH);
     return p;
   }
@@ -405,7 +415,7 @@ public class SamplerDevicePanel extends JPanel {
                                      Theme theme, JLabel displayLabel) {
     JPanel p = new JPanel(new BorderLayout());
     p.setOpaque(false);
-    p.setPreferredSize(new Dimension(theme.scale(32), theme.scale(40)));
+    p.setPreferredSize(new Dimension(theme.scale(40), theme.scale(52)));
     KnobPanel knob = new KnobPanel(paramId, defaultVal) {
       @Override protected void onValueChanged() {
         displayLabel.setText("Root: " + noteNameFromNorm(value));
@@ -414,7 +424,7 @@ public class SamplerDevicePanel extends JPanel {
     p.add(knob, BorderLayout.CENTER);
     JLabel l = new JLabel(label, SwingConstants.CENTER);
     l.setForeground(new Color(0x999999));
-    l.setFont(theme.FONT_UI.deriveFont(theme.scale(7.5f)));
+    l.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
     p.add(l, BorderLayout.SOUTH);
     return p;
   }
@@ -442,7 +452,7 @@ public class SamplerDevicePanel extends JPanel {
       this.paramId = paramId;
       this.value = defaultVal;
       setOpaque(false);
-      setPreferredSize(new Dimension(24, 24));
+      setPreferredSize(new Dimension(30, 30));
       setCursor(Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR));
       addMouseListener(new MouseAdapter() {
         @Override public void mousePressed(MouseEvent e) { dragStartY = e.getY(); }
@@ -471,7 +481,7 @@ public class SamplerDevicePanel extends JPanel {
       int x = (getWidth() - size) / 2;
       int y = (getHeight() - size) / 2;
       g2.setColor(new Color(0x333333));
-      g2.setStroke(new BasicStroke(2.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+      g2.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
       g2.drawArc(x, y, size, size, 225, -270);
       int arcAngle = (int) (-270 * value);
       g2.setColor(new Color(0xE09040));

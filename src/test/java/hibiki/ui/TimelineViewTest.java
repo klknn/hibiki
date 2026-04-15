@@ -14,7 +14,7 @@ public class TimelineViewTest {
   @Test
   public void testHandleTimelineClipNotification() {
     TimelineView view = new TimelineView();
-    assertEquals(8, view.tracks.size());
+    assertEquals(4, view.tracks.size());
     assertEquals(0, view.tracks.get(0).clips.size());
 
     Notification n =
@@ -365,5 +365,38 @@ public class TimelineViewTest {
     TimelineView view = new TimelineView();
     // Should not throw
     view.updateContentSize();
+  }
+
+  @Test
+  public void testAddTrack() {
+    TimelineView tv = new TimelineView();
+    int before = tv.tracks.size();
+    tv.addTrack();
+    assertEquals(before + 1, tv.tracks.size());
+    assertEquals(before, tv.tracks.get(before).index);
+  }
+
+  @Test
+  public void testRemoveTrack() {
+    TimelineView tv = new TimelineView();
+    int before = tv.tracks.size();
+    tv.removeTrack(0);
+    // Size stays same (hidden, not removed)
+    assertEquals(before, tv.tracks.size());
+    // But visible count decreases
+    assertEquals(before - 1, tv.getVisibleTrackCount());
+    assertTrue(tv.tracks.get(0).hidden);
+  }
+
+  @Test
+  public void testRemoveTrack_cannotRemoveLast() {
+    TimelineView tv = new TimelineView();
+    // Remove all but one
+    tv.removeTrack(0);
+    tv.removeTrack(1);
+    tv.removeTrack(2);
+    assertEquals(1, tv.getVisibleTrackCount());
+    tv.removeTrack(3); // should be no-op
+    assertEquals(1, tv.getVisibleTrackCount());
   }
 }

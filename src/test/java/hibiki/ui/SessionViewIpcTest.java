@@ -26,7 +26,7 @@ public class SessionViewIpcTest {
       // Expected - backend may not accept
     }
     // Verify path was stored in sessionview
-    assertEquals("test.mid", sv.slotPaths[0][0]);
+    assertEquals("test.mid", sv.slotPaths.get(0)[0]);
   }
 
   @Test
@@ -78,13 +78,13 @@ public class SessionViewIpcTest {
     SessionView sv = new SessionView();
     SessionViewIpc ipc = new SessionViewIpc(sv);
     // First set a path
-    sv.slotPaths[0][0] = "test.mid";
+    sv.slotPaths.get(0)[0] = "test.mid";
     try {
       ipc.sendDeleteClip(0, 0);
     } catch (Exception e) {
       // Backend may not accept
     }
     // Verify optimistic clear
-    assertNull(sv.slotPaths[0][0]);
+    assertNull(sv.slotPaths.get(0)[0]);
   }
 }

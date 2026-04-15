@@ -9,6 +9,7 @@ import java.awt.dnd.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import javax.swing.*;
 
@@ -16,19 +17,20 @@ public class SessionView extends JPanel {
   private static SessionView instance;
   private final SessionViewIpc ipc = new SessionViewIpc(this);
 
-  private JButton[][] slotButtons = new JButton[5][5]; // 4 tracks + master, 5 slots
-  String[][] slotPaths = new String[5][5]; // paths to loaded clips
-  private LevelMeter[] trackMeters = new LevelMeter[4]; // 0-3 for tracks
-  private JPanel[] trackStrips = new JPanel[4]; // Track strip panels for selection highlighting
-  JLabel[] trackHeaders =
-      new JLabel[4]; // Track header labels (package-visible for TimelineView sync)
-  private int selectedTrack = 0; // Currently selected track (0-based, 0-3)
+  // Dynamic track data (was fixed arrays, now supports add/remove)
+  private final ArrayList<JButton[]> slotButtons = new ArrayList<>(); // per-track, 5 slots each
+  final ArrayList<String[]> slotPaths = new ArrayList<>(); // paths to loaded clips
+  private final ArrayList<LevelMeter> trackMeters = new ArrayList<>();
+  private final ArrayList<JPanel> trackStrips = new ArrayList<>();
+  final ArrayList<JLabel> trackHeaders = new ArrayList<>();
+  private int selectedTrack = 0;
+  private JPanel trackPanel; // The scrollable panel containing track strips
 
   public static SessionView getInstance() {
     return instance;
   }
 
-  /** Select track by index (1-based for tracks 1-4) */
+  /** Select track by index */
   public void selectTrackByIdx(int trackIdx) {
     selectTrack(trackIdx);
   }
@@ -38,6 +40,11 @@ public class SessionView extends JPanel {
     return selectedTrack;
   }
 
+  /** Get current number of tracks */
+  public int getTrackCount() {
+    return trackStrips.size();
+  }
+
   public SessionView() {
     instance = this;
     setLayout(new BorderLayout());
@@ -45,7 +52,7 @@ public class SessionView extends JPanel {
 
     JPanel master = createMasterStrip();
 
-    JPanel trackPanel =
+    trackPanel =
         new JPanel() {
           @Override
           public Dimension getPreferredSize() {
@@ -60,8 +67,23 @@ public class SessionView extends JPanel {
     trackPanel.setBackground(Theme.getInstance().BG_DARK);
 
     for (int i = 0; i < 4; i++) {
-      trackPanel.add(createTrackStrip("Track " + i, i));
+      addTrackInternal(i, false);
     }
+
+    // "+" button to add new tracks
+    JButton addBtn = new JButton("+");
+    addBtn.setFont(Theme.getInstance().FONT_UI_BOLD);
+    addBtn.setFocusPainted(false);
+    addBtn.setToolTipText("Add Track");
+    addBtn.setBackground(Theme.getInstance().PANEL_BG);
+    addBtn.setForeground(Theme.getInstance().TEXT_DIM);
+    addBtn.setPreferredSize(
+        new Dimension(Theme.getInstance().scale(30), Theme.getInstance().scale(400)));
+    addBtn.setMaximumSize(
+        new Dimension(Theme.getInstance().scale(30), 32767));
+    addBtn.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.getInstance().BORDER));
+    addBtn.addActionListener(e -> addTrack());
+    trackPanel.add(addBtn);
 
     JScrollPane scrollPane = new JScrollPane(trackPanel);
     scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
@@ -82,9 +104,13 @@ public class SessionView extends JPanel {
                     var info = notification.getClipInfo();
                     updateSlotLabel(info.getTrackIndex(), info.getSlotIndex(), info.getName());
                     if (!info.getPath().isEmpty()) {
-                      slotPaths[info.getTrackIndex()][info.getSlotIndex()] = info.getPath();
+                    if (info.getTrackIndex() < slotPaths.size()) {
+                      slotPaths.get(info.getTrackIndex())[info.getSlotIndex()] = info.getPath();
+                    }
                     } else {
-                      slotPaths[info.getTrackIndex()][info.getSlotIndex()] = null;
+                    if (info.getTrackIndex() < slotPaths.size()) {
+                      slotPaths.get(info.getTrackIndex())[info.getSlotIndex()] = null;
+                    }
                     }
                     break;
                   }
@@ -106,17 +132,109 @@ public class SessionView extends JPanel {
             });
   }
 
+  /** Add a new track at the end, syncing with TimelineView. */
+  public void addTrack() {
+    int newIdx = trackStrips.size();
+    addTrackNoSync();
+    if (TimelineView.getInstance() != null
+        && TimelineView.getInstance().tracks.size() <= newIdx) {
+      TimelineView.getInstance().addTrackNoSync();
+    }
+  }
+
+  /** Add a new track locally without syncing to TimelineView. */
+  void addTrackNoSync() {
+    int newIdx = trackStrips.size();
+    addTrackInternal(newIdx, true);
+  }
+
+  /** Remove a track by index, syncing with TimelineView. */
+  public void removeTrack(int trackIdx) {
+    if (trackIdx < 0 || trackIdx >= trackStrips.size() || getVisibleTrackCount() <= 1)
+      return;
+    JPanel strip = trackStrips.get(trackIdx);
+    if (strip == null || !strip.isVisible())
+      return;
+    removeTrackNoSync(trackIdx);
+    if (TimelineView.getInstance() != null
+        && trackIdx < TimelineView.getInstance().tracks.size()) {
+      TimelineView.getInstance().removeTrackNoSync(trackIdx);
+    }
+  }
+
+  /** Remove a track locally without syncing to TimelineView. */
+  void removeTrackNoSync(int trackIdx) {
+    if (trackIdx < 0 || trackIdx >= trackStrips.size() || getVisibleTrackCount() <= 1)
+      return;
+    JPanel strip = trackStrips.get(trackIdx);
+    if (strip == null || !strip.isVisible())
+      return;
+    removeTrackInternal(trackIdx);
+  }
+
+  /** Count of visible (non-hidden) tracks. */
+  int getVisibleTrackCount() {
+    int count = 0;
+    for (JPanel strip : trackStrips) {
+      if (strip != null && strip.isVisible())
+        count++;
+    }
+    return count;
+  }
+
+  /** Internal: add a track strip to the panel without syncing. */
+  private void addTrackInternal(int trackIdx, boolean rebuild) {
+    JPanel strip = createTrackStrip("Track " + trackIdx, trackIdx);
+    if (rebuild) {
+      // Insert before the "+" button (last component)
+      trackPanel.add(strip, trackPanel.getComponentCount() - 1);
+      trackPanel.revalidate();
+      trackPanel.repaint();
+    } else {
+      trackPanel.add(strip);
+    }
+  }
+
+  /** Internal: hide a track strip (keep in data lists for stable indexing). */
+  private void removeTrackInternal(int trackIdx) {
+    if (trackIdx < 0 || trackIdx >= trackStrips.size())
+      return;
+
+    // Hide the UI component (don't remove from lists)
+    JPanel strip = trackStrips.get(trackIdx);
+    if (strip != null) {
+      strip.setVisible(false);
+    }
+
+    // Adjust selected track to next visible
+    if (selectedTrack == trackIdx) {
+      for (int i = 0; i < trackStrips.size(); i++) {
+        JPanel s = trackStrips.get(i);
+        if (s != null && s.isVisible()) {
+          selectedTrack = i;
+          break;
+        }
+      }
+    }
+
+    trackPanel.revalidate();
+    trackPanel.repaint();
+    updateSelectionHighlight();
+  }
+
   void clearAllSlots() {
     SwingUtilities.invokeLater(
         () -> {
-          for (int t = 1; t <= 4; t++) {
+          int count = slotButtons.size();
+          for (int t = 0; t < count; t++) {
+            JButton[] buttons = slotButtons.get(t);
+            String[] paths = slotPaths.get(t);
             for (int s = 0; s < 5; s++) {
-              slotPaths[t][s] = null;
-              JButton btn = slotButtons[t][s];
-              if (btn != null) {
-                btn.setText("");
-                btn.setBackground(Theme.getInstance().PANEL_BG_LIGHT);
-                btn.setForeground(Theme.getInstance().TEXT_NORMAL);
+              paths[s] = null;
+              if (buttons[s] != null) {
+                buttons[s].setText("");
+                buttons[s].setBackground(Theme.getInstance().PANEL_BG_LIGHT);
+                buttons[s].setForeground(Theme.getInstance().TEXT_NORMAL);
               }
             }
           }
@@ -126,8 +244,8 @@ public class SessionView extends JPanel {
   void updateSlotLabel(int trackIdx, int slotIdx, String name) {
     SwingUtilities.invokeLater(
         () -> {
-          if (trackIdx >= 0 && trackIdx < 4 && slotIdx >= 0 && slotIdx < 5) {
-            JButton btn = slotButtons[trackIdx][slotIdx];
+          if (trackIdx >= 0 && trackIdx < slotButtons.size() && slotIdx >= 0 && slotIdx < 5) {
+            JButton btn = slotButtons.get(trackIdx)[slotIdx];
             if (btn != null) {
               if (name.isEmpty()) {
                 btn.setText("");
@@ -146,33 +264,41 @@ public class SessionView extends JPanel {
   void updateLevel(int trackIdx, float peakL, float peakR) {
     SwingUtilities.invokeLater(
         () -> {
-          if (trackIdx >= 0 && trackIdx < 4) {
-            if (trackMeters[trackIdx] != null) {
-              trackMeters[trackIdx].setLevels(peakL, peakR);
+          if (trackIdx >= 0 && trackIdx < trackMeters.size()) {
+            LevelMeter meter = trackMeters.get(trackIdx);
+            if (meter != null) {
+              meter.setLevels(peakL, peakR);
             }
           }
         });
   }
 
   private void selectTrack(int trackIdx) {
-    if (trackIdx == selectedTrack) return; // Prevent infinite recursion
+    if (trackIdx == selectedTrack)
+      return;
     selectedTrack = trackIdx;
     // Sync with TimelineView (both now use 0-based)
     if (TimelineView.getInstance() != null) {
       TimelineView.getInstance().setSelectedTrack(trackIdx);
     }
-    // Update visual highlighting - entire track panel, not just header
-    for (int i = 0; i < 4; i++) {
-      if (trackStrips[i] != null) {
+    updateSelectionHighlight();
+  }
+
+  private void updateSelectionHighlight() {
+    int count = trackStrips.size();
+    for (int i = 0; i < count; i++) {
+      JPanel strip = trackStrips.get(i);
+      JLabel header = trackHeaders.get(i);
+      if (strip != null) {
         if (i == selectedTrack) {
-          trackStrips[i].setBackground(Theme.getInstance().ACCENT_BLUE.darker().darker());
-          if (trackHeaders[i] != null) {
-            trackHeaders[i].setBackground(Theme.getInstance().ACCENT_BLUE.darker());
+          strip.setBackground(Theme.getInstance().ACCENT_BLUE.darker().darker());
+          if (header != null) {
+            header.setBackground(Theme.getInstance().ACCENT_BLUE.darker());
           }
         } else {
-          trackStrips[i].setBackground(Theme.getInstance().PANEL_BG);
-          if (trackHeaders[i] != null) {
-            trackHeaders[i].setBackground(Theme.getInstance().TRACK_HEADER);
+          strip.setBackground(Theme.getInstance().PANEL_BG);
+          if (header != null) {
+            header.setBackground(Theme.getInstance().TRACK_HEADER);
           }
         }
       }
@@ -181,8 +307,8 @@ public class SessionView extends JPanel {
 
   /** Show dialog to rename a track (syncs with TimelineView) */
   private void renameTrack(int trackIdx) {
-    if (trackIdx < 0 || trackIdx >= 4) return;
-    // Get current name from TimelineView if available
+    if (trackIdx < 0 || trackIdx >= trackStrips.size())
+      return;
     String currentName = "Track " + trackIdx;
     if (TimelineView.getInstance() != null && trackIdx < TimelineView.getInstance().tracks.size()) {
       TimelineView.TrackTimeline t = TimelineView.getInstance().tracks.get(trackIdx);
@@ -190,17 +316,15 @@ public class SessionView extends JPanel {
     }
     String newName = JOptionPane.showInputDialog(this, "Enter track name:", currentName);
     if (newName != null) {
-      // Update TimelineView (which stores the names)
       if (TimelineView.getInstance() != null
           && trackIdx < TimelineView.getInstance().tracks.size()) {
         TimelineView.getInstance().tracks.get(trackIdx).customName =
             newName.isEmpty() ? null : newName;
         TimelineView.getInstance().repaint();
       }
-      // Update SessionView header label
-      if (trackHeaders[trackIdx] != null) {
+      if (trackIdx < trackHeaders.size() && trackHeaders.get(trackIdx) != null) {
         String displayName = (newName == null || newName.isEmpty()) ? "Track " + trackIdx : newName;
-        trackHeaders[trackIdx].setText(trackIdx + " " + displayName);
+        trackHeaders.get(trackIdx).setText(trackIdx + " " + displayName);
       }
     }
   }
@@ -213,9 +337,18 @@ public class SessionView extends JPanel {
         new Dimension(Theme.getInstance().scale(110), Theme.getInstance().scale(400)));
     strip.setMaximumSize(new Dimension(Theme.getInstance().scale(110), 32767));
     strip.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.getInstance().BORDER));
-    trackStrips[trackIdx] = strip;
 
-    // Header (clickable for track selection)
+    // Ensure lists have space for this index (append if needed)
+    while (trackStrips.size() <= trackIdx) {
+      trackStrips.add(null);
+      slotButtons.add(new JButton[5]);
+      slotPaths.add(new String[5]);
+      trackMeters.add(null);
+      trackHeaders.add(null);
+    }
+    trackStrips.set(trackIdx, strip);
+
+    // Header (clickable for track selection, right-click for context menu)
     JLabel header = new JLabel(trackIdx + " " + name, SwingConstants.CENTER);
     header.setAlignmentX(Component.CENTER_ALIGNMENT);
     header.setMinimumSize(
@@ -230,14 +363,17 @@ public class SessionView extends JPanel {
     header.setOpaque(true);
     header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.getInstance().BORDER));
     header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-    trackHeaders[trackIdx] = header;
+    trackHeaders.set(trackIdx, header);
 
-    // Click on header to select track, double-click to rename
-    int finalTrackIdx = trackIdx; // Final for lambda
+    int finalTrackIdx = trackIdx;
     header.addMouseListener(
         new MouseAdapter() {
           @Override
           public void mousePressed(MouseEvent e) {
+            if (SwingUtilities.isRightMouseButton(e)) {
+              showTrackContextMenu(finalTrackIdx, e);
+              return;
+            }
             selectTrack(finalTrackIdx);
           }
 
@@ -251,6 +387,7 @@ public class SessionView extends JPanel {
     strip.add(header);
 
     // Clips
+    JButton[] buttons = slotButtons.get(trackIdx);
     for (int i = 0; i < 5; i++) {
       JButton clipBtn = new JButton("");
       clipBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -267,13 +404,13 @@ public class SessionView extends JPanel {
       clipBtn.setFocusPainted(false);
 
       int slotIdx = i;
-      clipBtn.addActionListener(e -> ipc.sendPlayClip(trackIdx, slotIdx));
+      clipBtn.addActionListener(e -> ipc.sendPlayClip(finalTrackIdx, slotIdx));
 
       clipBtn.addMouseListener(
           new MouseAdapter() {
             public void mousePressed(MouseEvent e) {
               if (SwingUtilities.isRightMouseButton(e)) {
-                showClipContextMenu(clipBtn, trackIdx, slotIdx, e.getX(), e.getY());
+                showClipContextMenu(clipBtn, finalTrackIdx, slotIdx, e.getX(), e.getY());
               }
             }
           });
@@ -302,8 +439,7 @@ public class SessionView extends JPanel {
                           || lower.endsWith(".mp3")
                           || lower.endsWith(".ogg")
                           || lower.endsWith(".flac")) {
-                        // Load clip to this slot
-                        sendLoadClip(trackIdx, slotIdx, path, false);
+                        sendLoadClip(finalTrackIdx, slotIdx, path, false);
                       }
                     }
                   }
@@ -325,7 +461,7 @@ public class SessionView extends JPanel {
             });
       }
 
-      slotButtons[trackIdx][slotIdx] = clipBtn;
+      buttons[slotIdx] = clipBtn;
       strip.add(Box.createVerticalStrut(Theme.getInstance().scale(2)));
       strip.add(clipBtn);
     }
@@ -342,7 +478,7 @@ public class SessionView extends JPanel {
     LevelMeter meter = new LevelMeter();
     meter.setPreferredSize(
         new Dimension(Theme.getInstance().scale(12), Theme.getInstance().scale(100)));
-    trackMeters[trackIdx] = meter;
+    trackMeters.set(trackIdx, meter);
 
     JPanel volPanel = new JPanel();
     volPanel.setLayout(new BoxLayout(volPanel, BoxLayout.Y_AXIS));
@@ -357,11 +493,10 @@ public class SessionView extends JPanel {
         e -> {
           int db = volSlider.getValue();
           float gain = db <= -70 ? 0.0f : (float) Math.pow(10, db / 20.0);
-          BackendManager.getInstance().setTrackVolume(trackIdx, Math.min(2.0f, gain));
-          // Sync with TimelineView
+          BackendManager.getInstance().setTrackVolume(finalTrackIdx, Math.min(2.0f, gain));
           if (TimelineView.getInstance() != null
-              && trackIdx < TimelineView.getInstance().tracks.size()) {
-            TimelineView.getInstance().tracks.get(trackIdx).volume = gain;
+              && finalTrackIdx < TimelineView.getInstance().tracks.size()) {
+            TimelineView.getInstance().tracks.get(finalTrackIdx).volume = gain;
             TimelineView.getInstance().repaint();
           }
         });
@@ -383,16 +518,14 @@ public class SessionView extends JPanel {
     panSlider.setBackground(Theme.getInstance().PANEL_BG);
     panSlider.addChangeListener(
         e -> {
-          float pan = panSlider.getValue() / 50.0f; // -1.0 to 1.0
-          BackendManager.getInstance().setTrackPan(trackIdx, pan);
-          // Sync with TimelineView
+          float pan = panSlider.getValue() / 50.0f;
+          BackendManager.getInstance().setTrackPan(finalTrackIdx, pan);
           if (TimelineView.getInstance() != null
-              && trackIdx < TimelineView.getInstance().tracks.size()) {
-            TimelineView.getInstance().tracks.get(trackIdx).pan = pan;
+              && finalTrackIdx < TimelineView.getInstance().tracks.size()) {
+            TimelineView.getInstance().tracks.get(finalTrackIdx).pan = pan;
             TimelineView.getInstance().repaint();
           }
         });
-    // Pan value label
     JLabel panLabel = new JLabel("C", SwingConstants.CENTER);
     panLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
     panLabel.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(8)));
@@ -439,10 +572,10 @@ public class SessionView extends JPanel {
           boolean newState = soloBtn.getBackground().getRGB() != new Color(200, 180, 40).getRGB();
           soloBtn.setBackground(newState ? new Color(200, 180, 40) : new Color(50, 50, 55));
           soloBtn.setForeground(newState ? Color.BLACK : new Color(160, 150, 60));
-          BackendManager.getInstance().setTrackSolo(trackIdx, newState);
+          BackendManager.getInstance().setTrackSolo(finalTrackIdx, newState);
           if (TimelineView.getInstance() != null
-              && trackIdx < TimelineView.getInstance().tracks.size()) {
-            TimelineView.getInstance().tracks.get(trackIdx).soloed = newState;
+              && finalTrackIdx < TimelineView.getInstance().tracks.size()) {
+            TimelineView.getInstance().tracks.get(finalTrackIdx).soloed = newState;
             TimelineView.getInstance().repaint();
           }
         });
@@ -461,10 +594,10 @@ public class SessionView extends JPanel {
           boolean newState = muteBtn.getBackground().getRGB() != new Color(200, 60, 60).getRGB();
           muteBtn.setBackground(newState ? new Color(200, 60, 60) : new Color(50, 50, 55));
           muteBtn.setForeground(newState ? Color.WHITE : new Color(160, 60, 60));
-          BackendManager.getInstance().setTrackMute(trackIdx, newState);
+          BackendManager.getInstance().setTrackMute(finalTrackIdx, newState);
           if (TimelineView.getInstance() != null
-              && trackIdx < TimelineView.getInstance().tracks.size()) {
-            TimelineView.getInstance().tracks.get(trackIdx).muted = newState;
+              && finalTrackIdx < TimelineView.getInstance().tracks.size()) {
+            TimelineView.getInstance().tracks.get(finalTrackIdx).muted = newState;
             TimelineView.getInstance().repaint();
           }
         });
@@ -473,7 +606,7 @@ public class SessionView extends JPanel {
     strip.add(smPanel);
 
     // Activator
-    JButton activeBtn = createFlatButton("" + trackIdx, e -> ipc.sendStopTrack(trackIdx));
+    JButton activeBtn = createFlatButton("" + finalTrackIdx, e -> ipc.sendStopTrack(finalTrackIdx));
     activeBtn.setBackground(new Color(200, 160, 50));
     activeBtn.setForeground(Color.BLACK);
     strip.add(Box.createVerticalStrut(Theme.getInstance().scale(5)));
@@ -481,6 +614,28 @@ public class SessionView extends JPanel {
     strip.add(Box.createVerticalStrut(Theme.getInstance().scale(5)));
 
     return strip;
+  }
+
+  /** Show context menu for track header (right-click) */
+  private void showTrackContextMenu(int trackIdx, MouseEvent e) {
+    JPopupMenu menu = new JPopupMenu();
+
+    JMenuItem renameItem = new JMenuItem("Rename Track");
+    renameItem.addActionListener(ev -> renameTrack(trackIdx));
+    menu.add(renameItem);
+
+    menu.addSeparator();
+
+    JMenuItem addItem = new JMenuItem("Add Track");
+    addItem.addActionListener(ev -> addTrack());
+    menu.add(addItem);
+
+    JMenuItem deleteItem = new JMenuItem("Delete Track");
+    deleteItem.setEnabled(trackStrips.size() > 1);
+    deleteItem.addActionListener(ev -> removeTrack(trackIdx));
+    menu.add(deleteItem);
+
+    menu.show(e.getComponent(), e.getX(), e.getY());
   }
 
   private JPanel createMasterStrip() {
@@ -579,7 +734,7 @@ public class SessionView extends JPanel {
     JMenuItem editItem = new JMenuItem("Edit Clip...");
     editItem.addActionListener(
         e -> {
-          String path = slotPaths[trackIdx][slotIdx];
+          String path = (trackIdx < slotPaths.size()) ? slotPaths.get(trackIdx)[slotIdx] : null;
           if (path != null && path.endsWith(".mid")) {
             File file = new File(path);
             JFrame ownerFrame = (JFrame) SwingUtilities.getWindowAncestor(this);

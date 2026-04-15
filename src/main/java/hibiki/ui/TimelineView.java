@@ -56,6 +56,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
   /** Total height for a track including expanded automation lanes. */
   int getTotalTrackHeight(int trackIdx) {
+    if (trackIdx >= 0 && trackIdx < tracks.size() && tracks.get(trackIdx).hidden)
+      return 0;
     int h = getBaseTrackHeight(trackIdx);
     if (trackIdx >= 0 && trackIdx < tracks.size()) {
       TrackTimeline t = tracks.get(trackIdx);
@@ -88,11 +90,28 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   int getTrackIdxAtY(int scaledY) {
     int cumY = 0;
     for (int i = 0; i < tracks.size(); i++) {
+      if (tracks.get(i).hidden)
+        continue;
       int th = Theme.getInstance().scale(getTotalTrackHeight(i));
       if (scaledY < cumY + th) return i;
       cumY += th;
     }
-    return Math.max(0, tracks.size() - 1);
+    // Fall back to last visible track
+    for (int i = tracks.size() - 1; i >= 0; i--) {
+      if (!tracks.get(i).hidden)
+        return i;
+    }
+    return 0;
+  }
+
+  /** Count of visible (non-hidden) tracks. */
+  int getVisibleTrackCount() {
+    int count = 0;
+    for (TrackTimeline t : tracks) {
+      if (!t.hidden)
+        count++;
+    }
+    return count;
   }
 
   // GridMode is shared - see GridMode.java
@@ -496,7 +515,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     add(scrollPane, BorderLayout.CENTER);
 
     // Initial tracks
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 4; i++) {
       tracks.add(new TrackTimeline(i));
     }
     updateContentSize();
@@ -699,6 +718,64 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       }
       repaint();
     }
+  }
+
+  /** Add a new track at the end, syncing with SessionView. */
+  public void addTrack() {
+    addTrackNoSync();
+    if (SessionView.getInstance() != null
+        && SessionView.getInstance().getTrackCount() < tracks.size()) {
+      SessionView.getInstance().addTrackNoSync();
+    }
+  }
+
+  /** Add a new track locally without syncing to SessionView. */
+  void addTrackNoSync() {
+    int newIdx = tracks.size();
+    tracks.add(new TrackTimeline(newIdx));
+    updateContentSize();
+    if (rowHeader != null) {
+      rowHeader.revalidate();
+      rowHeader.repaint();
+    }
+    contentPanel.repaint();
+  }
+
+  /** Remove a track by index, syncing with SessionView. */
+  public void removeTrack(int trackIdx) {
+    if (trackIdx < 0 || trackIdx >= tracks.size() || getVisibleTrackCount() <= 1)
+      return;
+    if (tracks.get(trackIdx).hidden)
+      return;
+    removeTrackNoSync(trackIdx);
+    if (SessionView.getInstance() != null
+        && trackIdx < SessionView.getInstance().getTrackCount()) {
+      SessionView.getInstance().removeTrackNoSync(trackIdx);
+    }
+  }
+
+  /** Remove a track locally without syncing to SessionView. */
+  void removeTrackNoSync(int trackIdx) {
+    if (trackIdx < 0 || trackIdx >= tracks.size() || getVisibleTrackCount() <= 1)
+      return;
+    if (tracks.get(trackIdx).hidden)
+      return;
+    tracks.get(trackIdx).hidden = true;
+    // Adjust selected track if needed — pick next visible
+    if (selectedTrack == trackIdx || tracks.get(selectedTrack).hidden) {
+      for (int i = 0; i < tracks.size(); i++) {
+        if (!tracks.get(i).hidden) {
+          selectedTrack = i;
+          break;
+        }
+      }
+    }
+    updateContentSize();
+    if (rowHeader != null) {
+      rowHeader.revalidate();
+      rowHeader.repaint();
+    }
+    contentPanel.repaint();
   }
 
   /** Show dialog to rename a track */
@@ -973,6 +1050,18 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       menu.add(removeMenu);
     }
 
+    menu.addSeparator();
+
+    // Add / Delete track
+    JMenuItem addTrackItem = new JMenuItem("Add Track");
+    addTrackItem.addActionListener(ev -> addTrack());
+    menu.add(addTrackItem);
+
+    JMenuItem deleteTrackItem = new JMenuItem("Delete Track");
+    deleteTrackItem.setEnabled(tracks.size() > 1);
+    deleteTrackItem.addActionListener(ev -> removeTrack(trackIdx));
+    menu.add(deleteTrackItem);
+
     menu.show(rowHeader, e.getX(), e.getY());
   }
 
@@ -1219,6 +1308,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     boolean automationExpanded = true; // Whether automation sub-rows are visible
     boolean recordArmed = false; // Whether track is armed for recording
     boolean midiRecordMode = true; // true = MIDI recording, false = audio recording
+    boolean hidden = false; // Whether track is hidden (deleted from GUI but index preserved)
     float volume = 0.31623f; // linear gain; default = -10 dB
     float pan = 0.0f; // -1.0 (left) to 1.0 (right)
     boolean muted = false;

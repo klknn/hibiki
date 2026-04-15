@@ -133,4 +133,54 @@ public class SessionViewTest {
       sv.updateLevel(i, (float) Math.random(), (float) Math.random());
     }
   }
+
+  @Test
+  public void testGetTrackCount() {
+    SessionView sv = new SessionView();
+    assertEquals(4, sv.getTrackCount());
+    assertEquals(4, sv.getVisibleTrackCount());
+  }
+
+  @Test
+  public void testAddTrack() {
+    SessionView sv = new SessionView();
+    assertEquals(4, sv.getVisibleTrackCount());
+    sv.addTrack();
+    assertEquals(5, sv.getVisibleTrackCount());
+  }
+
+  @Test
+  public void testRemoveTrack() {
+    SessionView sv = new SessionView();
+    assertEquals(4, sv.getVisibleTrackCount());
+    sv.removeTrack(0);
+    assertEquals(3, sv.getVisibleTrackCount());
+    // Total count unchanged (track hidden, not removed)
+    assertEquals(4, sv.getTrackCount());
+  }
+
+  @Test
+  public void testRemoveTrack_cannotRemoveLast() {
+    SessionView sv = new SessionView();
+    sv.removeTrack(0);
+    sv.removeTrack(1);
+    sv.removeTrack(2);
+    assertEquals(1, sv.getVisibleTrackCount());
+    // Can't remove last visible track
+    sv.removeTrack(3);
+    assertEquals(1, sv.getVisibleTrackCount());
+  }
+
+  @Test
+  public void testAddRemoveMultiple() {
+    SessionView sv = new SessionView();
+    assertEquals(4, sv.getVisibleTrackCount());
+    sv.addTrack();
+    sv.addTrack();
+    assertEquals(6, sv.getVisibleTrackCount());
+    sv.removeTrack(5);
+    assertEquals(5, sv.getVisibleTrackCount());
+    sv.removeTrack(0);
+    assertEquals(4, sv.getVisibleTrackCount());
+  }
 }

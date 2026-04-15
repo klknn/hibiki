@@ -110,8 +110,8 @@ class TimelineNotificationHandler {
     view.tracks.get(tidx).customName = name.isEmpty() ? null : name;
     view.repaint();
     // Sync with SessionView
-    if (SessionView.getInstance() != null && SessionView.getInstance().trackHeaders.length > tidx) {
-      javax.swing.JLabel header = SessionView.getInstance().trackHeaders[tidx];
+    if (SessionView.getInstance() != null && SessionView.getInstance().trackHeaders.size() > tidx) {
+      javax.swing.JLabel header = SessionView.getInstance().trackHeaders.get(tidx);
       if (header != null) {
         String displayName = view.tracks.get(tidx).getDisplayName();
         header.setText(tidx + " " + displayName);

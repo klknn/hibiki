@@ -42,6 +42,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
   /** Height of one track with per-track override. */
   int getBaseTrackHeight(int trackIdx) {
+    if (trackIdx >= 0 && trackIdx < tracks.size() && tracks.get(trackIdx).hidden)
+      return 0;
     if (trackIdx >= 0 && trackIdx < tracks.size()) {
       int custom = tracks.get(trackIdx).customHeight;
       if (custom > 0) return custom;

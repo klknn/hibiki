@@ -8,6 +8,7 @@ cc_library(
         "builtin_compressor.cpp",
         "builtin_delay.cpp",
         "builtin_eq.cpp",
+        "builtin_hott.cpp",
         "builtin_limiter.cpp",
         "builtin_reverb.cpp",
     ],
@@ -15,6 +16,7 @@ cc_library(
         "builtin_compressor.hpp",
         "builtin_delay.hpp",
         "builtin_eq.hpp",
+        "builtin_hott.hpp",
         "builtin_limiter.hpp",
         "builtin_reverb.hpp",
     ],
@@ -69,6 +71,16 @@ cc_test(
 cc_test(
     name = "builtin_limiter_test",
     srcs = ["builtin_limiter_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":effects",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_hott_test",
+    srcs = ["builtin_hott_test.cpp"],
     linkstatic = True,
     deps = [
         ":effects",

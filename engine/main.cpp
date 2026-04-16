@@ -27,6 +27,7 @@
 #include "engine/core/track.hpp"
 #include "engine/effects/builtin_compressor.hpp"
 #include "engine/effects/builtin_eq.hpp"
+#include "engine/effects/builtin_hott.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "engine/vst3/vst3_host.hpp"
 #include "pb/commands.pb.h"
@@ -432,6 +433,10 @@ void notification_thread(ProjectState& state) {
             sendPluginMeteringData(track_idx, (int)p, comp->getInputDb(),
                                    comp->getOutputDb(),
                                    comp->getGainReductionDb());
+          } else if (auto* hott = dynamic_cast<BuiltinHott*>(plugin.get())) {
+            sendPluginMeteringData(track_idx, (int)p, hott->getInputDb(),
+                                   hott->getOutputDb(),
+                                   hott->getBandGainReduction(0));
           }
         }
       }

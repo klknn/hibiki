@@ -165,6 +165,9 @@ public class PluginPane extends JPanel {
             } else if (bp instanceof CompressorDevicePanel) {
               ((CompressorDevicePanel) bp).updateParam(paramId, value);
               return;
+            } else if (bp instanceof HottDevicePanel) {
+              ((HottDevicePanel) bp).updateParam(paramId, value);
+              return;
             } else if (bp instanceof ThreeOscDevicePanel) {
               ((ThreeOscDevicePanel) bp).handleParamChange(paramId, value);
               return;
@@ -207,6 +210,10 @@ public class PluginPane extends JPanel {
             CompressorDevicePanel comp = (CompressorDevicePanel) bp;
             comp.setInputOutputLevel(inputDb, outputDb);
             comp.setGainReduction(gainReductionDb);
+          } else if (bp instanceof HottDevicePanel) {
+            HottDevicePanel hott = (HottDevicePanel) bp;
+            hott.setInputOutputLevel(inputDb, outputDb);
+            hott.setGainReduction(gainReductionDb);
           }
         });
   }
@@ -298,6 +305,15 @@ public class PluginPane extends JPanel {
             if (trackIdx == selectedTrack) rebuildDeviceChain();
             return;
           }
+          if ("Hott".equals(pluginName)) {
+            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
+            if (!(bi.get(pIdx) instanceof HottDevicePanel)) {
+              bi.put(pIdx, new HottDevicePanel(trackIdx, pIdx));
+            }
+            if (trackIdx == selectedTrack)
+              rebuildDeviceChain();
+            return;
+          }
 
           // Standard VST3 device panel
           Map<Integer, DevicePanel> devicePanels =
@@ -385,6 +401,8 @@ public class PluginPane extends JPanel {
       ((ReverbDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     } else if (device instanceof LimiterDevicePanel) {
       ((LimiterDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof HottDevicePanel) {
+      ((HottDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     }
 
     return wrapper;

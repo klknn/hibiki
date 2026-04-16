@@ -2,10 +2,10 @@
 // Used by test binaries that don't link a platform-specific
 // vst3_host_{x11,win32,mac} library.
 
-#include "engine/vst3/vst3_host.hpp"
-
 #include <cstdint>
 #include <vector>
+
+#include "engine/vst3/vst3_host.hpp"
 
 namespace hibiki {
 

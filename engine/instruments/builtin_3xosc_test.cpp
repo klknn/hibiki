@@ -1,9 +1,9 @@
 #include "engine/instruments/builtin_3xosc.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <vector>
-
-#include <gtest/gtest.h>
 
 namespace hibiki {
 namespace {
@@ -89,7 +89,8 @@ TEST(Builtin3xOscTest, NoteOffSilencesAfterRelease) {
 
   // Process many blocks to let release finish
   for (int b = 0; b < 20; ++b) {
-    osc.process(nullptr, outs, N, ctx, b == 0 ? ev_off : std::vector<MidiNoteEvent>{});
+    osc.process(nullptr, outs, N, ctx,
+                b == 0 ? ev_off : std::vector<MidiNoteEvent>{});
   }
 
   // After release, output should be near zero

@@ -7,7 +7,7 @@ namespace hibiki {
 BuiltinSampler::BuiltinSampler() { reset(); }
 
 bool BuiltinSampler::load(const std::string& /*path*/, int /*plugin_index*/,
-                            double sample_rate) {
+                          double sample_rate) {
   sample_rate_ = sample_rate;
   reset();
   return true;
@@ -34,9 +34,8 @@ const std::vector<float>& BuiltinSampler::getWaveformSummary() const {
 }
 
 void BuiltinSampler::process(float** /*inputs*/, float** outputs,
-                              int num_samples,
-                              const HostProcessContext& context,
-                              const std::vector<MidiNoteEvent>& events) {
+                             int num_samples, const HostProcessContext& context,
+                             const std::vector<MidiNoteEvent>& events) {
   sample_rate_ = context.sampleRate;
 
   for (const auto& ev : events) {
@@ -101,8 +100,7 @@ void BuiltinSampler::process(float** /*inputs*/, float** outputs,
         } else {
           float l0 = sample_data_[idx0 * 2];
           float r0 = sample_data_[idx0 * 2 + 1];
-          float l1 =
-              (idx0 + 1 < end_frame) ? sample_data_[(idx0 + 1) * 2] : l0;
+          float l1 = (idx0 + 1 < end_frame) ? sample_data_[(idx0 + 1) * 2] : l0;
           float r1 =
               (idx0 + 1 < end_frame) ? sample_data_[(idx0 + 1) * 2 + 1] : r0;
           sL = l0 + frac * (l1 - l0);

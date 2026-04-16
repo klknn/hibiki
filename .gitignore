@@ -17,6 +17,10 @@ genhtml
 *.swp
 *~
 
+# Downloaded tools
+tools/google-java-format-*.jar
+tools/buildifier
+
 # Temporary files
 *.log
 *.txt

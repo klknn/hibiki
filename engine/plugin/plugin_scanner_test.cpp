@@ -127,12 +127,11 @@ TEST(PluginScannerTest, ScanBundlesParallelEmptyBundles) {
   std::vector<std::string> empty;
   int callback_count = 0;
 
-  scanBundlesParallel(
-      empty, fakeScanFn,
-      [&callback_count](const std::string&,
-                        const std::vector<PluginDescription>&) {
-        callback_count++;
-      });
+  scanBundlesParallel(empty, fakeScanFn,
+                      [&callback_count](const std::string&,
+                                        const std::vector<PluginDescription>&) {
+                        callback_count++;
+                      });
 
   EXPECT_EQ(callback_count, 0);
 }
@@ -146,12 +145,11 @@ TEST(PluginScannerTest, ScanBundlesParallelCallbackPerBundle) {
 
   std::atomic<int> callback_count{0};
 
-  scanBundlesParallel(
-      bundles, fakeScanFn,
-      [&callback_count](const std::string&,
-                        const std::vector<PluginDescription>&) {
-        callback_count++;
-      });
+  scanBundlesParallel(bundles, fakeScanFn,
+                      [&callback_count](const std::string&,
+                                        const std::vector<PluginDescription>&) {
+                        callback_count++;
+                      });
 
   EXPECT_EQ(callback_count.load(), static_cast<int>(bundles.size()));
 }

@@ -19,10 +19,8 @@ void SpectrumAnalyzer::init(int num_bins, float sample_rate) {
 
   // Pre-compute Hann window
   for (int i = 0; i < kFftSize; ++i) {
-    hann_window_[i] =
-        0.5f *
-        (1.0f -
-         std::cos(2.0f * std::numbers::pi_v<float> * i / (kFftSize - 1)));
+    hann_window_[i] = 0.5f * (1.0f - std::cos(2.0f * std::numbers::pi_v<float> *
+                                              i / (kFftSize - 1)));
   }
 
   // Log-spaced bin edges from 20 Hz to 20 kHz
@@ -55,8 +53,8 @@ void SpectrumAnalyzer::computeSpectrum(const float* ring,
   pocketfft::shape_t shape = {(size_t)kFftSize};
   pocketfft::stride_t stride_in = {(ptrdiff_t)sizeof(double)};
   pocketfft::stride_t stride_out = {(ptrdiff_t)sizeof(std::complex<double>)};
-  pocketfft::r2c(shape, stride_in, stride_out, /*axes=*/{0},
-                 pocketfft::FORWARD, fft_in_, g_fft_out, 1.0);
+  pocketfft::r2c(shape, stride_in, stride_out, /*axes=*/{0}, pocketfft::FORWARD,
+                 fft_in_, g_fft_out, 1.0);
 
   // Map FFT bins to log-spaced display bins
   double freq_per_bin = sample_rate_ / kFftSize;

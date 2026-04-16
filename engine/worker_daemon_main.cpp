@@ -20,10 +20,10 @@
 #include <string>
 #include <thread>
 
-#include "pb/plugin_worker.pb.h"
-#include "engine/plugin/plugin_scanner.hpp"
 #include "engine/ipc/tcp.hpp"
+#include "engine/plugin/plugin_scanner.hpp"
 #include "engine/vst3/vst3_host.hpp"
+#include "pb/plugin_worker.pb.h"
 
 namespace hibiki {
 
@@ -413,7 +413,8 @@ int main(int argc, char** argv) {
   while (true) {
     socket_t conn_fd = ::accept(listen_fd, nullptr, nullptr);
     if (conn_fd == INVALID_SOCK) {
-      // Note: On Windows WSAEINTR corresponds to EINTR. For simplicity we can just log all failures.
+      // Note: On Windows WSAEINTR corresponds to EINTR. For simplicity we can
+      // just log all failures.
       std::cerr << "accept() failed: " << tcp_strerror() << "\n";
       continue;
     }

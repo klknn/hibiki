@@ -20,8 +20,7 @@ class SessionViewIpc {
   }
 
   void sendLoadClip(int trackIdx, int slotIdx, String path, boolean isLoop) {
-      if (trackIdx < view.slotPaths.size())
-          view.slotPaths.get(trackIdx)[slotIdx] = path;
+    if (trackIdx < view.slotPaths.size()) view.slotPaths.get(trackIdx)[slotIdx] = path;
     BackendManager.getInstance()
         .sendRequest(
             Request.newBuilder()
@@ -94,8 +93,7 @@ class SessionViewIpc {
                 .build());
 
     // Optimistically clear the UI
-    if (trackIdx < view.slotPaths.size())
-        view.slotPaths.get(trackIdx)[slotIdx] = null;
+    if (trackIdx < view.slotPaths.size()) view.slotPaths.get(trackIdx)[slotIdx] = null;
     view.updateSlotLabel(trackIdx, slotIdx, "");
   }
 }

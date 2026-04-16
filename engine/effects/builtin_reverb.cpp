@@ -9,8 +9,8 @@ static const std::string kReverbName = "Reverb";
 static const std::string kReverbPath = "builtin://reverb";
 
 // Freeverb comb filter lengths (tuned for 44100 Hz, scaled at load)
-static constexpr int kCombLengths[8] = {
-    1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617};
+static constexpr int kCombLengths[8] = {1116, 1188, 1277, 1356,
+                                        1422, 1491, 1557, 1617};
 // Stereo spread: offset right channel
 static constexpr int kStereoSpread = 23;
 // Allpass lengths
@@ -26,9 +26,9 @@ BuiltinReverb::BuiltinReverb() {
   params_[PARAM_ROOM_SIZE] = 0.5;
   params_[PARAM_DAMPING] = 0.5;
   params_[PARAM_MIX] = 0.3;
-  params_[PARAM_PRE_DELAY] = 0.1;   // ~10ms
-  params_[PARAM_HP_FREQ] = 0.15;    // ~40Hz
-  params_[PARAM_LP_FREQ] = 0.85;    // ~16kHz
+  params_[PARAM_PRE_DELAY] = 0.1;  // ~10ms
+  params_[PARAM_HP_FREQ] = 0.15;   // ~40Hz
+  params_[PARAM_LP_FREQ] = 0.85;   // ~16kHz
   params_[PARAM_WIDTH] = 1.0;
   params_[PARAM_ENABLE] = 1.0;
 }
@@ -145,15 +145,19 @@ void BuiltinReverb::process(float** inputs, float** outputs, int num_samples,
   float wet2 = (1.0f - width) * 0.5f;
 
   float pre_delay_ms = normToPreDelayMs(params_[PARAM_PRE_DELAY]);
-  int pre_delay_samples = std::clamp(
-      (int)(pre_delay_ms * 0.001f * (float)sample_rate_),
-      0, (int)predelay_l_.size() - 1);
+  int pre_delay_samples =
+      std::clamp((int)(pre_delay_ms * 0.001f * (float)sample_rate_), 0,
+                 (int)predelay_l_.size() - 1);
 
   // Filter coefficients
-  float hp_freq = 20.0f * std::pow(25.0f, (float)params_[PARAM_HP_FREQ]);  // 20-500Hz
-  float lp_freq = 2000.0f * std::pow(10.0f, (float)params_[PARAM_LP_FREQ]);  // 2k-20kHz
-  float hp_coeff = 1.0f - std::exp(-2.0f * 3.14159f * hp_freq / (float)sample_rate_);
-  float lp_coeff = 1.0f - std::exp(-2.0f * 3.14159f * lp_freq / (float)sample_rate_);
+  float hp_freq =
+      20.0f * std::pow(25.0f, (float)params_[PARAM_HP_FREQ]);  // 20-500Hz
+  float lp_freq =
+      2000.0f * std::pow(10.0f, (float)params_[PARAM_LP_FREQ]);  // 2k-20kHz
+  float hp_coeff =
+      1.0f - std::exp(-2.0f * 3.14159f * hp_freq / (float)sample_rate_);
+  float lp_coeff =
+      1.0f - std::exp(-2.0f * 3.14159f * lp_freq / (float)sample_rate_);
 
   int pd_size = (int)predelay_l_.size();
 
@@ -212,9 +216,8 @@ int BuiltinReverb::getParameterCount() const { return kTotalParams; }
 
 bool BuiltinReverb::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
-  static const char* names[] = {
-      "Room Size", "Damping", "Mix", "Pre-Delay",
-      "HP Freq", "LP Freq", "Width", "Enable"};
+  static const char* names[] = {"Room Size", "Damping", "Mix",   "Pre-Delay",
+                                "HP Freq",   "LP Freq", "Width", "Enable"};
   static const double defaults[] = {0.5, 0.5, 0.3, 0.1, 0.15, 0.85, 1.0, 1.0};
   info.id = index;
   info.name = names[index];

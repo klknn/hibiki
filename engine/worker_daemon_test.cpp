@@ -27,8 +27,8 @@
 #include <unistd.h>
 #endif
 
-#include "pb/plugin_worker.pb.h"
 #include "engine/ipc/tcp.hpp"
+#include "pb/plugin_worker.pb.h"
 
 namespace hibiki {
 namespace {
@@ -81,7 +81,7 @@ int recvMessage(socket_t fd, std::string& out) {
 }
 
 pb::worker::WorkerResponse sendRequest(socket_t fd,
-                                        const pb::worker::WorkerRequest& req) {
+                                       const pb::worker::WorkerRequest& req) {
   std::string data;
   req.SerializeToString(&data);
   EXPECT_TRUE(sendMessage(fd, data));
@@ -132,8 +132,7 @@ std::string findDaemonBinary() {
   if (access("bazel-bin/hbk-worker-daemon", X_OK) == 0)
     return "bazel-bin/hbk-worker-daemon";
   // Try CWD
-  if (access("./hbk-worker-daemon", X_OK) == 0)
-    return "./hbk-worker-daemon";
+  if (access("./hbk-worker-daemon", X_OK) == 0) return "./hbk-worker-daemon";
 #endif
   return "";
 }
@@ -144,8 +143,7 @@ std::string findDexedVst3() {
     std::string p = std::string(srcdir) + "/_main/testdata/Dexed.vst3";
     if (access(p.c_str(), F_OK) == 0) return p;
   }
-  if (access("testdata/Dexed.vst3", F_OK) == 0)
-    return "testdata/Dexed.vst3";
+  if (access("testdata/Dexed.vst3", F_OK) == 0) return "testdata/Dexed.vst3";
   return "";
 }
 
@@ -256,8 +254,8 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
 
   // Connect
   socket_t fd = connectToPort(port_);
-  ASSERT_NE(fd, INVALID_SOCK) << "Could not connect to daemon on port "
-                               << port_;
+  ASSERT_NE(fd, INVALID_SOCK)
+      << "Could not connect to daemon on port " << port_;
 
   constexpr int BLOCK_SIZE = 512;
   constexpr int NUM_CHANNELS = 2;
@@ -272,8 +270,7 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
     cfg->set_use_shared_memory(false);
 
     auto resp = sendRequest(fd, req);
-    EXPECT_EQ(resp.result_case(),
-              pb::worker::WorkerResponse::kConfigAck);
+    EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kConfigAck);
     std::cerr << "  Config accepted\n";
   }
 
@@ -286,8 +283,7 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
     load->set_sample_rate(SAMPLE_RATE);
 
     auto resp = sendRequest(fd, req);
-    ASSERT_EQ(resp.result_case(),
-              pb::worker::WorkerResponse::kLoadResult);
+    ASSERT_EQ(resp.result_case(), pb::worker::WorkerResponse::kLoadResult);
     ASSERT_TRUE(resp.load_result().success())
         << "Failed to load Dexed: " << resp.load_result().error();
     EXPECT_TRUE(resp.load_result().is_instrument());
@@ -301,8 +297,7 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
     pb::worker::WorkerRequest req;
     req.mutable_get_param_count();
     auto resp = sendRequest(fd, req);
-    ASSERT_EQ(resp.result_case(),
-              pb::worker::WorkerResponse::kParamCount);
+    ASSERT_EQ(resp.result_case(), pb::worker::WorkerResponse::kParamCount);
     param_count = resp.param_count().count();
     EXPECT_GT(param_count, 0) << "Dexed should have parameters";
     std::cerr << "  Parameter count: " << param_count << "\n";
@@ -320,8 +315,7 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
     proc->set_has_inputs(false);
 
     auto resp = sendRequest(fd, req);
-    ASSERT_EQ(resp.result_case(),
-              pb::worker::WorkerResponse::kProcessDone);
+    ASSERT_EQ(resp.result_case(), pb::worker::WorkerResponse::kProcessDone);
     auto& audio = resp.process_done().output_audio();
     size_t expected_bytes = NUM_CHANNELS * BLOCK_SIZE * sizeof(float);
     EXPECT_EQ(audio.size(), expected_bytes);
@@ -345,13 +339,12 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
     auto* note = proc->add_midi_events();
     note->set_sample_offset(0);
     note->set_channel(0);
-    note->set_pitch(60);      // C4
+    note->set_pitch(60);       // C4
     note->set_velocity(0.8f);  // ~100/127
     note->set_is_note_on(true);
 
     auto resp = sendRequest(fd, req);
-    ASSERT_EQ(resp.result_case(),
-              pb::worker::WorkerResponse::kProcessDone);
+    ASSERT_EQ(resp.result_case(), pb::worker::WorkerResponse::kProcessDone);
     auto& audio = resp.process_done().output_audio();
     size_t expected_bytes = NUM_CHANNELS * BLOCK_SIZE * sizeof(float);
     ASSERT_EQ(audio.size(), expected_bytes)
@@ -413,8 +406,7 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
     note->set_is_note_on(false);
 
     auto resp = sendRequest(fd, req);
-    ASSERT_EQ(resp.result_case(),
-              pb::worker::WorkerResponse::kProcessDone);
+    ASSERT_EQ(resp.result_case(), pb::worker::WorkerResponse::kProcessDone);
     std::cerr << "  Sent note-off\n";
   }
 

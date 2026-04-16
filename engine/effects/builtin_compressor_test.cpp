@@ -1,9 +1,9 @@
 #include "engine/effects/builtin_compressor.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <vector>
-
-#include <gtest/gtest.h>
 
 namespace hibiki {
 namespace {
@@ -66,7 +66,7 @@ TEST(BuiltinCompressorTest, AboveThresholdGainReduction) {
 
   // Threshold = -20 dB, Ratio = 4:1
   comp.setParameterValue(BuiltinCompressor::PARAM_THRESHOLD,
-                         (60.0 - 20.0) / 60.0);  // -20 dB
+                         (60.0 - 20.0) / 60.0);                  // -20 dB
   comp.setParameterValue(BuiltinCompressor::PARAM_RATIO, 0.75);  // ~4:1
   comp.setParameterValue(BuiltinCompressor::PARAM_ATTACK, 0.0);  // fast
   comp.setParameterValue(BuiltinCompressor::PARAM_RELEASE, 0.0);
@@ -85,8 +85,7 @@ TEST(BuiltinCompressorTest, AboveThresholdGainReduction) {
 
   // After compression, the last samples should be reduced
   float last = std::abs(outL[N - 1]);
-  EXPECT_LT(last, input_level)
-      << "Signal above threshold should be compressed";
+  EXPECT_LT(last, input_level) << "Signal above threshold should be compressed";
 }
 
 TEST(BuiltinCompressorTest, TransferCurve) {

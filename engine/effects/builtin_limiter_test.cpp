@@ -1,7 +1,8 @@
 #include "engine/effects/builtin_limiter.hpp"
 
-#include <cmath>
 #include <gtest/gtest.h>
+
+#include <cmath>
 
 namespace hibiki {
 namespace {
@@ -80,7 +81,8 @@ TEST_F(BuiltinLimiterTest, QuietSignalPassesThrough) {
 
   limiter.process(inputs, outputs, kBlockSize, ctx, {});
   // After lookahead samples, output should match input
-  int la_samples = (int)(BuiltinLimiter::normToLookaheadMs(0.2) * 0.001f * 44100.0f);
+  int la_samples =
+      (int)(BuiltinLimiter::normToLookaheadMs(0.2) * 0.001f * 44100.0f);
   if (la_samples + 1 < kBlockSize) {
     EXPECT_NEAR(out_l[la_samples + 1], 0.3f, 0.01f);
   }

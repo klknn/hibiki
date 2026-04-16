@@ -4,9 +4,9 @@
 #include <iostream>
 #include <thread>
 
-#include "pluginterfaces/gui/iplugview.h"
 #include "engine/vst3/vst3_host.hpp"
 #include "engine/vst3/vst3_host_impl.hpp"
+#include "pluginterfaces/gui/iplugview.h"
 
 namespace hibiki {
 

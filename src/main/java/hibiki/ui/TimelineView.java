@@ -42,8 +42,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
   /** Height of one track with per-track override. */
   int getBaseTrackHeight(int trackIdx) {
-    if (trackIdx >= 0 && trackIdx < tracks.size() && tracks.get(trackIdx).hidden)
-      return 0;
+    if (trackIdx >= 0 && trackIdx < tracks.size() && tracks.get(trackIdx).hidden) return 0;
     if (trackIdx >= 0 && trackIdx < tracks.size()) {
       int custom = tracks.get(trackIdx).customHeight;
       if (custom > 0) return custom;
@@ -58,8 +57,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
   /** Total height for a track including expanded automation lanes. */
   int getTotalTrackHeight(int trackIdx) {
-    if (trackIdx >= 0 && trackIdx < tracks.size() && tracks.get(trackIdx).hidden)
-      return 0;
+    if (trackIdx >= 0 && trackIdx < tracks.size() && tracks.get(trackIdx).hidden) return 0;
     int h = getBaseTrackHeight(trackIdx);
     if (trackIdx >= 0 && trackIdx < tracks.size()) {
       TrackTimeline t = tracks.get(trackIdx);
@@ -92,16 +90,14 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   int getTrackIdxAtY(int scaledY) {
     int cumY = 0;
     for (int i = 0; i < tracks.size(); i++) {
-      if (tracks.get(i).hidden)
-        continue;
+      if (tracks.get(i).hidden) continue;
       int th = Theme.getInstance().scale(getTotalTrackHeight(i));
       if (scaledY < cumY + th) return i;
       cumY += th;
     }
     // Fall back to last visible track
     for (int i = tracks.size() - 1; i >= 0; i--) {
-      if (!tracks.get(i).hidden)
-        return i;
+      if (!tracks.get(i).hidden) return i;
     }
     return 0;
   }
@@ -110,8 +106,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   int getVisibleTrackCount() {
     int count = 0;
     for (TrackTimeline t : tracks) {
-      if (!t.hidden)
-        count++;
+      if (!t.hidden) count++;
     }
     return count;
   }
@@ -745,23 +740,18 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
 
   /** Remove a track by index, syncing with SessionView. */
   public void removeTrack(int trackIdx) {
-    if (trackIdx < 0 || trackIdx >= tracks.size() || getVisibleTrackCount() <= 1)
-      return;
-    if (tracks.get(trackIdx).hidden)
-      return;
+    if (trackIdx < 0 || trackIdx >= tracks.size() || getVisibleTrackCount() <= 1) return;
+    if (tracks.get(trackIdx).hidden) return;
     removeTrackNoSync(trackIdx);
-    if (SessionView.getInstance() != null
-        && trackIdx < SessionView.getInstance().getTrackCount()) {
+    if (SessionView.getInstance() != null && trackIdx < SessionView.getInstance().getTrackCount()) {
       SessionView.getInstance().removeTrackNoSync(trackIdx);
     }
   }
 
   /** Remove a track locally without syncing to SessionView. */
   void removeTrackNoSync(int trackIdx) {
-    if (trackIdx < 0 || trackIdx >= tracks.size() || getVisibleTrackCount() <= 1)
-      return;
-    if (tracks.get(trackIdx).hidden)
-      return;
+    if (trackIdx < 0 || trackIdx >= tracks.size() || getVisibleTrackCount() <= 1) return;
+    if (tracks.get(trackIdx).hidden) return;
     tracks.get(trackIdx).hidden = true;
     // Adjust selected track if needed — pick next visible
     if (selectedTrack == trackIdx || tracks.get(selectedTrack).hidden) {

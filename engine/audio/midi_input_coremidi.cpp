@@ -1,14 +1,14 @@
 // macOS CoreMIDI-based MIDI input implementation.
 
-#include "engine/audio/midi_input.hpp"
-
-#include "absl/strings/numbers.h"
 #include <CoreMIDI/CoreMIDI.h>
 
 #include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <vector>
+
+#include "absl/strings/numbers.h"
+#include "engine/audio/midi_input.hpp"
 
 namespace hibiki {
 
@@ -27,8 +27,8 @@ class MidiInputCoreMidi : public MidiInput {
       return false;
     }
 
-    status = MIDIInputPortCreate(client_, CFSTR("input"), readProc, this,
-                                 &port_);
+    status =
+        MIDIInputPortCreate(client_, CFSTR("input"), readProc, this, &port_);
     if (status != noErr) {
       fprintf(stderr, "[MIDI Input] Failed to create input port: %d\n",
               (int)status);

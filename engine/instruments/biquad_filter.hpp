@@ -12,8 +12,7 @@ class BiquadFilter {
   enum Type { LOWPASS = 0, HIGHPASS, BANDPASS };
 
   void setParams(Type type, float cutoff_hz, float q, float sample_rate) {
-    if (cutoff_hz == cutoff_ && q == q_ && type == type_ &&
-        sample_rate == sr_)
+    if (cutoff_hz == cutoff_ && q == q_ && type == type_ && sample_rate == sr_)
       return;
     type_ = type;
     cutoff_ = cutoff_hz;
@@ -24,8 +23,8 @@ class BiquadFilter {
 
   // Modulate cutoff by envelope: base_hz * 2^(depth * env_value * 4)
   // depth in [-1, 1], env_value in [0, 1]
-  void setModulatedCutoff(float base_hz, float depth, float env_value,
-                          float q, float sample_rate) {
+  void setModulatedCutoff(float base_hz, float depth, float env_value, float q,
+                          float sample_rate) {
     float mod_oct = depth * env_value * 4.0f;  // ±4 octaves
     float mod_hz = base_hz * std::pow(2.0f, mod_oct);
     mod_hz = std::max(20.0f, std::min(20000.0f, mod_hz));
@@ -41,9 +40,7 @@ class BiquadFilter {
     return y;
   }
 
-  void reset() {
-    x1_ = x2_ = y1_ = y2_ = 0.0f;
-  }
+  void reset() { x1_ = x2_ = y1_ = y2_ = 0.0f; }
 
   // Map normalized 0..1 to cutoff Hz (log: 20Hz..20kHz)
   static float normToCutoff(float norm) {
@@ -51,9 +48,7 @@ class BiquadFilter {
   }
 
   // Map normalized 0..1 to Q (0.5..20)
-  static float normToQ(float norm) {
-    return 0.5f + norm * 19.5f;
-  }
+  static float normToQ(float norm) { return 0.5f + norm * 19.5f; }
 
   // Map normalized 0..1 to filter type
   static Type normToType(float norm) {

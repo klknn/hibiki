@@ -7,8 +7,8 @@
 namespace hibiki {
 
 struct AudioInputInfo {
-  std::string id;    // Platform device ID (e.g. "hw:0,0" or CoreAudio UID)
-  std::string name;  // Human-readable name
+  std::string id;         // Platform device ID (e.g. "hw:0,0" or CoreAudio UID)
+  std::string name;       // Human-readable name
   int channel_count = 2;  // Number of input channels
 };
 
@@ -43,4 +43,3 @@ class SoundDevice {
 };
 
 }  // namespace hibiki
-

@@ -1,12 +1,12 @@
 // ALSA sequencer-based MIDI input implementation.
 // Uses snd_seq for device enumeration and event reading.
 
-#include "engine/audio/midi_input.hpp"
-
 #include <alsa/asoundlib.h>
 
 #include <cstdio>
 #include <cstring>
+
+#include "engine/audio/midi_input.hpp"
 
 namespace hibiki {
 
@@ -17,7 +17,8 @@ class MidiInputAlsa : public MidiInput {
   bool open(const std::string& device_id) override {
     if (seq_) close();
 
-    int err = snd_seq_open(&seq_, "default", SND_SEQ_OPEN_INPUT, SND_SEQ_NONBLOCK);
+    int err =
+        snd_seq_open(&seq_, "default", SND_SEQ_OPEN_INPUT, SND_SEQ_NONBLOCK);
     if (err < 0) {
       fprintf(stderr, "[MIDI Input] Failed to open ALSA sequencer: %s\n",
               snd_strerror(err));
@@ -27,8 +28,7 @@ class MidiInputAlsa : public MidiInput {
 
     // Create an input port
     port_id_ = snd_seq_create_simple_port(
-        seq_, "input",
-        SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE,
+        seq_, "input", SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE,
         SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
     if (port_id_ < 0) {
       fprintf(stderr, "[MIDI Input] Failed to create port: %s\n",
@@ -118,8 +118,8 @@ class MidiInputAlsa : public MidiInput {
     snd_seq_port_subscribe_set_dest(sub, &dest);
     int err = snd_seq_subscribe_port(seq_, sub);
     if (err < 0) {
-      fprintf(stderr, "[MIDI Input] Failed to subscribe %d:%d: %s\n",
-              client, port, snd_strerror(err));
+      fprintf(stderr, "[MIDI Input] Failed to subscribe %d:%d: %s\n", client,
+              port, snd_strerror(err));
     }
   }
 
@@ -142,12 +142,12 @@ class MidiInputAlsa : public MidiInput {
         // Only subscribe to readable MIDI ports (hardware or software)
         if ((caps & SND_SEQ_PORT_CAP_READ) &&
             (caps & SND_SEQ_PORT_CAP_SUBS_READ) &&
-            (type & (SND_SEQ_PORT_TYPE_MIDI_GENERIC |
-                     SND_SEQ_PORT_TYPE_HARDWARE))) {
+            (type &
+             (SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_HARDWARE))) {
           int port = snd_seq_port_info_get_port(pinfo);
           subscribePort(client, port);
-          fprintf(stderr, "[MIDI Input] Subscribed to %d:%d (%s)\n",
-                  client, port, snd_seq_port_info_get_name(pinfo));
+          fprintf(stderr, "[MIDI Input] Subscribed to %d:%d (%s)\n", client,
+                  port, snd_seq_port_info_get_name(pinfo));
         }
       }
     }

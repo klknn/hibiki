@@ -21,7 +21,8 @@ void scanBundlesParallel(
     const std::vector<std::string>& bundles,
     std::function<std::vector<PluginDescription>(const std::string&)> scan_fn,
     std::function<void(const std::string& path,
-                       const std::vector<PluginDescription>&)> on_bundle);
+                       const std::vector<PluginDescription>&)>
+        on_bundle);
 
 // Async plugin cache — populated by a background scan thread.
 // Clients can poll for new entries via getNewEntries().

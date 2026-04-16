@@ -34,8 +34,7 @@ class TimelineRenderer {
     g2.fillRect(0, 0, scaleLabelWidth, scaleTimeRuler);
 
     for (int i = 0; i < tracks.size(); i++) {
-      if (tracks.get(i).hidden)
-        continue;
+      if (tracks.get(i).hidden) continue;
       int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight(i));
       int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
 
@@ -348,8 +347,7 @@ class TimelineRenderer {
 
     // Draw tracks background
     for (int i = 0; i < tracks.size(); i++) {
-      if (tracks.get(i).hidden)
-        continue;
+      if (tracks.get(i).hidden) continue;
       int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight(i));
       int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
       // Main clip area
@@ -415,8 +413,7 @@ class TimelineRenderer {
 
     // Draw automation curves (when expanded)
     for (int i = 0; i < tracks.size(); i++) {
-      if (tracks.get(i).hidden)
-        continue;
+      if (tracks.get(i).hidden) continue;
       TimelineView.TrackTimeline track = tracks.get(i);
       if (!track.automationExpanded || track.automationLanes.isEmpty()) continue;
       int trackY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
@@ -511,8 +508,7 @@ class TimelineRenderer {
   private int getTrackAtY(int yFromRuler, List<TimelineView.TrackTimeline> tracks) {
     int cumY = 0;
     for (int i = 0; i < tracks.size(); i++) {
-      if (tracks.get(i).hidden)
-        continue;
+      if (tracks.get(i).hidden) continue;
       int th = Theme.getInstance().scale(view.getTotalTrackHeight(i));
       if (yFromRuler < cumY + th) return i;
       cumY += th;
@@ -598,8 +594,7 @@ class TimelineRenderer {
       TimelineView.ClipRect draggingClip) {
     Color accentBlue = Theme.getInstance().ACCENT_BLUE;
     for (int i = 0; i < tracks.size(); i++) {
-      if (tracks.get(i).hidden)
-        continue;
+      if (tracks.get(i).hidden) continue;
       int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight(i));
       int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i)) + 5;
       for (TimelineView.ClipRect clip : tracks.get(i).clips) {

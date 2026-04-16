@@ -30,7 +30,8 @@ void scanBundlesParallel(
     const std::vector<std::string>& bundles,
     std::function<std::vector<PluginDescription>(const std::string&)> scan_fn,
     std::function<void(const std::string& path,
-                       const std::vector<PluginDescription>&)> on_bundle) {
+                       const std::vector<PluginDescription>&)>
+        on_bundle) {
   struct BundleResult {
     std::string path;
     std::vector<PluginDescription> plugins;
@@ -38,10 +39,9 @@ void scanBundlesParallel(
 
   std::vector<std::future<BundleResult>> futures;
   for (const auto& bp : bundles) {
-    futures.push_back(
-        std::async(std::launch::async, [bp, &scan_fn]() -> BundleResult {
-          return {bp, scan_fn(bp)};
-        }));
+    futures.push_back(std::async(
+        std::launch::async,
+        [bp, &scan_fn]() -> BundleResult { return {bp, scan_fn(bp)}; }));
   }
 
   for (auto& f : futures) {

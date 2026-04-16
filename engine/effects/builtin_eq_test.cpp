@@ -1,9 +1,9 @@
 #include "engine/effects/builtin_eq.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <vector>
-
-#include <gtest/gtest.h>
 
 namespace hibiki {
 namespace {
@@ -75,8 +75,8 @@ TEST(BuiltinEqTest, BellBoostIncreasesLevel) {
   // Enable band 0 as Bell, boost at 440 Hz
   eq.setParameterValue(0, 1.0);  // Band 0 type = BELL (norm >= 0.9)
   eq.setParameterValue(8, BuiltinEq::freqToNorm(440.0f));  // Freq
-  eq.setParameterValue(16, 0.75);  // Gain = +12 dB
-  eq.setParameterValue(24, BuiltinEq::qToNorm(1.0f));  // Q
+  eq.setParameterValue(16, 0.75);                          // Gain = +12 dB
+  eq.setParameterValue(24, BuiltinEq::qToNorm(1.0f));      // Q
 
   constexpr int N = 1024;
   float outL[N], outR[N];

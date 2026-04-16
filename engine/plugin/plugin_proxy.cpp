@@ -8,8 +8,8 @@
 #include <iostream>
 #include <random>
 
-#include "pb/plugin_worker.pb.h"
 #include "engine/ipc/worker_channel_tcp.hpp"
+#include "pb/plugin_worker.pb.h"
 
 namespace hibiki {
 

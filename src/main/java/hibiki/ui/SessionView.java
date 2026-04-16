@@ -79,8 +79,7 @@ public class SessionView extends JPanel {
     addBtn.setForeground(Theme.getInstance().TEXT_DIM);
     addBtn.setPreferredSize(
         new Dimension(Theme.getInstance().scale(30), Theme.getInstance().scale(400)));
-    addBtn.setMaximumSize(
-        new Dimension(Theme.getInstance().scale(30), 32767));
+    addBtn.setMaximumSize(new Dimension(Theme.getInstance().scale(30), 32767));
     addBtn.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.getInstance().BORDER));
     addBtn.addActionListener(e -> addTrack());
     trackPanel.add(addBtn);
@@ -104,13 +103,13 @@ public class SessionView extends JPanel {
                     var info = notification.getClipInfo();
                     updateSlotLabel(info.getTrackIndex(), info.getSlotIndex(), info.getName());
                     if (!info.getPath().isEmpty()) {
-                    if (info.getTrackIndex() < slotPaths.size()) {
-                      slotPaths.get(info.getTrackIndex())[info.getSlotIndex()] = info.getPath();
-                    }
+                      if (info.getTrackIndex() < slotPaths.size()) {
+                        slotPaths.get(info.getTrackIndex())[info.getSlotIndex()] = info.getPath();
+                      }
                     } else {
-                    if (info.getTrackIndex() < slotPaths.size()) {
-                      slotPaths.get(info.getTrackIndex())[info.getSlotIndex()] = null;
-                    }
+                      if (info.getTrackIndex() < slotPaths.size()) {
+                        slotPaths.get(info.getTrackIndex())[info.getSlotIndex()] = null;
+                      }
                     }
                     break;
                   }
@@ -136,8 +135,7 @@ public class SessionView extends JPanel {
   public void addTrack() {
     int newIdx = trackStrips.size();
     addTrackNoSync();
-    if (TimelineView.getInstance() != null
-        && TimelineView.getInstance().tracks.size() <= newIdx) {
+    if (TimelineView.getInstance() != null && TimelineView.getInstance().tracks.size() <= newIdx) {
       TimelineView.getInstance().addTrackNoSync();
     }
   }
@@ -150,25 +148,20 @@ public class SessionView extends JPanel {
 
   /** Remove a track by index, syncing with TimelineView. */
   public void removeTrack(int trackIdx) {
-    if (trackIdx < 0 || trackIdx >= trackStrips.size() || getVisibleTrackCount() <= 1)
-      return;
+    if (trackIdx < 0 || trackIdx >= trackStrips.size() || getVisibleTrackCount() <= 1) return;
     JPanel strip = trackStrips.get(trackIdx);
-    if (strip == null || !strip.isVisible())
-      return;
+    if (strip == null || !strip.isVisible()) return;
     removeTrackNoSync(trackIdx);
-    if (TimelineView.getInstance() != null
-        && trackIdx < TimelineView.getInstance().tracks.size()) {
+    if (TimelineView.getInstance() != null && trackIdx < TimelineView.getInstance().tracks.size()) {
       TimelineView.getInstance().removeTrackNoSync(trackIdx);
     }
   }
 
   /** Remove a track locally without syncing to TimelineView. */
   void removeTrackNoSync(int trackIdx) {
-    if (trackIdx < 0 || trackIdx >= trackStrips.size() || getVisibleTrackCount() <= 1)
-      return;
+    if (trackIdx < 0 || trackIdx >= trackStrips.size() || getVisibleTrackCount() <= 1) return;
     JPanel strip = trackStrips.get(trackIdx);
-    if (strip == null || !strip.isVisible())
-      return;
+    if (strip == null || !strip.isVisible()) return;
     removeTrackInternal(trackIdx);
   }
 
@@ -176,8 +169,7 @@ public class SessionView extends JPanel {
   int getVisibleTrackCount() {
     int count = 0;
     for (JPanel strip : trackStrips) {
-      if (strip != null && strip.isVisible())
-        count++;
+      if (strip != null && strip.isVisible()) count++;
     }
     return count;
   }
@@ -197,8 +189,7 @@ public class SessionView extends JPanel {
 
   /** Internal: hide a track strip (keep in data lists for stable indexing). */
   private void removeTrackInternal(int trackIdx) {
-    if (trackIdx < 0 || trackIdx >= trackStrips.size())
-      return;
+    if (trackIdx < 0 || trackIdx >= trackStrips.size()) return;
 
     // Hide the UI component (don't remove from lists)
     JPanel strip = trackStrips.get(trackIdx);
@@ -274,8 +265,7 @@ public class SessionView extends JPanel {
   }
 
   private void selectTrack(int trackIdx) {
-    if (trackIdx == selectedTrack)
-      return;
+    if (trackIdx == selectedTrack) return;
     selectedTrack = trackIdx;
     // Sync with TimelineView (both now use 0-based)
     if (TimelineView.getInstance() != null) {
@@ -307,8 +297,7 @@ public class SessionView extends JPanel {
 
   /** Show dialog to rename a track (syncs with TimelineView) */
   private void renameTrack(int trackIdx) {
-    if (trackIdx < 0 || trackIdx >= trackStrips.size())
-      return;
+    if (trackIdx < 0 || trackIdx >= trackStrips.size()) return;
     String currentName = "Track " + trackIdx;
     if (TimelineView.getInstance() != null && trackIdx < TimelineView.getInstance().tracks.size()) {
       TimelineView.TrackTimeline t = TimelineView.getInstance().tracks.get(trackIdx);

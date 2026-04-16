@@ -1,8 +1,6 @@
 // POSIX implementation of platform-specific PluginProxy methods.
 // See plugin_proxy_win32.cpp for the Windows equivalent.
 
-#include "engine/plugin/plugin_proxy.hpp"
-
 #include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -11,6 +9,7 @@
 #include <iostream>
 
 #include "engine/ipc/worker_channel_local.hpp"
+#include "engine/plugin/plugin_proxy.hpp"
 
 namespace hibiki {
 

@@ -5,8 +5,8 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <windows.h>
 #include <mmsystem.h>
+#include <windows.h>
 
 #include <cstdio>
 #include <mutex>
@@ -93,9 +93,8 @@ class MidiInputWinMM : public MidiInput {
 
  private:
   static void CALLBACK midiCallback(HMIDIIN /*hMidiIn*/, UINT wMsg,
-                                     DWORD_PTR dwInstance,
-                                     DWORD_PTR dwParam1,
-                                     DWORD_PTR /*dwParam2*/) {
+                                    DWORD_PTR dwInstance, DWORD_PTR dwParam1,
+                                    DWORD_PTR /*dwParam2*/) {
     if (wMsg != MIM_DATA) return;
 
     auto* self = reinterpret_cast<MidiInputWinMM*>(dwInstance);

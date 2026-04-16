@@ -1,7 +1,8 @@
 #include "engine/effects/builtin_delay.hpp"
 
-#include <cmath>
 #include <gtest/gtest.h>
+
+#include <cmath>
 
 namespace hibiki {
 namespace {
@@ -47,7 +48,8 @@ TEST_F(BuiltinDelayTest, ImpulseProducesDelayedOutput) {
   EXPECT_NEAR(out_l[0], 0.5f, 0.01f);
 
   // After the delay, we should see the wet impulse
-  int delay_samples = (int)(BuiltinDelay::normToTimeMs(0.22) * 0.001f * 44100.0f);
+  int delay_samples =
+      (int)(BuiltinDelay::normToTimeMs(0.22) * 0.001f * 44100.0f);
   if (delay_samples < kBlockSize) {
     EXPECT_GT(std::abs(out_l[delay_samples]), 0.1f);
   }

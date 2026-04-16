@@ -7,16 +7,15 @@ namespace hibiki {
 Builtin3xOsc::Builtin3xOsc() { reset(); }
 
 bool Builtin3xOsc::load(const std::string& /*path*/, int /*plugin_index*/,
-                          double sample_rate) {
+                        double sample_rate) {
   sample_rate_ = sample_rate;
   reset();
   return true;
 }
 
-void Builtin3xOsc::process(float** /*inputs*/, float** outputs,
-                            int num_samples,
-                            const HostProcessContext& context,
-                            const std::vector<MidiNoteEvent>& events) {
+void Builtin3xOsc::process(float** /*inputs*/, float** outputs, int num_samples,
+                           const HostProcessContext& context,
+                           const std::vector<MidiNoteEvent>& events) {
   sample_rate_ = context.sampleRate;
 
   for (const auto& ev : events) {
@@ -65,12 +64,11 @@ void Builtin3xOsc::process(float** /*inputs*/, float** outputs,
         if (osc_vol < 0.001f) continue;
 
         float osc_pan = params_[base + P_PAN];
-        int coarse =
-            (int)((params_[base + P_COARSE] - 0.5f) * 48.0f);
+        int coarse = (int)((params_[base + P_COARSE] - 0.5f) * 48.0f);
         float fine = (params_[base + P_FINE] - 0.5f) * 200.0f;
 
-        float freq = voice.base_freq *
-                     std::pow(2.0f, (coarse + fine / 100.0f) / 12.0f);
+        float freq =
+            voice.base_freq * std::pow(2.0f, (coarse + fine / 100.0f) / 12.0f);
         float sample = generateOsc(normToWaveform(params_[base + P_WAVEFORM]),
                                    voice.phase[o], freq, sample_rate_);
         voice.phase[o] += freq / sample_rate_;
@@ -166,7 +164,7 @@ Builtin3xOsc::Waveform Builtin3xOsc::normToWaveform(float norm) {
 }
 
 float Builtin3xOsc::generateOsc(Waveform wf, double phase, float /*freq*/,
-                                 double /*sr*/) {
+                                double /*sr*/) {
   float p = (float)phase;
   switch (wf) {
     case SINE:

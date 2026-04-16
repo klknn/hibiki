@@ -30,7 +30,7 @@ class SoundDeviceCoreAudio : public SoundDevice {
       // 3x latency is usually a safe bet for stable audio on macOS.
       size_t frames_needed = (static_cast<size_t>(rate) * latency_ms) / 1000;
       capacity = frames_needed * ch * 3;
-      
+
       // Ensure a reasonable minimum size (e.g., 2048 samples)
       if (capacity < 2048) capacity = 2048;
 

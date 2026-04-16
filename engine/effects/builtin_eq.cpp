@@ -8,15 +8,15 @@ namespace hibiki {
 BuiltinEq::BuiltinEq() { reset(); }
 
 bool BuiltinEq::load(const std::string& /*path*/, int /*plugin_index*/,
-                      double sample_rate) {
+                     double sample_rate) {
   sample_rate_ = sample_rate;
   reset();
   return true;
 }
 
 void BuiltinEq::process(float** inputs, float** outputs, int num_samples,
-                         const HostProcessContext& context,
-                         const std::vector<MidiNoteEvent>& /*events*/) {
+                        const HostProcessContext& context,
+                        const std::vector<MidiNoteEvent>& /*events*/) {
   if (sample_rate_ != context.sampleRate) {
     sample_rate_ = context.sampleRate;
     recalcAllCoeffs();
@@ -53,8 +53,8 @@ void BuiltinEq::process(float** inputs, float** outputs, int num_samples,
     for (int i = 0; i < num_samples; ++i) {
       // Left channel
       float xL = outL[i];
-      float yL = c.b0 * xL + c.b1 * sL.x1 + c.b2 * sL.x2 - c.a1 * sL.y1 -
-                 c.a2 * sL.y2;
+      float yL =
+          c.b0 * xL + c.b1 * sL.x1 + c.b2 * sL.x2 - c.a1 * sL.y1 - c.a2 * sL.y2;
       sL.x2 = sL.x1;
       sL.x1 = xL;
       sL.y2 = sL.y1;
@@ -63,8 +63,8 @@ void BuiltinEq::process(float** inputs, float** outputs, int num_samples,
 
       // Right channel
       float xR = outR[i];
-      float yR = c.b0 * xR + c.b1 * sR.x1 + c.b2 * sR.x2 - c.a1 * sR.y1 -
-                 c.a2 * sR.y2;
+      float yR =
+          c.b0 * xR + c.b1 * sR.x1 + c.b2 * sR.x2 - c.a1 * sR.y1 - c.a2 * sR.y2;
       sR.x2 = sR.x1;
       sR.x1 = xR;
       sR.y2 = sR.y1;

@@ -2,8 +2,8 @@
 
 #include <gtest/gtest.h>
 
-#include "engine/ipc/ipc.hpp"
 #include "engine/core/track.hpp"
+#include "engine/ipc/ipc.hpp"
 
 namespace hibiki {
 

@@ -58,9 +58,10 @@ int findFirstNonSilent(const float* buf, int n, float threshold = 1e-6f) {
 
 // Simulate timeline MIDI event collection for one block
 // (mirrors main.cpp lines 140-172)
-std::vector<MidiNoteEvent> collectTimelineMidi(
-    const Track& track, double playhead_sec, double time_per_block,
-    double bpm, double sample_rate) {
+std::vector<MidiNoteEvent> collectTimelineMidi(const Track& track,
+                                               double playhead_sec,
+                                               double time_per_block,
+                                               double bpm, double sample_rate) {
   std::vector<MidiNoteEvent> events;
   int block_size = (int)(time_per_block * sample_rate);
   double beats_per_sec = bpm / 60.0;
@@ -97,8 +98,7 @@ std::vector<MidiNoteEvent> collectTimelineMidi(
 // Simulate timeline audio clip mixing for one block
 // (mirrors main.cpp audio clip playback)
 void mixTimelineAudio(const Track& track, float* outL, float* outR,
-                      int block_size, double playhead_sec,
-                      double sample_rate) {
+                      int block_size, double playhead_sec, double sample_rate) {
   for (const auto& tc : track.timeline_clips) {
     if (!tc->clip || tc->clip->type != Clip::Type::AUDIO) continue;
     double clip_duration = tc->duration_sec;
@@ -129,9 +129,7 @@ class IntegrationTest : public ::testing::Test {
   static constexpr int kBlockSize = 512;
   static constexpr double kBpm = 120.0;
 
-  void SetUp() override {
-    hibiki::g_ipc_enabled = false;
-  }
+  void SetUp() override { hibiki::g_ipc_enabled = false; }
 
   // Render N blocks through Dexed with given MIDI events per block
   // Returns concatenated stereo audio [L, R]
@@ -140,8 +138,9 @@ class IntegrationTest : public ::testing::Test {
     std::vector<float> right;
   };
 
-  RenderResult renderBlocks(IPlugin* plugin, int num_blocks,
-                            const std::vector<std::vector<MidiNoteEvent>>& events_per_block) {
+  RenderResult renderBlocks(
+      IPlugin* plugin, int num_blocks,
+      const std::vector<std::vector<MidiNoteEvent>>& events_per_block) {
     RenderResult result;
     result.left.resize(num_blocks * kBlockSize, 0.0f);
     result.right.resize(num_blocks * kBlockSize, 0.0f);
@@ -159,9 +158,9 @@ class IntegrationTest : public ::testing::Test {
       float* outR = result.right.data() + b * kBlockSize;
       float* outs[2] = {outL, outR};
 
-      const auto& events =
-          (b < (int)events_per_block.size()) ? events_per_block[b]
-                                             : std::vector<MidiNoteEvent>{};
+      const auto& events = (b < (int)events_per_block.size())
+                               ? events_per_block[b]
+                               : std::vector<MidiNoteEvent>{};
 
       plugin->process(nullptr, outs, kBlockSize, ctx, events);
       ctx.continuousTimeSamples += kBlockSize;
@@ -218,14 +217,12 @@ TEST_F(IntegrationTest, DexedNoteTimingMatchesSampleOffset) {
 
   // First 256 samples should be silent
   float first_half_peak = computePeak(result.left.data(), 256);
-  EXPECT_LT(first_half_peak, 1e-6f)
-      << "Before sampleOffset should be silent";
+  EXPECT_LT(first_half_peak, 1e-6f) << "Before sampleOffset should be silent";
 
   // After sample 256 should have audio
   float second_half_peak =
       computePeak(result.left.data() + 256, kBlockSize - 256);
-  EXPECT_GT(second_half_peak, 0.001f)
-      << "Audio should start at sampleOffset";
+  EXPECT_GT(second_half_peak, 0.001f) << "Audio should start at sampleOffset";
 }
 
 TEST_F(IntegrationTest, TimelineMidiClipPlaybackTiming) {
@@ -253,8 +250,8 @@ TEST_F(IntegrationTest, TimelineMidiClipPlaybackTiming) {
   std::vector<float> allAudioL;
 
   for (int b = 0; b < 8; b++) {
-    auto events = collectTimelineMidi(track, playhead, time_per_block,
-                                      kBpm, kSampleRate);
+    auto events =
+        collectTimelineMidi(track, playhead, time_per_block, kBpm, kSampleRate);
     std::vector<float> outL(kBlockSize, 0.0f);
     std::vector<float> outR(kBlockSize, 0.0f);
     float* outs[2] = {outL.data(), outR.data()};
@@ -265,7 +262,8 @@ TEST_F(IntegrationTest, TimelineMidiClipPlaybackTiming) {
     ctx.projectTimeMusic += time_per_block * (kBpm / 60.0);
   }
 
-  // test.mid first event is at beat 0.0, so audio should appear in the first block
+  // test.mid first event is at beat 0.0, so audio should appear in the first
+  // block
   float first_block_peak = computePeak(allAudioL.data(), kBlockSize);
   EXPECT_GT(first_block_peak, 0.001f)
       << "First block should have audio (MIDI file starts at beat 0)";
@@ -282,12 +280,14 @@ TEST_F(IntegrationTest, LoadMidiClipAndVerifyPlayback) {
   double time_per_block = (double)kBlockSize / kSampleRate;
 
   // Before clip start (playhead = 0.0) → no events
-  auto events = collectTimelineMidi(track, 0.0, time_per_block, kBpm, kSampleRate);
+  auto events =
+      collectTimelineMidi(track, 0.0, time_per_block, kBpm, kSampleRate);
   EXPECT_TRUE(events.empty()) << "No events before clip start";
 
   // At clip start (playhead = 2.0) → should have events
   events = collectTimelineMidi(track, 2.0, time_per_block, kBpm, kSampleRate);
-  EXPECT_FALSE(events.empty()) << "Should have events at clip start (beat 0 is at t=2.0)";
+  EXPECT_FALSE(events.empty())
+      << "Should have events at clip start (beat 0 is at t=2.0)";
 }
 
 TEST_F(IntegrationTest, LoadAudioClipAndVerifyPlayback) {
@@ -300,14 +300,16 @@ TEST_F(IntegrationTest, LoadAudioClipAndVerifyPlayback) {
 
   // Before clip start → silence
   std::vector<float> outL(kBlockSize, 0.0f), outR(kBlockSize, 0.0f);
-  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 0.0, kSampleRate);
+  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 0.0,
+                   kSampleRate);
   EXPECT_LT(computePeak(outL.data(), kBlockSize), 1e-6f)
       << "Before clip start should be silence";
 
   // At clip start → audio
   std::fill(outL.begin(), outL.end(), 0.0f);
   std::fill(outR.begin(), outR.end(), 0.0f);
-  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 1.0, kSampleRate);
+  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 1.0,
+                   kSampleRate);
   EXPECT_GT(computePeak(outL.data(), kBlockSize), 0.001f)
       << "Audio clip should produce output at its start time";
 }
@@ -323,7 +325,8 @@ TEST_F(IntegrationTest, DeleteMidiClipStopsPlayback) {
   double time_per_block = (double)kBlockSize / kSampleRate;
 
   // Before delete → events available
-  auto events = collectTimelineMidi(track, 0.0, time_per_block, kBpm, kSampleRate);
+  auto events =
+      collectTimelineMidi(track, 0.0, time_per_block, kBpm, kSampleRate);
   EXPECT_FALSE(events.empty()) << "Events should exist before delete";
 
   // Delete the clip
@@ -343,7 +346,8 @@ TEST_F(IntegrationTest, DeleteAudioClipStopsPlayback) {
 
   // Before delete → audio
   std::vector<float> outL(kBlockSize, 0.0f), outR(kBlockSize, 0.0f);
-  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 0.0, kSampleRate);
+  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 0.0,
+                   kSampleRate);
   EXPECT_GT(computePeak(outL.data(), kBlockSize), 0.001f);
 
   // Delete
@@ -353,7 +357,8 @@ TEST_F(IntegrationTest, DeleteAudioClipStopsPlayback) {
   // After delete → silence
   std::fill(outL.begin(), outL.end(), 0.0f);
   std::fill(outR.begin(), outR.end(), 0.0f);
-  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 0.0, kSampleRate);
+  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 0.0,
+                   kSampleRate);
   EXPECT_LT(computePeak(outL.data(), kBlockSize), 1e-6f);
 }
 
@@ -368,7 +373,8 @@ TEST_F(IntegrationTest, MoveMidiClipUpdatesPlayback) {
   double time_per_block = (double)kBlockSize / kSampleRate;
 
   // Events at original position (t=0)
-  auto events = collectTimelineMidi(track, 0.0, time_per_block, kBpm, kSampleRate);
+  auto events =
+      collectTimelineMidi(track, 0.0, time_per_block, kBpm, kSampleRate);
   EXPECT_FALSE(events.empty()) << "Events at original position";
 
   // Move clip to t=5.0
@@ -391,7 +397,8 @@ TEST_F(IntegrationTest, MoveAudioClipUpdatesPlayback) {
 
   // Audio at original position
   std::vector<float> outL(kBlockSize, 0.0f), outR(kBlockSize, 0.0f);
-  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 0.0, kSampleRate);
+  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 0.0,
+                   kSampleRate);
   EXPECT_GT(computePeak(outL.data(), kBlockSize), 0.001f);
 
   // Move clip to t=5.0
@@ -399,12 +406,14 @@ TEST_F(IntegrationTest, MoveAudioClipUpdatesPlayback) {
 
   // No audio at old position
   std::fill(outL.begin(), outL.end(), 0.0f);
-  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 0.0, kSampleRate);
+  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 0.0,
+                   kSampleRate);
   EXPECT_LT(computePeak(outL.data(), kBlockSize), 1e-6f);
 
   // Audio at new position
   std::fill(outL.begin(), outL.end(), 0.0f);
-  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 5.0, kSampleRate);
+  mixTimelineAudio(track, outL.data(), outR.data(), kBlockSize, 5.0,
+                   kSampleRate);
   EXPECT_GT(computePeak(outL.data(), kBlockSize), 0.001f);
 }
 

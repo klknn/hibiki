@@ -9,10 +9,10 @@ static const std::string kLimiterName = "Limiter";
 static const std::string kLimiterPath = "builtin://limiter";
 
 BuiltinLimiter::BuiltinLimiter() {
-  params_[PARAM_CEILING] = 0.975;     // -0.3 dB
-  params_[PARAM_RELEASE] = 0.3;       // ~100ms
-  params_[PARAM_LOOKAHEAD] = 0.2;     // ~1ms
-  params_[PARAM_GAIN] = 0.0;          // 0 dB
+  params_[PARAM_CEILING] = 0.975;  // -0.3 dB
+  params_[PARAM_RELEASE] = 0.3;    // ~100ms
+  params_[PARAM_LOOKAHEAD] = 0.2;  // ~1ms
+  params_[PARAM_GAIN] = 0.0;       // 0 dB
   params_[PARAM_LINK_STEREO] = 1.0;
   params_[PARAM_ENABLE] = 1.0;
   lookahead_l_.resize(kMaxLookahead, 0.0f);
@@ -75,11 +75,12 @@ void BuiltinLimiter::process(float** inputs, float** outputs, int num_samples,
   float gain_lin = std::pow(10.0f, gain_db / 20.0f);
   bool link_stereo = params_[PARAM_LINK_STEREO] >= 0.5;
 
-  int la_samples = std::clamp(
-      (int)(la_ms * 0.001f * (float)sample_rate_), 1, kMaxLookahead - 1);
+  int la_samples = std::clamp((int)(la_ms * 0.001f * (float)sample_rate_), 1,
+                              kMaxLookahead - 1);
 
   // Release coefficient: smooth envelope release
-  float release_coeff = std::exp(-1.0f / (release_ms * 0.001f * (float)sample_rate_));
+  float release_coeff =
+      std::exp(-1.0f / (release_ms * 0.001f * (float)sample_rate_));
 
   int buf_size = (int)lookahead_l_.size();
   float max_gr_db = 0.0f;
@@ -141,8 +142,8 @@ int BuiltinLimiter::getParameterCount() const { return kTotalParams; }
 
 bool BuiltinLimiter::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
-  static const char* names[] = {
-      "Ceiling", "Release", "Lookahead", "Gain", "Link Stereo", "Enable"};
+  static const char* names[] = {"Ceiling", "Release",     "Lookahead",
+                                "Gain",    "Link Stereo", "Enable"};
   static const double defaults[] = {0.975, 0.3, 0.2, 0.0, 1.0, 1.0};
   info.id = index;
   info.name = names[index];

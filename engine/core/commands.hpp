@@ -1,8 +1,8 @@
 #pragma once
 
 #include "engine/core/history.hpp"
-#include "pb/commands.pb.h"
 #include "engine/core/project.hpp"
+#include "pb/commands.pb.h"
 
 namespace hibiki {
 

@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <random>
 #include <numbers>
+#include <random>
 #include <string>
 
 namespace hibiki {
@@ -17,20 +17,21 @@ struct Modulator {
   enum Waveform { SINE = 0, SAW = 1, SQUARE = 2, RANDOM = 3 };
 
   Waveform waveform = SINE;
-  float rate_hz = 1.0f;       // LFO frequency (Hz, or beat-relative if synced)
-  float depth = 0.0f;         // -1.0 to 1.0 modulation scale
-  int plugin_idx = -1;        // target plugin index on the track
-  uint32_t param_id = 0;      // target parameter ID
-  bool assigned = false;      // true if this slot targets a param
-  bool sync_to_tempo = false; // if true, rate is in beat divisions
-  std::string param_name;     // human-readable param name (for UI)
+  float rate_hz = 1.0f;        // LFO frequency (Hz, or beat-relative if synced)
+  float depth = 0.0f;          // -1.0 to 1.0 modulation scale
+  int plugin_idx = -1;         // target plugin index on the track
+  uint32_t param_id = 0;       // target parameter ID
+  bool assigned = false;       // true if this slot targets a param
+  bool sync_to_tempo = false;  // if true, rate is in beat divisions
+  std::string param_name;      // human-readable param name (for UI)
 
   // Runtime state (audio thread only)
-  double phase = 0.0;         // 0.0 - 1.0 free-running phase
-  float last_random = 0.0f;   // S&H value for RANDOM waveform
-  double random_phase_prev = 0.0; // previous phase for edge detection
+  double phase = 0.0;              // 0.0 - 1.0 free-running phase
+  float last_random = 0.0f;        // S&H value for RANDOM waveform
+  double random_phase_prev = 0.0;  // previous phase for edge detection
 
-  // Advance phase by one block and return the modulation offset (-depth..+depth)
+  // Advance phase by one block and return the modulation offset
+  // (-depth..+depth)
   float tick(int num_samples, double sample_rate, double tempo) {
     if (!assigned || depth == 0.0f) return 0.0f;
 

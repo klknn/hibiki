@@ -310,8 +310,7 @@ public class PluginPane extends JPanel {
             if (!(bi.get(pIdx) instanceof HottDevicePanel)) {
               bi.put(pIdx, new HottDevicePanel(trackIdx, pIdx));
             }
-            if (trackIdx == selectedTrack)
-              rebuildDeviceChain();
+            if (trackIdx == selectedTrack) rebuildDeviceChain();
             return;
           }
 

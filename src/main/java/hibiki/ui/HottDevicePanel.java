@@ -38,7 +38,6 @@ public class HottDevicePanel extends JPanel {
   private boolean enabled = true;
   private final float[] bandGrDb = {0, 0, 0}; // per-band gain reduction
   private float inputDb = -200, outputDb = -200;
-
   private final KnobPanel knobLowXover, knobHighXover;
   private final KnobPanel knobAmount, knobTime, knobOutput;
   private final KnobPanel knobLowOut, knobMidOut, knobHighOut;
@@ -83,16 +82,20 @@ public class HottDevicePanel extends JPanel {
     JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
     btnPanel.setOpaque(false);
     JButton modBtn = new JButton("Mod");
-    modBtn.addActionListener(e -> { if (modToggleCallback != null) modToggleCallback.run(); });
+    modBtn.addActionListener(
+        e -> {
+          if (modToggleCallback != null) modToggleCallback.run();
+        });
     btnPanel.add(modBtn);
     JToggleButton enableBtn = new JToggleButton("On", enabled);
     enableBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     enableBtn.setFocusPainted(false);
-    enableBtn.addActionListener(e -> {
-      enabled = enableBtn.isSelected();
-      sendParam(PARAM_ENABLE, enabled ? 1.0 : 0.0);
-      repaint();
-    });
+    enableBtn.addActionListener(
+        e -> {
+          enabled = enableBtn.isSelected();
+          sendParam(PARAM_ENABLE, enabled ? 1.0 : 0.0);
+          repaint();
+        });
     btnPanel.add(enableBtn);
     JButton delBtn = new JButton("\u274C");
     delBtn.addActionListener(e -> sendRemove());
@@ -103,8 +106,9 @@ public class HottDevicePanel extends JPanel {
     // ── Main body: [Left: split freq] [Center: meters] [Right: knobs] ──
     JPanel body = new JPanel(new BorderLayout(theme.scale(4), 0));
     body.setBackground(theme.BG_MEDIUM);
-    body.setBorder(BorderFactory.createEmptyBorder(
-        theme.scale(4), theme.scale(4), theme.scale(4), theme.scale(4)));
+    body.setBorder(
+        BorderFactory.createEmptyBorder(
+            theme.scale(4), theme.scale(4), theme.scale(4), theme.scale(4)));
 
     // Left column: split freq knobs + labels
     JPanel leftCol = new JPanel();
@@ -126,8 +130,11 @@ public class HottDevicePanel extends JPanel {
     hiLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
     leftCol.add(hiLabel);
 
-    knobHighXover = new KnobPanel("HiFreq", params[PARAM_HIGH_XOVER],
-        v -> String.format("%.1f kHz", normToFreq(v, 500, 20000) / 1000));
+    knobHighXover =
+        new KnobPanel(
+            "HiFreq",
+            params[PARAM_HIGH_XOVER],
+            v -> String.format("%.1f kHz", normToFreq(v, 500, 20000) / 1000));
     knobHighXover.addChangeListener(e -> onKnobChanged(PARAM_HIGH_XOVER, knobHighXover));
     leftCol.add(knobHighXover);
 
@@ -140,8 +147,11 @@ public class HottDevicePanel extends JPanel {
     loLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
     leftCol.add(loLabel);
 
-    knobLowXover = new KnobPanel("LoFreq", params[PARAM_LOW_XOVER],
-        v -> String.format("%.1f Hz", normToFreq(v, 20, 500)));
+    knobLowXover =
+        new KnobPanel(
+            "LoFreq",
+            params[PARAM_LOW_XOVER],
+            v -> String.format("%.1f Hz", normToFreq(v, 20, 500)));
     knobLowXover.addChangeListener(e -> onKnobChanged(PARAM_LOW_XOVER, knobLowXover));
     leftCol.add(knobLowXover);
 
@@ -162,18 +172,18 @@ public class HottDevicePanel extends JPanel {
     bandOutRow.setOpaque(false);
     bandOutRow.setMaximumSize(new Dimension(Short.MAX_VALUE, theme.scale(72)));
 
-    knobHighOut = new KnobPanel("Hi Out", params[PARAM_HIGH_OUT],
-        v -> String.format("%.1f dB", v * 48 - 24));
+    knobHighOut =
+        new KnobPanel("Hi Out", params[PARAM_HIGH_OUT], v -> String.format("%.1f dB", v * 48 - 24));
     knobHighOut.addChangeListener(e -> onKnobChanged(PARAM_HIGH_OUT, knobHighOut));
     bandOutRow.add(knobHighOut);
 
-    knobMidOut = new KnobPanel("Mid Out", params[PARAM_MID_OUT],
-        v -> String.format("%.1f dB", v * 48 - 24));
+    knobMidOut =
+        new KnobPanel("Mid Out", params[PARAM_MID_OUT], v -> String.format("%.1f dB", v * 48 - 24));
     knobMidOut.addChangeListener(e -> onKnobChanged(PARAM_MID_OUT, knobMidOut));
     bandOutRow.add(knobMidOut);
 
-    knobLowOut = new KnobPanel("Lo Out", params[PARAM_LOW_OUT],
-        v -> String.format("%.1f dB", v * 48 - 24));
+    knobLowOut =
+        new KnobPanel("Lo Out", params[PARAM_LOW_OUT], v -> String.format("%.1f dB", v * 48 - 24));
     knobLowOut.addChangeListener(e -> onKnobChanged(PARAM_LOW_OUT, knobLowOut));
     bandOutRow.add(knobLowOut);
 
@@ -192,18 +202,17 @@ public class HottDevicePanel extends JPanel {
     globalRow.setOpaque(false);
     globalRow.setMaximumSize(new Dimension(Short.MAX_VALUE, theme.scale(72)));
 
-    knobOutput = new KnobPanel("Output", params[PARAM_OUTPUT],
-        v -> String.format("%.1f dB", v * 48 - 24));
+    knobOutput =
+        new KnobPanel("Output", params[PARAM_OUTPUT], v -> String.format("%.1f dB", v * 48 - 24));
     knobOutput.addChangeListener(e -> onKnobChanged(PARAM_OUTPUT, knobOutput));
     globalRow.add(knobOutput);
 
-    knobTime = new KnobPanel("Time", params[PARAM_TIME],
-        v -> String.format("%.0f %%", v * 200));
+    knobTime = new KnobPanel("Time", params[PARAM_TIME], v -> String.format("%.0f %%", v * 200));
     knobTime.addChangeListener(e -> onKnobChanged(PARAM_TIME, knobTime));
     globalRow.add(knobTime);
 
-    knobAmount = new KnobPanel("Amount", params[PARAM_AMOUNT],
-        v -> String.format("%.0f %%", v * 200));
+    knobAmount =
+        new KnobPanel("Amount", params[PARAM_AMOUNT], v -> String.format("%.0f %%", v * 200));
     knobAmount.addChangeListener(e -> onKnobChanged(PARAM_AMOUNT, knobAmount));
     globalRow.add(knobAmount);
 
@@ -250,15 +259,24 @@ public class HottDevicePanel extends JPanel {
 
   private KnobPanel getKnobForParam(int paramId) {
     switch (paramId) {
-      case PARAM_LOW_XOVER: return knobLowXover;
-      case PARAM_HIGH_XOVER: return knobHighXover;
-      case PARAM_AMOUNT: return knobAmount;
-      case PARAM_TIME: return knobTime;
-      case PARAM_OUTPUT: return knobOutput;
-      case PARAM_LOW_OUT: return knobLowOut;
-      case PARAM_MID_OUT: return knobMidOut;
-      case PARAM_HIGH_OUT: return knobHighOut;
-      default: return knobAmount; // fallback
+      case PARAM_LOW_XOVER:
+        return knobLowXover;
+      case PARAM_HIGH_XOVER:
+        return knobHighXover;
+      case PARAM_AMOUNT:
+        return knobAmount;
+      case PARAM_TIME:
+        return knobTime;
+      case PARAM_OUTPUT:
+        return knobOutput;
+      case PARAM_LOW_OUT:
+        return knobLowOut;
+      case PARAM_MID_OUT:
+        return knobMidOut;
+      case PARAM_HIGH_OUT:
+        return knobHighOut;
+      default:
+        return knobAmount; // fallback
     }
   }
 
@@ -284,9 +302,9 @@ public class HottDevicePanel extends JPanel {
       g2.setFont(theme.FONT_UI.deriveFont(theme.scale(7.0f)));
       g2.setColor(new Color(255, 255, 255, 60));
       int scaleY = h - pad + theme.scale(2);
-      for (int db : new int[]{-80, -70, -60, -50, -40, -30, -20, -10, 0}) {
+      for (int db : new int[] {-80, -70, -60, -50, -40, -30, -20, -10, 0}) {
         float norm = (db + 80) / 80.0f;
-        int x = pad + (int)(norm * meterW);
+        int x = pad + (int) (norm * meterW);
         g2.drawLine(x, pad, x, h - pad);
         g2.drawString(String.valueOf(Math.abs(db)), x - theme.scale(4), scaleY);
       }
@@ -304,15 +322,15 @@ public class HottDevicePanel extends JPanel {
 
         // Gridlines inside meter
         g2.setColor(new Color(255, 255, 255, 15));
-        for (int db : new int[]{-60, -40, -20}) {
+        for (int db : new int[] {-60, -40, -20}) {
           float norm = (db + 80) / 80.0f;
-          int x = pad + (int)(norm * meterW);
+          int x = pad + (int) (norm * meterW);
           g2.drawLine(x, y, x, y + bandH);
         }
 
         // GR bar (horizontal, cyan)
         float grNorm = Math.min(1.0f, Math.abs(bandGrDb[b]) / 80.0f);
-        int barW = (int)(grNorm * meterW);
+        int barW = (int) (grNorm * meterW);
         if (barW > 0) {
           g2.setColor(accentCyan);
           g2.fillRect(pad, y + theme.scale(2), barW, bandH - theme.scale(4));
@@ -329,11 +347,14 @@ public class HottDevicePanel extends JPanel {
         // Band label (right side)
         g2.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
         g2.setColor(new Color(255, 255, 255, 100));
-        String bandInfo = String.format("%s  Att %.1fms  Rel %.0fms",
-            BAND_NAMES[b], BAND_ATTACK[b], BAND_RELEASE[b]);
+        String bandInfo =
+            String.format(
+                "%s  Att %.1fms  Rel %.0fms", BAND_NAMES[b], BAND_ATTACK[b], BAND_RELEASE[b]);
         // Position at right edge
         FontMetrics fm = g2.getFontMetrics();
-        g2.drawString(bandInfo, pad + meterW - fm.stringWidth(bandInfo) - theme.scale(2),
+        g2.drawString(
+            bandInfo,
+            pad + meterW - fm.stringWidth(bandInfo) - theme.scale(2),
             y + theme.scale(10));
 
         // GR indicator line (vertical orange bar in the meter)
@@ -376,54 +397,60 @@ public class HottDevicePanel extends JPanel {
       nameLabel.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
       add(nameLabel, BorderLayout.NORTH);
 
-      JPanel knobCanvas = new JPanel() {
-        @Override
-        protected void paintComponent(Graphics g) {
-          super.paintComponent(g);
-          Graphics2D g2 = (Graphics2D) g.create();
-          g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-          int sz = Math.min(getWidth(), getHeight()) - 4;
-          int kx = (getWidth() - sz) / 2;
-          int ky = (getHeight() - sz) / 2;
+      JPanel knobCanvas =
+          new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+              super.paintComponent(g);
+              Graphics2D g2 = (Graphics2D) g.create();
+              g2.setRenderingHint(
+                  RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+              int sz = Math.min(getWidth(), getHeight()) - 4;
+              int kx = (getWidth() - sz) / 2;
+              int ky = (getHeight() - sz) / 2;
 
-          // Background arc
-          g2.setColor(new Color(0x3A3A3A));
-          g2.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-          g2.drawArc(kx, ky, sz, sz, 225, -270);
+              // Background arc
+              g2.setColor(new Color(0x3A3A3A));
+              g2.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+              g2.drawArc(kx, ky, sz, sz, 225, -270);
 
-          // Value arc (cyan)
-          int arcAngle = (int) (-270 * value);
-          g2.setColor(new Color(0x00D4FF));
-          g2.drawArc(kx, ky, sz, sz, 225, arcAngle);
+              // Value arc (cyan)
+              int arcAngle = (int) (-270 * value);
+              g2.setColor(new Color(0x00D4FF));
+              g2.drawArc(kx, ky, sz, sz, 225, arcAngle);
 
-          // Indicator dot
-          g2.setColor(new Color(0xEEEEEE));
-          double angle = Math.toRadians(225 - 270 * value);
-          int cx = kx + sz / 2 + (int) ((sz / 2 - 2) * Math.cos(angle));
-          int cy = ky + sz / 2 - (int) ((sz / 2 - 2) * Math.sin(angle));
-          g2.fillOval(cx - 2, cy - 2, 5, 5);
+              // Indicator dot
+              g2.setColor(new Color(0xEEEEEE));
+              double angle = Math.toRadians(225 - 270 * value);
+              int cx = kx + sz / 2 + (int) ((sz / 2 - 2) * Math.cos(angle));
+              int cy = ky + sz / 2 - (int) ((sz / 2 - 2) * Math.sin(angle));
+              g2.fillOval(cx - 2, cy - 2, 5, 5);
 
-          g2.dispose();
-        }
-      };
+              g2.dispose();
+            }
+          };
       knobCanvas.setOpaque(false);
       knobCanvas.setPreferredSize(new Dimension(theme.scale(28), theme.scale(28)));
       knobCanvas.setCursor(Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR));
-      knobCanvas.addMouseListener(new MouseAdapter() {
-        @Override
-        public void mousePressed(MouseEvent e) { dragStartY = e.getY(); }
-      });
-      knobCanvas.addMouseMotionListener(new MouseMotionAdapter() {
-        @Override
-        public void mouseDragged(MouseEvent e) {
-          int dy = dragStartY - e.getY();
-          dragStartY = e.getY();
-          value = Math.max(0.0, Math.min(1.0, value + dy * 0.005));
-          valLabel.setText(formatter.format(value));
-          knobCanvas.repaint();
-          for (ChangeListener l : listeners) l.stateChanged(new ChangeEvent(KnobPanel.this));
-        }
-      });
+      knobCanvas.addMouseListener(
+          new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+              dragStartY = e.getY();
+            }
+          });
+      knobCanvas.addMouseMotionListener(
+          new MouseMotionAdapter() {
+            @Override
+            public void mouseDragged(MouseEvent e) {
+              int dy = dragStartY - e.getY();
+              dragStartY = e.getY();
+              value = Math.max(0.0, Math.min(1.0, value + dy * 0.005));
+              valLabel.setText(formatter.format(value));
+              knobCanvas.repaint();
+              for (ChangeListener l : listeners) l.stateChanged(new ChangeEvent(KnobPanel.this));
+            }
+          });
       add(knobCanvas, BorderLayout.CENTER);
 
       valLabel = new JLabel(formatter.format(initialValue), SwingConstants.CENTER);
@@ -432,7 +459,9 @@ public class HottDevicePanel extends JPanel {
       add(valLabel, BorderLayout.SOUTH);
     }
 
-    double getValue() { return value; }
+    double getValue() {
+      return value;
+    }
 
     void setValue(double v) {
       this.value = v;
@@ -440,13 +469,15 @@ public class HottDevicePanel extends JPanel {
       repaint();
     }
 
-    void addChangeListener(ChangeListener l) { listeners.add(l); }
+    void addChangeListener(ChangeListener l) {
+      listeners.add(l);
+    }
   }
 
   // ─── Utility ────────────────────────────────────────────────────
 
   private static float normToFreq(double norm, float minHz, float maxHz) {
-    return (float)(minHz * Math.pow(maxHz / minHz, norm));
+    return (float) (minHz * Math.pow(maxHz / minHz, norm));
   }
 
   // ─── Backend communication ──────────────────────────────────────

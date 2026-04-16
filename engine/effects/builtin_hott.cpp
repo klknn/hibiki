@@ -14,10 +14,11 @@ static constexpr float kDefaultLowDownThresh = -29.9f;
 static constexpr float kDefaultMidDownThresh = -16.4f;
 static constexpr float kDefaultHighDownThresh = -29.9f;
 static constexpr float kDefaultDownRatio = 1000.0f;  // effectively inf:1
-static constexpr float kDefaultLowUpThresh = 8.0f;    // dB above which upward stops
+static constexpr float kDefaultLowUpThresh =
+    8.0f;  // dB above which upward stops
 static constexpr float kDefaultMidUpThresh = 8.0f;
 static constexpr float kDefaultHighUpThresh = 8.0f;
-static constexpr float kDefaultUpRatio = 1000.0f;    // strong upward expansion
+static constexpr float kDefaultUpRatio = 1000.0f;  // strong upward expansion
 
 static constexpr float kDefaultLowAttack = 47.8f;
 static constexpr float kDefaultLowRelease = 282.0f;
@@ -57,7 +58,7 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
     return;
   }
 
-  float amount = (float)(params_[PARAM_AMOUNT] * 2.0);  // 0..2
+  float amount = (float)(params_[PARAM_AMOUNT] * 2.0);   // 0..2
   float time_mult = (float)(params_[PARAM_TIME] * 2.0);  // 0..2
   float global_out_db = normToDb24(params_[PARAM_OUTPUT]);
   float global_out_lin = std::pow(10.0f, global_out_db / 20.0f);
@@ -66,7 +67,8 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
   float band_out_lin[kNumBands];
   band_out_lin[0] = std::pow(10.0f, normToDb24(params_[PARAM_LOW_OUT]) / 20.0f);
   band_out_lin[1] = std::pow(10.0f, normToDb24(params_[PARAM_MID_OUT]) / 20.0f);
-  band_out_lin[2] = std::pow(10.0f, normToDb24(params_[PARAM_HIGH_OUT]) / 20.0f);
+  band_out_lin[2] =
+      std::pow(10.0f, normToDb24(params_[PARAM_HIGH_OUT]) / 20.0f);
 
   // Per-band attack/release coefficients
   float attack_coeff[kNumBands], release_coeff[kNumBands];
@@ -75,10 +77,8 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
     float rel_ms = bands_[b].release_ms * time_mult;
     if (att_ms < 0.01f) att_ms = 0.01f;
     if (rel_ms < 0.1f) rel_ms = 0.1f;
-    attack_coeff[b] =
-        (float)std::exp(-1.0 / (att_ms * 0.001 * sample_rate_));
-    release_coeff[b] =
-        (float)std::exp(-1.0 / (rel_ms * 0.001 * sample_rate_));
+    attack_coeff[b] = (float)std::exp(-1.0 / (att_ms * 0.001 * sample_rate_));
+    release_coeff[b] = (float)std::exp(-1.0 / (rel_ms * 0.001 * sample_rate_));
   }
 
   updateCrossoverCoeffs();
@@ -92,8 +92,7 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
     float inR = outR[i];
 
     float in_abs = std::max(std::abs(inL), std::abs(inR));
-    float in_db =
-        (in_abs > 1e-10f) ? 20.0f * std::log10(in_abs) : -200.0f;
+    float in_db = (in_abs > 1e-10f) ? 20.0f * std::log10(in_abs) : -200.0f;
     if (in_db > peak_input_db) peak_input_db = in_db;
 
     // Split into 3 bands using LR4 crossover
@@ -128,21 +127,18 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
       float bL = bandL[b];
       float bR = bandR[b];
       float b_abs = std::max(std::abs(bL), std::abs(bR));
-      float b_db =
-          (b_abs > 1e-10f) ? 20.0f * std::log10(b_abs) : -200.0f;
+      float b_db = (b_abs > 1e-10f) ? 20.0f * std::log10(b_abs) : -200.0f;
 
       // Compute gain (combined up+down compression)
       float gain_db = computeBandGain(bands_[b], b_db, amount);
 
       // Smoothed envelope
       if (gain_db < bands_[b].envelope_db) {
-        bands_[b].envelope_db =
-            attack_coeff[b] * bands_[b].envelope_db +
-            (1 - attack_coeff[b]) * gain_db;
+        bands_[b].envelope_db = attack_coeff[b] * bands_[b].envelope_db +
+                                (1 - attack_coeff[b]) * gain_db;
       } else {
-        bands_[b].envelope_db =
-            release_coeff[b] * bands_[b].envelope_db +
-            (1 - release_coeff[b]) * gain_db;
+        bands_[b].envelope_db = release_coeff[b] * bands_[b].envelope_db +
+                                (1 - release_coeff[b]) * gain_db;
       }
 
       float gain_lin =
@@ -159,8 +155,7 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
     outR[i] = sumR * global_out_lin;
 
     float out_abs = std::max(std::abs(outL[i]), std::abs(outR[i]));
-    float out_db =
-        (out_abs > 1e-10f) ? 20.0f * std::log10(out_abs) : -200.0f;
+    float out_db = (out_abs > 1e-10f) ? 20.0f * std::log10(out_abs) : -200.0f;
     if (out_db > peak_output_db) peak_output_db = out_db;
   }
 
@@ -176,10 +171,10 @@ int BuiltinHott::getParameterCount() const { return kTotalParams; }
 bool BuiltinHott::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
   info.id = index;
-  static const char* names[] = {"LowXover", "HighXover", "Amount", "Time",
-                                "Output",   "LowOut",    "MidOut", "HighOut",
-                                "Enable"};
-  static const double defaults[] = {0.25, 0.65, 1.0, 1.0, 0.5,
+  static const char* names[] = {"LowXover", "HighXover", "Amount",
+                                "Time",     "Output",    "LowOut",
+                                "MidOut",   "HighOut",   "Enable"};
+  static const double defaults[] = {0.25, 0.65, 1.0,  1.0, 0.5,
                                     0.62, 0.71, 0.71, 1.0};
   info.name = names[index];
   info.defaultValue = defaults[index];
@@ -227,14 +222,14 @@ float BuiltinHott::getOutputDb() const {
 
 void BuiltinHott::reset() {
   // Default parameter values
-  params_[PARAM_LOW_CROSSOVER] = 0.25;  // ~88 Hz
-  params_[PARAM_HIGH_CROSSOVER] = 0.65; // ~2.5 kHz
-  params_[PARAM_AMOUNT] = 1.0;          // 100%
-  params_[PARAM_TIME] = 1.0;            // 100%
-  params_[PARAM_OUTPUT] = 0.5;          // 0 dB
-  params_[PARAM_LOW_OUT] = 0.62;        // ~5.7 dB
-  params_[PARAM_MID_OUT] = 0.71;        // ~10.3 dB
-  params_[PARAM_HIGH_OUT] = 0.71;       // ~10.3 dB
+  params_[PARAM_LOW_CROSSOVER] = 0.25;   // ~88 Hz
+  params_[PARAM_HIGH_CROSSOVER] = 0.65;  // ~2.5 kHz
+  params_[PARAM_AMOUNT] = 1.0;           // 100%
+  params_[PARAM_TIME] = 1.0;             // 100%
+  params_[PARAM_OUTPUT] = 0.5;           // 0 dB
+  params_[PARAM_LOW_OUT] = 0.62;         // ~5.7 dB
+  params_[PARAM_MID_OUT] = 0.71;         // ~10.3 dB
+  params_[PARAM_HIGH_OUT] = 0.71;        // ~10.3 dB
   params_[PARAM_ENABLE] = 1.0;
   enabled_ = true;
 

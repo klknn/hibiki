@@ -35,7 +35,7 @@ TEST_F(BuiltinHottTest, ParameterInfo) {
   EXPECT_EQ(std::string(info.name), "Amount");
 
   EXPECT_FALSE(hott.getParameterInfo(-1, info));
-  EXPECT_FALSE(hott.getParameterInfo(9, info));
+  EXPECT_FALSE(hott.getParameterInfo(15, info));
 }
 
 TEST_F(BuiltinHottTest, Identity) {

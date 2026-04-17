@@ -41,6 +41,8 @@ void BuiltinCompressor::process(float** inputs, float** outputs,
   float release_ms = normToRelease(params_[PARAM_RELEASE]);
   float knee_db = (float)(params_[PARAM_KNEE] * 30.0);
   float makeup_lin = (float)std::pow(10.0, params_[PARAM_MAKEUP] * 30.0 / 20.0);
+  float up_threshold = normToUpThreshold(params_[PARAM_UP_THRESHOLD]);
+  float up_ratio = normToRatio(params_[PARAM_UP_RATIO]);
 
   float attack_coeff =
       (float)std::exp(-1.0 / (attack_ms * 0.001 * sample_rate_));
@@ -57,7 +59,8 @@ void BuiltinCompressor::process(float** inputs, float** outputs,
         (input_abs > 1e-10f) ? 20.0f * std::log10(input_abs) : -200.0f;
     if (input_db > peak_input_db) peak_input_db = input_db;
 
-    float gr_db = computeGainReduction(input_db, threshold, ratio, knee_db);
+    float gr_db = computeGainReduction(input_db, threshold, ratio, knee_db,
+                                       up_threshold, up_ratio);
 
     if (gr_db < envelope_db_) {
       envelope_db_ = attack_coeff * envelope_db_ + (1 - attack_coeff) * gr_db;
@@ -87,9 +90,11 @@ int BuiltinCompressor::getParameterCount() const { return kTotalParams; }
 bool BuiltinCompressor::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
   info.id = index;
-  static const char* names[] = {"Threshold", "Ratio",  "Attack", "Release",
-                                "Knee",      "Makeup", "Enable"};
-  static const double defaults[] = {1.0, 0.0, 0.3, 0.3, 0.0, 0.0, 1.0};
+  static const char* names[] = {"Threshold", "Ratio",   "Attack",  "Release",
+                                "Knee",      "Makeup",  "Enable",
+                                "UpThresh",  "UpRatio"};
+  static const double defaults[] = {1.0, 0.0, 0.3, 0.3, 0.0, 0.0, 1.0,
+                                    0.0, 0.0};
   info.name = names[index];
   info.defaultValue = defaults[index];
   return true;
@@ -135,7 +140,10 @@ float BuiltinCompressor::computeOutputDb(float input_db) const {
   float threshold = normToThreshold(params_[PARAM_THRESHOLD]);
   float ratio = normToRatio(params_[PARAM_RATIO]);
   float knee_db = (float)(params_[PARAM_KNEE] * 30.0);
-  float gr = computeGainReduction(input_db, threshold, ratio, knee_db);
+  float up_threshold = normToUpThreshold(params_[PARAM_UP_THRESHOLD]);
+  float up_ratio = normToRatio(params_[PARAM_UP_RATIO]);
+  float gr = computeGainReduction(input_db, threshold, ratio, knee_db,
+                                  up_threshold, up_ratio);
   return input_db + gr;
 }
 
@@ -149,16 +157,21 @@ void BuiltinCompressor::reset() {
   params_[PARAM_KNEE] = 0.0;
   params_[PARAM_MAKEUP] = 0.0;
   params_[PARAM_ENABLE] = 1.0;
+  params_[PARAM_UP_THRESHOLD] = 0.0;  // -60 dB (effectively off)
+  params_[PARAM_UP_RATIO] = 0.0;     // 1:1 (no upward comp)
   enabled_ = true;
   envelope_db_ = 0.0f;
   gain_reduction_db_ = 0.0f;
 }
 
 float BuiltinCompressor::computeGainReduction(float input_db, float threshold,
-                                              float ratio, float knee_db) {
+                                               float ratio, float knee_db,
+                                               float up_threshold,
+                                               float up_ratio) {
   float half_knee = knee_db / 2.0f;
   float gr_db = 0.0f;
 
+  // Downward compression: reduce signals above threshold
   if (knee_db <= 0.01f) {
     if (input_db > threshold) {
       gr_db = (threshold - input_db) * (1.0f - 1.0f / ratio);
@@ -167,7 +180,7 @@ float BuiltinCompressor::computeGainReduction(float input_db, float threshold,
     float lower = threshold - half_knee;
     float upper = threshold + half_knee;
     if (input_db <= lower) {
-      gr_db = 0.0f;
+      // no downward reduction
     } else if (input_db >= upper) {
       gr_db = (threshold - input_db) * (1.0f - 1.0f / ratio);
     } else {
@@ -175,6 +188,14 @@ float BuiltinCompressor::computeGainReduction(float input_db, float threshold,
       gr_db = -(1.0f - 1.0f / ratio) * x * x / (2.0f * knee_db);
     }
   }
+
+  // Upward compression: boost signals below up_threshold
+  if (up_ratio > 1.001f && input_db < up_threshold && input_db > -100.0f) {
+    float under = up_threshold - input_db;
+    float target = up_threshold - under / up_ratio;
+    gr_db += (target - input_db);  // positive = boost
+  }
+
   return gr_db;
 }
 
@@ -193,6 +214,11 @@ float BuiltinCompressor::normToAttack(double norm) {
 
 float BuiltinCompressor::normToRelease(double norm) {
   return (float)(10.0 * std::pow(100.0, norm));
+}
+
+float BuiltinCompressor::normToUpThreshold(double norm) {
+  // 0..1 -> -60..+12 dB (wider than downward to support OTT-style upward)
+  return (float)(norm * 72.0 - 60.0);
 }
 
 }  // namespace hibiki

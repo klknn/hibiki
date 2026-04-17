@@ -23,10 +23,12 @@ public class CompressorDevicePanel extends JPanel {
   private static final int PARAM_KNEE = 4;
   private static final int PARAM_MAKEUP = 5;
   private static final int PARAM_ENABLE = 6;
-  private static final int TOTAL_PARAMS = 7;
+  private static final int PARAM_UP_THRESHOLD = 7;
+  private static final int PARAM_UP_RATIO = 8;
+  private static final int TOTAL_PARAMS = 9;
 
   private static final String[] PARAM_NAMES = {
-    "Thresh", "Ratio", "Attack", "Release", "Knee", "Makeup", "Enable"
+    "Thresh", "Ratio", "Attack", "Release", "Knee", "Makeup", "Enable", "UpThresh", "UpRatio"
   };
 
   private final int trackIndex;
@@ -36,7 +38,7 @@ public class CompressorDevicePanel extends JPanel {
   private float gainReductionDb = 0;
   private final TransferCurvePanel curvePanel;
   private final GrMeterPanel grMeter;
-  private final KnobPanel[] knobs = new KnobPanel[6]; // threshold..makeup
+  private final KnobPanel[] knobs = new KnobPanel[8]; // threshold..makeup + upthresh, upratio
   private boolean updatingFromBackend = false;
 
   /** Callback invoked when user clicks Mod button; set by PluginPane wrapper. */
@@ -58,6 +60,8 @@ public class CompressorDevicePanel extends JPanel {
     params[PARAM_KNEE] = 0.0;
     params[PARAM_MAKEUP] = 0.0;
     params[PARAM_ENABLE] = 1.0;
+    params[PARAM_UP_THRESHOLD] = 0.0; // -60 dB (effectively off)
+    params[PARAM_UP_RATIO] = 0.0;    // 1:1 (no upward comp)
 
     Theme theme = Theme.getInstance();
     setLayout(new BorderLayout());
@@ -117,26 +121,38 @@ public class CompressorDevicePanel extends JPanel {
     add(centerPanel, BorderLayout.CENTER);
 
     // Bottom: knob row
-    JPanel knobRow = new JPanel(new GridLayout(1, 6, theme.scale(4), 0));
+    JPanel knobRow = new JPanel(new GridLayout(1, 8, theme.scale(2), 0));
     knobRow.setBackground(theme.BG_DARK);
     knobRow.setPreferredSize(new Dimension(0, theme.scale(68)));
     knobRow.setBorder(
         BorderFactory.createEmptyBorder(
             theme.scale(4), theme.scale(6), theme.scale(4), theme.scale(6)));
 
-    for (int i = 0; i < 6; i++) {
-      final int paramId = i;
-      knobs[i] = new KnobPanel(PARAM_NAMES[i], params[i]);
-      knobs[i].addChangeListener(
+    // Knobs for params 0-5 (Thresh, Ratio, Attack, Release, Knee, Makeup)
+    // plus 7-8 (UpThresh, UpRatio) — skip 6 (Enable, handled by toggle button)
+    int[] knobParamIds = {0, 1, 2, 3, 4, 5, 7, 8};
+    for (int k = 0; k < 8; k++) {
+      final int paramId = knobParamIds[k];
+      knobs[k] = new KnobPanel(PARAM_NAMES[paramId], params[paramId]);
+      knobs[k].addChangeListener(
           e -> {
             if (updatingFromBackend) return;
-            params[paramId] = knobs[paramId].getValue();
+            params[paramId] = knobs[findKnobIndex(paramId)].getValue();
             sendParam(paramId, params[paramId]);
             curvePanel.repaint();
           });
-      knobRow.add(knobs[i]);
+      knobRow.add(knobs[k]);
     }
     add(knobRow, BorderLayout.SOUTH);
+  }
+
+  /** Find the knob array index for a given param ID. */
+  private int findKnobIndex(int paramId) {
+    int[] knobParamIds = {0, 1, 2, 3, 4, 5, 7, 8};
+    for (int i = 0; i < knobParamIds.length; i++) {
+      if (knobParamIds[i] == paramId) return i;
+    }
+    return 0;
   }
 
   /** Update a parameter from backend notification. */
@@ -146,8 +162,11 @@ public class CompressorDevicePanel extends JPanel {
     params[paramId] = value;
     if (paramId == PARAM_ENABLE) {
       enabled = value >= 0.5;
-    } else if (paramId < 6) {
-      knobs[paramId].setValue(value);
+    } else if (paramId != PARAM_ENABLE) {
+      int ki = findKnobIndex(paramId);
+      if (ki >= 0 && ki < knobs.length && knobs[ki] != null) {
+        knobs[ki].setValue(value);
+      }
     }
     updatingFromBackend = false;
     curvePanel.repaint();
@@ -217,9 +236,12 @@ public class CompressorDevicePanel extends JPanel {
       g2.setStroke(new BasicStroke(2.0f));
       GeneralPath path = new GeneralPath();
       boolean first = true;
+      float upThreshold = normToUpThreshold(params[PARAM_UP_THRESHOLD]);
+      float upRatio = normToRatio(params[PARAM_UP_RATIO]);
       for (int px = 0; px <= pw; px++) {
         float inputDb = DB_MIN + (float) px / pw * (DB_MAX - DB_MIN);
-        float outputDb = computeOutputDb(inputDb, threshold, ratio, kneeDb) + makeup;
+        float outputDb = computeOutputDb(inputDb, threshold, ratio, kneeDb,
+                                         upThreshold, upRatio) + makeup;
         outputDb = Math.max(DB_MIN, Math.min(DB_MAX, outputDb));
         int x = pad + px;
         int y = dbToY(outputDb, ph, pad);
@@ -426,6 +448,11 @@ public class CompressorDevicePanel extends JPanel {
       if ("Release".equals(name)) return String.format("%.0f ms", 10.0 * Math.pow(100, norm));
       if ("Knee".equals(name)) return String.format("%.1f dB", norm * 30);
       if ("Makeup".equals(name)) return String.format("%.1f dB", norm * 30);
+      if ("UpThresh".equals(name)) return String.format("%.1f dB", norm * 72 - 60);
+      if ("UpRatio".equals(name)) {
+        float r = normToRatioStatic(norm);
+        return r > 100 ? "\u221E:1" : String.format("%.1f:1", r);
+      }
       return String.format("%.2f", norm);
     }
 
@@ -446,7 +473,8 @@ public class CompressorDevicePanel extends JPanel {
     return 1.0f / (1.0f - (float) norm);
   }
 
-  private static float computeOutputDb(float inputDb, float threshold, float ratio, float kneeDb) {
+  private static float computeOutputDb(float inputDb, float threshold, float ratio, float kneeDb,
+                                        float upThreshold, float upRatio) {
     float halfKnee = kneeDb / 2;
     float gr;
     if (kneeDb <= 0.01f) {
@@ -461,7 +489,17 @@ public class CompressorDevicePanel extends JPanel {
         gr = -(1 - 1 / ratio) * x * x / (2 * kneeDb);
       }
     }
+    // Upward compression
+    if (upRatio > 1.001f && inputDb < upThreshold && inputDb > -100.0f) {
+      float under = upThreshold - inputDb;
+      float target = upThreshold - under / upRatio;
+      gr += (target - inputDb);
+    }
     return inputDb + gr;
+  }
+
+  private static float normToUpThreshold(double norm) {
+    return (float) (norm * 72.0 - 60.0);
   }
 
   // ─── Backend communication ─────────────────────────────────────

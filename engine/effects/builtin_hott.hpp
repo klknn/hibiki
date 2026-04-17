@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "engine/effects/builtin_compressor.hpp"
 #include "engine/plugin/iplugin.hpp"
 
 namespace hibiki {
@@ -17,26 +18,13 @@ struct BiquadCoeffs {
   float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
 };
 
-// Per-band compressor state (upward + downward).
-struct BandCompressor {
-  float down_threshold_db;  // downward comp threshold
-  float down_ratio;         // downward comp ratio (∞ = limiter)
-  float up_threshold_db;    // upward comp threshold
-  float up_ratio;           // upward comp ratio
-  float attack_ms;
-  float release_ms;
-  float output_gain_db;
 
-  // Envelope follower
-  float envelope_db = -100.0f;
-  float gain_reduction_db = 0.0f;
-};
 
 // OTT-style three-band multiband upward/downward compressor.
 // Path: builtin://hott
 class BuiltinHott : public IPlugin {
  public:
-  static constexpr int kTotalParams = 9;
+  static constexpr int kTotalParams = 15;
   static constexpr const char* kPath = "builtin://hott";
   static constexpr const char* kName = "Hott";
   static constexpr int kNumBands = 3;
@@ -51,6 +39,12 @@ class BuiltinHott : public IPlugin {
     PARAM_MID_OUT = 6,
     PARAM_HIGH_OUT = 7,
     PARAM_ENABLE = 8,
+    PARAM_LOW_DOWN_THRESH = 9,
+    PARAM_MID_DOWN_THRESH = 10,
+    PARAM_HIGH_DOWN_THRESH = 11,
+    PARAM_LOW_UP_THRESH = 12,
+    PARAM_MID_UP_THRESH = 13,
+    PARAM_HIGH_UP_THRESH = 14,
   };
 
   BuiltinHott();
@@ -96,19 +90,18 @@ class BuiltinHott : public IPlugin {
   BiquadCoeffs lp1_coeffs_, hp1_coeffs_;
   BiquadCoeffs lp2_coeffs_, hp2_coeffs_;
 
-  BandCompressor bands_[kNumBands];  // Low=0, Mid=1, High=2
+  BuiltinCompressor band_comp_[kNumBands];  // Low=0, Mid=1, High=2
 
   std::atomic<float> input_db_{-200.0f};
   std::atomic<float> output_db_{-200.0f};
 
   void reset();
+  void updateBandCompParams();
   void updateCrossoverCoeffs();
   static BiquadCoeffs computeLowpass(float freq, double sr);
   static BiquadCoeffs computeHighpass(float freq, double sr);
   static float processBiquad(BiquadState& state, const BiquadCoeffs& c,
                              float x);
-  static float computeBandGain(const BandCompressor& band, float input_db,
-                               float amount);
 };
 
 }  // namespace hibiki

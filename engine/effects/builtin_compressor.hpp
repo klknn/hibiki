@@ -13,7 +13,7 @@ namespace hibiki {
 // makeup gain. Provides gain reduction metering for UI.
 class BuiltinCompressor : public IPlugin {
  public:
-  static constexpr int kTotalParams = 7;
+  static constexpr int kTotalParams = 9;
   static constexpr const char* kPath = "builtin://compressor";
   static constexpr const char* kName = "Compressor";
 
@@ -25,6 +25,8 @@ class BuiltinCompressor : public IPlugin {
     PARAM_KNEE = 4,
     PARAM_MAKEUP = 5,
     PARAM_ENABLE = 6,
+    PARAM_UP_THRESHOLD = 7,
+    PARAM_UP_RATIO = 8,
   };
 
   BuiltinCompressor();
@@ -59,6 +61,7 @@ class BuiltinCompressor : public IPlugin {
   static float normToRatio(double norm);
   static float normToAttack(double norm);
   static float normToRelease(double norm);
+  static float normToUpThreshold(double norm);
 
  private:
   double params_[kTotalParams] = {};
@@ -71,7 +74,8 @@ class BuiltinCompressor : public IPlugin {
 
   void reset();
   static float computeGainReduction(float input_db, float threshold,
-                                    float ratio, float knee_db);
+                                    float ratio, float knee_db,
+                                    float up_threshold, float up_ratio);
 };
 
 }  // namespace hibiki

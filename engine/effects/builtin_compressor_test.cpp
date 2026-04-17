@@ -137,5 +137,58 @@ TEST(BuiltinCompressorTest, NameAndPath) {
   EXPECT_EQ(comp.getParameterCount(), BuiltinCompressor::kTotalParams);
 }
 
+TEST(BuiltinCompressorTest, UpwardCompressionBoostsQuietSignal) {
+  BuiltinCompressor comp;
+  comp.load("", 0, 44100.0);
+
+  // Set downward threshold high (effectively off), enable upward comp
+  comp.setParameterValue(BuiltinCompressor::PARAM_THRESHOLD, 1.0);  // 0 dB
+  comp.setParameterValue(BuiltinCompressor::PARAM_RATIO, 0.0);     // 1:1 down
+  comp.setParameterValue(BuiltinCompressor::PARAM_ATTACK, 0.0);    // fast
+  comp.setParameterValue(BuiltinCompressor::PARAM_RELEASE, 0.0);
+  // Up threshold = -10 dB -> norm = (−10+60)/72 ≈ 0.694
+  comp.setParameterValue(BuiltinCompressor::PARAM_UP_THRESHOLD, 50.0 / 72.0);
+  // Up ratio ~4:1 -> norm = 0.75
+  comp.setParameterValue(BuiltinCompressor::PARAM_UP_RATIO, 0.75);
+
+  constexpr int N = 4096;
+  float outL[N], outR[N];
+  float input_level = 0.01f;  // ~-40 dB, well below -10 dB up_threshold
+  for (int i = 0; i < N; ++i) {
+    outL[i] = outR[i] = input_level;
+  }
+
+  float* outs[2] = {outL, outR};
+  auto ctx = MakeContext();
+  std::vector<MidiNoteEvent> events;
+  comp.process(outs, outs, N, ctx, events);
+
+  // After upward compression, last samples should be louder
+  float last = std::abs(outL[N - 1]);
+  EXPECT_GT(last, input_level)
+      << "Quiet signal below up_threshold should be boosted";
+}
+
+TEST(BuiltinCompressorTest, DefaultUpwardHasNoEffect) {
+  BuiltinCompressor comp;
+  comp.load("", 0, 44100.0);
+
+  // Defaults: up_threshold=-60 dB, up_ratio=1:1 -> no upward effect
+  constexpr int N = 256;
+  float outL[N], outR[N];
+  for (int i = 0; i < N; ++i) {
+    outL[i] = outR[i] = 0.001f;  // -60 dB
+  }
+
+  float* outs[2] = {outL, outR};
+  auto ctx = MakeContext();
+  std::vector<MidiNoteEvent> events;
+  comp.process(outs, outs, N, ctx, events);
+
+  for (int i = 0; i < N; ++i) {
+    EXPECT_NEAR(outL[i], 0.001f, 1e-4f);
+  }
+}
+
 }  // namespace
 }  // namespace hibiki

@@ -9,16 +9,39 @@
 
 namespace hibiki {
 
-// OTT default band parameters
+// OTT default per-band compressor parameters (normalized 0..1 for
+// BuiltinCompressor).
+// Threshold norm = (threshold_db + 60) / 60
+// Ratio norm: ratio = 1/(1-norm), so norm = 1 - 1/ratio
+// Attack norm: attack_ms = 0.1 * 1000^norm, so norm = log10(attack_ms/0.1) / 3
+// Release norm: release_ms = 10 * 100^norm, so norm = log10(release_ms/10) / 2
+
+struct BandDefaults {
+  double threshold_norm;
+  double ratio_norm;
+  double attack_norm;
+  double release_norm;
+};
+
+static BandDefaults computeBandDefaults(float threshold_db, float ratio,
+                                        float attack_ms, float release_ms) {
+  BandDefaults d;
+  d.threshold_norm = (threshold_db + 60.0) / 60.0;
+  d.ratio_norm = (ratio >= 999.0f) ? 0.999 : (1.0 - 1.0 / ratio);
+  d.attack_norm = std::log10(attack_ms / 0.1) / 3.0;
+  d.release_norm = std::log10(release_ms / 10.0) / 2.0;
+  // Clamp to [0, 1]
+  d.threshold_norm = std::max(0.0, std::min(1.0, d.threshold_norm));
+  d.ratio_norm = std::max(0.0, std::min(1.0, d.ratio_norm));
+  d.attack_norm = std::max(0.0, std::min(1.0, d.attack_norm));
+  d.release_norm = std::max(0.0, std::min(1.0, d.release_norm));
+  return d;
+}
+
 static constexpr float kDefaultLowDownThresh = -29.9f;
 static constexpr float kDefaultMidDownThresh = -16.4f;
 static constexpr float kDefaultHighDownThresh = -29.9f;
-static constexpr float kDefaultDownRatio = 1000.0f;  // effectively inf:1
-static constexpr float kDefaultLowUpThresh =
-    8.0f;  // dB above which upward stops
-static constexpr float kDefaultMidUpThresh = 8.0f;
-static constexpr float kDefaultHighUpThresh = 8.0f;
-static constexpr float kDefaultUpRatio = 1000.0f;  // strong upward expansion
+static constexpr float kDefaultDownRatio = 1000.0f;
 
 static constexpr float kDefaultLowAttack = 47.8f;
 static constexpr float kDefaultLowRelease = 282.0f;
@@ -42,6 +65,11 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
   if (sample_rate_ != context.sampleRate) {
     sample_rate_ = context.sampleRate;
     updateCrossoverCoeffs();
+    // Re-load compressors with new sample rate
+    for (int b = 0; b < kNumBands; ++b) {
+      band_comp_[b].load("", 0, sample_rate_);
+    }
+    updateBandCompParams();
   }
 
   float* outL = outputs[0];
@@ -54,12 +82,10 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
   }
 
   if (!enabled_) {
-    for (auto& b : bands_) b.gain_reduction_db = 0.0f;
     return;
   }
 
-  float amount = (float)(params_[PARAM_AMOUNT] * 2.0);   // 0..2
-  float time_mult = (float)(params_[PARAM_TIME] * 2.0);  // 0..2
+  float amount = (float)params_[PARAM_AMOUNT];  // 0..1 dry/wet
   float global_out_db = normToDb24(params_[PARAM_OUTPUT]);
   float global_out_lin = std::pow(10.0f, global_out_db / 20.0f);
 
@@ -70,23 +96,21 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
   band_out_lin[2] =
       std::pow(10.0f, normToDb24(params_[PARAM_HIGH_OUT]) / 20.0f);
 
-  // Per-band attack/release coefficients
-  float attack_coeff[kNumBands], release_coeff[kNumBands];
-  for (int b = 0; b < kNumBands; ++b) {
-    float att_ms = bands_[b].attack_ms * time_mult;
-    float rel_ms = bands_[b].release_ms * time_mult;
-    if (att_ms < 0.01f) att_ms = 0.01f;
-    if (rel_ms < 0.1f) rel_ms = 0.1f;
-    attack_coeff[b] = (float)std::exp(-1.0 / (att_ms * 0.001 * sample_rate_));
-    release_coeff[b] = (float)std::exp(-1.0 / (rel_ms * 0.001 * sample_rate_));
-  }
-
   updateCrossoverCoeffs();
 
-  float peak_gr[kNumBands] = {0.0f, 0.0f, 0.0f};
   float peak_input_db = -200.0f;
   float peak_output_db = -200.0f;
 
+  // Temporary per-band buffers
+  std::vector<float> band_buf(kNumBands * 2 * num_samples, 0.0f);
+  float* bandL[kNumBands];
+  float* bandR[kNumBands];
+  for (int b = 0; b < kNumBands; ++b) {
+    bandL[b] = &band_buf[(b * 2) * num_samples];
+    bandR[b] = &band_buf[(b * 2 + 1) * num_samples];
+  }
+
+  // Split into 3 bands using LR4 crossover (per-sample)
   for (int i = 0; i < num_samples; ++i) {
     float inL = outL[i];
     float inR = outR[i];
@@ -95,73 +119,67 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
     float in_db = (in_abs > 1e-10f) ? 20.0f * std::log10(in_abs) : -200.0f;
     if (in_db > peak_input_db) peak_input_db = in_db;
 
-    // Split into 3 bands using LR4 crossover
     // Low split: LP1 cascaded, HP1 cascaded
-    float lp1_L = processBiquad(lp1_L_[0], lp1_coeffs_, inL);
-    lp1_L = processBiquad(lp1_L_[1], lp1_coeffs_, lp1_L);
-    float hp1_L = processBiquad(hp1_L_[0], hp1_coeffs_, inL);
-    hp1_L = processBiquad(hp1_L_[1], hp1_coeffs_, hp1_L);
+    float lp1_l = processBiquad(lp1_L_[0], lp1_coeffs_, inL);
+    lp1_l = processBiquad(lp1_L_[1], lp1_coeffs_, lp1_l);
+    float hp1_l = processBiquad(hp1_L_[0], hp1_coeffs_, inL);
+    hp1_l = processBiquad(hp1_L_[1], hp1_coeffs_, hp1_l);
 
-    float lp1_R = processBiquad(lp1_R_[0], lp1_coeffs_, inR);
-    lp1_R = processBiquad(lp1_R_[1], lp1_coeffs_, lp1_R);
-    float hp1_R = processBiquad(hp1_R_[0], hp1_coeffs_, inR);
-    hp1_R = processBiquad(hp1_R_[1], hp1_coeffs_, hp1_R);
+    float lp1_r = processBiquad(lp1_R_[0], lp1_coeffs_, inR);
+    lp1_r = processBiquad(lp1_R_[1], lp1_coeffs_, lp1_r);
+    float hp1_r = processBiquad(hp1_R_[0], hp1_coeffs_, inR);
+    hp1_r = processBiquad(hp1_R_[1], hp1_coeffs_, hp1_r);
 
     // High split on hp1 output: LP2, HP2
-    float lp2_L = processBiquad(lp2_L_[0], lp2_coeffs_, hp1_L);
-    lp2_L = processBiquad(lp2_L_[1], lp2_coeffs_, lp2_L);
-    float hp2_L = processBiquad(hp2_L_[0], hp2_coeffs_, hp1_L);
-    hp2_L = processBiquad(hp2_L_[1], hp2_coeffs_, hp2_L);
+    float lp2_l = processBiquad(lp2_L_[0], lp2_coeffs_, hp1_l);
+    lp2_l = processBiquad(lp2_L_[1], lp2_coeffs_, lp2_l);
+    float hp2_l = processBiquad(hp2_L_[0], hp2_coeffs_, hp1_l);
+    hp2_l = processBiquad(hp2_L_[1], hp2_coeffs_, hp2_l);
 
-    float lp2_R = processBiquad(lp2_R_[0], lp2_coeffs_, hp1_R);
-    lp2_R = processBiquad(lp2_R_[1], lp2_coeffs_, lp2_R);
-    float hp2_R = processBiquad(hp2_R_[0], hp2_coeffs_, hp1_R);
-    hp2_R = processBiquad(hp2_R_[1], hp2_coeffs_, hp2_R);
+    float lp2_r = processBiquad(lp2_R_[0], lp2_coeffs_, hp1_r);
+    lp2_r = processBiquad(lp2_R_[1], lp2_coeffs_, lp2_r);
+    float hp2_r = processBiquad(hp2_R_[0], hp2_coeffs_, hp1_r);
+    hp2_r = processBiquad(hp2_R_[1], hp2_coeffs_, hp2_r);
 
     // Band channels: Low=lp1, Mid=lp2, High=hp2
-    float bandL[kNumBands] = {lp1_L, lp2_L, hp2_L};
-    float bandR[kNumBands] = {lp1_R, lp2_R, hp2_R};
+    bandL[0][i] = lp1_l;
+    bandR[0][i] = lp1_r;
+    bandL[1][i] = lp2_l;
+    bandR[1][i] = lp2_r;
+    bandL[2][i] = hp2_l;
+    bandR[2][i] = hp2_r;
+  }
+
+  // Process each band through its BuiltinCompressor
+  for (int b = 0; b < kNumBands; ++b) {
+    float* band_bufs[] = {bandL[b], bandR[b]};
+    band_comp_[b].process(band_bufs, band_bufs, num_samples, context, {});
+  }
+
+  // Sum bands back together with dry/wet (amount) and per-band output gains
+  for (int i = 0; i < num_samples; ++i) {
+    float dryL = outL[i];
+    float dryR = outR[i];
 
     float sumL = 0, sumR = 0;
+    // Reconstruct dry signal from bands (uncompressed) for blending
+    // Since we already overwrote outL/outR, we use the original input.
+    // But we need dry band signals too — for simplicity, when amount < 1
+    // we blend at the final output level.
     for (int b = 0; b < kNumBands; ++b) {
-      float bL = bandL[b];
-      float bR = bandR[b];
-      float b_abs = std::max(std::abs(bL), std::abs(bR));
-      float b_db = (b_abs > 1e-10f) ? 20.0f * std::log10(b_abs) : -200.0f;
-
-      // Compute gain (combined up+down compression)
-      float gain_db = computeBandGain(bands_[b], b_db, amount);
-
-      // Smoothed envelope
-      if (gain_db < bands_[b].envelope_db) {
-        bands_[b].envelope_db = attack_coeff[b] * bands_[b].envelope_db +
-                                (1 - attack_coeff[b]) * gain_db;
-      } else {
-        bands_[b].envelope_db = release_coeff[b] * bands_[b].envelope_db +
-                                (1 - release_coeff[b]) * gain_db;
-      }
-
-      float gain_lin =
-          std::pow(10.0f, bands_[b].envelope_db / 20.0f) * band_out_lin[b];
-
-      sumL += bL * gain_lin;
-      sumR += bR * gain_lin;
-
-      if (bands_[b].envelope_db < peak_gr[b])
-        peak_gr[b] = bands_[b].envelope_db;
+      sumL += bandL[b][i] * band_out_lin[b];
+      sumR += bandR[b][i] * band_out_lin[b];
     }
 
-    outL[i] = sumL * global_out_lin;
-    outR[i] = sumR * global_out_lin;
+    // Blend wet/dry based on amount (0=dry, 1=fully wet)
+    outL[i] = (dryL * (1.0f - amount) + sumL * amount) * global_out_lin;
+    outR[i] = (dryR * (1.0f - amount) + sumR * amount) * global_out_lin;
 
     float out_abs = std::max(std::abs(outL[i]), std::abs(outR[i]));
     float out_db = (out_abs > 1e-10f) ? 20.0f * std::log10(out_abs) : -200.0f;
     if (out_db > peak_output_db) peak_output_db = out_db;
   }
 
-  for (int b = 0; b < kNumBands; ++b) {
-    bands_[b].gain_reduction_db = peak_gr[b];
-  }
   input_db_.store(peak_input_db, std::memory_order_relaxed);
   output_db_.store(peak_output_db, std::memory_order_relaxed);
 }
@@ -171,11 +189,19 @@ int BuiltinHott::getParameterCount() const { return kTotalParams; }
 bool BuiltinHott::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
   info.id = index;
-  static const char* names[] = {"LowXover", "HighXover", "Amount",
-                                "Time",     "Output",    "LowOut",
-                                "MidOut",   "HighOut",   "Enable"};
-  static const double defaults[] = {0.25, 0.65, 1.0,  1.0, 0.5,
-                                    0.62, 0.71, 0.71, 1.0};
+  static const char* names[] = {
+      "LowXover",     "HighXover",     "Amount",        "Time",
+      "Output",       "LowOut",        "MidOut",        "HighOut",
+      "Enable",       "LowDownThresh", "MidDownThresh", "HighDownThresh",
+      "LowUpThresh",  "MidUpThresh",   "HighUpThresh"};
+  // Down thresh defaults: normToThreshold maps 0..1 -> -60..0 dB
+  // Low/High -29.9 dB -> (29.9+60)/60 = 0.502
+  // Mid -16.4 dB -> (16.4+60)/60 = 0.727
+  // Up thresh defaults: normToUpThreshold maps 0..1 -> -60..+12 dB
+  // +8 dB -> (8+60)/72 = 0.944
+  static const double defaults[] = {
+      0.25,  0.65,  1.0,   1.0,   0.5,   0.62,  0.71, 0.71,
+      1.0,   0.502, 0.727, 0.502, 0.944, 0.944, 0.944};
   info.name = names[index];
   info.defaultValue = defaults[index];
   return true;
@@ -185,6 +211,10 @@ void BuiltinHott::setParameterValue(uint32_t id, double value) {
   if (id >= (uint32_t)kTotalParams) return;
   params_[id] = value;
   if (id == PARAM_ENABLE) enabled_ = value >= 0.5;
+  // Update band compressor params when relevant params change
+  if (id == PARAM_TIME || (id >= PARAM_LOW_DOWN_THRESH && id <= PARAM_HIGH_UP_THRESH)) {
+    updateBandCompParams();
+  }
 }
 
 double BuiltinHott::getParameterValue(uint32_t id) const {
@@ -207,7 +237,7 @@ bool BuiltinHott::isInstrument() const { return false; }
 
 float BuiltinHott::getBandGainReduction(int band) const {
   if (band < 0 || band >= kNumBands) return 0.0f;
-  return bands_[band].gain_reduction_db;
+  return band_comp_[band].getGainReductionDb();
 }
 
 float BuiltinHott::getInputDb() const {
@@ -233,35 +263,21 @@ void BuiltinHott::reset() {
   params_[PARAM_ENABLE] = 1.0;
   enabled_ = true;
 
-  // Band 0: Low
-  bands_[0].down_threshold_db = kDefaultLowDownThresh;
-  bands_[0].down_ratio = kDefaultDownRatio;
-  bands_[0].up_threshold_db = kDefaultLowUpThresh;
-  bands_[0].up_ratio = kDefaultUpRatio;
-  bands_[0].attack_ms = kDefaultLowAttack;
-  bands_[0].release_ms = kDefaultLowRelease;
-  bands_[0].envelope_db = 0.0f;
-  bands_[0].gain_reduction_db = 0.0f;
+  // Per-band threshold defaults (normalized)
+  // Down thresh: normToThreshold maps 0..1 -> -60..0 dB
+  params_[PARAM_LOW_DOWN_THRESH] = (kDefaultLowDownThresh + 60.0) / 60.0;
+  params_[PARAM_MID_DOWN_THRESH] = (kDefaultMidDownThresh + 60.0) / 60.0;
+  params_[PARAM_HIGH_DOWN_THRESH] = (kDefaultHighDownThresh + 60.0) / 60.0;
+  // Up thresh: normToUpThreshold maps 0..1 -> -60..+12 dB
+  params_[PARAM_LOW_UP_THRESH] = (8.0 + 60.0) / 72.0;
+  params_[PARAM_MID_UP_THRESH] = (8.0 + 60.0) / 72.0;
+  params_[PARAM_HIGH_UP_THRESH] = (8.0 + 60.0) / 72.0;
 
-  // Band 1: Mid
-  bands_[1].down_threshold_db = kDefaultMidDownThresh;
-  bands_[1].down_ratio = kDefaultDownRatio;
-  bands_[1].up_threshold_db = kDefaultMidUpThresh;
-  bands_[1].up_ratio = kDefaultUpRatio;
-  bands_[1].attack_ms = kDefaultMidAttack;
-  bands_[1].release_ms = kDefaultMidRelease;
-  bands_[1].envelope_db = 0.0f;
-  bands_[1].gain_reduction_db = 0.0f;
-
-  // Band 2: High
-  bands_[2].down_threshold_db = kDefaultHighDownThresh;
-  bands_[2].down_ratio = kDefaultDownRatio;
-  bands_[2].up_threshold_db = kDefaultHighUpThresh;
-  bands_[2].up_ratio = kDefaultUpRatio;
-  bands_[2].attack_ms = kDefaultHighAttack;
-  bands_[2].release_ms = kDefaultHighRelease;
-  bands_[2].envelope_db = 0.0f;
-  bands_[2].gain_reduction_db = 0.0f;
+  // Initialize band compressors
+  for (int b = 0; b < kNumBands; ++b) {
+    band_comp_[b].load("", 0, sample_rate_);
+  }
+  updateBandCompParams();
 
   // Clear filter states
   for (int s = 0; s < 2; ++s) {
@@ -272,6 +288,47 @@ void BuiltinHott::reset() {
   }
 
   updateCrossoverCoeffs();
+}
+
+void BuiltinHott::updateBandCompParams() {
+  float time_mult = (float)(params_[PARAM_TIME] * 2.0);
+  if (time_mult < 0.01f) time_mult = 0.01f;
+
+  // Read per-band thresholds from params
+  // Down thresholds are in BuiltinCompressor norm space (0..1 -> -60..0 dB)
+  double down_thresh_norm[kNumBands] = {
+      params_[PARAM_LOW_DOWN_THRESH], params_[PARAM_MID_DOWN_THRESH],
+      params_[PARAM_HIGH_DOWN_THRESH]};
+  // Up thresholds need conversion from Hott norm (0..1 -> -60..+12 dB)
+  // to BuiltinCompressor UP norm (same mapping, pass through)
+  double up_thresh_norm[kNumBands] = {
+      params_[PARAM_LOW_UP_THRESH], params_[PARAM_MID_UP_THRESH],
+      params_[PARAM_HIGH_UP_THRESH]};
+
+  float attack_ms[kNumBands] = {kDefaultLowAttack, kDefaultMidAttack,
+                                kDefaultHighAttack};
+  float release_ms[kNumBands] = {kDefaultLowRelease, kDefaultMidRelease,
+                                 kDefaultHighRelease};
+
+  for (int b = 0; b < kNumBands; ++b) {
+    auto bd = computeBandDefaults(
+        0.0f, kDefaultDownRatio,  // threshold_db unused, ratio used
+        attack_ms[b] * time_mult, release_ms[b] * time_mult);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_THRESHOLD,
+                                    down_thresh_norm[b]);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_RATIO,
+                                    bd.ratio_norm);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_ATTACK,
+                                    bd.attack_norm);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_RELEASE,
+                                    bd.release_norm);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_KNEE, 0.0);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_MAKEUP, 0.0);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_ENABLE, 1.0);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_UP_THRESHOLD,
+                                    up_thresh_norm[b]);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_UP_RATIO, 0.999);
+  }
 }
 
 void BuiltinHott::updateCrossoverCoeffs() {
@@ -325,27 +382,6 @@ float BuiltinHott::processBiquad(BiquadState& state, const BiquadCoeffs& c,
   state.y2 = state.y1;
   state.y1 = y;
   return y;
-}
-
-float BuiltinHott::computeBandGain(const BandCompressor& band, float input_db,
-                                   float amount) {
-  float gain_db = 0.0f;
-
-  // Downward compression: reduce signals above threshold
-  if (input_db > band.down_threshold_db) {
-    float over = input_db - band.down_threshold_db;
-    float target = band.down_threshold_db + over / band.down_ratio;
-    gain_db += (target - input_db);  // negative = reduction
-  }
-
-  // Upward compression: boost signals below threshold
-  if (input_db < band.up_threshold_db && input_db > -100.0f) {
-    float under = band.up_threshold_db - input_db;
-    float target = band.up_threshold_db - under / band.up_ratio;
-    gain_db += (target - input_db);  // positive = boost
-  }
-
-  return gain_db * amount;
 }
 
 float BuiltinHott::normToFreq(double norm, float min_hz, float max_hz) {

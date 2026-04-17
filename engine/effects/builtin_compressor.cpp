@@ -188,6 +188,7 @@ void BuiltinCompressor::reset() {
   std::memset(rms_buf_R_, 0, sizeof(rms_buf_R_));
   rms_sum_L_ = rms_sum_R_ = 0.0f;
   rms_index_ = 0;
+  last_time_samples_ = -1;
 }
 
 float BuiltinCompressor::computeGainReduction(float input_db, float threshold,

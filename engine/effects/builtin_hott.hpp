@@ -110,6 +110,7 @@ class BuiltinHott : public IPlugin {
 
   std::atomic<float> input_db_{-200.0f};
   std::atomic<float> output_db_{-200.0f};
+  int64_t last_time_samples_ = -1;  // For transport discontinuity detection
 
   void reset();
   void updateBandCompParams();

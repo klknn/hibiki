@@ -104,6 +104,18 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
     updateBandCompParams();
   }
 
+  // Detect transport discontinuity (restart/seek) and reset filter states
+  if (last_time_samples_ >= 0 &&
+      context.continuousTimeSamples < last_time_samples_) {
+    for (int s = 0; s < 2; ++s) {
+      lp1_L_[s] = lp1_R_[s] = {};
+      hp1_L_[s] = hp1_R_[s] = {};
+      lp2_L_[s] = lp2_R_[s] = {};
+      hp2_L_[s] = hp2_R_[s] = {};
+    }
+  }
+  last_time_samples_ = context.continuousTimeSamples + num_samples;
+
   float* outL = outputs[0];
   float* outR = outputs[1];
   if (inputs && inputs != outputs) {
@@ -232,48 +244,74 @@ bool BuiltinHott::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
   info.id = index;
   static const char* names[] = {
-      "LowXover",     "HighXover",     "Amount",        "Time",
-      "Output",       "LowOut",        "MidOut",        "HighOut",
-      "Enable",       "LowDownThresh", "MidDownThresh", "HighDownThresh",
-      "LowUpThresh",  "MidUpThresh",   "HighUpThresh",  "SoftKnee",
-      "RmsMode",      "LowAttack",     "MidAttack",     "HighAttack",
-      "LowRelease",   "MidRelease",    "HighRelease",   "LowDownRatio",
-      "MidDownRatio", "HighDownRatio", "LowUpRatio",    "MidUpRatio",
-      "HighUpRatio",  "LowIn",         "MidIn",         "HighIn"};
+      /* PARAM_LOW_CROSSOVER  */ "LowXover",
+      /* PARAM_HIGH_CROSSOVER */ "HighXover",
+      /* PARAM_AMOUNT         */ "Amount",
+      /* PARAM_TIME           */ "Time",
+      /* PARAM_OUTPUT         */ "Output",
+      /* PARAM_LOW_OUT        */ "LowOut",
+      /* PARAM_MID_OUT        */ "MidOut",
+      /* PARAM_HIGH_OUT       */ "HighOut",
+      /* PARAM_ENABLE         */ "Enable",
+      /* PARAM_LOW_DOWN_THRESH  */ "LowDownThresh",
+      /* PARAM_MID_DOWN_THRESH  */ "MidDownThresh",
+      /* PARAM_HIGH_DOWN_THRESH */ "HighDownThresh",
+      /* PARAM_LOW_UP_THRESH  */ "LowUpThresh",
+      /* PARAM_MID_UP_THRESH  */ "MidUpThresh",
+      /* PARAM_HIGH_UP_THRESH */ "HighUpThresh",
+      /* PARAM_SOFT_KNEE      */ "SoftKnee",
+      /* PARAM_RMS_MODE       */ "RmsMode",
+      /* PARAM_LOW_ATTACK     */ "LowAttack",
+      /* PARAM_MID_ATTACK     */ "MidAttack",
+      /* PARAM_HIGH_ATTACK    */ "HighAttack",
+      /* PARAM_LOW_RELEASE    */ "LowRelease",
+      /* PARAM_MID_RELEASE    */ "MidRelease",
+      /* PARAM_HIGH_RELEASE   */ "HighRelease",
+      /* PARAM_LOW_DOWN_RATIO  */ "LowDownRatio",
+      /* PARAM_MID_DOWN_RATIO  */ "MidDownRatio",
+      /* PARAM_HIGH_DOWN_RATIO */ "HighDownRatio",
+      /* PARAM_LOW_UP_RATIO   */ "LowUpRatio",
+      /* PARAM_MID_UP_RATIO   */ "MidUpRatio",
+      /* PARAM_HIGH_UP_RATIO  */ "HighUpRatio",
+      /* PARAM_LOW_IN         */ "LowIn",
+      /* PARAM_MID_IN         */ "MidIn",
+      /* PARAM_HIGH_IN        */ "HighIn",
+  };
   // Defaults computed in reset() — provide matching values here for hosts.
   static const double defaults[] = {
-      0.461,
-      0.436,
-      1.0,
-      1.0,
-      0.5,
-      0.715,
-      0.619,
-      0.715,                                   // 0-7
-      1.0,                                     // 8 (Enable)
-      (kDefaultLowDownThresh + 60.0) / 60.0,   // 9
-      (kDefaultMidDownThresh + 60.0) / 60.0,   // 10
-      (kDefaultHighDownThresh + 60.0) / 60.0,  // 11
-      (kDefaultLowUpThresh + 60.0) / 72.0,     // 12
-      (kDefaultMidUpThresh + 60.0) / 72.0,     // 13
-      (kDefaultHighUpThresh + 60.0) / 72.0,    // 14
-      1.0,
-      1.0,  // 15-16 (SoftKnee,RMS on)
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,  // 17-22 (att/rel, set in reset)
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,  // 23-28 (ratios, set in reset)
-      0.608,
-      0.608,
-      0.608};  // 29-31 (in gains ~5.2dB)
+      /* PARAM_LOW_CROSSOVER    */ 0.461,  // 88.3 Hz
+      /* PARAM_HIGH_CROSSOVER   */ 0.436,  // 2.50 kHz
+      /* PARAM_AMOUNT           */ 1.0,    // 100%
+      /* PARAM_TIME             */ 1.0,    // 100%
+      /* PARAM_OUTPUT           */ 0.5,    // 0 dB
+      /* PARAM_LOW_OUT          */ 0.715,  // 10.3 dB
+      /* PARAM_MID_OUT          */ 0.619,  // 5.7 dB
+      /* PARAM_HIGH_OUT         */ 0.715,  // 10.3 dB
+      /* PARAM_ENABLE           */ 1.0,
+      /* PARAM_LOW_DOWN_THRESH  */ (kDefaultLowDownThresh + 60.0) / 60.0,
+      /* PARAM_MID_DOWN_THRESH  */ (kDefaultMidDownThresh + 60.0) / 60.0,
+      /* PARAM_HIGH_DOWN_THRESH */ (kDefaultHighDownThresh + 60.0) / 60.0,
+      /* PARAM_LOW_UP_THRESH    */ (kDefaultLowUpThresh + 60.0) / 72.0,
+      /* PARAM_MID_UP_THRESH    */ (kDefaultMidUpThresh + 60.0) / 72.0,
+      /* PARAM_HIGH_UP_THRESH   */ (kDefaultHighUpThresh + 60.0) / 72.0,
+      /* PARAM_SOFT_KNEE        */ 1.0,  // on by default
+      /* PARAM_RMS_MODE         */ 1.0,  // on by default
+      /* PARAM_LOW_ATTACK       */ 0.0,  // set in reset()
+      /* PARAM_MID_ATTACK       */ 0.0,
+      /* PARAM_HIGH_ATTACK      */ 0.0,
+      /* PARAM_LOW_RELEASE      */ 0.0,
+      /* PARAM_MID_RELEASE      */ 0.0,
+      /* PARAM_HIGH_RELEASE     */ 0.0,
+      /* PARAM_LOW_DOWN_RATIO   */ 0.0,  // set in reset()
+      /* PARAM_MID_DOWN_RATIO   */ 0.0,
+      /* PARAM_HIGH_DOWN_RATIO  */ 0.0,
+      /* PARAM_LOW_UP_RATIO     */ 0.0,
+      /* PARAM_MID_UP_RATIO     */ 0.0,
+      /* PARAM_HIGH_UP_RATIO    */ 0.0,
+      /* PARAM_LOW_IN           */ 0.608,  // 5.2 dB
+      /* PARAM_MID_IN           */ 0.608,
+      /* PARAM_HIGH_IN          */ 0.608,
+  };
   info.name = names[index];
   info.defaultValue = defaults[index];
   return true;

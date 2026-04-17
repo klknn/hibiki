@@ -80,6 +80,7 @@ class BuiltinCompressor : public IPlugin {
   float rms_sum_L_ = 0.0f;
   float rms_sum_R_ = 0.0f;
   int rms_index_ = 0;
+  int64_t last_time_samples_ = -1;  // For transport discontinuity detection
 
   void reset();
   static float computeGainReduction(float input_db, float threshold,

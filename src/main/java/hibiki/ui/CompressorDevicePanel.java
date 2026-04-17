@@ -61,7 +61,7 @@ public class CompressorDevicePanel extends JPanel {
     params[PARAM_MAKEUP] = 0.0;
     params[PARAM_ENABLE] = 1.0;
     params[PARAM_UP_THRESHOLD] = 0.0; // -60 dB (effectively off)
-    params[PARAM_UP_RATIO] = 0.0;    // 1:1 (no upward comp)
+    params[PARAM_UP_RATIO] = 0.0; // 1:1 (no upward comp)
 
     Theme theme = Theme.getInstance();
     setLayout(new BorderLayout());
@@ -240,8 +240,8 @@ public class CompressorDevicePanel extends JPanel {
       float upRatio = normToRatio(params[PARAM_UP_RATIO]);
       for (int px = 0; px <= pw; px++) {
         float inputDb = DB_MIN + (float) px / pw * (DB_MAX - DB_MIN);
-        float outputDb = computeOutputDb(inputDb, threshold, ratio, kneeDb,
-                                         upThreshold, upRatio) + makeup;
+        float outputDb =
+            computeOutputDb(inputDb, threshold, ratio, kneeDb, upThreshold, upRatio) + makeup;
         outputDb = Math.max(DB_MIN, Math.min(DB_MAX, outputDb));
         int x = pad + px;
         int y = dbToY(outputDb, ph, pad);
@@ -473,8 +473,8 @@ public class CompressorDevicePanel extends JPanel {
     return 1.0f / (1.0f - (float) norm);
   }
 
-  private static float computeOutputDb(float inputDb, float threshold, float ratio, float kneeDb,
-                                        float upThreshold, float upRatio) {
+  private static float computeOutputDb(
+      float inputDb, float threshold, float ratio, float kneeDb, float upThreshold, float upRatio) {
     float halfKnee = kneeDb / 2;
     float gr;
     if (kneeDb <= 0.01f) {

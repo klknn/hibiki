@@ -178,8 +178,8 @@ void BuiltinCompressor::reset() {
   params_[PARAM_MAKEUP] = 0.0;
   params_[PARAM_ENABLE] = 1.0;
   params_[PARAM_UP_THRESHOLD] = 0.0;  // -60 dB (effectively off)
-  params_[PARAM_UP_RATIO] = 0.0;     // 1:1 (no upward comp)
-  params_[PARAM_RMS_MODE] = 0.0;     // Peak detection by default
+  params_[PARAM_UP_RATIO] = 0.0;      // 1:1 (no upward comp)
+  params_[PARAM_RMS_MODE] = 0.0;      // Peak detection by default
   enabled_ = true;
   envelope_db_ = 0.0f;
   gain_reduction_db_ = 0.0f;
@@ -191,9 +191,9 @@ void BuiltinCompressor::reset() {
 }
 
 float BuiltinCompressor::computeGainReduction(float input_db, float threshold,
-                                               float ratio, float knee_db,
-                                               float up_threshold,
-                                               float up_ratio) {
+                                              float ratio, float knee_db,
+                                              float up_threshold,
+                                              float up_ratio) {
   float half_knee = knee_db / 2.0f;
   float gr_db = 0.0f;
 

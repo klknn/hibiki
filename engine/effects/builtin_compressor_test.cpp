@@ -143,8 +143,8 @@ TEST(BuiltinCompressorTest, UpwardCompressionBoostsQuietSignal) {
 
   // Set downward threshold high (effectively off), enable upward comp
   comp.setParameterValue(BuiltinCompressor::PARAM_THRESHOLD, 1.0);  // 0 dB
-  comp.setParameterValue(BuiltinCompressor::PARAM_RATIO, 0.0);     // 1:1 down
-  comp.setParameterValue(BuiltinCompressor::PARAM_ATTACK, 0.0);    // fast
+  comp.setParameterValue(BuiltinCompressor::PARAM_RATIO, 0.0);      // 1:1 down
+  comp.setParameterValue(BuiltinCompressor::PARAM_ATTACK, 0.0);     // fast
   comp.setParameterValue(BuiltinCompressor::PARAM_RELEASE, 0.0);
   // Up threshold = -10 dB -> norm = (−10+60)/72 ≈ 0.694
   comp.setParameterValue(BuiltinCompressor::PARAM_UP_THRESHOLD, 50.0 / 72.0);

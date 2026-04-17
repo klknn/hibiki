@@ -328,12 +328,12 @@ void BuiltinHott::reset() {
   // Default parameter values — Xfer OTT exact defaults
   params_[PARAM_LOW_CROSSOVER] = 0.461;   // 88.3 Hz
   params_[PARAM_HIGH_CROSSOVER] = 0.436;  // 2.50 kHz
-  params_[PARAM_AMOUNT] = 1.0;           // 100%
-  params_[PARAM_TIME] = 1.0;             // 100%
-  params_[PARAM_OUTPUT] = 0.5;           // 0 dB
-  params_[PARAM_LOW_OUT] = 0.715;        // 10.3 dB
-  params_[PARAM_MID_OUT] = 0.619;        // 5.7 dB
-  params_[PARAM_HIGH_OUT] = 0.715;       // 10.3 dB
+  params_[PARAM_AMOUNT] = 1.0;            // 100%
+  params_[PARAM_TIME] = 1.0;              // 100%
+  params_[PARAM_OUTPUT] = 0.5;            // 0 dB
+  params_[PARAM_LOW_OUT] = 0.715;         // 10.3 dB
+  params_[PARAM_MID_OUT] = 0.619;         // 5.7 dB
+  params_[PARAM_HIGH_OUT] = 0.715;        // 10.3 dB
   params_[PARAM_ENABLE] = 1.0;
   enabled_ = true;
 
@@ -410,9 +410,9 @@ void BuiltinHott::updateBandCompParams() {
   double down_thresh_norm[kNumBands] = {params_[PARAM_LOW_DOWN_THRESH],
                                         params_[PARAM_MID_DOWN_THRESH],
                                         params_[PARAM_HIGH_DOWN_THRESH]};
-  double up_thresh_norm[kNumBands] = {
-      params_[PARAM_LOW_UP_THRESH], params_[PARAM_MID_UP_THRESH],
-      params_[PARAM_HIGH_UP_THRESH]};
+  double up_thresh_norm[kNumBands] = {params_[PARAM_LOW_UP_THRESH],
+                                      params_[PARAM_MID_UP_THRESH],
+                                      params_[PARAM_HIGH_UP_THRESH]};
 
   // Per-band ratios from params (already normalized)
   double down_ratio_norm[kNumBands] = {params_[PARAM_LOW_DOWN_RATIO],

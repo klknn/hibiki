@@ -10,14 +10,11 @@ import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
 /**
- * OTT-style three-band multiband compressor device panel ("Hott"). Features
- * T/B/A tabs (Time,
- * Below, Above) for per-band configuration, Soft Knee / RMS toggle buttons,
- * draggable thresholds
+ * OTT-style three-band multiband compressor device panel ("Hott"). Features T/B/A tabs (Time,
+ * Below, Above) for per-band configuration, Soft Knee / RMS toggle buttons, draggable thresholds
  * and per-band att/rel controls.
  *
- * <p>
- * Reference: https://www.makou.com/available-xfer-ott-parameters/
+ * <p>Reference: https://www.makou.com/available-xfer-ott-parameters/
  */
 public class HottDevicePanel extends JPanel {
   // Parameter IDs matching C++ BuiltinHott::ParamId
@@ -262,20 +259,17 @@ public class HottDevicePanel extends JPanel {
     bandOutRow.setMaximumSize(new Dimension(Short.MAX_VALUE, theme.scale(72)));
 
     knobHighOut =
-        new KnobPanel(
-            "Hi Out", params[PARAM_HIGH_OUT], v -> String.format("%.1f dB", v * 48 - 24));
+        new KnobPanel("Hi Out", params[PARAM_HIGH_OUT], v -> String.format("%.1f dB", v * 48 - 24));
     knobHighOut.addChangeListener(e -> onKnobChanged(PARAM_HIGH_OUT, knobHighOut));
     bandOutRow.add(knobHighOut);
 
     knobMidOut =
-        new KnobPanel(
-            "Mid Out", params[PARAM_MID_OUT], v -> String.format("%.1f dB", v * 48 - 24));
+        new KnobPanel("Mid Out", params[PARAM_MID_OUT], v -> String.format("%.1f dB", v * 48 - 24));
     knobMidOut.addChangeListener(e -> onKnobChanged(PARAM_MID_OUT, knobMidOut));
     bandOutRow.add(knobMidOut);
 
     knobLowOut =
-        new KnobPanel(
-            "Lo Out", params[PARAM_LOW_OUT], v -> String.format("%.1f dB", v * 48 - 24));
+        new KnobPanel("Lo Out", params[PARAM_LOW_OUT], v -> String.format("%.1f dB", v * 48 - 24));
     knobLowOut.addChangeListener(e -> onKnobChanged(PARAM_LOW_OUT, knobLowOut));
     bandOutRow.add(knobLowOut);
 
@@ -383,6 +377,7 @@ public class HottDevicePanel extends JPanel {
 
   /** dB range for display: -80 to 0 dB */
   private static final float DB_MIN = -80f;
+
   private static final float DB_MAX = 0f;
 
   private static float dbToNorm(float db) {
@@ -427,15 +422,13 @@ public class HottDevicePanel extends JPanel {
 
   /** Convert normalized ratio param to ratio: ratio = 1/(1-norm) */
   private static float ratioNormToRatio(double norm) {
-    if (norm >= 0.999)
-      return 1000.0f;
+    if (norm >= 0.999) return 1000.0f;
     return 1.0f / (1.0f - (float) norm);
   }
 
   /** Convert ratio to normalized param */
   private static double ratioToNorm(float ratio) {
-    if (ratio >= 999.0f)
-      return 0.999;
+    if (ratio >= 999.0f) return 0.999;
     return Math.max(0.0, Math.min(0.999, 1.0 - 1.0 / ratio));
   }
 
@@ -449,20 +442,18 @@ public class HottDevicePanel extends JPanel {
     PARAM_HIGH_UP_THRESH, PARAM_MID_UP_THRESH, PARAM_LOW_UP_THRESH
   };
   private static final int[] ATTACK_PARAMS = {
-      PARAM_HIGH_ATTACK, PARAM_MID_ATTACK, PARAM_LOW_ATTACK
+    PARAM_HIGH_ATTACK, PARAM_MID_ATTACK, PARAM_LOW_ATTACK
   };
   private static final int[] RELEASE_PARAMS = {
-      PARAM_HIGH_RELEASE, PARAM_MID_RELEASE, PARAM_LOW_RELEASE
+    PARAM_HIGH_RELEASE, PARAM_MID_RELEASE, PARAM_LOW_RELEASE
   };
   private static final int[] DOWN_RATIO_PARAMS = {
-      PARAM_HIGH_DOWN_RATIO, PARAM_MID_DOWN_RATIO, PARAM_LOW_DOWN_RATIO
+    PARAM_HIGH_DOWN_RATIO, PARAM_MID_DOWN_RATIO, PARAM_LOW_DOWN_RATIO
   };
   private static final int[] UP_RATIO_PARAMS = {
-      PARAM_HIGH_UP_RATIO, PARAM_MID_UP_RATIO, PARAM_LOW_UP_RATIO
+    PARAM_HIGH_UP_RATIO, PARAM_MID_UP_RATIO, PARAM_LOW_UP_RATIO
   };
-  private static final int[] IN_GAIN_PARAMS = {
-      PARAM_HIGH_IN, PARAM_MID_IN, PARAM_LOW_IN
-  };
+  private static final int[] IN_GAIN_PARAMS = {PARAM_HIGH_IN, PARAM_MID_IN, PARAM_LOW_IN};
 
   private class BandMeterPanel extends JPanel {
     private int dragBand = -1;
@@ -753,7 +744,7 @@ public class HottDevicePanel extends JPanel {
         FontMetrics fm3 = g2.getFontMetrics();
         g2.drawString(
             BAND_NAMES[b],
-                pad + meterW - fm3.stringWidth(BAND_NAMES[b]) - theme.scale(2),
+            pad + meterW - fm3.stringWidth(BAND_NAMES[b]) - theme.scale(2),
             y + theme.scale(10));
       }
 
@@ -763,8 +754,8 @@ public class HottDevicePanel extends JPanel {
       int tabBtnW = theme.scale(18);
       int tabBtnH = theme.scale(14);
       int tabGap = theme.scale(2);
-      String[] tabLabels = { "T", "B", "A" };
-      int[] tabs = { TAB_TIME, TAB_BELOW, TAB_ABOVE };
+      String[] tabLabels = {"T", "B", "A"};
+      int[] tabs = {TAB_TIME, TAB_BELOW, TAB_ABOVE};
 
       for (int t = 0; t < 3; t++) {
         int tx = tabX + t * (tabBtnW + tabGap);
@@ -800,7 +791,7 @@ public class HottDevicePanel extends JPanel {
             @Override
             public void mouseClicked(MouseEvent e) {
               int mx = e.getX(), my = e.getY();
-              int[] tabs = { TAB_TIME, TAB_BELOW, TAB_ABOVE };
+              int[] tabs = {TAB_TIME, TAB_BELOW, TAB_ABOVE};
               for (int t = 0; t < 3; t++) {
                 int tx = tabBtnX + t * (tabBtnW + tabGap);
                 if (mx >= tx && mx < tx + tabBtnW && my >= tabBtnY && my < tabBtnY + tabBtnH) {

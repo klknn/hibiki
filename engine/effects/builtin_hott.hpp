@@ -18,8 +18,6 @@ struct BiquadCoeffs {
   float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
 };
 
-
-
 // OTT-style three-band multiband upward/downward compressor.
 // Path: builtin://hott
 class BuiltinHott : public IPlugin {

@@ -385,7 +385,8 @@ void playback_thread(ProjectState& state) {
     if (state.is_timeline_playing) {
       state.playhead_pos_sec += time_per_block;
     }
-    context.continuousTimeSamples += block_size;
+    context.continuousTimeSamples =
+        (int64_t)(state.playhead_pos_sec * context.sampleRate);
     context.projectTimeMusic = state.playhead_pos_sec * (context.tempo / 60.0);
   }
 }

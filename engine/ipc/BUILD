@@ -76,11 +76,6 @@ cc_test(
         "@platforms//os:macos": [],
         "//conditions:default": ["-lrt"],
     }),
-    target_compatible_with = select({
-        # TODO macos support.
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         ":worker_channel",
         "@googletest//:gtest_main",

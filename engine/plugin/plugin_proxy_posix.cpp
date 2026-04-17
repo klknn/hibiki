@@ -5,6 +5,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 #include <cstring>
 #include <iostream>
 
@@ -20,7 +24,15 @@ namespace {
 
 std::string findWorkerBinary() {
   char exe_path[1024];
-  ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+  ssize_t len = 0;
+#ifdef __APPLE__
+  uint32_t size = sizeof(exe_path);
+  if (_NSGetExecutablePath(exe_path, &size) == 0) {
+    len = strlen(exe_path);
+  }
+#else
+  len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+#endif
   if (len <= 0) return "hbk-plugin-worker";
   exe_path[len] = '\0';
   std::string path(exe_path);

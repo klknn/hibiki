@@ -1,6 +1,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -132,9 +133,13 @@ WorkerChannelLocal* WorkerChannelLocal::createClient(
     return nullptr;
   }
 
-  off_t size = lseek(ch->impl_->shm_fd, 0, SEEK_END);
-  lseek(ch->impl_->shm_fd, 0, SEEK_SET);
-  ch->shm_size_ = (size_t)size;
+  struct stat st;
+  if (fstat(ch->impl_->shm_fd, &st) < 0) {
+    std::cerr << "WorkerChannel: fstat() failed: " << strerror(errno) << "\n";
+    delete ch;
+    return nullptr;
+  }
+  ch->shm_size_ = (size_t)st.st_size;
 
   ch->shm_ptr_ = mmap(nullptr, ch->shm_size_, PROT_READ | PROT_WRITE,
                       MAP_SHARED, ch->impl_->shm_fd, 0);

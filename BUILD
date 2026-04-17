@@ -128,11 +128,6 @@ java_test(
         "//engine:hbk-plugin-worker",
         "//testdata",
     ],
-    target_compatible_with = select({
-        # TODO macos support.
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     test_class = "hibiki.PluginWorkerTest",
     deps = [
         ":hibiki-gui-lib",

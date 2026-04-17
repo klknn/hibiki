@@ -9,12 +9,32 @@
 
 namespace hibiki {
 
-// OTT default per-band compressor parameters (normalized 0..1 for
-// BuiltinCompressor).
-// Threshold norm = (threshold_db + 60) / 60
-// Ratio norm: ratio = 1/(1-norm), so norm = 1 - 1/ratio
-// Attack norm: attack_ms = 0.1 * 1000^norm, so norm = log10(attack_ms/0.1) / 3
-// Release norm: release_ms = 10 * 100^norm, so norm = log10(release_ms/10) / 2
+// Xfer OTT (Over The Top) default per-band compressor parameters.
+// Reference: https://www.makou.com/available-xfer-ott-parameters/
+//
+// Normalization formulas (matching BuiltinCompressor):
+//   Threshold norm = (threshold_db + 60) / 60
+//   Ratio norm:  ratio = 1/(1-norm), so norm = 1 - 1/ratio
+//   Attack norm: attack_ms = 0.1 * 1000^norm, so norm = log10(attack_ms/0.1) /
+//   3 Release norm: release_ms = 10 * 100^norm, so norm = log10(release_ms/10)
+//   / 2
+//
+// Band defaults (from Ableton Live OTT.adv / Xfer OTT):
+//   [T]ime — per-band attack/release:
+//     High: 13.5ms / 132ms
+//     Mid:  22.4ms / 282ms
+//     Low:  47.8ms / 282ms
+//   [A]bove — downward compression (threshold, ratio):
+//     High: -35.5dB, inf:1
+//     Mid:  -30.2dB, 66.7:1
+//     Low:  -33.8dB, 66.7:1
+//   [B]elow — upward compression (threshold, ratio):
+//     High: -40.8dB, 4.17:1
+//     Mid:  -41.8dB, 4.17:1
+//     Low:  -40.8dB, 4.17:1
+//   Input gains:  all 5.2 dB
+//   Output gains: High 10.3dB, Mid 5.7dB, Low 10.3dB
+//   Split freq:   Low 88.3Hz, High 2.50kHz
 
 struct BandDefaults {
   double threshold_norm;
@@ -38,11 +58,23 @@ static BandDefaults computeBandDefaults(float threshold_db, float ratio,
   return d;
 }
 
-static constexpr float kDefaultLowDownThresh = -29.9f;
-static constexpr float kDefaultMidDownThresh = -16.4f;
-static constexpr float kDefaultHighDownThresh = -29.9f;
-static constexpr float kDefaultDownRatio = 1000.0f;
+// [A]bove — downward compression defaults
+static constexpr float kDefaultLowDownThresh = -33.8f;
+static constexpr float kDefaultMidDownThresh = -30.2f;
+static constexpr float kDefaultHighDownThresh = -35.5f;
+static constexpr float kDefaultLowDownRatio = 66.7f;
+static constexpr float kDefaultMidDownRatio = 66.7f;
+static constexpr float kDefaultHighDownRatio = 1000.0f;  // inf:1
 
+// [B]elow — upward compression defaults
+static constexpr float kDefaultLowUpThresh = -40.8f;
+static constexpr float kDefaultMidUpThresh = -41.8f;
+static constexpr float kDefaultHighUpThresh = -40.8f;
+static constexpr float kDefaultLowUpRatio = 4.17f;
+static constexpr float kDefaultMidUpRatio = 4.17f;
+static constexpr float kDefaultHighUpRatio = 4.17f;
+
+// [T]ime — attack/release defaults
 static constexpr float kDefaultLowAttack = 47.8f;
 static constexpr float kDefaultLowRelease = 282.0f;
 static constexpr float kDefaultMidAttack = 22.4f;
@@ -88,6 +120,12 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
   float amount = (float)params_[PARAM_AMOUNT];  // 0..1 dry/wet
   float global_out_db = normToDb24(params_[PARAM_OUTPUT]);
   float global_out_lin = std::pow(10.0f, global_out_db / 20.0f);
+
+  // Per-band input gains
+  float band_in_lin[kNumBands];
+  band_in_lin[0] = std::pow(10.0f, normToDb24(params_[PARAM_LOW_IN]) / 20.0f);
+  band_in_lin[1] = std::pow(10.0f, normToDb24(params_[PARAM_MID_IN]) / 20.0f);
+  band_in_lin[2] = std::pow(10.0f, normToDb24(params_[PARAM_HIGH_IN]) / 20.0f);
 
   // Per-band output gains
   float band_out_lin[kNumBands];
@@ -150,8 +188,12 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
     bandR[2][i] = hp2_r;
   }
 
-  // Process each band through its BuiltinCompressor
+  // Apply per-band input gains, then process each band through its compressor
   for (int b = 0; b < kNumBands; ++b) {
+    for (int i = 0; i < num_samples; ++i) {
+      bandL[b][i] *= band_in_lin[b];
+      bandR[b][i] *= band_in_lin[b];
+    }
     float* band_bufs[] = {bandL[b], bandR[b]};
     band_comp_[b].process(band_bufs, band_bufs, num_samples, context, {});
   }
@@ -193,15 +235,45 @@ bool BuiltinHott::getParameterInfo(int index, VstParamInfo& info) const {
       "LowXover",     "HighXover",     "Amount",        "Time",
       "Output",       "LowOut",        "MidOut",        "HighOut",
       "Enable",       "LowDownThresh", "MidDownThresh", "HighDownThresh",
-      "LowUpThresh",  "MidUpThresh",   "HighUpThresh"};
-  // Down thresh defaults: normToThreshold maps 0..1 -> -60..0 dB
-  // Low/High -29.9 dB -> (29.9+60)/60 = 0.502
-  // Mid -16.4 dB -> (16.4+60)/60 = 0.727
-  // Up thresh defaults: normToUpThreshold maps 0..1 -> -60..+12 dB
-  // +8 dB -> (8+60)/72 = 0.944
+      "LowUpThresh",  "MidUpThresh",   "HighUpThresh",  "SoftKnee",
+      "RmsMode",      "LowAttack",     "MidAttack",     "HighAttack",
+      "LowRelease",   "MidRelease",    "HighRelease",   "LowDownRatio",
+      "MidDownRatio", "HighDownRatio", "LowUpRatio",    "MidUpRatio",
+      "HighUpRatio",  "LowIn",         "MidIn",         "HighIn"};
+  // Defaults computed in reset() — provide matching values here for hosts.
   static const double defaults[] = {
-      0.25,  0.65,  1.0,   1.0,   0.5,   0.62,  0.71, 0.71,
-      1.0,   0.502, 0.727, 0.502, 0.944, 0.944, 0.944};
+      0.461,
+      0.436,
+      1.0,
+      1.0,
+      0.5,
+      0.715,
+      0.619,
+      0.715,                                   // 0-7
+      1.0,                                     // 8 (Enable)
+      (kDefaultLowDownThresh + 60.0) / 60.0,   // 9
+      (kDefaultMidDownThresh + 60.0) / 60.0,   // 10
+      (kDefaultHighDownThresh + 60.0) / 60.0,  // 11
+      (kDefaultLowUpThresh + 60.0) / 72.0,     // 12
+      (kDefaultMidUpThresh + 60.0) / 72.0,     // 13
+      (kDefaultHighUpThresh + 60.0) / 72.0,    // 14
+      1.0,
+      1.0,  // 15-16 (SoftKnee,RMS on)
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,  // 17-22 (att/rel, set in reset)
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,  // 23-28 (ratios, set in reset)
+      0.608,
+      0.608,
+      0.608};  // 29-31 (in gains ~5.2dB)
   info.name = names[index];
   info.defaultValue = defaults[index];
   return true;
@@ -212,7 +284,9 @@ void BuiltinHott::setParameterValue(uint32_t id, double value) {
   params_[id] = value;
   if (id == PARAM_ENABLE) enabled_ = value >= 0.5;
   // Update band compressor params when relevant params change
-  if (id == PARAM_TIME || (id >= PARAM_LOW_DOWN_THRESH && id <= PARAM_HIGH_UP_THRESH)) {
+  if (id == PARAM_TIME ||
+      (id >= PARAM_LOW_DOWN_THRESH && id <= PARAM_HIGH_UP_THRESH) ||
+      (id >= PARAM_SOFT_KNEE && id <= PARAM_HIGH_UP_RATIO)) {
     updateBandCompParams();
   }
 }
@@ -251,27 +325,65 @@ float BuiltinHott::getOutputDb() const {
 // --- Private ---
 
 void BuiltinHott::reset() {
-  // Default parameter values
-  params_[PARAM_LOW_CROSSOVER] = 0.25;   // ~88 Hz
-  params_[PARAM_HIGH_CROSSOVER] = 0.65;  // ~2.5 kHz
+  // Default parameter values — Xfer OTT exact defaults
+  params_[PARAM_LOW_CROSSOVER] = 0.461;   // 88.3 Hz
+  params_[PARAM_HIGH_CROSSOVER] = 0.436;  // 2.50 kHz
   params_[PARAM_AMOUNT] = 1.0;           // 100%
   params_[PARAM_TIME] = 1.0;             // 100%
   params_[PARAM_OUTPUT] = 0.5;           // 0 dB
-  params_[PARAM_LOW_OUT] = 0.62;         // ~5.7 dB
-  params_[PARAM_MID_OUT] = 0.71;         // ~10.3 dB
-  params_[PARAM_HIGH_OUT] = 0.71;        // ~10.3 dB
+  params_[PARAM_LOW_OUT] = 0.715;        // 10.3 dB
+  params_[PARAM_MID_OUT] = 0.619;        // 5.7 dB
+  params_[PARAM_HIGH_OUT] = 0.715;       // 10.3 dB
   params_[PARAM_ENABLE] = 1.0;
   enabled_ = true;
 
-  // Per-band threshold defaults (normalized)
-  // Down thresh: normToThreshold maps 0..1 -> -60..0 dB
+  // [A]bove — downward threshold defaults (0..1 -> -60..0 dB)
   params_[PARAM_LOW_DOWN_THRESH] = (kDefaultLowDownThresh + 60.0) / 60.0;
   params_[PARAM_MID_DOWN_THRESH] = (kDefaultMidDownThresh + 60.0) / 60.0;
   params_[PARAM_HIGH_DOWN_THRESH] = (kDefaultHighDownThresh + 60.0) / 60.0;
-  // Up thresh: normToUpThreshold maps 0..1 -> -60..+12 dB
-  params_[PARAM_LOW_UP_THRESH] = (8.0 + 60.0) / 72.0;
-  params_[PARAM_MID_UP_THRESH] = (8.0 + 60.0) / 72.0;
-  params_[PARAM_HIGH_UP_THRESH] = (8.0 + 60.0) / 72.0;
+  // [B]elow — upward threshold defaults (0..1 -> -60..+12 dB)
+  params_[PARAM_LOW_UP_THRESH] = (kDefaultLowUpThresh + 60.0) / 72.0;
+  params_[PARAM_MID_UP_THRESH] = (kDefaultMidUpThresh + 60.0) / 72.0;
+  params_[PARAM_HIGH_UP_THRESH] = (kDefaultHighUpThresh + 60.0) / 72.0;
+
+  // Soft knee and RMS enabled by default (matches Xfer OTT)
+  params_[PARAM_SOFT_KNEE] = 1.0;
+  params_[PARAM_RMS_MODE] = 1.0;
+
+  // [T]ime — per-band attack/release defaults (normalized)
+  auto bd_low =
+      computeBandDefaults(0, 1, kDefaultLowAttack, kDefaultLowRelease);
+  auto bd_mid =
+      computeBandDefaults(0, 1, kDefaultMidAttack, kDefaultMidRelease);
+  auto bd_hi =
+      computeBandDefaults(0, 1, kDefaultHighAttack, kDefaultHighRelease);
+  params_[PARAM_LOW_ATTACK] = bd_low.attack_norm;
+  params_[PARAM_MID_ATTACK] = bd_mid.attack_norm;
+  params_[PARAM_HIGH_ATTACK] = bd_hi.attack_norm;
+  params_[PARAM_LOW_RELEASE] = bd_low.release_norm;
+  params_[PARAM_MID_RELEASE] = bd_mid.release_norm;
+  params_[PARAM_HIGH_RELEASE] = bd_hi.release_norm;
+
+  // Per-band downward ratios (normalized: ratio = 1/(1-norm))
+  auto r_low_down = computeBandDefaults(0, kDefaultLowDownRatio, 1, 10);
+  auto r_mid_down = computeBandDefaults(0, kDefaultMidDownRatio, 1, 10);
+  auto r_hi_down = computeBandDefaults(0, kDefaultHighDownRatio, 1, 10);
+  params_[PARAM_LOW_DOWN_RATIO] = r_low_down.ratio_norm;
+  params_[PARAM_MID_DOWN_RATIO] = r_mid_down.ratio_norm;
+  params_[PARAM_HIGH_DOWN_RATIO] = r_hi_down.ratio_norm;
+
+  // Per-band upward ratios
+  auto r_low_up = computeBandDefaults(0, kDefaultLowUpRatio, 1, 10);
+  auto r_mid_up = computeBandDefaults(0, kDefaultMidUpRatio, 1, 10);
+  auto r_hi_up = computeBandDefaults(0, kDefaultHighUpRatio, 1, 10);
+  params_[PARAM_LOW_UP_RATIO] = r_low_up.ratio_norm;
+  params_[PARAM_MID_UP_RATIO] = r_mid_up.ratio_norm;
+  params_[PARAM_HIGH_UP_RATIO] = r_hi_up.ratio_norm;
+
+  // Per-band input gains (5.2 dB -> norm = (5.2+24)/48 = 0.608)
+  params_[PARAM_LOW_IN] = 0.608;
+  params_[PARAM_MID_IN] = 0.608;
+  params_[PARAM_HIGH_IN] = 0.608;
 
   // Initialize band compressors
   for (int b = 0; b < kNumBands; ++b) {
@@ -294,40 +406,57 @@ void BuiltinHott::updateBandCompParams() {
   float time_mult = (float)(params_[PARAM_TIME] * 2.0);
   if (time_mult < 0.01f) time_mult = 0.01f;
 
-  // Read per-band thresholds from params
-  // Down thresholds are in BuiltinCompressor norm space (0..1 -> -60..0 dB)
-  double down_thresh_norm[kNumBands] = {
-      params_[PARAM_LOW_DOWN_THRESH], params_[PARAM_MID_DOWN_THRESH],
-      params_[PARAM_HIGH_DOWN_THRESH]};
-  // Up thresholds need conversion from Hott norm (0..1 -> -60..+12 dB)
-  // to BuiltinCompressor UP norm (same mapping, pass through)
+  // Per-band thresholds (already in BuiltinCompressor norm space)
+  double down_thresh_norm[kNumBands] = {params_[PARAM_LOW_DOWN_THRESH],
+                                        params_[PARAM_MID_DOWN_THRESH],
+                                        params_[PARAM_HIGH_DOWN_THRESH]};
   double up_thresh_norm[kNumBands] = {
       params_[PARAM_LOW_UP_THRESH], params_[PARAM_MID_UP_THRESH],
       params_[PARAM_HIGH_UP_THRESH]};
 
-  float attack_ms[kNumBands] = {kDefaultLowAttack, kDefaultMidAttack,
-                                kDefaultHighAttack};
-  float release_ms[kNumBands] = {kDefaultLowRelease, kDefaultMidRelease,
-                                 kDefaultHighRelease};
+  // Per-band ratios from params (already normalized)
+  double down_ratio_norm[kNumBands] = {params_[PARAM_LOW_DOWN_RATIO],
+                                       params_[PARAM_MID_DOWN_RATIO],
+                                       params_[PARAM_HIGH_DOWN_RATIO]};
+  double up_ratio_norm[kNumBands] = {params_[PARAM_LOW_UP_RATIO],
+                                     params_[PARAM_MID_UP_RATIO],
+                                     params_[PARAM_HIGH_UP_RATIO]};
+
+  // Per-band attack/release from params (normalized), scaled by Time
+  double att_norm[kNumBands] = {params_[PARAM_LOW_ATTACK],
+                                params_[PARAM_MID_ATTACK],
+                                params_[PARAM_HIGH_ATTACK]};
+  double rel_norm[kNumBands] = {params_[PARAM_LOW_RELEASE],
+                                params_[PARAM_MID_RELEASE],
+                                params_[PARAM_HIGH_RELEASE]};
+
+  // Soft knee: 0 -> hard (0 dB), 1 -> soft (~10 dB width -> norm 0.33)
+  double knee_norm = (params_[PARAM_SOFT_KNEE] >= 0.5) ? 0.33 : 0.0;
+  double rms_mode = (params_[PARAM_RMS_MODE] >= 0.5) ? 1.0 : 0.0;
 
   for (int b = 0; b < kNumBands; ++b) {
-    auto bd = computeBandDefaults(
-        0.0f, kDefaultDownRatio,  // threshold_db unused, ratio used
-        attack_ms[b] * time_mult, release_ms[b] * time_mult);
+    // Convert normalized att/rel to ms, apply time multiplier, re-normalize
+    float att_ms = 0.1f * std::pow(1000.0f, (float)att_norm[b]) * time_mult;
+    float rel_ms = 10.0f * std::pow(100.0f, (float)rel_norm[b]) * time_mult;
+    auto bd = computeBandDefaults(0.0f, 1.0f, att_ms, rel_ms);
+
     band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_THRESHOLD,
                                     down_thresh_norm[b]);
     band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_RATIO,
-                                    bd.ratio_norm);
+                                    down_ratio_norm[b]);
     band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_ATTACK,
                                     bd.attack_norm);
     band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_RELEASE,
                                     bd.release_norm);
-    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_KNEE, 0.0);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_KNEE, knee_norm);
     band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_MAKEUP, 0.0);
     band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_ENABLE, 1.0);
     band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_UP_THRESHOLD,
                                     up_thresh_norm[b]);
-    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_UP_RATIO, 0.999);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_UP_RATIO,
+                                    up_ratio_norm[b]);
+    band_comp_[b].setParameterValue(BuiltinCompressor::PARAM_RMS_MODE,
+                                    rms_mode);
   }
 }
 

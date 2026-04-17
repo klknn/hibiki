@@ -24,7 +24,7 @@ struct BiquadCoeffs {
 // Path: builtin://hott
 class BuiltinHott : public IPlugin {
  public:
-  static constexpr int kTotalParams = 15;
+  static constexpr int kTotalParams = 32;
   static constexpr const char* kPath = "builtin://hott";
   static constexpr const char* kName = "Hott";
   static constexpr int kNumBands = 3;
@@ -45,6 +45,24 @@ class BuiltinHott : public IPlugin {
     PARAM_LOW_UP_THRESH = 12,
     PARAM_MID_UP_THRESH = 13,
     PARAM_HIGH_UP_THRESH = 14,
+    // --- New params (Xfer OTT parity) ---
+    PARAM_SOFT_KNEE = 15,
+    PARAM_RMS_MODE = 16,
+    PARAM_LOW_ATTACK = 17,
+    PARAM_MID_ATTACK = 18,
+    PARAM_HIGH_ATTACK = 19,
+    PARAM_LOW_RELEASE = 20,
+    PARAM_MID_RELEASE = 21,
+    PARAM_HIGH_RELEASE = 22,
+    PARAM_LOW_DOWN_RATIO = 23,
+    PARAM_MID_DOWN_RATIO = 24,
+    PARAM_HIGH_DOWN_RATIO = 25,
+    PARAM_LOW_UP_RATIO = 26,
+    PARAM_MID_UP_RATIO = 27,
+    PARAM_HIGH_UP_RATIO = 28,
+    PARAM_LOW_IN = 29,
+    PARAM_MID_IN = 30,
+    PARAM_HIGH_IN = 31,
   };
 
   BuiltinHott();

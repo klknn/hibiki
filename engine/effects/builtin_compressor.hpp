@@ -13,7 +13,7 @@ namespace hibiki {
 // makeup gain. Provides gain reduction metering for UI.
 class BuiltinCompressor : public IPlugin {
  public:
-  static constexpr int kTotalParams = 9;
+  static constexpr int kTotalParams = 10;
   static constexpr const char* kPath = "builtin://compressor";
   static constexpr const char* kName = "Compressor";
 
@@ -27,6 +27,7 @@ class BuiltinCompressor : public IPlugin {
     PARAM_ENABLE = 6,
     PARAM_UP_THRESHOLD = 7,
     PARAM_UP_RATIO = 8,
+    PARAM_RMS_MODE = 9,
   };
 
   BuiltinCompressor();
@@ -71,6 +72,14 @@ class BuiltinCompressor : public IPlugin {
   float gain_reduction_db_ = 0.0f;
   std::atomic<float> input_db_{-200.0f};
   std::atomic<float> output_db_{-200.0f};
+
+  // RMS detection ring buffer (~3ms window at 44.1kHz ≈ 128 samples)
+  static constexpr int kRmsWindowSize = 128;
+  float rms_buf_L_[kRmsWindowSize] = {};
+  float rms_buf_R_[kRmsWindowSize] = {};
+  float rms_sum_L_ = 0.0f;
+  float rms_sum_R_ = 0.0f;
+  int rms_index_ = 0;
 
   void reset();
   static float computeGainReduction(float input_db, float threshold,

@@ -10,9 +10,14 @@ import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
 /**
- * OTT-style three-band multiband compressor device panel ("Hott"). Shows per-band horizontal
- * threshold bars (draggable), input/output level indicators, crossover frequency controls, per-band
- * output knobs, and global Amount/Time/Output knobs.
+ * OTT-style three-band multiband compressor device panel ("Hott"). Features
+ * T/B/A tabs (Time,
+ * Below, Above) for per-band configuration, Soft Knee / RMS toggle buttons,
+ * draggable thresholds
+ * and per-band att/rel controls.
+ *
+ * <p>
+ * Reference: https://www.makou.com/available-xfer-ott-parameters/
  */
 public class HottDevicePanel extends JPanel {
   // Parameter IDs matching C++ BuiltinHott::ParamId
@@ -31,12 +36,32 @@ public class HottDevicePanel extends JPanel {
   private static final int PARAM_LOW_UP_THRESH = 12;
   private static final int PARAM_MID_UP_THRESH = 13;
   private static final int PARAM_HIGH_UP_THRESH = 14;
-  private static final int TOTAL_PARAMS = 15;
+  private static final int PARAM_SOFT_KNEE = 15;
+  private static final int PARAM_RMS_MODE = 16;
+  private static final int PARAM_LOW_ATTACK = 17;
+  private static final int PARAM_MID_ATTACK = 18;
+  private static final int PARAM_HIGH_ATTACK = 19;
+  private static final int PARAM_LOW_RELEASE = 20;
+  private static final int PARAM_MID_RELEASE = 21;
+  private static final int PARAM_HIGH_RELEASE = 22;
+  private static final int PARAM_LOW_DOWN_RATIO = 23;
+  private static final int PARAM_MID_DOWN_RATIO = 24;
+  private static final int PARAM_HIGH_DOWN_RATIO = 25;
+  private static final int PARAM_LOW_UP_RATIO = 26;
+  private static final int PARAM_MID_UP_RATIO = 27;
+  private static final int PARAM_HIGH_UP_RATIO = 28;
+  private static final int PARAM_LOW_IN = 29;
+  private static final int PARAM_MID_IN = 30;
+  private static final int PARAM_HIGH_IN = 31;
+  private static final int TOTAL_PARAMS = 32;
 
-  // OTT default band settings
+  // Band display names (display order: top=High, mid=Mid, bottom=Low)
   private static final String[] BAND_NAMES = {"High", "Mid", "Low"};
-  private static final float[] BAND_ATTACK = {13.5f, 22.4f, 47.8f};
-  private static final float[] BAND_RELEASE = {132f, 282f, 282f};
+
+  // T/B/A tab modes
+  private static final int TAB_TIME = 0;
+  private static final int TAB_BELOW = 1;
+  private static final int TAB_ABOVE = 2;
 
   private final int trackIndex;
   private final int pluginIndex;
@@ -44,10 +69,13 @@ public class HottDevicePanel extends JPanel {
   private boolean enabled = true;
   private final float[] bandGrDb = {0, 0, 0};
   private float inputDb = -200, outputDb = -200;
+  private int activeTab = TAB_TIME; // Current T/B/A tab
   private final KnobPanel knobLowXover, knobHighXover;
   private final KnobPanel knobAmount, knobTime, knobOutput;
   private final KnobPanel knobLowOut, knobMidOut, knobHighOut;
   private final BandMeterPanel meterPanel;
+  private JToggleButton softKneeBtn, rmsBtn;
+  private JToggleButton tabT, tabB, tabA;
   private boolean updatingFromBackend = false;
 
   /** Callback invoked when user clicks Mod button; set by PluginPane wrapper. */
@@ -57,27 +85,48 @@ public class HottDevicePanel extends JPanel {
     this.trackIndex = trackIndex;
     this.pluginIndex = pluginIndex;
 
-    // Defaults matching C++
-    params[PARAM_LOW_XOVER] = 0.25;
-    params[PARAM_HIGH_XOVER] = 0.65;
+    // Defaults matching C++ BuiltinHott::reset()
+    params[PARAM_LOW_XOVER] = 0.461;
+    params[PARAM_HIGH_XOVER] = 0.436;
     params[PARAM_AMOUNT] = 1.0;
     params[PARAM_TIME] = 1.0;
     params[PARAM_OUTPUT] = 0.5;
-    params[PARAM_LOW_OUT] = 0.62;
-    params[PARAM_MID_OUT] = 0.71;
-    params[PARAM_HIGH_OUT] = 0.71;
+    params[PARAM_LOW_OUT] = 0.715;
+    params[PARAM_MID_OUT] = 0.619;
+    params[PARAM_HIGH_OUT] = 0.715;
     params[PARAM_ENABLE] = 1.0;
-    params[PARAM_LOW_DOWN_THRESH] = 0.502;
-    params[PARAM_MID_DOWN_THRESH] = 0.727;
-    params[PARAM_HIGH_DOWN_THRESH] = 0.502;
-    params[PARAM_LOW_UP_THRESH] = 0.944;
-    params[PARAM_MID_UP_THRESH] = 0.944;
-    params[PARAM_HIGH_UP_THRESH] = 0.944;
+    params[PARAM_LOW_DOWN_THRESH] = (-33.8 + 60.0) / 60.0;
+    params[PARAM_MID_DOWN_THRESH] = (-30.2 + 60.0) / 60.0;
+    params[PARAM_HIGH_DOWN_THRESH] = (-35.5 + 60.0) / 60.0;
+    params[PARAM_LOW_UP_THRESH] = (-40.8 + 60.0) / 72.0;
+    params[PARAM_MID_UP_THRESH] = (-41.8 + 60.0) / 72.0;
+    params[PARAM_HIGH_UP_THRESH] = (-40.8 + 60.0) / 72.0;
+    params[PARAM_SOFT_KNEE] = 1.0;
+    params[PARAM_RMS_MODE] = 1.0;
+    // att/rel/ratio norms will be set from backend on load; use reasonable
+    // placeholders
+    // Attack norm: log10(attack_ms/0.1)/3
+    params[PARAM_LOW_ATTACK] = Math.log10(47.8 / 0.1) / 3.0;
+    params[PARAM_MID_ATTACK] = Math.log10(22.4 / 0.1) / 3.0;
+    params[PARAM_HIGH_ATTACK] = Math.log10(13.5 / 0.1) / 3.0;
+    params[PARAM_LOW_RELEASE] = Math.log10(282.0 / 10.0) / 2.0;
+    params[PARAM_MID_RELEASE] = Math.log10(282.0 / 10.0) / 2.0;
+    params[PARAM_HIGH_RELEASE] = Math.log10(132.0 / 10.0) / 2.0;
+    // Ratio norm: 1 - 1/ratio
+    params[PARAM_LOW_DOWN_RATIO] = 1.0 - 1.0 / 66.7;
+    params[PARAM_MID_DOWN_RATIO] = 1.0 - 1.0 / 66.7;
+    params[PARAM_HIGH_DOWN_RATIO] = 0.999; // inf
+    params[PARAM_LOW_UP_RATIO] = 1.0 - 1.0 / 4.17;
+    params[PARAM_MID_UP_RATIO] = 1.0 - 1.0 / 4.17;
+    params[PARAM_HIGH_UP_RATIO] = 1.0 - 1.0 / 4.17;
+    params[PARAM_LOW_IN] = 0.608;
+    params[PARAM_MID_IN] = 0.608;
+    params[PARAM_HIGH_IN] = 0.608;
 
     Theme theme = Theme.getInstance();
     setLayout(new BorderLayout());
-    setPreferredSize(new Dimension(theme.scale(480), theme.scale(240)));
-    setMaximumSize(new Dimension(theme.scale(480), Short.MAX_VALUE));
+    setPreferredSize(new Dimension(theme.scale(520), theme.scale(260)));
+    setMaximumSize(new Dimension(theme.scale(520), Short.MAX_VALUE));
     setBackground(theme.BG_MEDIUM);
     setBorder(BorderFactory.createLineBorder(theme.BORDER));
 
@@ -115,14 +164,15 @@ public class HottDevicePanel extends JPanel {
     header.add(btnPanel, BorderLayout.EAST);
     add(header, BorderLayout.NORTH);
 
-    // ── Main body: [Left: split freq] [Center: meters] [Right: knobs] ──
+    // ── Main body: [Left: split freq + input knobs] [Center: meters] [Right:
+    // output knobs] ──
     JPanel body = new JPanel(new BorderLayout(theme.scale(4), 0));
     body.setBackground(theme.BG_MEDIUM);
     body.setBorder(
         BorderFactory.createEmptyBorder(
             theme.scale(4), theme.scale(4), theme.scale(4), theme.scale(4)));
 
-    // Left column: split freq knobs + labels
+    // Left column: split freq knobs + per-band input knobs
     JPanel leftCol = new JPanel();
     leftCol.setLayout(new BoxLayout(leftCol, BoxLayout.Y_AXIS));
     leftCol.setBackground(theme.BG_MEDIUM);
@@ -133,7 +183,7 @@ public class HottDevicePanel extends JPanel {
     splitLabel.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     splitLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
     leftCol.add(splitLabel);
-    leftCol.add(Box.createVerticalStrut(theme.scale(4)));
+    leftCol.add(Box.createVerticalStrut(theme.scale(2)));
 
     // High crossover
     JLabel hiLabel = new JLabel("High", SwingConstants.CENTER);
@@ -146,7 +196,7 @@ public class HottDevicePanel extends JPanel {
         new KnobPanel(
             "HiFreq",
             params[PARAM_HIGH_XOVER],
-            v -> String.format("%.1f kHz", normToFreq(v, 500, 20000) / 1000));
+            v -> String.format("%.2f kHz", normToFreq(v, 500, 20000) / 1000));
     knobHighXover.addChangeListener(e -> onKnobChanged(PARAM_HIGH_XOVER, knobHighXover));
     leftCol.add(knobHighXover);
 
@@ -167,9 +217,36 @@ public class HottDevicePanel extends JPanel {
     knobLowXover.addChangeListener(e -> onKnobChanged(PARAM_LOW_XOVER, knobLowXover));
     leftCol.add(knobLowXover);
 
+    // Soft Knee / RMS buttons at bottom of left column
+    leftCol.add(Box.createVerticalStrut(theme.scale(4)));
+    softKneeBtn = new JToggleButton("Soft Knee", params[PARAM_SOFT_KNEE] >= 0.5);
+    softKneeBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
+    softKneeBtn.setFocusPainted(false);
+    softKneeBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+    softKneeBtn.setMaximumSize(new Dimension(theme.scale(66), theme.scale(20)));
+    softKneeBtn.addActionListener(
+        e -> {
+          params[PARAM_SOFT_KNEE] = softKneeBtn.isSelected() ? 1.0 : 0.0;
+          sendParam(PARAM_SOFT_KNEE, params[PARAM_SOFT_KNEE]);
+        });
+    leftCol.add(softKneeBtn);
+    leftCol.add(Box.createVerticalStrut(theme.scale(2)));
+
+    rmsBtn = new JToggleButton("RMS", params[PARAM_RMS_MODE] >= 0.5);
+    rmsBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
+    rmsBtn.setFocusPainted(false);
+    rmsBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+    rmsBtn.setMaximumSize(new Dimension(theme.scale(66), theme.scale(20)));
+    rmsBtn.addActionListener(
+        e -> {
+          params[PARAM_RMS_MODE] = rmsBtn.isSelected() ? 1.0 : 0.0;
+          sendParam(PARAM_RMS_MODE, params[PARAM_RMS_MODE]);
+        });
+    leftCol.add(rmsBtn);
+
     body.add(leftCol, BorderLayout.WEST);
 
-    // Center: band meters
+    // Center: band meters with T/B/A tabs
     meterPanel = new BandMeterPanel();
     body.add(meterPanel, BorderLayout.CENTER);
 
@@ -185,17 +262,20 @@ public class HottDevicePanel extends JPanel {
     bandOutRow.setMaximumSize(new Dimension(Short.MAX_VALUE, theme.scale(72)));
 
     knobHighOut =
-        new KnobPanel("Hi Out", params[PARAM_HIGH_OUT], v -> String.format("%.1f dB", v * 48 - 24));
+        new KnobPanel(
+            "Hi Out", params[PARAM_HIGH_OUT], v -> String.format("%.1f dB", v * 48 - 24));
     knobHighOut.addChangeListener(e -> onKnobChanged(PARAM_HIGH_OUT, knobHighOut));
     bandOutRow.add(knobHighOut);
 
     knobMidOut =
-        new KnobPanel("Mid Out", params[PARAM_MID_OUT], v -> String.format("%.1f dB", v * 48 - 24));
+        new KnobPanel(
+            "Mid Out", params[PARAM_MID_OUT], v -> String.format("%.1f dB", v * 48 - 24));
     knobMidOut.addChangeListener(e -> onKnobChanged(PARAM_MID_OUT, knobMidOut));
     bandOutRow.add(knobMidOut);
 
     knobLowOut =
-        new KnobPanel("Lo Out", params[PARAM_LOW_OUT], v -> String.format("%.1f dB", v * 48 - 24));
+        new KnobPanel(
+            "Lo Out", params[PARAM_LOW_OUT], v -> String.format("%.1f dB", v * 48 - 24));
     knobLowOut.addChangeListener(e -> onKnobChanged(PARAM_LOW_OUT, knobLowOut));
     bandOutRow.add(knobLowOut);
 
@@ -249,6 +329,10 @@ public class HottDevicePanel extends JPanel {
     params[paramId] = value;
     if (paramId == PARAM_ENABLE) {
       enabled = value >= 0.5;
+    } else if (paramId == PARAM_SOFT_KNEE) {
+      softKneeBtn.setSelected(value >= 0.5);
+    } else if (paramId == PARAM_RMS_MODE) {
+      rmsBtn.setSelected(value >= 0.5);
     } else {
       KnobPanel knob = getKnobForParam(paramId);
       if (knob != null) knob.setValue(value);
@@ -259,7 +343,6 @@ public class HottDevicePanel extends JPanel {
 
   /** Update metering data from backend. */
   public void setGainReduction(float db) {
-    // Use global GR as approximate per-band (backend doesn't send per-band yet)
     bandGrDb[0] = db;
     bandGrDb[1] = db;
     bandGrDb[2] = db;
@@ -292,47 +375,70 @@ public class HottDevicePanel extends JPanel {
       case PARAM_HIGH_OUT:
         return knobHighOut;
       default:
-        return null; // threshold params are handled via meter panel drag
+        return null; // threshold/att/rel/ratio params handled via meter panel drag
     }
   }
 
-  // ─── Band Meter Panel (OTT-style with draggable thresholds) ────────
+  // ─── Band Meter Panel (OTT-style with T/B/A tabs) ─────────────────────
 
   /** dB range for display: -80 to 0 dB */
   private static final float DB_MIN = -80f;
   private static final float DB_MAX = 0f;
 
-  /** Convert a dB value to a normalized 0..1 position within the meter */
   private static float dbToNorm(float db) {
     return Math.max(0f, Math.min(1f, (db - DB_MIN) / (DB_MAX - DB_MIN)));
   }
 
-  /** Convert a down-threshold norm (0..1 param) to dB: norm*60-60 */
   private static float downThreshNormToDb(double norm) {
     return (float) (norm * 60.0 - 60.0);
   }
 
-  /** Convert a dB value to down-threshold norm: (db+60)/60 */
   private static double dbToDownThreshNorm(float db) {
     return Math.max(0.0, Math.min(1.0, (db + 60.0) / 60.0));
   }
 
-  /** Convert an up-threshold norm (0..1 param) to dB: norm*72-60 */
   private static float upThreshNormToDb(double norm) {
     return (float) (norm * 72.0 - 60.0);
   }
 
-  /** Convert a dB value to up-threshold norm: (db+60)/72 */
   private static double dbToUpThreshNorm(float db) {
     return Math.max(0.0, Math.min(1.0, (db + 60.0) / 72.0));
   }
 
-  /**
-   * Band meter panel with 3 horizontal bands (top=High, mid=Mid, bottom=Low). Each band has: -
-   * Left side: upward compression range (cyan bars from left to up_threshold) - Right side:
-   * downward compression threshold marker - Cyan bar: output level - Orange dot: input level -
-   * Thresholds are draggable
-   */
+  /** Convert normalized attack param to ms: attack_ms = 0.1 * 1000^norm */
+  private static float attackNormToMs(double norm) {
+    return (float) (0.1 * Math.pow(1000.0, norm));
+  }
+
+  /** Convert ms to normalized attack param */
+  private static double msToAttackNorm(float ms) {
+    return Math.max(0.0, Math.min(1.0, Math.log10(ms / 0.1) / 3.0));
+  }
+
+  /** Convert normalized release param to ms: release_ms = 10 * 100^norm */
+  private static float releaseNormToMs(double norm) {
+    return (float) (10.0 * Math.pow(100.0, norm));
+  }
+
+  /** Convert ms to normalized release param */
+  private static double msToReleaseNorm(float ms) {
+    return Math.max(0.0, Math.min(1.0, Math.log10(ms / 10.0) / 2.0));
+  }
+
+  /** Convert normalized ratio param to ratio: ratio = 1/(1-norm) */
+  private static float ratioNormToRatio(double norm) {
+    if (norm >= 0.999)
+      return 1000.0f;
+    return 1.0f / (1.0f - (float) norm);
+  }
+
+  /** Convert ratio to normalized param */
+  private static double ratioToNorm(float ratio) {
+    if (ratio >= 999.0f)
+      return 0.999;
+    return Math.max(0.0, Math.min(0.999, 1.0 - 1.0 / ratio));
+  }
+
   // Band index mapping: display order [0=High, 1=Mid, 2=Low]
   // to param order [High=2, Mid=1, Low=0]
   private static final int[] DISPLAY_TO_PARAM = {2, 1, 0};
@@ -342,10 +448,26 @@ public class HottDevicePanel extends JPanel {
   private static final int[] UP_THRESH_PARAMS = {
     PARAM_HIGH_UP_THRESH, PARAM_MID_UP_THRESH, PARAM_LOW_UP_THRESH
   };
+  private static final int[] ATTACK_PARAMS = {
+      PARAM_HIGH_ATTACK, PARAM_MID_ATTACK, PARAM_LOW_ATTACK
+  };
+  private static final int[] RELEASE_PARAMS = {
+      PARAM_HIGH_RELEASE, PARAM_MID_RELEASE, PARAM_LOW_RELEASE
+  };
+  private static final int[] DOWN_RATIO_PARAMS = {
+      PARAM_HIGH_DOWN_RATIO, PARAM_MID_DOWN_RATIO, PARAM_LOW_DOWN_RATIO
+  };
+  private static final int[] UP_RATIO_PARAMS = {
+      PARAM_HIGH_UP_RATIO, PARAM_MID_UP_RATIO, PARAM_LOW_UP_RATIO
+  };
+  private static final int[] IN_GAIN_PARAMS = {
+      PARAM_HIGH_IN, PARAM_MID_IN, PARAM_LOW_IN
+  };
 
   private class BandMeterPanel extends JPanel {
-    private int dragBand = -1; // which band is being dragged
-    private boolean dragIsUp = false; // true=dragging upward thresh, false=downward
+    private int dragBand = -1;
+    private boolean dragIsUp = false;
+    private int dragType = 0; // 0=threshold, 1=att/rel value, 2=ratio
 
     BandMeterPanel() {
       setBackground(Theme.getInstance().BG_DARKER);
@@ -367,7 +489,7 @@ public class HottDevicePanel extends JPanel {
           new MouseMotionAdapter() {
             @Override
             public void mouseDragged(MouseEvent e) {
-              handleDrag(e.getX());
+              handleDrag(e.getX(), e.getY());
             }
           });
     }
@@ -376,32 +498,77 @@ public class HottDevicePanel extends JPanel {
       Theme theme = Theme.getInstance();
       int w = getWidth(), h = getHeight();
       int pad = theme.scale(6);
-      int bandH = (h - pad * 4) / 3;
-      int meterW = w - pad * 2;
+      int tabH = theme.scale(18);
+      int bandAreaH = h - pad * 2 - tabH;
+      int bandH = (bandAreaH - pad * 2) / 3;
 
       for (int b = 0; b < 3; b++) {
         int y = pad + b * (bandH + pad);
         if (my >= y && my < y + bandH) {
           dragBand = b;
-          // Determine if click is on up or down threshold
-          float downDb = downThreshNormToDb(params[DOWN_THRESH_PARAMS[b]]);
-          float upDb = upThreshNormToDb(params[UP_THRESH_PARAMS[b]]);
-          float downX = pad + dbToNorm(downDb) * meterW;
-          float upX = pad + dbToNorm(upDb) * meterW;
-          float clickDb = DB_MIN + (mx - pad) * (DB_MAX - DB_MIN) / meterW;
-          // If closer to up threshold, drag up; otherwise drag down
-          dragIsUp = Math.abs(mx - upX) < Math.abs(mx - downX);
-          handleDrag(mx);
+          int meterW = getMeterWidth();
+          int attRelW = getAttRelWidth();
+          int meterX = pad;
+
+          if (activeTab == TAB_TIME) {
+            // Right side: att/rel area — draggable vertically
+            int attRelX = pad + meterW + theme.scale(4);
+            if (mx >= attRelX) {
+              dragType = 1;
+              // Upper half = attack, lower half = release
+              dragIsUp = (my - y) < bandH / 2;
+              handleDrag(mx, my);
+              return;
+            }
+          }
+          // Threshold drag in meter area
+          dragType = 0;
+          if (activeTab == TAB_BELOW) {
+            dragIsUp = true; // below tab -> upward threshold
+          } else if (activeTab == TAB_ABOVE) {
+            dragIsUp = false; // above tab -> downward threshold
+          } else {
+            // Time tab: determine by proximity
+            float downDb = downThreshNormToDb(params[DOWN_THRESH_PARAMS[b]]);
+            float upDb = upThreshNormToDb(params[UP_THRESH_PARAMS[b]]);
+            float downX = pad + dbToNorm(downDb) * meterW;
+            float upX = pad + dbToNorm(upDb) * meterW;
+            dragIsUp = Math.abs(mx - upX) < Math.abs(mx - downX);
+          }
+          handleDrag(mx, my);
           break;
         }
       }
     }
 
-    private void handleDrag(int mx) {
+    private void handleDrag(int mx, int my) {
       if (dragBand < 0) return;
       Theme theme = Theme.getInstance();
       int pad = theme.scale(6);
-      int meterW = getWidth() - pad * 2;
+      int meterW = getMeterWidth();
+
+      if (dragType == 1) {
+        // Dragging att/rel value — horizontal drag maps to ms
+        int attRelX = pad + meterW + theme.scale(4);
+        int attRelW = getAttRelWidth();
+        float fraction = Math.max(0f, Math.min(1f, (mx - attRelX) / (float) attRelW));
+
+        if (dragIsUp) {
+          // Attack: map fraction to 0.1 - 100ms range (norm space)
+          double norm = fraction;
+          params[ATTACK_PARAMS[dragBand]] = norm;
+          sendParam(ATTACK_PARAMS[dragBand], norm);
+        } else {
+          // Release: map fraction to 10 - 1000ms range (norm space)
+          double norm = fraction;
+          params[RELEASE_PARAMS[dragBand]] = norm;
+          sendParam(RELEASE_PARAMS[dragBand], norm);
+        }
+        repaint();
+        return;
+      }
+
+      // Threshold drag
       float db = DB_MIN + (mx - pad) * (DB_MAX - DB_MIN) / meterW;
       db = Math.max(DB_MIN, Math.min(DB_MAX, db));
 
@@ -419,6 +586,17 @@ public class HottDevicePanel extends JPanel {
       repaint();
     }
 
+    private int getMeterWidth() {
+      Theme theme = Theme.getInstance();
+      int pad = theme.scale(6);
+      int attRelW = getAttRelWidth();
+      return getWidth() - pad * 2 - attRelW - theme.scale(4) - theme.scale(30); // tab area
+    }
+
+    private int getAttRelWidth() {
+      return Theme.getInstance().scale(70);
+    }
+
     @Override
     protected void paintComponent(Graphics g) {
       super.paintComponent(g);
@@ -427,8 +605,12 @@ public class HottDevicePanel extends JPanel {
       Theme theme = Theme.getInstance();
       int w = getWidth(), h = getHeight();
       int pad = theme.scale(6);
-      int bandH = (h - pad * 4) / 3;
-      int meterW = w - pad * 2;
+      int tabAreaW = theme.scale(30);
+      int attRelW = getAttRelWidth();
+      int meterW = w - pad * 2 - attRelW - theme.scale(4) - tabAreaW;
+      int tabH = theme.scale(18);
+      int bandAreaH = h - pad - tabH;
+      int bandH = (bandAreaH - pad * 2) / 3;
 
       // dB gridlines
       g2.setFont(theme.FONT_UI.deriveFont(theme.scale(7.0f)));
@@ -436,11 +618,11 @@ public class HottDevicePanel extends JPanel {
       for (int db : new int[] {-80, -70, -60, -50, -40, -30, -20, -10, 0}) {
         float norm = dbToNorm(db);
         int x = pad + (int) (norm * meterW);
-        g2.drawLine(x, pad, x, h - pad);
+        g2.drawLine(x, pad, x, bandAreaH);
       }
-      // dB labels at bottom
+      // dB labels at bottom of meter area
       g2.setColor(new Color(255, 255, 255, 60));
-      int scaleY = h - 1;
+      int scaleY = bandAreaH + theme.scale(8);
       for (int db : new int[] {-80, -60, -40, -20, 0}) {
         float norm = dbToNorm(db);
         int x = pad + (int) (norm * meterW);
@@ -450,8 +632,21 @@ public class HottDevicePanel extends JPanel {
       Color accentCyan = new Color(0x00D4FF);
       Color cyanDim = new Color(0x00, 0xD4, 0xFF, 80);
       Color meterBg = new Color(0x2A3540);
-      Color downColor = new Color(0x2A3540);
       Color grOrange = new Color(0xFF8C00);
+
+      // --- Att/Rel header ---
+      int attRelX = pad + meterW + theme.scale(4);
+      g2.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(9.0f)));
+      g2.setColor(theme.TEXT_DIM);
+      String attRelHeader;
+      if (activeTab == TAB_TIME) {
+        attRelHeader = "Att/Rel";
+      } else if (activeTab == TAB_BELOW) {
+        attRelHeader = "Below";
+      } else {
+        attRelHeader = "Above";
+      }
+      g2.drawString(attRelHeader, attRelX, pad - 1);
 
       for (int b = 0; b < 3; b++) {
         int y = pad + b * (bandH + pad);
@@ -473,7 +668,7 @@ public class HottDevicePanel extends JPanel {
         int upZoneW = Math.max(0, upX - pad);
         g2.fillRect(pad, y, upZoneW, bandH);
 
-        // Downward compression zone: slightly darker from downward threshold to right
+        // Downward compression zone
         g2.setColor(new Color(0x1A, 0x25, 0x30, 120));
         int downZoneStart = Math.max(pad, downX);
         g2.fillRect(downZoneStart, y, pad + meterW - downZoneStart, bandH);
@@ -486,16 +681,14 @@ public class HottDevicePanel extends JPanel {
           g2.drawLine(gx, y, gx, y + bandH);
         }
 
-        // Upward threshold line (thick cyan)
+        // Threshold lines (thick cyan)
         g2.setColor(accentCyan);
         g2.setStroke(new BasicStroke(2.0f));
         g2.drawLine(upX, y, upX, y + bandH);
-
-        // Downward threshold line (thick cyan)
         g2.drawLine(downX, y, downX, y + bandH);
         g2.setStroke(new BasicStroke(1.0f));
 
-        // Output level bar (bright cyan horizontal bar)
+        // Output level bar
         if (outputDb > DB_MIN) {
           float outNorm = dbToNorm(outputDb);
           int outW = (int) (outNorm * meterW);
@@ -515,34 +708,109 @@ public class HottDevicePanel extends JPanel {
           g2.fillRect(inX - dotW / 2, y + bandH / 2 - dotH / 2, dotW, dotH);
         }
 
-        // Threshold value labels
+        // Threshold value labels in the band
         g2.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(10.0f)));
         g2.setColor(accentCyan);
-        String downText = String.format("%.1f", downDb);
         FontMetrics fm = g2.getFontMetrics();
-        // Down threshold label (positioned near the threshold line)
+        String downText = String.format("%.1f", downDb);
         int dtLabelX = Math.max(pad + 2, downX - fm.stringWidth(downText) - theme.scale(3));
         g2.drawString(downText, dtLabelX, y + bandH - theme.scale(3));
-        // Up threshold label
-        String upText = String.format("%+.1f", upDb);
-        int utLabelX = Math.min(pad + meterW - fm.stringWidth(upText) - 2, upX + theme.scale(3));
-        if (utLabelX < pad + 2) utLabelX = pad + 2;
-        g2.drawString(upText, utLabelX, y + theme.scale(12));
 
-        // Band label + Att/Rel text (right side)
+        // --- Right-side per-band info (depends on active tab) ---
+        g2.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(10.0f)));
+        g2.setColor(accentCyan);
+        FontMetrics fm2 = g2.getFontMetrics();
+
+        if (activeTab == TAB_TIME) {
+          // Show Att/Rel times
+          float attMs = attackNormToMs(params[ATTACK_PARAMS[b]]);
+          float relMs = releaseNormToMs(params[RELEASE_PARAMS[b]]);
+          String attText = String.format("%.1f ms", attMs);
+          String relText = String.format("%.0f ms", relMs);
+          g2.drawString(attText, attRelX, y + theme.scale(12));
+          g2.drawString(relText, attRelX, y + bandH - theme.scale(3));
+        } else if (activeTab == TAB_BELOW) {
+          // Show upward threshold + ratio
+          String thText = String.format("%.1f dB", upDb);
+          float upRatio = ratioNormToRatio(params[UP_RATIO_PARAMS[b]]);
+          String ratioText = String.format("1:%.2f", upRatio);
+          g2.drawString(thText, attRelX, y + theme.scale(12));
+          g2.setColor(new Color(0x00D4FF, true).brighter());
+          g2.drawString(ratioText, attRelX, y + bandH - theme.scale(3));
+        } else {
+          // TAB_ABOVE: show downward threshold + ratio
+          String thText = String.format("%.1f dB", downDb);
+          float downRatio = ratioNormToRatio(params[DOWN_RATIO_PARAMS[b]]);
+          String ratioText = downRatio >= 999f ? "inf:1" : String.format("%.1f:1", downRatio);
+          g2.drawString(thText, attRelX, y + theme.scale(12));
+          g2.setColor(new Color(0x00D4FF, true).brighter());
+          g2.drawString(ratioText, attRelX, y + bandH - theme.scale(3));
+        }
+
+        // Band name label (small, top-right of band area)
         g2.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
         g2.setColor(new Color(255, 255, 255, 100));
-        String bandInfo =
-            String.format(
-                "%s  Att %.1fms  Rel %.0fms", BAND_NAMES[b], BAND_ATTACK[b], BAND_RELEASE[b]);
-        FontMetrics fm2 = g2.getFontMetrics();
+        FontMetrics fm3 = g2.getFontMetrics();
         g2.drawString(
-            bandInfo,
-            pad + meterW - fm2.stringWidth(bandInfo) - theme.scale(2),
+            BAND_NAMES[b],
+                pad + meterW - fm3.stringWidth(BAND_NAMES[b]) - theme.scale(2),
             y + theme.scale(10));
       }
 
+      // --- T/B/A tab buttons (bottom-right corner) ---
+      int tabX = w - tabAreaW - pad;
+      int tabY = bandAreaH + theme.scale(2);
+      int tabBtnW = theme.scale(18);
+      int tabBtnH = theme.scale(14);
+      int tabGap = theme.scale(2);
+      String[] tabLabels = { "T", "B", "A" };
+      int[] tabs = { TAB_TIME, TAB_BELOW, TAB_ABOVE };
+
+      for (int t = 0; t < 3; t++) {
+        int tx = tabX + t * (tabBtnW + tabGap);
+        boolean active = (activeTab == tabs[t]);
+        g2.setColor(active ? accentCyan : new Color(0x3A4550));
+        g2.fillRoundRect(tx, tabY, tabBtnW, tabBtnH, 3, 3);
+        g2.setColor(active ? Color.BLACK : new Color(0xBBBBBB));
+        g2.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(9.0f)));
+        FontMetrics tfm = g2.getFontMetrics();
+        g2.drawString(
+            tabLabels[t],
+            tx + (tabBtnW - tfm.stringWidth(tabLabels[t])) / 2,
+            tabY + tabBtnH - theme.scale(3));
+      }
+
+      // Store tab button positions for click detection
+      this.tabBtnX = tabX;
+      this.tabBtnY = tabY;
+      this.tabBtnW = tabBtnW;
+      this.tabBtnH = tabBtnH;
+      this.tabGap = tabGap;
+
       g2.dispose();
+    }
+
+    // Tab button hit detection state
+    private int tabBtnX, tabBtnY, tabBtnW, tabBtnH, tabGap;
+
+    {
+      // Add click handler for tab buttons
+      addMouseListener(
+          new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+              int mx = e.getX(), my = e.getY();
+              int[] tabs = { TAB_TIME, TAB_BELOW, TAB_ABOVE };
+              for (int t = 0; t < 3; t++) {
+                int tx = tabBtnX + t * (tabBtnW + tabGap);
+                if (mx >= tx && mx < tx + tabBtnW && my >= tabBtnY && my < tabBtnY + tabBtnH) {
+                  activeTab = tabs[t];
+                  repaint();
+                  return;
+                }
+              }
+            }
+          });
     }
   }
 

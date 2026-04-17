@@ -1,6 +1,7 @@
 #include "engine/effects/builtin_compressor.hpp"
 
 #include <cmath>
+#include <cstring>
 
 namespace hibiki {
 
@@ -53,8 +54,27 @@ void BuiltinCompressor::process(float** inputs, float** outputs,
   float peak_input_db = -200.0f;
   float peak_output_db = -200.0f;
 
+  bool use_rms = params_[PARAM_RMS_MODE] >= 0.5;
+
   for (int i = 0; i < num_samples; ++i) {
-    float input_abs = std::max(std::abs(outL[i]), std::abs(outR[i]));
+    float input_abs;
+    if (use_rms) {
+      // Sliding-window RMS detection
+      float sL = outL[i] * outL[i];
+      float sR = outR[i] * outR[i];
+      rms_sum_L_ -= rms_buf_L_[rms_index_];
+      rms_sum_R_ -= rms_buf_R_[rms_index_];
+      rms_buf_L_[rms_index_] = sL;
+      rms_buf_R_[rms_index_] = sR;
+      rms_sum_L_ += sL;
+      rms_sum_R_ += sR;
+      rms_index_ = (rms_index_ + 1) % kRmsWindowSize;
+      float rms_L = std::sqrt(std::max(0.0f, rms_sum_L_ / kRmsWindowSize));
+      float rms_R = std::sqrt(std::max(0.0f, rms_sum_R_ / kRmsWindowSize));
+      input_abs = std::max(rms_L, rms_R);
+    } else {
+      input_abs = std::max(std::abs(outL[i]), std::abs(outR[i]));
+    }
     float input_db =
         (input_abs > 1e-10f) ? 20.0f * std::log10(input_abs) : -200.0f;
     if (input_db > peak_input_db) peak_input_db = input_db;
@@ -90,11 +110,11 @@ int BuiltinCompressor::getParameterCount() const { return kTotalParams; }
 bool BuiltinCompressor::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
   info.id = index;
-  static const char* names[] = {"Threshold", "Ratio",   "Attack",  "Release",
-                                "Knee",      "Makeup",  "Enable",
-                                "UpThresh",  "UpRatio"};
-  static const double defaults[] = {1.0, 0.0, 0.3, 0.3, 0.0, 0.0, 1.0,
-                                    0.0, 0.0};
+  static const char* names[] = {"Threshold", "Ratio",  "Attack", "Release",
+                                "Knee",      "Makeup", "Enable", "UpThresh",
+                                "UpRatio",   "RmsMode"};
+  static const double defaults[] = {1.0, 0.0, 0.3, 0.3, 0.0,
+                                    0.0, 1.0, 0.0, 0.0, 0.0};
   info.name = names[index];
   info.defaultValue = defaults[index];
   return true;
@@ -159,9 +179,15 @@ void BuiltinCompressor::reset() {
   params_[PARAM_ENABLE] = 1.0;
   params_[PARAM_UP_THRESHOLD] = 0.0;  // -60 dB (effectively off)
   params_[PARAM_UP_RATIO] = 0.0;     // 1:1 (no upward comp)
+  params_[PARAM_RMS_MODE] = 0.0;     // Peak detection by default
   enabled_ = true;
   envelope_db_ = 0.0f;
   gain_reduction_db_ = 0.0f;
+  // Clear RMS state
+  std::memset(rms_buf_L_, 0, sizeof(rms_buf_L_));
+  std::memset(rms_buf_R_, 0, sizeof(rms_buf_R_));
+  rms_sum_L_ = rms_sum_R_ = 0.0f;
+  rms_index_ = 0;
 }
 
 float BuiltinCompressor::computeGainReduction(float input_db, float threshold,

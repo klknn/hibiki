@@ -311,12 +311,12 @@ public class CompressorDevicePanel extends JPanel {
         g2.setColor(new Color(0, 200, 220, 60));
         g2.setStroke(
             new BasicStroke(
-                1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10.0f,
-                new float[] { 3, 3 }, 0));
+                1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10.0f, new float[] {3, 3}, 0));
         g2.drawLine(scX, pad, scX, pad + ph);
 
         // SC dot on transfer curve (shows where SC level drives compression)
-        float scOutDb = computeOutputDb(scIn, threshold, ratio, kneeDb, upThreshold, upRatio) + makeup;
+        float scOutDb =
+            computeOutputDb(scIn, threshold, ratio, kneeDb, upThreshold, upRatio) + makeup;
         scOutDb = Math.max(DB_MIN, Math.min(DB_MAX, scOutDb));
         int scY = dbToY(scOutDb, ph, pad);
 

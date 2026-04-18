@@ -15,6 +15,18 @@ import java.util.TreeMap;
 import javax.swing.*;
 
 public class PluginPane extends JPanel {
+  /** Name → panel class for all built-in effects. All must have (int, int) constructor. */
+  private static final Map<String, Class<? extends JPanel>> BUILTIN_DEVICE_PANELS =
+      Map.ofEntries(
+          Map.entry("EQ Eight", EqDevicePanel.class),
+          Map.entry("Compressor", CompressorDevicePanel.class),
+          Map.entry("3xOsc", ThreeOscDevicePanel.class),
+          Map.entry("Sampler", SamplerDevicePanel.class),
+          Map.entry("Delay", DelayDevicePanel.class),
+          Map.entry("Reverb", ReverbDevicePanel.class),
+          Map.entry("Limiter", LimiterDevicePanel.class),
+          Map.entry("Hott", HottDevicePanel.class));
+
   private static PluginPane instance;
   private final JPanel deviceChainContent;
   // Per-track cache: trackIndex -> (pluginIndex -> DevicePanel)
@@ -116,8 +128,8 @@ public class PluginPane extends JPanel {
                         meter.getPluginIndex(),
                         meter.getInputDb(),
                         meter.getOutputDb(),
-                      meter.getGainReductionDb(),
-                      meter.getSidechainDb());
+                        meter.getGainReductionDb(),
+                        meter.getSidechainDb());
                     break;
                   }
                 case PLUGIN_SAMPLE_DATA:
@@ -201,7 +213,11 @@ public class PluginPane extends JPanel {
 
   /** Handle plugin metering data for compressor visualization. */
   private void handlePluginMetering(
-      int trackIdx, int pluginIdx, float inputDb, float outputDb, float gainReductionDb,
+      int trackIdx,
+      int pluginIdx,
+      float inputDb,
+      float outputDb,
+      float gainReductionDb,
       float sidechainDb) {
     SwingUtilities.invokeLater(
         () -> {
@@ -252,66 +268,17 @@ public class PluginPane extends JPanel {
           }
 
           // Detect built-in devices and create specialized panels
-          if ("EQ Eight".equals(pluginName)) {
+          Class<? extends JPanel> builtinClass = BUILTIN_DEVICE_PANELS.get(pluginName);
+          if (builtinClass != null) {
             Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
-            if (!(bi.get(pIdx) instanceof EqDevicePanel)) {
-              bi.put(pIdx, new EqDevicePanel(trackIdx, pIdx));
-            }
-            if (trackIdx == selectedTrack) rebuildDeviceChain();
-            return;
-          }
-          if ("Compressor".equals(pluginName)) {
-            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
-            if (!(bi.get(pIdx) instanceof CompressorDevicePanel)) {
-              bi.put(pIdx, new CompressorDevicePanel(trackIdx, pIdx));
-            }
-            if (trackIdx == selectedTrack) rebuildDeviceChain();
-            return;
-          }
-          if ("3xOsc".equals(pluginName)) {
-            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
-            if (!(bi.get(pIdx) instanceof ThreeOscDevicePanel)) {
-              bi.put(pIdx, new ThreeOscDevicePanel(trackIdx, pIdx));
-            }
-            if (trackIdx == selectedTrack) rebuildDeviceChain();
-            return;
-          }
-          if ("Sampler".equals(pluginName)) {
-            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
-            if (!(bi.get(pIdx) instanceof SamplerDevicePanel)) {
-              bi.put(pIdx, new SamplerDevicePanel(trackIdx, pIdx));
-            }
-            if (trackIdx == selectedTrack) rebuildDeviceChain();
-            return;
-          }
-          if ("Delay".equals(pluginName)) {
-            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
-            if (!(bi.get(pIdx) instanceof DelayDevicePanel)) {
-              bi.put(pIdx, new DelayDevicePanel(trackIdx, pIdx));
-            }
-            if (trackIdx == selectedTrack) rebuildDeviceChain();
-            return;
-          }
-          if ("Reverb".equals(pluginName)) {
-            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
-            if (!(bi.get(pIdx) instanceof ReverbDevicePanel)) {
-              bi.put(pIdx, new ReverbDevicePanel(trackIdx, pIdx));
-            }
-            if (trackIdx == selectedTrack) rebuildDeviceChain();
-            return;
-          }
-          if ("Limiter".equals(pluginName)) {
-            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
-            if (!(bi.get(pIdx) instanceof LimiterDevicePanel)) {
-              bi.put(pIdx, new LimiterDevicePanel(trackIdx, pIdx));
-            }
-            if (trackIdx == selectedTrack) rebuildDeviceChain();
-            return;
-          }
-          if ("Hott".equals(pluginName)) {
-            Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
-            if (!(bi.get(pIdx) instanceof HottDevicePanel)) {
-              bi.put(pIdx, new HottDevicePanel(trackIdx, pIdx));
+            if (!builtinClass.isInstance(bi.get(pIdx))) {
+              try {
+                bi.put(
+                    pIdx,
+                    builtinClass.getConstructor(int.class, int.class).newInstance(trackIdx, pIdx));
+              } catch (Exception ex) {
+                throw new RuntimeException("Failed to create " + pluginName + " panel", ex);
+              }
             }
             if (trackIdx == selectedTrack) rebuildDeviceChain();
             return;
@@ -405,8 +372,7 @@ public class PluginPane extends JPanel {
     // Include all tracks from session view (tracks without effects were missing)
     SessionView sv = SessionView.getInstance();
     if (sv != null) {
-      for (int i = 0; i < sv.getTrackCount(); i++)
-        knownTracks.add(i);
+      for (int i = 0; i < sv.getTrackCount(); i++) knownTracks.add(i);
     }
 
     for (int tidx : knownTracks) {

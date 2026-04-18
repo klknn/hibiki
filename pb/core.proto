@@ -65,7 +65,8 @@ message Plugin {
   string vendor = 5;
   bool is_instrument = 6;  // true = VSTi (generates audio)
   repeated ParamInfo params = 7;
-  optional int32 sidechain_track_index = 8;  // Source track for sidechain (0-based, absent = none)
+  optional int32 sidechain_track_index =
+      8;  // Source track for sidechain (0-based, absent = none)
 }
 
 // Media type discriminator.

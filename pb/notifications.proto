@@ -234,6 +234,7 @@ message PluginMeteringData {
   float input_db = 3;
   float output_db = 4;
   float gain_reduction_db = 5;
+  float sidechain_db = 6;  // Sidechain detection level (-200 = no SC active)
 }
 
 // ─── Notification Envelope ──────────────────────────────────────────

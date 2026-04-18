@@ -60,6 +60,8 @@ void BuiltinCompressor::process(float** inputs, float** outputs,
   // Use sidechain signal for detection if available, else main signal
   float* detL = (sidechain && sidechain[0]) ? sidechain[0] : outL;
   float* detR = (sidechain && sidechain[1]) ? sidechain[1] : outR;
+  bool has_sidechain = (sidechain && sidechain[0] && sidechain[1]);
+  float peak_sidechain_db = -200.0f;
 
   for (int i = 0; i < num_samples; ++i) {
     float input_abs;
@@ -83,6 +85,8 @@ void BuiltinCompressor::process(float** inputs, float** outputs,
     float input_db =
         (input_abs > 1e-10f) ? 20.0f * std::log10(input_abs) : -200.0f;
     if (input_db > peak_input_db) peak_input_db = input_db;
+    if (has_sidechain && input_db > peak_sidechain_db)
+      peak_sidechain_db = input_db;
 
     float gr_db = computeGainReduction(input_db, threshold, ratio, knee_db,
                                        up_threshold, up_ratio);
@@ -108,6 +112,8 @@ void BuiltinCompressor::process(float** inputs, float** outputs,
   gain_reduction_db_ = peak_gr;
   input_db_.store(peak_input_db, std::memory_order_relaxed);
   output_db_.store(peak_output_db, std::memory_order_relaxed);
+  sidechain_db_.store(has_sidechain ? peak_sidechain_db : -200.0f,
+                      std::memory_order_relaxed);
 }
 
 int BuiltinCompressor::getParameterCount() const { return kTotalParams; }
@@ -159,6 +165,10 @@ float BuiltinCompressor::getInputDb() const {
 
 float BuiltinCompressor::getOutputDb() const {
   return output_db_.load(std::memory_order_relaxed);
+}
+
+float BuiltinCompressor::getSidechainDb() const {
+  return sidechain_db_.load(std::memory_order_relaxed);
 }
 
 float BuiltinCompressor::computeOutputDb(float input_db) const {

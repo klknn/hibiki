@@ -47,6 +47,7 @@ public class CompressorDevicePanel extends JPanel {
   // Real-time I/O levels for transfer curve dot
   private float inputLevelDb = -200;
   private float outputLevelDb = -200;
+  private float sidechainLevelDb = -200;
 
   public CompressorDevicePanel(int trackIndex, int pluginIndex) {
     this.trackIndex = trackIndex;
@@ -191,6 +192,12 @@ public class CompressorDevicePanel extends JPanel {
     curvePanel.repaint();
   }
 
+  /** Update sidechain detection level for SC overlay. */
+  public void setSidechainLevel(float scDb) {
+    sidechainLevelDb = scDb;
+    curvePanel.repaint();
+  }
+
   // ─── Transfer curve panel ──────────────────────────────────────
 
   private class TransferCurvePanel extends JPanel {
@@ -293,6 +300,35 @@ public class CompressorDevicePanel extends JPanel {
         g2.setStroke(new BasicStroke(0.5f));
         g2.drawLine(dx, dy, dx, pad + ph);
         g2.drawLine(dx, dy, pad, dy);
+      }
+
+      // Sidechain overlay: show SC input level as cyan indicator
+      if (sidechainLevelDb > -100) {
+        float scIn = Math.max(DB_MIN, Math.min(DB_MAX, sidechainLevelDb));
+        int scX = dbToX(scIn, pw, pad);
+
+        // Vertical SC level line
+        g2.setColor(new Color(0, 200, 220, 60));
+        g2.setStroke(
+            new BasicStroke(
+                1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10.0f,
+                new float[] { 3, 3 }, 0));
+        g2.drawLine(scX, pad, scX, pad + ph);
+
+        // SC dot on transfer curve (shows where SC level drives compression)
+        float scOutDb = computeOutputDb(scIn, threshold, ratio, kneeDb, upThreshold, upRatio) + makeup;
+        scOutDb = Math.max(DB_MIN, Math.min(DB_MAX, scOutDb));
+        int scY = dbToY(scOutDb, ph, pad);
+
+        g2.setColor(new Color(0, 200, 220, 60));
+        g2.fillOval(scX - 6, scY - 6, 12, 12);
+        g2.setColor(new Color(0, 220, 240, 180));
+        g2.fillOval(scX - 3, scY - 3, 6, 6);
+
+        // SC label
+        g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(7.0f)));
+        g2.setColor(new Color(0, 220, 240, 140));
+        g2.drawString("SC", scX + 4, pad + 10);
       }
 
       g2.dispose();

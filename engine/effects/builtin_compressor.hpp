@@ -54,6 +54,7 @@ class BuiltinCompressor : public IPlugin {
   float getGainReductionDb() const;
   float getInputDb() const;
   float getOutputDb() const;
+  float getSidechainDb() const;
 
   // For UI transfer curve rendering
   float computeOutputDb(float input_db) const;
@@ -73,6 +74,7 @@ class BuiltinCompressor : public IPlugin {
   float gain_reduction_db_ = 0.0f;
   std::atomic<float> input_db_{-200.0f};
   std::atomic<float> output_db_{-200.0f};
+  std::atomic<float> sidechain_db_{-200.0f};
 
   // RMS detection ring buffer (~3ms window at 44.1kHz ≈ 128 samples)
   static constexpr int kRmsWindowSize = 128;

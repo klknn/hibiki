@@ -50,6 +50,7 @@ void sendPluginSpectrumData(int track_idx, int plugin_idx,
 
 // Send plugin metering data for compressor visualization
 void sendPluginMeteringData(int track_idx, int plugin_idx, float input_db,
-                            float output_db, float gain_reduction_db);
+                            float output_db, float gain_reduction_db,
+                            float sidechain_db = -200.0f);
 
 }  // namespace hibiki

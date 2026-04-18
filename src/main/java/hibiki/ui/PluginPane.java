@@ -116,7 +116,8 @@ public class PluginPane extends JPanel {
                         meter.getPluginIndex(),
                         meter.getInputDb(),
                         meter.getOutputDb(),
-                        meter.getGainReductionDb());
+                      meter.getGainReductionDb(),
+                      meter.getSidechainDb());
                     break;
                   }
                 case PLUGIN_SAMPLE_DATA:
@@ -200,7 +201,8 @@ public class PluginPane extends JPanel {
 
   /** Handle plugin metering data for compressor visualization. */
   private void handlePluginMetering(
-      int trackIdx, int pluginIdx, float inputDb, float outputDb, float gainReductionDb) {
+      int trackIdx, int pluginIdx, float inputDb, float outputDb, float gainReductionDb,
+      float sidechainDb) {
     SwingUtilities.invokeLater(
         () -> {
           Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
@@ -210,6 +212,7 @@ public class PluginPane extends JPanel {
             CompressorDevicePanel comp = (CompressorDevicePanel) bp;
             comp.setInputOutputLevel(inputDb, outputDb);
             comp.setGainReduction(gainReductionDb);
+            comp.setSidechainLevel(sidechainDb);
           } else if (bp instanceof HottDevicePanel) {
             HottDevicePanel hott = (HottDevicePanel) bp;
             hott.setInputOutputLevel(inputDb, outputDb);
@@ -399,12 +402,23 @@ public class PluginPane extends JPanel {
     java.util.Set<Integer> knownTracks = new java.util.TreeSet<>();
     for (var tk : pane.trackDevicePanels.keySet()) knownTracks.add(tk);
     for (var tk : pane.builtinPanels.keySet()) knownTracks.add(tk);
+    // Include all tracks from session view (tracks without effects were missing)
+    SessionView sv = SessionView.getInstance();
+    if (sv != null) {
+      for (int i = 0; i < sv.getTrackCount(); i++)
+        knownTracks.add(i);
+    }
 
     for (int tidx : knownTracks) {
       if (tidx == trackIndex) continue;
-      String label = "Track " + (tidx + 1);
+      String label = "Track " + tidx;
+      TimelineView tv = TimelineView.getInstance();
+      if (tv != null && tidx < tv.tracks.size()) {
+        label = tidx + " " + tv.tracks.get(tidx).getDisplayName();
+      }
       JMenuItem item = new JMenuItem(label);
-      item.addActionListener(e -> sendSidechainCmd(trackIndex, pluginIndex, tidx));
+      int srcIdx = tidx;
+      item.addActionListener(e -> sendSidechainCmd(trackIndex, pluginIndex, srcIdx));
       menu.add(item);
     }
 

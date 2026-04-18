@@ -457,9 +457,9 @@ void notification_thread(ProjectState& state) {
                                    spec.output_db, BuiltinEq::kSpectrumBins);
           } else if (auto* comp =
                          dynamic_cast<BuiltinCompressor*>(plugin.get())) {
-            sendPluginMeteringData(track_idx, (int)p, comp->getInputDb(),
-                                   comp->getOutputDb(),
-                                   comp->getGainReductionDb());
+            sendPluginMeteringData(
+                track_idx, (int)p, comp->getInputDb(), comp->getOutputDb(),
+                comp->getGainReductionDb(), comp->getSidechainDb());
           } else if (auto* hott = dynamic_cast<BuiltinHott*>(plugin.get())) {
             sendPluginMeteringData(track_idx, (int)p, hott->getInputDb(),
                                    hott->getOutputDb(),

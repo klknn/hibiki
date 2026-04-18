@@ -126,7 +126,7 @@ static void LoadTracksFromProto(ProjectState& state,
                                                   param_data.current_value());
         }
         // Restore sidechain route
-        if (plugin_data.sidechain_track_index() > 0) {
+        if (plugin_data.has_sidechain_track_index()) {
           track->plugin_sidechain[pidx] = {plugin_data.sidechain_track_index()};
         }
       }

@@ -84,6 +84,11 @@ public class ThreeOscDevicePanel extends JPanel {
         });
     btnPanel.add(modBtn);
 
+    JButton scBtn = new JButton("SC");
+    scBtn.setToolTipText("Sidechain Source");
+    scBtn.addActionListener(e -> PluginPane.showSidechainPopup(scBtn, trackIndex, pluginIndex));
+    btnPanel.add(scBtn);
+
     JToggleButton enableBtn = new JToggleButton("On", enabled);
     enableBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     enableBtn.setFocusPainted(false);

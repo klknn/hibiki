@@ -84,6 +84,11 @@ public class SamplerDevicePanel extends JPanel {
         });
     btnPanel.add(modBtn);
 
+    JButton scBtn = new JButton("SC");
+    scBtn.setToolTipText("Sidechain Source");
+    scBtn.addActionListener(e -> PluginPane.showSidechainPopup(scBtn, trackIndex, pluginIndex));
+    btnPanel.add(scBtn);
+
     JButton loadBtn = new JButton("Load");
     loadBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     loadBtn.setFocusPainted(false);

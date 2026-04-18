@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "engine/core/biquad_filter.hpp"
 #include "engine/instruments/adsr.hpp"
-#include "engine/instruments/biquad_filter.hpp"
 #include "engine/plugin/iplugin.hpp"
 
 namespace hibiki {

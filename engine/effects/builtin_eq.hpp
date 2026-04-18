@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "engine/core/biquad_filter.hpp"
 #include "engine/core/fft.hpp"
 #include "engine/plugin/iplugin.hpp"
 
@@ -21,8 +22,6 @@ class BuiltinEq : public IPlugin {
   static constexpr int kSpectrumBins = 64;
   static constexpr const char* kPath = "builtin://eq";
   static constexpr const char* kName = "EQ Eight";
-
-  enum FilterType { OFF = 0, LPF, HPF, LOW_SHELF, HIGH_SHELF, BELL };
 
   BuiltinEq();
 
@@ -62,24 +61,14 @@ class BuiltinEq : public IPlugin {
 
  private:
   struct BandParams {
-    FilterType type = OFF;
+    BiquadFilter::Type type = BiquadFilter::OFF;
     float freq = 1000.0f;
     float gain_db = 0.0f;
     float q = 0.707f;
   };
 
-  struct BiquadCoeffs {
-    float b0 = 1, b1 = 0, b2 = 0;
-    float a1 = 0, a2 = 0;
-  };
-
-  struct BiquadState {
-    float x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-  };
-
   BandParams bands_[kNumBands];
-  BiquadCoeffs coeffs_[kNumBands];
-  BiquadState state_[kNumBands][2];  // [band][channel]
+  BiquadFilter filters_[kNumBands][2];  // [band][channel]
   double params_[kTotalParams] = {};
   double sample_rate_ = 44100.0;
   bool enabled_ = true;
@@ -90,7 +79,6 @@ class BuiltinEq : public IPlugin {
   void reset();
   void updateBand(int b);
   void recalcAllCoeffs();
-  void calcCoeffs(int b);
 
   // --- FFT-based spectrum analysis ---
   static constexpr int kFftSize = SpectrumAnalyzer::kFftSize;

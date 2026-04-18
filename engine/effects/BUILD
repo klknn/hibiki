@@ -21,6 +21,7 @@ cc_library(
     srcs = ["builtin_eq.cpp"],
     hdrs = ["builtin_eq.hpp"],
     deps = [
+        "//engine/core:biquad_filter",
         "//engine/core:fft",
         "//engine/plugin:iplugin",
     ],
@@ -32,6 +33,7 @@ cc_library(
     hdrs = ["builtin_hott.hpp"],
     deps = [
         ":builtin_compressor",
+        "//engine/core:biquad_filter",
         "//engine/plugin:iplugin",
     ],
 )

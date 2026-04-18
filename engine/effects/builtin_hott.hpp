@@ -4,19 +4,11 @@
 #include <string>
 #include <vector>
 
+#include "engine/core/biquad_filter.hpp"
 #include "engine/effects/builtin_compressor.hpp"
 #include "engine/plugin/iplugin.hpp"
 
 namespace hibiki {
-
-// 2nd-order biquad filter section for crossover building blocks.
-struct BiquadState {
-  float x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-};
-
-struct BiquadCoeffs {
-  float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
-};
 
 // OTT-style three-band multiband upward/downward compressor.
 // Path: builtin://hott
@@ -99,13 +91,10 @@ class BuiltinHott : public IPlugin {
 
   // Crossover filter states (LR4 = 2 cascaded biquads per split)
   // Low/High split: 2 biquads per channel per split = 4 biquad states per split
-  BiquadState lp1_L_[2], lp1_R_[2];  // low-pass for low split (2 stages)
-  BiquadState hp1_L_[2], hp1_R_[2];  // high-pass for low split
-  BiquadState lp2_L_[2], lp2_R_[2];  // low-pass for high split
-  BiquadState hp2_L_[2], hp2_R_[2];  // high-pass for high split
-
-  BiquadCoeffs lp1_coeffs_, hp1_coeffs_;
-  BiquadCoeffs lp2_coeffs_, hp2_coeffs_;
+  BiquadFilter lp1_L_[2], lp1_R_[2];  // low-pass for low split (2 stages)
+  BiquadFilter hp1_L_[2], hp1_R_[2];  // high-pass for low split
+  BiquadFilter lp2_L_[2], lp2_R_[2];  // low-pass for high split
+  BiquadFilter hp2_L_[2], hp2_R_[2];  // high-pass for high split
 
   BuiltinCompressor band_comp_[kNumBands];  // Low=0, Mid=1, High=2
 
@@ -116,10 +105,6 @@ class BuiltinHott : public IPlugin {
   void reset();
   void updateBandCompParams();
   void updateCrossoverCoeffs();
-  static BiquadCoeffs computeLowpass(float freq, double sr);
-  static BiquadCoeffs computeHighpass(float freq, double sr);
-  static float processBiquad(BiquadState& state, const BiquadCoeffs& c,
-                             float x);
 };
 
 }  // namespace hibiki

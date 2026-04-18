@@ -82,12 +82,12 @@ void Builtin3xOsc::process(float** /*inputs*/, float** outputs, int num_samples,
       }
 
       voice.filterL.setModulatedCutoff(base_cutoff, filt_depth, filt_val,
-                                       filt_q, (float)sample_rate_);
+                                       filt_q, 0.0f, (float)sample_rate_);
       voice.filterR.setModulatedCutoff(base_cutoff, filt_depth, filt_val,
-                                       filt_q, (float)sample_rate_);
+                                       filt_q, 0.0f, (float)sample_rate_);
       voice.filterL.setParams(filt_type,
                               voice.filterL.process(0) * 0 + base_cutoff,
-                              filt_q, (float)sample_rate_);
+                              filt_q, 0.0f, (float)sample_rate_);
       float filtL = voice.filterL.process(mixL);
       float filtR = voice.filterR.process(mixR);
 

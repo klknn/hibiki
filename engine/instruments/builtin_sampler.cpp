@@ -115,14 +115,14 @@ void BuiltinSampler::process(float** /*inputs*/, float** outputs,
         voice.filter_env.noteOff();
       }
 
-      voice.filterL.setParams(filt_type, base_cutoff, filt_q,
+      voice.filterL.setParams(filt_type, base_cutoff, filt_q, 0.0f,
                               (float)sample_rate_);
-      voice.filterR.setParams(filt_type, base_cutoff, filt_q,
+      voice.filterR.setParams(filt_type, base_cutoff, filt_q, 0.0f,
                               (float)sample_rate_);
       voice.filterL.setModulatedCutoff(base_cutoff, filt_depth, filt_val,
-                                       filt_q, (float)sample_rate_);
+                                       filt_q, 0.0f, (float)sample_rate_);
       voice.filterR.setModulatedCutoff(base_cutoff, filt_depth, filt_val,
-                                       filt_q, (float)sample_rate_);
+                                       filt_q, 0.0f, (float)sample_rate_);
       sL = voice.filterL.process(sL);
       sR = voice.filterR.process(sR);
 

@@ -22,6 +22,12 @@ cc_library(
 )
 
 cc_library(
+    name = "biquad_filter",
+    srcs = ["biquad_filter.cpp"],
+    hdrs = ["biquad_filter.hpp"],
+)
+
+cc_library(
     name = "audio_file",
     srcs = ["audio_file.cpp"],
     hdrs = ["audio_file.hpp"],

@@ -46,31 +46,11 @@ void BuiltinEq::process(float** inputs, float** outputs, int num_samples,
 
   // Process each band
   for (int b = 0; b < kNumBands; ++b) {
-    if (bands_[b].type == OFF) continue;
-    const auto& c = coeffs_[b];
-    auto& sL = state_[b][0];
-    auto& sR = state_[b][1];
+    if (bands_[b].type == BiquadFilter::OFF) continue;
 
     for (int i = 0; i < num_samples; ++i) {
-      // Left channel
-      float xL = outL[i];
-      float yL =
-          c.b0 * xL + c.b1 * sL.x1 + c.b2 * sL.x2 - c.a1 * sL.y1 - c.a2 * sL.y2;
-      sL.x2 = sL.x1;
-      sL.x1 = xL;
-      sL.y2 = sL.y1;
-      sL.y1 = yL;
-      outL[i] = yL;
-
-      // Right channel
-      float xR = outR[i];
-      float yR =
-          c.b0 * xR + c.b1 * sR.x1 + c.b2 * sR.x2 - c.a1 * sR.y1 - c.a2 * sR.y2;
-      sR.x2 = sR.x1;
-      sR.x1 = xR;
-      sR.y2 = sR.y1;
-      sR.y1 = yR;
-      outR[i] = yR;
+      outL[i] = filters_[b][0].process(outL[i]);
+      outR[i] = filters_[b][1].process(outR[i]);
     }
   }
 
@@ -151,14 +131,8 @@ float BuiltinEq::getMagnitudeDb(float freq) const {
   double sin_2w = std::sin(2.0 * w);
 
   for (int b = 0; b < kNumBands; ++b) {
-    if (bands_[b].type == OFF) continue;
-    const auto& c = coeffs_[b];
-    double num_re = c.b0 + c.b1 * cos_w + c.b2 * cos_2w;
-    double num_im = -(c.b1 * sin_w + c.b2 * sin_2w);
-    double den_re = 1.0 + c.a1 * cos_w + c.a2 * cos_2w;
-    double den_im = -(c.a1 * sin_w + c.a2 * sin_2w);
-    double mag_sq = (num_re * num_re + num_im * num_im) /
-                    (den_re * den_re + den_im * den_im);
+    if (bands_[b].type == BiquadFilter::OFF) continue;
+    double mag_sq = filters_[b][0].getMagnitudeSq(cos_w, cos_2w, sin_w, sin_2w);
     if (mag_sq > 0) total_db += 10.0f * std::log10(mag_sq);
   }
   return total_db;
@@ -179,9 +153,8 @@ void BuiltinEq::reset() {
   for (int b = 0; b < kNumBands; ++b) {
     bands_[b] = {};
     bands_[b].freq = defaultFreqs_[b];
-    coeffs_[b] = {};
-    state_[b][0] = {};
-    state_[b][1] = {};
+    filters_[b][0].reset();
+    filters_[b][1].reset();
   }
   for (int b = 0; b < kNumBands; ++b) {
     params_[b] = 0.0;  // type = OFF
@@ -195,101 +168,19 @@ void BuiltinEq::reset() {
 }
 
 void BuiltinEq::updateBand(int b) {
-  double typeNorm = params_[b];
-  if (typeNorm < 0.1)
-    bands_[b].type = OFF;
-  else if (typeNorm < 0.3)
-    bands_[b].type = LPF;
-  else if (typeNorm < 0.5)
-    bands_[b].type = HPF;
-  else if (typeNorm < 0.7)
-    bands_[b].type = LOW_SHELF;
-  else if (typeNorm < 0.9)
-    bands_[b].type = HIGH_SHELF;
-  else
-    bands_[b].type = BELL;
-
+  bands_[b].type = BiquadFilter::normToTypeV2(params_[b]);
   bands_[b].freq = normToFreq(params_[b + kNumBands]);
   bands_[b].gain_db =
       (float)(params_[b + kNumBands * 2] - 0.5) * 48.0f;  // ±24 dB
-  bands_[b].q = normToQ(params_[b + kNumBands * 3]);
-  calcCoeffs(b);
+
+  filters_[b][0].setParams(bands_[b].type, bands_[b].freq, bands_[b].q,
+                           bands_[b].gain_db, (float)sample_rate_);
+  filters_[b][1].setParams(bands_[b].type, bands_[b].freq, bands_[b].q,
+                           bands_[b].gain_db, (float)sample_rate_);
 }
 
 void BuiltinEq::recalcAllCoeffs() {
   for (int b = 0; b < kNumBands; ++b) updateBand(b);
-}
-
-void BuiltinEq::calcCoeffs(int b) {
-  const auto& bp = bands_[b];
-  if (bp.type == OFF) {
-    coeffs_[b] = {1, 0, 0, 0, 0};
-    return;
-  }
-
-  double w0 = 2.0 * std::numbers::pi_v<double> * bp.freq / sample_rate_;
-  double cos_w0 = std::cos(w0);
-  double sin_w0 = std::sin(w0);
-  double alpha = sin_w0 / (2.0 * bp.q);
-  double A = std::pow(10.0, bp.gain_db / 40.0);
-
-  double b0, b1, b2, a0, a1, a2;
-
-  switch (bp.type) {
-    case LPF:
-      b0 = (1 - cos_w0) / 2;
-      b1 = 1 - cos_w0;
-      b2 = (1 - cos_w0) / 2;
-      a0 = 1 + alpha;
-      a1 = -2 * cos_w0;
-      a2 = 1 - alpha;
-      break;
-    case HPF:
-      b0 = (1 + cos_w0) / 2;
-      b1 = -(1 + cos_w0);
-      b2 = (1 + cos_w0) / 2;
-      a0 = 1 + alpha;
-      a1 = -2 * cos_w0;
-      a2 = 1 - alpha;
-      break;
-    case LOW_SHELF: {
-      double sqA = std::sqrt(A);
-      double two_sqA_alpha = 2 * sqA * alpha;
-      b0 = A * ((A + 1) - (A - 1) * cos_w0 + two_sqA_alpha);
-      b1 = 2 * A * ((A - 1) - (A + 1) * cos_w0);
-      b2 = A * ((A + 1) - (A - 1) * cos_w0 - two_sqA_alpha);
-      a0 = (A + 1) + (A - 1) * cos_w0 + two_sqA_alpha;
-      a1 = -2 * ((A - 1) + (A + 1) * cos_w0);
-      a2 = (A + 1) + (A - 1) * cos_w0 - two_sqA_alpha;
-      break;
-    }
-    case HIGH_SHELF: {
-      double sqA = std::sqrt(A);
-      double two_sqA_alpha = 2 * sqA * alpha;
-      b0 = A * ((A + 1) + (A - 1) * cos_w0 + two_sqA_alpha);
-      b1 = -2 * A * ((A - 1) + (A + 1) * cos_w0);
-      b2 = A * ((A + 1) + (A - 1) * cos_w0 - two_sqA_alpha);
-      a0 = (A + 1) - (A - 1) * cos_w0 + two_sqA_alpha;
-      a1 = 2 * ((A - 1) - (A + 1) * cos_w0);
-      a2 = (A + 1) - (A - 1) * cos_w0 - two_sqA_alpha;
-      break;
-    }
-    case BELL:
-    default:
-      b0 = 1 + alpha * A;
-      b1 = -2 * cos_w0;
-      b2 = 1 - alpha * A;
-      a0 = 1 + alpha / A;
-      a1 = -2 * cos_w0;
-      a2 = 1 - alpha / A;
-      break;
-  }
-
-  coeffs_[b].b0 = (float)(b0 / a0);
-  coeffs_[b].b1 = (float)(b1 / a0);
-  coeffs_[b].b2 = (float)(b2 / a0);
-  coeffs_[b].a1 = (float)(a1 / a0);
-  coeffs_[b].a2 = (float)(a2 / a0);
 }
 
 float BuiltinEq::normToFreq(double norm) {

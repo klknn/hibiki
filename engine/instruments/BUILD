@@ -3,10 +3,12 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
-    name = "instrument_utils",
+    name = "adsr",
+    srcs = [
+        "adsr.cpp",
+    ],
     hdrs = [
         "adsr.hpp",
-        "biquad_filter.hpp",
     ],
 )
 
@@ -15,7 +17,8 @@ cc_library(
     srcs = ["builtin_3xosc.cpp"],
     hdrs = ["builtin_3xosc.hpp"],
     deps = [
-        ":instrument_utils",
+        ":adsr",
+        "//engine/core:biquad_filter",
         "//engine/plugin:iplugin",
     ],
 )
@@ -25,8 +28,9 @@ cc_library(
     srcs = ["builtin_sampler.cpp"],
     hdrs = ["builtin_sampler.hpp"],
     deps = [
-        ":instrument_utils",
+        ":adsr",
         "//engine/core:audio_file",
+        "//engine/core:biquad_filter",
         "//engine/plugin:iplugin",
     ],
 )

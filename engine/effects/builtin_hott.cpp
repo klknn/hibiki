@@ -109,10 +109,14 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
   if (last_time_samples_ >= 0 &&
       context.continuousTimeSamples < last_time_samples_) {
     for (int s = 0; s < 2; ++s) {
-      lp1_L_[s] = lp1_R_[s] = {};
-      hp1_L_[s] = hp1_R_[s] = {};
-      lp2_L_[s] = lp2_R_[s] = {};
-      hp2_L_[s] = hp2_R_[s] = {};
+      lp1_L_[s].reset();
+      lp1_R_[s].reset();
+      hp1_L_[s].reset();
+      hp1_R_[s].reset();
+      lp2_L_[s].reset();
+      lp2_R_[s].reset();
+      hp2_L_[s].reset();
+      hp2_R_[s].reset();
     }
   }
   last_time_samples_ = context.continuousTimeSamples + num_samples;
@@ -171,26 +175,18 @@ void BuiltinHott::process(float** inputs, float** outputs, int num_samples,
     if (in_db > peak_input_db) peak_input_db = in_db;
 
     // Low split: LP1 cascaded, HP1 cascaded
-    float lp1_l = processBiquad(lp1_L_[0], lp1_coeffs_, inL);
-    lp1_l = processBiquad(lp1_L_[1], lp1_coeffs_, lp1_l);
-    float hp1_l = processBiquad(hp1_L_[0], hp1_coeffs_, inL);
-    hp1_l = processBiquad(hp1_L_[1], hp1_coeffs_, hp1_l);
+    float lp1_l = lp1_L_[1].process(lp1_L_[0].process(inL));
+    float hp1_l = hp1_L_[1].process(hp1_L_[0].process(inL));
 
-    float lp1_r = processBiquad(lp1_R_[0], lp1_coeffs_, inR);
-    lp1_r = processBiquad(lp1_R_[1], lp1_coeffs_, lp1_r);
-    float hp1_r = processBiquad(hp1_R_[0], hp1_coeffs_, inR);
-    hp1_r = processBiquad(hp1_R_[1], hp1_coeffs_, hp1_r);
+    float lp1_r = lp1_R_[1].process(lp1_R_[0].process(inR));
+    float hp1_r = hp1_R_[1].process(hp1_R_[0].process(inR));
 
     // High split on hp1 output: LP2, HP2
-    float lp2_l = processBiquad(lp2_L_[0], lp2_coeffs_, hp1_l);
-    lp2_l = processBiquad(lp2_L_[1], lp2_coeffs_, lp2_l);
-    float hp2_l = processBiquad(hp2_L_[0], hp2_coeffs_, hp1_l);
-    hp2_l = processBiquad(hp2_L_[1], hp2_coeffs_, hp2_l);
+    float lp2_l = lp2_L_[1].process(lp2_L_[0].process(hp1_l));
+    float hp2_l = hp2_L_[1].process(hp2_L_[0].process(hp1_l));
 
-    float lp2_r = processBiquad(lp2_R_[0], lp2_coeffs_, hp1_r);
-    lp2_r = processBiquad(lp2_R_[1], lp2_coeffs_, lp2_r);
-    float hp2_r = processBiquad(hp2_R_[0], hp2_coeffs_, hp1_r);
-    hp2_r = processBiquad(hp2_R_[1], hp2_coeffs_, hp2_r);
+    float lp2_r = lp2_R_[1].process(lp2_R_[0].process(hp1_r));
+    float hp2_r = hp2_R_[1].process(hp2_R_[0].process(hp1_r));
 
     // Band channels: Low=lp1, Mid=lp2, High=hp2
     bandL[0][i] = lp1_l;
@@ -432,10 +428,14 @@ void BuiltinHott::reset() {
 
   // Clear filter states
   for (int s = 0; s < 2; ++s) {
-    lp1_L_[s] = lp1_R_[s] = {};
-    hp1_L_[s] = hp1_R_[s] = {};
-    lp2_L_[s] = lp2_R_[s] = {};
-    hp2_L_[s] = hp2_R_[s] = {};
+    lp1_L_[s].reset();
+    lp1_R_[s].reset();
+    hp1_L_[s].reset();
+    hp1_R_[s].reset();
+    lp2_L_[s].reset();
+    lp2_R_[s].reset();
+    hp2_L_[s].reset();
+    hp2_R_[s].reset();
   }
 
   updateCrossoverCoeffs();
@@ -502,54 +502,25 @@ void BuiltinHott::updateBandCompParams() {
 void BuiltinHott::updateCrossoverCoeffs() {
   float low_freq = normToFreq(params_[PARAM_LOW_CROSSOVER], 20.0f, 500.0f);
   float high_freq = normToFreq(params_[PARAM_HIGH_CROSSOVER], 500.0f, 20000.0f);
-  lp1_coeffs_ = computeLowpass(low_freq, sample_rate_);
-  hp1_coeffs_ = computeHighpass(low_freq, sample_rate_);
-  lp2_coeffs_ = computeLowpass(high_freq, sample_rate_);
-  hp2_coeffs_ = computeHighpass(high_freq, sample_rate_);
-}
+  for (int i = 0; i < 2; ++i) {
+    lp1_L_[i].setParams(BiquadFilter::LOWPASS, low_freq, 0.7071f, 0.0f,
+                        (float)sample_rate_);
+    lp1_R_[i].setParams(BiquadFilter::LOWPASS, low_freq, 0.7071f, 0.0f,
+                        (float)sample_rate_);
+    hp1_L_[i].setParams(BiquadFilter::HIGHPASS, low_freq, 0.7071f, 0.0f,
+                        (float)sample_rate_);
+    hp1_R_[i].setParams(BiquadFilter::HIGHPASS, low_freq, 0.7071f, 0.0f,
+                        (float)sample_rate_);
 
-BiquadCoeffs BuiltinHott::computeLowpass(float freq, double sr) {
-  float w0 = 2.0f * (float)M_PI * freq / (float)sr;
-  float cos_w0 = std::cos(w0);
-  float sin_w0 = std::sin(w0);
-  // Butterworth Q for LR4 cascade = 0.7071 (sqrt(2)/2)
-  float alpha = sin_w0 / (2.0f * 0.7071f);
-
-  float a0 = 1.0f + alpha;
-  BiquadCoeffs c;
-  c.b0 = ((1.0f - cos_w0) / 2.0f) / a0;
-  c.b1 = (1.0f - cos_w0) / a0;
-  c.b2 = c.b0;
-  c.a1 = (-2.0f * cos_w0) / a0;
-  c.a2 = (1.0f - alpha) / a0;
-  return c;
-}
-
-BiquadCoeffs BuiltinHott::computeHighpass(float freq, double sr) {
-  float w0 = 2.0f * (float)M_PI * freq / (float)sr;
-  float cos_w0 = std::cos(w0);
-  float sin_w0 = std::sin(w0);
-  float alpha = sin_w0 / (2.0f * 0.7071f);
-
-  float a0 = 1.0f + alpha;
-  BiquadCoeffs c;
-  c.b0 = ((1.0f + cos_w0) / 2.0f) / a0;
-  c.b1 = -(1.0f + cos_w0) / a0;
-  c.b2 = c.b0;
-  c.a1 = (-2.0f * cos_w0) / a0;
-  c.a2 = (1.0f - alpha) / a0;
-  return c;
-}
-
-float BuiltinHott::processBiquad(BiquadState& state, const BiquadCoeffs& c,
-                                 float x) {
-  float y = c.b0 * x + c.b1 * state.x1 + c.b2 * state.x2 - c.a1 * state.y1 -
-            c.a2 * state.y2;
-  state.x2 = state.x1;
-  state.x1 = x;
-  state.y2 = state.y1;
-  state.y1 = y;
-  return y;
+    lp2_L_[i].setParams(BiquadFilter::LOWPASS, high_freq, 0.7071f, 0.0f,
+                        (float)sample_rate_);
+    lp2_R_[i].setParams(BiquadFilter::LOWPASS, high_freq, 0.7071f, 0.0f,
+                        (float)sample_rate_);
+    hp2_L_[i].setParams(BiquadFilter::HIGHPASS, high_freq, 0.7071f, 0.0f,
+                        (float)sample_rate_);
+    hp2_R_[i].setParams(BiquadFilter::HIGHPASS, high_freq, 0.7071f, 0.0f,
+                        (float)sample_rate_);
+  }
 }
 
 float BuiltinHott::normToFreq(double norm, float min_hz, float max_hz) {

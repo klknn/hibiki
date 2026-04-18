@@ -13,7 +13,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 public class BackendManager {
-  private static BackendManager instance;
+  private static final BackendManager instance = new BackendManager();
   private Process backendProcess;
   private DataOutputStream out;
   private final ExecutorService executor = Executors.newCachedThreadPool();
@@ -25,10 +25,7 @@ public class BackendManager {
 
   private BackendManager() {}
 
-  public static synchronized BackendManager getInstance() {
-    if (instance == null) {
-      instance = new BackendManager();
-    }
+  public static BackendManager getInstance() {
     return instance;
   }
 

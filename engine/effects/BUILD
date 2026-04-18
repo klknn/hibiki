@@ -3,27 +3,62 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
-    name = "effects",
-    srcs = [
-        "builtin_compressor.cpp",
-        "builtin_delay.cpp",
-        "builtin_eq.cpp",
-        "builtin_hott.cpp",
-        "builtin_limiter.cpp",
-        "builtin_reverb.cpp",
-    ],
-    hdrs = [
-        "builtin_compressor.hpp",
-        "builtin_delay.hpp",
-        "builtin_eq.hpp",
-        "builtin_hott.hpp",
-        "builtin_limiter.hpp",
-        "builtin_reverb.hpp",
-    ],
-    copts = ["-fexceptions"],
+    name = "builtin_compressor",
+    srcs = ["builtin_compressor.cpp"],
+    hdrs = ["builtin_compressor.hpp"],
+    deps = ["//engine/plugin:iplugin"],
+)
+
+cc_library(
+    name = "builtin_delay",
+    srcs = ["builtin_delay.cpp"],
+    hdrs = ["builtin_delay.hpp"],
+    deps = ["//engine/plugin:iplugin"],
+)
+
+cc_library(
+    name = "builtin_eq",
+    srcs = ["builtin_eq.cpp"],
+    hdrs = ["builtin_eq.hpp"],
     deps = [
         "//engine/core:fft",
         "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
+    name = "builtin_hott",
+    srcs = ["builtin_hott.cpp"],
+    hdrs = ["builtin_hott.hpp"],
+    deps = [
+        ":builtin_compressor",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
+    name = "builtin_limiter",
+    srcs = ["builtin_limiter.cpp"],
+    hdrs = ["builtin_limiter.hpp"],
+    deps = ["//engine/plugin:iplugin"],
+)
+
+cc_library(
+    name = "builtin_reverb",
+    srcs = ["builtin_reverb.cpp"],
+    hdrs = ["builtin_reverb.hpp"],
+    deps = ["//engine/plugin:iplugin"],
+)
+
+cc_library(
+    name = "effects",
+    deps = [
+        ":builtin_compressor",
+        ":builtin_delay",
+        ":builtin_eq",
+        ":builtin_hott",
+        ":builtin_limiter",
+        ":builtin_reverb",
     ],
 )
 
@@ -33,7 +68,7 @@ cc_test(
     copts = ["-fexceptions"],
     linkstatic = True,
     deps = [
-        ":effects",
+        ":builtin_eq",
         "@googletest//:gtest_main",
     ],
 )
@@ -43,7 +78,7 @@ cc_test(
     srcs = ["builtin_compressor_test.cpp"],
     linkstatic = True,
     deps = [
-        ":effects",
+        ":builtin_compressor",
         "@googletest//:gtest_main",
     ],
 )
@@ -53,7 +88,7 @@ cc_test(
     srcs = ["builtin_delay_test.cpp"],
     linkstatic = True,
     deps = [
-        ":effects",
+        ":builtin_delay",
         "@googletest//:gtest_main",
     ],
 )
@@ -63,7 +98,7 @@ cc_test(
     srcs = ["builtin_reverb_test.cpp"],
     linkstatic = True,
     deps = [
-        ":effects",
+        ":builtin_reverb",
         "@googletest//:gtest_main",
     ],
 )
@@ -73,7 +108,7 @@ cc_test(
     srcs = ["builtin_limiter_test.cpp"],
     linkstatic = True,
     deps = [
-        ":effects",
+        ":builtin_limiter",
         "@googletest//:gtest_main",
     ],
 )
@@ -83,7 +118,7 @@ cc_test(
     srcs = ["builtin_hott_test.cpp"],
     linkstatic = True,
     deps = [
-        ":effects",
+        ":builtin_hott",
         "@googletest//:gtest_main",
     ],
 )

@@ -190,5 +190,78 @@ TEST(BuiltinCompressorTest, DefaultUpwardHasNoEffect) {
   }
 }
 
+TEST(BuiltinCompressorTest, SidechainDetectionFollowsSidechainSignal) {
+  BuiltinCompressor comp;
+  comp.load("", 0, 44100.0);
+
+  // Set threshold = -20 dB, ratio = 4:1, fast attack/release
+  comp.setParameterValue(BuiltinCompressor::PARAM_THRESHOLD,
+                         (60.0 - 20.0) / 60.0);                  // -20 dB
+  comp.setParameterValue(BuiltinCompressor::PARAM_RATIO, 0.75);  // ~4:1
+  comp.setParameterValue(BuiltinCompressor::PARAM_ATTACK, 0.0);  // fast
+  comp.setParameterValue(BuiltinCompressor::PARAM_RELEASE, 0.0);
+
+  constexpr int N = 4096;
+
+  // Main signal: very quiet (-60 dB), well below threshold
+  float mainL[N], mainR[N];
+  float main_level = 0.001f;
+  for (int i = 0; i < N; ++i) {
+    mainL[i] = mainR[i] = main_level;
+  }
+
+  // Sidechain signal: loud (-6 dB), well above threshold
+  float scL[N], scR[N];
+  for (int i = 0; i < N; ++i) {
+    scL[i] = scR[i] = 0.5f;
+  }
+
+  float* outs[2] = {mainL, mainR};
+  float* sc[2] = {scL, scR};
+  auto ctx = MakeContext();
+  std::vector<MidiNoteEvent> events;
+  comp.process(outs, outs, N, ctx, events, sc);
+
+  // The main signal should be attenuated because the sidechain triggered
+  // gain reduction, even though the main signal itself is below threshold.
+  float last = std::abs(mainL[N - 1]);
+  EXPECT_LT(last, main_level)
+      << "Sidechain detection should compress main signal based on SC level";
+}
+
+TEST(BuiltinCompressorTest, NullptrSidechainBackwardCompatible) {
+  // Run two compressors: one with explicit nullptr, one without sidechain arg
+  BuiltinCompressor comp1, comp2;
+  comp1.load("", 0, 44100.0);
+  comp2.load("", 0, 44100.0);
+
+  comp1.setParameterValue(BuiltinCompressor::PARAM_THRESHOLD,
+                          (60.0 - 20.0) / 60.0);
+  comp1.setParameterValue(BuiltinCompressor::PARAM_RATIO, 0.75);
+  comp2.setParameterValue(BuiltinCompressor::PARAM_THRESHOLD,
+                          (60.0 - 20.0) / 60.0);
+  comp2.setParameterValue(BuiltinCompressor::PARAM_RATIO, 0.75);
+
+  constexpr int N = 2048;
+  float out1L[N], out1R[N], out2L[N], out2R[N];
+  for (int i = 0; i < N; ++i) {
+    out1L[i] = out1R[i] = 0.3f;
+    out2L[i] = out2R[i] = 0.3f;
+  }
+
+  float* outs1[2] = {out1L, out1R};
+  float* outs2[2] = {out2L, out2R};
+  auto ctx = MakeContext();
+  std::vector<MidiNoteEvent> events;
+
+  comp1.process(outs1, outs1, N, ctx, events, nullptr);
+  comp2.process(outs2, outs2, N, ctx, events);  // no sidechain arg
+
+  // Both should produce identical output
+  for (int i = 0; i < N; ++i) {
+    EXPECT_NEAR(out1L[i], out2L[i], 1e-6f) << "Sample " << i;
+  }
+}
+
 }  // namespace
 }  // namespace hibiki

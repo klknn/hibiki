@@ -33,7 +33,8 @@ class PluginProxy : public IPlugin {
   void stopEditor() override;
   void process(float** inputs, float** outputs, int num_samples,
                const HostProcessContext& context,
-               const std::vector<MidiNoteEvent>& events) override;
+               const std::vector<MidiNoteEvent>& events,
+               float** sidechain = nullptr) override;
 
   int getParameterCount() const override;
   bool getParameterInfo(int index, VstParamInfo& info) const override;

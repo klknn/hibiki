@@ -128,7 +128,8 @@ float BuiltinReverb::normToPreDelayMs(double norm) {
 
 void BuiltinReverb::process(float** inputs, float** outputs, int num_samples,
                             const HostProcessContext& /*context*/,
-                            const std::vector<MidiNoteEvent>& /*events*/) {
+                            const std::vector<MidiNoteEvent>& /*events*/,
+                            float** /*sidechain*/) {
   if (!enabled_) {
     for (int i = 0; i < num_samples; ++i) {
       outputs[0][i] = inputs[0][i];

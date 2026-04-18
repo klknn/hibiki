@@ -35,7 +35,8 @@ const std::vector<float>& BuiltinSampler::getWaveformSummary() const {
 
 void BuiltinSampler::process(float** /*inputs*/, float** outputs,
                              int num_samples, const HostProcessContext& context,
-                             const std::vector<MidiNoteEvent>& events) {
+                             const std::vector<MidiNoteEvent>& events,
+                             float** /*sidechain*/) {
   sample_rate_ = context.sampleRate;
 
   for (const auto& ev : events) {

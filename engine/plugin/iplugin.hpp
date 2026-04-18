@@ -48,7 +48,8 @@ class IPlugin {
   virtual void stopEditor() = 0;
   virtual void process(float** inputs, float** outputs, int num_samples,
                        const HostProcessContext& context,
-                       const std::vector<MidiNoteEvent>& events) = 0;
+                       const std::vector<MidiNoteEvent>& events,
+                       float** sidechain = nullptr) = 0;
 
   virtual int getParameterCount() const = 0;
   virtual bool getParameterInfo(int index, VstParamInfo& info) const = 0;

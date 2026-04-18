@@ -15,7 +15,8 @@ bool Builtin3xOsc::load(const std::string& /*path*/, int /*plugin_index*/,
 
 void Builtin3xOsc::process(float** /*inputs*/, float** outputs, int num_samples,
                            const HostProcessContext& context,
-                           const std::vector<MidiNoteEvent>& events) {
+                           const std::vector<MidiNoteEvent>& events,
+                           float** /*sidechain*/) {
   sample_rate_ = context.sampleRate;
 
   for (const auto& ev : events) {

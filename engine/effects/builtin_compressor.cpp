@@ -17,7 +17,8 @@ bool BuiltinCompressor::load(const std::string& /*path*/, int /*plugin_index*/,
 void BuiltinCompressor::process(float** inputs, float** outputs,
                                 int num_samples,
                                 const HostProcessContext& context,
-                                const std::vector<MidiNoteEvent>& /*events*/) {
+                                const std::vector<MidiNoteEvent>& /*events*/,
+                                float** sidechain) {
   if (sample_rate_ != context.sampleRate) {
     sample_rate_ = context.sampleRate;
   }
@@ -56,12 +57,16 @@ void BuiltinCompressor::process(float** inputs, float** outputs,
 
   bool use_rms = params_[PARAM_RMS_MODE] >= 0.5;
 
+  // Use sidechain signal for detection if available, else main signal
+  float* detL = (sidechain && sidechain[0]) ? sidechain[0] : outL;
+  float* detR = (sidechain && sidechain[1]) ? sidechain[1] : outR;
+
   for (int i = 0; i < num_samples; ++i) {
     float input_abs;
     if (use_rms) {
       // Sliding-window RMS detection
-      float sL = outL[i] * outL[i];
-      float sR = outR[i] * outR[i];
+      float sL = detL[i] * detL[i];
+      float sR = detR[i] * detR[i];
       rms_sum_L_ -= rms_buf_L_[rms_index_];
       rms_sum_R_ -= rms_buf_R_[rms_index_];
       rms_buf_L_[rms_index_] = sL;
@@ -73,7 +78,7 @@ void BuiltinCompressor::process(float** inputs, float** outputs,
       float rms_R = std::sqrt(std::max(0.0f, rms_sum_R_ / kRmsWindowSize));
       input_abs = std::max(rms_L, rms_R);
     } else {
-      input_abs = std::max(std::abs(outL[i]), std::abs(outR[i]));
+      input_abs = std::max(std::abs(detL[i]), std::abs(detR[i]));
     }
     float input_db =
         (input_abs > 1e-10f) ? 20.0f * std::log10(input_abs) : -200.0f;

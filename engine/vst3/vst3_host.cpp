@@ -374,14 +374,19 @@ std::vector<PluginDescription> Vst3Plugin::listPlugins(
 
 void Vst3Plugin::process(float** inputs, float** outputs, int numSamples,
                          const HostProcessContext& context,
-                         const std::vector<MidiNoteEvent>& events) {
+                         const std::vector<MidiNoteEvent>& events,
+                         float** sidechain) {
   if (!impl->processor) return;
 
-  Steinberg::Vst::AudioBusBuffers inBuses = {}, outBuses = {};
-  inBuses.numChannels = inputs ? 2 : 0;  // Fixed: 0 channels if no inputs
-  inBuses.silenceFlags = 0;
-  inBuses.channelBuffers32 = inputs;
+  Steinberg::Vst::AudioBusBuffers inBuses[2] = {};
+  inBuses[0].numChannels = inputs ? 2 : 0;
+  inBuses[0].silenceFlags = 0;
+  inBuses[0].channelBuffers32 = inputs;
+  inBuses[1].numChannels = sidechain ? 2 : 0;
+  inBuses[1].silenceFlags = sidechain ? 0ULL : ~0ULL;
+  inBuses[1].channelBuffers32 = sidechain;
 
+  Steinberg::Vst::AudioBusBuffers outBuses = {};
   outBuses.numChannels = 2;
   outBuses.silenceFlags = 0;
   outBuses.channelBuffers32 = outputs;
@@ -417,8 +422,8 @@ void Vst3Plugin::process(float** inputs, float** outputs, int numSamples,
   data.processMode = Steinberg::Vst::kRealtime;
   data.symbolicSampleSize = Steinberg::Vst::kSample32;
   data.numSamples = numSamples;
-  data.numInputs = 1;
-  data.inputs = &inBuses;
+  data.numInputs = sidechain ? 2 : 1;
+  data.inputs = inBuses;
   data.numOutputs = 1;
   data.outputs = &outBuses;
   data.inputParameterChanges =

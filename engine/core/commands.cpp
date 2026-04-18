@@ -773,6 +773,23 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
       }
       break;
     }
+    case pb::commands::PluginCmd::ACTION_SET_SIDECHAIN: {
+      int pidx = cmd.target().plugin_index();
+      int sc_tidx = cmd.sidechain_track_index();
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      if (state.tracks.count(tidx)) {
+        auto& track = state.tracks[tidx];
+        if (sc_tidx < 0) {
+          track->plugin_sidechain.erase(pidx);
+        } else {
+          track->plugin_sidechain[pidx] = {sc_tidx};
+        }
+        sendAck("SET_SIDECHAIN", true);
+      } else {
+        sendAck("SET_SIDECHAIN", false);
+      }
+      break;
+    }
     default:
       break;
   }

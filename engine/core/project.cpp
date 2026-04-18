@@ -48,6 +48,13 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
           }
         }
       }
+
+      // Save sidechain routes
+      auto sc_it = track->plugin_sidechain.find((int)ps->plugin_index());
+      if (sc_it != track->plugin_sidechain.end() &&
+          sc_it->second.source_track_index >= 0) {
+        ps->set_sidechain_track_index(sc_it->second.source_track_index);
+      }
     }
 
     for (const auto& [slot, clip] : track->clips) {
@@ -117,6 +124,10 @@ static void LoadTracksFromProto(ProjectState& state,
         for (const auto& param_data : plugin_data.params()) {
           track->plugins[pidx]->setParameterValue(param_data.id(),
                                                   param_data.current_value());
+        }
+        // Restore sidechain route
+        if (plugin_data.sidechain_track_index() > 0) {
+          track->plugin_sidechain[pidx] = {plugin_data.sidechain_track_index()};
         }
       }
     }

@@ -16,7 +16,8 @@ bool BuiltinEq::load(const std::string& /*path*/, int /*plugin_index*/,
 
 void BuiltinEq::process(float** inputs, float** outputs, int num_samples,
                         const HostProcessContext& context,
-                        const std::vector<MidiNoteEvent>& /*events*/) {
+                        const std::vector<MidiNoteEvent>& /*events*/,
+                        float** /*sidechain*/) {
   if (sample_rate_ != context.sampleRate) {
     sample_rate_ = context.sampleRate;
     recalcAllCoeffs();

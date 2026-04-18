@@ -499,6 +499,14 @@ public class PluginPane extends JPanel {
           });
       btnPanel.add(modBtn);
 
+      // Sidechain source selector (effects only)
+      if (!isInstrument) {
+        JButton scBtn = new JButton("SC");
+        scBtn.setToolTipText("Sidechain Source");
+        scBtn.addActionListener(e -> showSidechainMenu(scBtn));
+        btnPanel.add(scBtn);
+      }
+
       JButton editBtn = new JButton("Edit");
       editBtn.addActionListener(e -> sendShowGui());
       btnPanel.add(editBtn);
@@ -651,6 +659,58 @@ public class PluginPane extends JPanel {
         panels.remove(pluginIndex);
       }
       rebuildDeviceChain();
+    }
+
+    private void showSidechainMenu(JButton source) {
+      JPopupMenu menu = new JPopupMenu("Sidechain Source");
+      menu.setBackground(Theme.getInstance().BG_DARK);
+
+      JMenuItem noneItem = new JMenuItem("None");
+      noneItem.addActionListener(e -> sendSetSidechain(-1));
+      menu.add(noneItem);
+      menu.addSeparator();
+
+      // List all available tracks (only those with lower index for dependency order)
+      Map<Integer, DevicePanel> allDevices =
+          trackDevicePanels.getOrDefault(selectedTrack, java.util.Collections.emptyMap());
+      Map<Integer, JPanel> allBuiltins =
+          builtinPanels.getOrDefault(selectedTrack, java.util.Collections.emptyMap());
+
+      // Gather all known track indices from cached panels
+      java.util.Set<Integer> knownTracks = new java.util.TreeSet<>();
+      for (var tk : trackDevicePanels.keySet()) knownTracks.add(tk);
+      for (var tk : builtinPanels.keySet()) knownTracks.add(tk);
+
+      for (int tidx : knownTracks) {
+        if (tidx == trackIndex) continue; // can't SC from self
+        String label = "Track " + (tidx + 1);
+        JMenuItem item = new JMenuItem(label);
+        item.addActionListener(e -> sendSetSidechain(tidx));
+        menu.add(item);
+      }
+
+      if (knownTracks.isEmpty() || (knownTracks.size() == 1 && knownTracks.contains(trackIndex))) {
+        JMenuItem noTracks = new JMenuItem("(no other tracks)");
+        noTracks.setEnabled(false);
+        menu.add(noTracks);
+      }
+
+      menu.show(source, 0, source.getHeight());
+    }
+
+    private void sendSetSidechain(int sourceTrackIndex) {
+      BackendManager.getInstance()
+          .sendRequest(
+              Request.newBuilder()
+                  .setPlugin(
+                      PluginCmd.newBuilder()
+                          .setAction(PluginCmd.Action.ACTION_SET_SIDECHAIN)
+                          .setTarget(
+                              EntityRef.newBuilder()
+                                  .setTrackIndex(trackIndex)
+                                  .setPluginIndex(pluginIndex))
+                          .setSidechainTrackIndex(sourceTrackIndex))
+                  .build());
     }
   }
 

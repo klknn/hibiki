@@ -135,6 +135,12 @@ class Track {
   std::vector<AutomationLane> automation_lanes;
   std::map<int, PluginModulation> modulations;  // key = plugin_idx
 
+  // Sidechain routing: per-plugin source track index (-1 = no sidechain)
+  struct SidechainRoute {
+    int source_track_index = -1;  // -1 = disabled
+  };
+  std::map<int, SidechainRoute> plugin_sidechain;  // key = plugin_index
+
   int playing_slot = -1;
   double current_time_sec = 0.0;
   int current_midi_idx = 0;

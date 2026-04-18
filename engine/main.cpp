@@ -1,3 +1,4 @@
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -67,6 +68,11 @@ void playback_thread(ProjectState& state) {
   while (!state.quit) {
     std::vector<float> mixBufferL(block_size, 0.0f);
     std::vector<float> mixBufferR(block_size, 0.0f);
+
+    // Sidechain buffer capture: stores post-effects output per track
+    // so downstream tracks can use it as sidechain input.
+    std::map<int, std::pair<std::array<float, 512>, std::array<float, 512>>>
+        sc_buffers;
 
     context.tempo = state.bpm;
 
@@ -345,8 +351,28 @@ void playback_thread(ProjectState& state) {
         // 4. Process effects (skip instrument at slot 0 — already used above)
         for (size_t i = 0; i < track->plugins.size(); ++i) {
           if (i == 0 && track->plugins[i]->isInstrument()) continue;
+          // Check for sidechain source
+          float** sc_ptr = nullptr;
+          float* sc_ch[2] = {nullptr, nullptr};
+          auto sc_it = track->plugin_sidechain.find((int)i);
+          if (sc_it != track->plugin_sidechain.end() &&
+              sc_it->second.source_track_index >= 0) {
+            auto buf_it = sc_buffers.find(sc_it->second.source_track_index);
+            if (buf_it != sc_buffers.end()) {
+              sc_ch[0] = buf_it->second.first.data();
+              sc_ch[1] = buf_it->second.second.data();
+              sc_ptr = sc_ch;
+            }
+          }
           track->plugins[i]->process(outChannels, outChannels, block_size,
-                                     context, {});
+                                     context, {}, sc_ptr);
+        }
+
+        // 4b. Capture post-effects output for sidechain use by later tracks
+        {
+          auto& buf = sc_buffers[pair.first];
+          std::copy(bufferL, bufferL + block_size, buf.first.begin());
+          std::copy(bufferR, bufferR + block_size, buf.second.begin());
         }
 
         // 5. Apply volume and pan, mix to master, compute peak levels

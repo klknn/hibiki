@@ -11,7 +11,7 @@ namespace hibiki {
 TEST(ClipTest, LoadAudioClip) {
   auto clip =
       hibiki::LoadClip(hibiki::find_test_file("testdata/loop140.wav"), true);
-  ASSERT_NE(clip, nullptr);
+  ASSERT_TRUE(clip.ok());
   EXPECT_EQ(clip->type, hibiki::Clip::Type::AUDIO);
   EXPECT_TRUE(clip->is_loop);
   EXPECT_GT(clip->audio_data.size(), 0);
@@ -20,7 +20,7 @@ TEST(ClipTest, LoadAudioClip) {
 
 TEST(ClipTest, LoadMidiClip) {
   auto clip = hibiki::LoadClip(hibiki::find_test_file("testdata/test.mid"));
-  ASSERT_NE(clip, nullptr);
+  ASSERT_TRUE(clip.ok());
   EXPECT_EQ(clip->type, hibiki::Clip::Type::MIDI);
   EXPECT_FALSE(clip->is_loop);
   EXPECT_GT(clip->midi_events.size(), 0);
@@ -30,7 +30,7 @@ TEST(ClipTest, LoadMidiClip) {
 
 TEST(ClipTest, LoadClipFileNotFound) {
   auto clip = hibiki::LoadClip("/nonexistent/path/to/clip.wav");
-  EXPECT_EQ(clip, nullptr) << "LoadClip should return nullptr for missing file";
+  EXPECT_FALSE(clip.ok()) << "LoadClip should return error for missing file";
 }
 
 TEST(ClipTest, LoadClipCorruptedWav) {
@@ -41,8 +41,7 @@ TEST(ClipTest, LoadClipCorruptedWav) {
     out << "THIS_IS_NOT_A_WAV_FILE";
   }
   auto clip = hibiki::LoadClip(tmp);
-  EXPECT_EQ(clip, nullptr)
-      << "LoadClip should return nullptr for corrupted WAV";
+  EXPECT_FALSE(clip.ok()) << "LoadClip should return error for corrupted WAV";
   std::remove(tmp.c_str());
 }
 

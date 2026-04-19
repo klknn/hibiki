@@ -503,22 +503,22 @@ void BuiltinHott::updateCrossoverCoeffs() {
   float low_freq = normToFreq(params_[PARAM_LOW_CROSSOVER], 20.0f, 500.0f);
   float high_freq = normToFreq(params_[PARAM_HIGH_CROSSOVER], 500.0f, 20000.0f);
   for (int i = 0; i < 2; ++i) {
-    lp1_L_[i].setParams(BiquadFilter::LOWPASS, low_freq, 0.7071f, 0.0f,
+    lp1_L_[i].setParams(BiquadFilter::Type::LOWPASS, low_freq, 0.7071f, 0.0f,
                         (float)sample_rate_);
-    lp1_R_[i].setParams(BiquadFilter::LOWPASS, low_freq, 0.7071f, 0.0f,
+    lp1_R_[i].setParams(BiquadFilter::Type::LOWPASS, low_freq, 0.7071f, 0.0f,
                         (float)sample_rate_);
-    hp1_L_[i].setParams(BiquadFilter::HIGHPASS, low_freq, 0.7071f, 0.0f,
+    hp1_L_[i].setParams(BiquadFilter::Type::HIGHPASS, low_freq, 0.7071f, 0.0f,
                         (float)sample_rate_);
-    hp1_R_[i].setParams(BiquadFilter::HIGHPASS, low_freq, 0.7071f, 0.0f,
+    hp1_R_[i].setParams(BiquadFilter::Type::HIGHPASS, low_freq, 0.7071f, 0.0f,
                         (float)sample_rate_);
 
-    lp2_L_[i].setParams(BiquadFilter::LOWPASS, high_freq, 0.7071f, 0.0f,
+    lp2_L_[i].setParams(BiquadFilter::Type::LOWPASS, high_freq, 0.7071f, 0.0f,
                         (float)sample_rate_);
-    lp2_R_[i].setParams(BiquadFilter::LOWPASS, high_freq, 0.7071f, 0.0f,
+    lp2_R_[i].setParams(BiquadFilter::Type::LOWPASS, high_freq, 0.7071f, 0.0f,
                         (float)sample_rate_);
-    hp2_L_[i].setParams(BiquadFilter::HIGHPASS, high_freq, 0.7071f, 0.0f,
+    hp2_L_[i].setParams(BiquadFilter::Type::HIGHPASS, high_freq, 0.7071f, 0.0f,
                         (float)sample_rate_);
-    hp2_R_[i].setParams(BiquadFilter::HIGHPASS, high_freq, 0.7071f, 0.0f,
+    hp2_R_[i].setParams(BiquadFilter::Type::HIGHPASS, high_freq, 0.7071f, 0.0f,
                         (float)sample_rate_);
   }
 }

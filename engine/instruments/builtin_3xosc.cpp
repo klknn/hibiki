@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "absl/base/optimization.h"
+
 namespace hibiki {
 
 Builtin3xOsc::Builtin3xOsc() { reset(); }
@@ -158,27 +160,26 @@ bool Builtin3xOsc::isInstrument() const { return true; }
 // --- Private ---
 
 Builtin3xOsc::Waveform Builtin3xOsc::normToWaveform(float norm) {
-  if (norm < 0.25f) return SINE;
-  if (norm < 0.5f) return SAW;
-  if (norm < 0.75f) return SQUARE;
-  return TRIANGLE;
+  if (norm < 0.25f) return Waveform::SINE;
+  if (norm < 0.5f) return Waveform::SAW;
+  if (norm < 0.75f) return Waveform::SQUARE;
+  return Waveform::TRIANGLE;
 }
 
 float Builtin3xOsc::generateOsc(Waveform wf, double phase, float /*freq*/,
                                 double /*sr*/) {
   float p = (float)phase;
   switch (wf) {
-    case SINE:
+    case Waveform::SINE:
       return std::sin(p * 6.28318530718f);
-    case SAW:
+    case Waveform::SAW:
       return 2.0f * p - 1.0f;
-    case SQUARE:
+    case Waveform::SQUARE:
       return p < 0.5f ? 1.0f : -1.0f;
-    case TRIANGLE:
+    case Waveform::TRIANGLE:
       return p < 0.5f ? (4.0f * p - 1.0f) : (3.0f - 4.0f * p);
-    default:
-      return 0;
   }
+  ABSL_UNREACHABLE();
 }
 
 void Builtin3xOsc::noteOn(int pitch, float velocity) {

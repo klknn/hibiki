@@ -141,7 +141,10 @@ static void LoadTracksFromProto(ProjectState& state,
     for (const auto& tc_data : track_data.timeline_clips()) {
       if (!tc_data.has_clip() || tc_data.clip().path().empty()) continue;
       auto tc = std::make_unique<TimelineClip>();
-      tc->clip = hibiki::LoadClip(tc_data.clip().path());
+      auto result = hibiki::LoadClip(tc_data.clip().path());
+      if (result.ok()) {
+        tc->clip = std::make_unique<Clip>(std::move(*result));
+      }
       tc->start_time_sec = tc_data.start_time_sec();
       tc->duration_sec =
           tc->clip ? tc->clip->duration_sec : tc_data.clip().duration_sec();

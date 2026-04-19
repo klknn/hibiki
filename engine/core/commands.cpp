@@ -149,7 +149,7 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
           Track* track = pair.second.get();
           if (!track->record_armed) continue;
 
-          if (track->record_mode == Track::RECORD_MIDI) {
+          if (track->record_mode == Track::RecordMode::RECORD_MIDI) {
             // Finalize MIDI recording
             if (track->midi_record_buffer.empty()) continue;
 
@@ -324,7 +324,7 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
       for (auto& pair : state.tracks) {
         Track* track = pair.second.get();
         if (track->record_armed) {
-          if (track->record_mode == Track::RECORD_AUDIO &&
+          if (track->record_mode == Track::RecordMode::RECORD_AUDIO &&
               !track->input_device) {
             int ch = track->input_stereo ? 2 : 1;
             track->input_device = SoundDevice::createInput(
@@ -520,8 +520,9 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
     case pb::commands::TrackCmd::ACTION_SET_RECORD_MODE: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       auto track = GetOrCreateTrack(state, tidx);
-      track->record_mode =
-          cmd.record_mode() == 1 ? Track::RECORD_MIDI : Track::RECORD_AUDIO;
+      track->record_mode = cmd.record_mode() == 1
+                               ? Track::RecordMode::RECORD_MIDI
+                               : Track::RecordMode::RECORD_AUDIO;
       sendAck("SET_RECORD_MODE", true);
       break;
     }

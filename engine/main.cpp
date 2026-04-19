@@ -225,7 +225,7 @@ void playback_thread(ProjectState& state) {
 
           // Capture MIDI events for recording (MIDI mode)
           if (state.is_recording && track->record_armed &&
-              track->record_mode == Track::RECORD_MIDI) {
+              track->record_mode == Track::RecordMode::RECORD_MIDI) {
             if (!allEvents.empty()) {
               LOG_EVERY_N_SEC(INFO, 1)
                   << "[MIDI_CAP] track=" << pair.first

@@ -31,28 +31,28 @@ float BiquadFilter::normToCutoff(float norm) {
 float BiquadFilter::normToQ(float norm) { return 0.5f + norm * 19.5f; }
 
 BiquadFilter::Type BiquadFilter::normToType(float norm) {
-  if (norm < 0.2f) return LOWPASS;
-  if (norm < 0.4f) return HIGHPASS;
-  if (norm < 0.6f) return BANDPASS;
-  if (norm < 0.8f) return LOW_SHELF;
-  return HIGH_SHELF;
+  if (norm < 0.2f) return Type::LOWPASS;
+  if (norm < 0.4f) return Type::HIGHPASS;
+  if (norm < 0.6f) return Type::BANDPASS;
+  if (norm < 0.8f) return Type::LOW_SHELF;
+  return Type::HIGH_SHELF;
   // Note: For BuiltinEq, it overrides type mapping entirely.
 }
 
 // For BuiltinEq. TODO: Unify with normToType.
 BiquadFilter::Type BiquadFilter::normToTypeV2(float norm) {
   if (norm < 0.1f)
-    return OFF;
+    return Type::OFF;
   else if (norm < 0.3f)
-    return LOWPASS;
+    return Type::LOWPASS;
   else if (norm < 0.5f)
-    return HIGHPASS;
+    return Type::HIGHPASS;
   else if (norm < 0.7f)
-    return LOW_SHELF;
+    return Type::LOW_SHELF;
   else if (norm < 0.9f)
-    return HIGH_SHELF;
+    return Type::HIGH_SHELF;
   else
-    return BELL;
+    return Type::BELL;
 }
 
 void BiquadFilter::recalc() {
@@ -64,7 +64,7 @@ void BiquadFilter::recalc() {
 
   float a0;
   switch (type_) {
-    case LOWPASS:
+    case Type::LOWPASS:
       b0_ = (1.0f - cw) / 2.0f;
       b1_ = 1.0f - cw;
       b2_ = (1.0f - cw) / 2.0f;
@@ -72,7 +72,7 @@ void BiquadFilter::recalc() {
       a1_ = -2.0f * cw;
       a2_ = 1.0f - alpha;
       break;
-    case HIGHPASS:
+    case Type::HIGHPASS:
       b0_ = (1.0f + cw) / 2.0f;
       b1_ = -(1.0f + cw);
       b2_ = (1.0f + cw) / 2.0f;
@@ -80,7 +80,7 @@ void BiquadFilter::recalc() {
       a1_ = -2.0f * cw;
       a2_ = 1.0f - alpha;
       break;
-    case BANDPASS:
+    case Type::BANDPASS:
       b0_ = alpha;
       b1_ = 0.0f;
       b2_ = -alpha;
@@ -88,7 +88,7 @@ void BiquadFilter::recalc() {
       a1_ = -2.0f * cw;
       a2_ = 1.0f - alpha;
       break;
-    case LOW_SHELF: {
+    case Type::LOW_SHELF: {
       float sqA = std::sqrt(A);
       float two_sqA_alpha = 2.0f * sqA * alpha;
       b0_ = A * ((A + 1.0f) - (A - 1.0f) * cw + two_sqA_alpha);
@@ -99,7 +99,7 @@ void BiquadFilter::recalc() {
       a2_ = (A + 1.0f) + (A - 1.0f) * cw - two_sqA_alpha;
       break;
     }
-    case HIGH_SHELF: {
+    case Type::HIGH_SHELF: {
       float sqA = std::sqrt(A);
       float two_sqA_alpha = 2.0f * sqA * alpha;
       b0_ = A * ((A + 1.0f) + (A - 1.0f) * cw + two_sqA_alpha);
@@ -110,7 +110,7 @@ void BiquadFilter::recalc() {
       a2_ = (A + 1.0f) - (A - 1.0f) * cw - two_sqA_alpha;
       break;
     }
-    case BELL:
+    case Type::BELL:
     default:
       b0_ = 1.0f + alpha * A;
       b1_ = -2.0f * cw;
@@ -129,7 +129,7 @@ void BiquadFilter::recalc() {
 }
 
 float BiquadFilter::process(float x) {
-  if (type_ == OFF) return x;
+  if (type_ == Type::OFF) return x;
   float y = b0_ * x + b1_ * x1_ + b2_ * x2_ - a1_ * y1_ - a2_ * y2_;
   x2_ = x1_;
   x1_ = x;
@@ -140,7 +140,7 @@ float BiquadFilter::process(float x) {
 
 float BiquadFilter::getMagnitudeSq(double cos_w, double cos_2w, double sin_w,
                                    double sin_2w) const {
-  if (type_ == OFF) return 1.0f;
+  if (type_ == Type::OFF) return 1.0f;
   double num_re = b0_ + b1_ * cos_w + b2_ * cos_2w;
   double num_im = -(b1_ * sin_w + b2_ * sin_2w);
   double den_re = 1.0 + a1_ * cos_w + a2_ * cos_2w;

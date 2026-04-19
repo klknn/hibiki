@@ -432,7 +432,7 @@ TEST_F(IntegrationTest, VirtualMidiEventsAreRecorded) {
   int pidx = track->LoadPlugin(GetDexedPath(), 0, kSampleRate);
   ASSERT_GE(pidx, 0) << "Failed to load Dexed";
   track->record_armed = true;
-  track->record_mode = Track::RECORD_MIDI;
+  track->record_mode = Track::RecordMode::RECORD_MIDI;
 
   // Simulate virtual MIDI events being pushed to the queue
   // (same as handleSendVirtualMidi does)
@@ -466,7 +466,7 @@ TEST_F(IntegrationTest, VirtualMidiEventsAreRecorded) {
 
   // Capture MIDI events for recording
   if (state.is_recording && track->record_armed &&
-      track->record_mode == Track::RECORD_MIDI) {
+      track->record_mode == Track::RecordMode::RECORD_MIDI) {
     for (const auto& ev : allEvents) {
       Track::TimestampedMidiEvent tev;
       tev.time_sec =
@@ -505,7 +505,7 @@ TEST_F(IntegrationTest, VirtualMidiEventsAreRecorded) {
   }
 
   if (state.is_recording && track->record_armed &&
-      track->record_mode == Track::RECORD_MIDI) {
+      track->record_mode == Track::RecordMode::RECORD_MIDI) {
     for (const auto& ev : allEvents) {
       Track::TimestampedMidiEvent tev;
       tev.time_sec =

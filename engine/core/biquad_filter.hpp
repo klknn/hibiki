@@ -10,7 +10,7 @@ namespace hibiki {
 // One instance per voice per channel.
 class BiquadFilter {
  public:
-  enum Type {
+  enum class Type {
     OFF = -1,
     LOWPASS = 0,
     HIGHPASS,
@@ -50,7 +50,7 @@ class BiquadFilter {
  private:
   void recalc();
 
-  Type type_ = LOWPASS;
+  Type type_ = Type::LOWPASS;
   float cutoff_ = 20000.0f;
   float q_ = 0.707f;
   float gain_db_ = 0.0f;

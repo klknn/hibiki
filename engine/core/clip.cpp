@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
 #include "engine/core/audio_file.hpp"
 
 namespace hibiki {
@@ -20,15 +22,16 @@ std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
 std::expected<Clip, std::string> MaybeLoadClip(const std::string& path, bool
 is_loop) {
 */
-std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
+absl::StatusOr<Clip> LoadClip(const std::string& path, bool is_loop) {
   Clip clip;
   clip.path = path;
   clip.is_loop = is_loop;
 
   if (path.size() > 4 && path.substr(path.size() - 4) == ".wav") {
-    if (!LoadWav(path, clip.audio_data, clip.num_channels, clip.duration_sec)
-             .ok()) {
-      return nullptr;
+    auto status =
+        LoadWav(path, clip.audio_data, clip.num_channels, clip.duration_sec);
+    if (!status.ok()) {
+      return status;
     }
     clip.type = Clip::Type::AUDIO;
 
@@ -53,7 +56,7 @@ std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
     }
   } else {
     auto events = hibiki::parseMidi(path);
-    // Do not return nullptr even if empty, to allow dropping empty/invalid MIDI
+    // Do not return error even if empty, to allow dropping empty/invalid MIDI
     // clips
     clip.midi_events = std::move(events);
     clip.type = Clip::Type::MIDI;
@@ -91,7 +94,7 @@ std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
     }
   }
 
-  return std::make_unique<Clip>(clip);
+  return clip;
 }
 
 }  // namespace hibiki

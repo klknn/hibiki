@@ -342,7 +342,7 @@ TEST_F(TimelinePlaybackTest, MidiRecordingTimingAtBarStart) {
   // Simulate: start recording at beat 0, play a note immediately, stop
   auto* track = GetOrCreateTrack(state, 0);
   track->record_armed = true;
-  track->record_mode = Track::RECORD_MIDI;
+  track->record_mode = Track::RecordMode::RECORD_MIDI;
 
   // Start recording via transport command
   pb::commands::TransportCmd rec_cmd;
@@ -424,7 +424,7 @@ TEST_F(TimelinePlaybackTest, MidiRecordingTimingAtMidTimeline) {
   state.playhead_pos_sec = 4.0;
   auto* track = GetOrCreateTrack(state, 0);
   track->record_armed = true;
-  track->record_mode = Track::RECORD_MIDI;
+  track->record_mode = Track::RecordMode::RECORD_MIDI;
 
   // Start recording
   pb::commands::TransportCmd rec_cmd;

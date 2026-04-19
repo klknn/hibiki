@@ -61,7 +61,7 @@ class BuiltinEq : public IPlugin {
 
  private:
   struct BandParams {
-    BiquadFilter::Type type = BiquadFilter::OFF;
+    BiquadFilter::Type type = BiquadFilter::Type::OFF;
     float freq = 1000.0f;
     float gain_db = 0.0f;
     float q = 0.707f;

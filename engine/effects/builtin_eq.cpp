@@ -46,7 +46,7 @@ void BuiltinEq::process(float** inputs, float** outputs, int num_samples,
 
   // Process each band
   for (int b = 0; b < kNumBands; ++b) {
-    if (bands_[b].type == BiquadFilter::OFF) continue;
+    if (bands_[b].type == BiquadFilter::Type::OFF) continue;
 
     for (int i = 0; i < num_samples; ++i) {
       outL[i] = filters_[b][0].process(outL[i]);
@@ -131,7 +131,7 @@ float BuiltinEq::getMagnitudeDb(float freq) const {
   double sin_2w = std::sin(2.0 * w);
 
   for (int b = 0; b < kNumBands; ++b) {
-    if (bands_[b].type == BiquadFilter::OFF) continue;
+    if (bands_[b].type == BiquadFilter::Type::OFF) continue;
     double mag_sq = filters_[b][0].getMagnitudeSq(cos_w, cos_2w, sin_w, sin_2w);
     if (mag_sq > 0) total_db += 10.0f * std::log10(mag_sq);
   }

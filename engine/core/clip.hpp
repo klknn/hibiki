@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/status/statusor.h"
 #include "engine/core/midi.hpp"
 #include "pb/core.pb.h"
 
@@ -25,8 +26,6 @@ struct Clip {
   std::vector<hibiki::pb::core::AutomationPoint> automation_points;
 };
 
-std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop = false);
-// std::expected<Clip, std::string> MaybeLoadClip(const std::string& path, bool
-// is_loop = false);
+absl::StatusOr<Clip> LoadClip(const std::string& path, bool is_loop = false);
 
 }  // namespace hibiki

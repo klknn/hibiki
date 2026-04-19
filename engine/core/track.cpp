@@ -141,8 +141,9 @@ bool Track::DeleteClip(int slot) {
 bool Track::LoadClip(int slot, const std::string& path, bool is_loop) {
   std::lock_guard<DummyMutex> lock(mutex);
 
-  auto clip = hibiki::LoadClip(path, is_loop);
-  if (!clip) return false;
+  auto result = hibiki::LoadClip(path, is_loop);
+  if (!result.ok()) return false;
+  auto clip = std::make_unique<Clip>(std::move(*result));
 
   // Exclusivity rule: If loading an audio clip, clear instruments
   if (clip->type == Clip::Type::AUDIO) {
@@ -225,8 +226,9 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec,
     clip->duration_beats = (duration_beats > 0) ? duration_beats : 4.0;
     clip->duration_sec = 0.0;
   } else {
-    clip = hibiki::LoadClip(path);
-    if (!clip) return;
+    auto result = hibiki::LoadClip(path);
+    if (!result.ok()) return;
+    clip = std::make_unique<Clip>(std::move(*result));
   }
 
   auto tc = std::make_unique<TimelineClip>();

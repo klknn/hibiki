@@ -14,9 +14,9 @@ namespace hibiki {
 struct Modulator {
   static constexpr int kMaxSlots = 3;
 
-  enum Waveform { SINE = 0, SAW = 1, SQUARE = 2, RANDOM = 3 };
+  enum class Waveform { SINE = 0, SAW = 1, SQUARE = 2, RANDOM = 3 };
 
-  Waveform waveform = SINE;
+  Waveform waveform = Waveform::SINE;
   float rate_hz = 1.0f;        // LFO frequency (Hz, or beat-relative if synced)
   float depth = 0.0f;          // -1.0 to 1.0 modulation scale
   int plugin_idx = -1;         // target plugin index on the track
@@ -49,16 +49,16 @@ struct Modulator {
     // Generate waveform value in [-1, 1]
     float val = 0.0f;
     switch (waveform) {
-      case SINE:
+      case Waveform::SINE:
         val = (float)std::sin(phase * 2.0 * std::numbers::pi_v<double>);
         break;
-      case SAW:
+      case Waveform::SAW:
         val = (float)(2.0 * phase - 1.0);
         break;
-      case SQUARE:
+      case Waveform::SQUARE:
         val = phase < 0.5 ? 1.0f : -1.0f;
         break;
-      case RANDOM: {
+      case Waveform::RANDOM: {
         // Sample-and-hold: new random value each cycle
         if (phase < random_phase_prev) {
           // Phase wrapped — generate new S&H value

@@ -154,8 +154,9 @@ class Track {
   bool soloed = false;
 
   // Recording state
-  enum RecordMode { RECORD_AUDIO = 0, RECORD_MIDI = 1 };
-  RecordMode record_mode = RECORD_MIDI;  // Default to MIDI for new tracks
+  enum class RecordMode { RECORD_AUDIO = 0, RECORD_MIDI = 1 };
+  RecordMode record_mode =
+      RecordMode::RECORD_MIDI;  // Default to MIDI for new tracks
   bool record_armed = false;
   std::string input_device_id;                // Selected input device
   int input_channel_start = 0;                // 0-based start channel

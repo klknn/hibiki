@@ -20,6 +20,7 @@ cc_library(
         ":adsr",
         "//engine/core:biquad_filter",
         "//engine/plugin:iplugin",
+        "@abseil-cpp//absl/base",
     ],
 )
 

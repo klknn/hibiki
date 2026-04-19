@@ -23,7 +23,7 @@ class Builtin3xOsc : public IPlugin {
   static constexpr const char* kPath = "builtin://3xosc";
   static constexpr const char* kName = "3xOsc";
 
-  enum Waveform { SINE = 0, SAW, SQUARE, TRIANGLE };
+  enum class Waveform { SINE = 0, SAW, SQUARE, TRIANGLE };
 
   enum ParamId {
     P_WAVEFORM = 0,

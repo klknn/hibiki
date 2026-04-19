@@ -429,7 +429,7 @@ TEST_F(IntegrationTest, VirtualMidiEventsAreRecorded) {
   state.record_start_sec = 0.0;
 
   auto track = GetOrCreateTrack(state, 0);
-  int pidx = track->LoadPlugin(GetDexedPath(), 0, kSampleRate);
+  int pidx = track->LoadPlugin(GetDexedPath(), 0, kSampleRate).index;
   ASSERT_GE(pidx, 0) << "Failed to load Dexed";
   track->record_armed = true;
   track->record_mode = Track::RecordMode::RECORD_MIDI;

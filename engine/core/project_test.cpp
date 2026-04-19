@@ -115,7 +115,7 @@ TEST_F(ProjectTest, BounceProjectWithDexed) {
 
   auto track = hibiki::GetOrCreateTrack(state, 0);
   std::string dexed_path = GetDexedPath();
-  int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate);
+  int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate).index;
   ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
 
   std::string mid_path = hibiki::find_test_file("testdata/test.mid");
@@ -156,7 +156,7 @@ TEST_F(ProjectTest, LoadProjectWithTimelineClips) {
   // Build a project with a plugin and a timeline clip
   auto track = hibiki::GetOrCreateTrack(state, 0);
   std::string dexed_path = GetDexedPath();
-  int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate);
+  int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate).index;
   ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
 
   std::string mid_path = hibiki::find_test_file("testdata/test.mid");
@@ -208,7 +208,7 @@ TEST_F(ProjectTest, SaveAndLoadCorrectProjectStructure) {
   // Create a track with BOTH plugin AND timeline clip (correct structure)
   auto track = hibiki::GetOrCreateTrack(state, 1);
   std::string dexed_path = GetDexedPath();
-  int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate);
+  int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate).index;
   ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
 
   std::string mid_path = hibiki::find_test_file("testdata/test.mid");
@@ -257,17 +257,17 @@ TEST_F(ProjectTest, DeletePluginThenLoadNew) {
   std::string dexed_path = GetDexedPath();
 
   // Step 1: Load a plugin
-  int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate);
+  int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate).index;
   ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
   EXPECT_EQ(track->plugins.size(), 1);
 
   // Step 2: Delete the plugin
-  bool removed = track->RemovePlugin(0);
-  EXPECT_TRUE(removed) << "Should successfully remove plugin";
+  auto removed = track->RemovePlugin(0);
+  EXPECT_TRUE(removed != nullptr) << "Should successfully remove plugin";
   EXPECT_EQ(track->plugins.size(), 0) << "Track should now be empty";
 
   // Step 3: Load a new plugin to the now-empty track (this was crashing)
-  int pidx2 = track->LoadPlugin(dexed_path, 0, state.sample_rate);
+  int pidx2 = track->LoadPlugin(dexed_path, 0, state.sample_rate).index;
   ASSERT_GE(pidx2, 0) << "Failed to load Dexed plugin to empty track";
   EXPECT_EQ(track->plugins.size(), 1);
 

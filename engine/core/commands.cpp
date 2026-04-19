@@ -614,34 +614,48 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
     case pb::commands::PluginCmd::ACTION_LOAD: {
       std::string vpath = cmd.path();
       int pidx = cmd.target().plugin_index();
-      std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      history.pushState(CaptureProjectState(state));
-      auto track = GetOrCreateTrack(state, tidx);
-      std::cerr << "BACKEND: Loading plugin: " << vpath << "\n";
-      sendLog("Loading plugin: " + vpath + " ...");
-      int target_idx =
-          track->LoadPlugin(vpath, pidx, state.sample_rate,
-                            state.plugin_host_mode, cmd.remote_host());
-      if (target_idx != -1) {
-        std::vector<VstParamInfo> params;
-        auto& plugin = track->plugins[target_idx];
-        for (int i = 0; i < plugin->getParameterCount(); ++i) {
-          VstParamInfo info;
-          if (plugin->getParameterInfo(i, info)) params.push_back(info);
+      // Displaced plugin must be destroyed OUTSIDE tracks_mutex to avoid
+      // blocking the audio thread during VST3 teardown (editor thread join,
+      // COM release, etc.)
+      std::unique_ptr<IPlugin> displaced;
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        history.pushState(CaptureProjectState(state));
+        auto track = GetOrCreateTrack(state, tidx);
+        std::cerr << "BACKEND: Loading plugin: " << vpath << "\n";
+        sendLog("Loading plugin: " + vpath + " ...");
+        auto result =
+            track->LoadPlugin(vpath, pidx, state.sample_rate,
+                              state.plugin_host_mode, cmd.remote_host());
+        displaced = std::move(result.displaced);
+        int target_idx = result.index;
+        if (target_idx != -1) {
+          std::vector<VstParamInfo> params;
+          auto& plugin = track->plugins[target_idx];
+          for (int i = 0; i < plugin->getParameterCount(); ++i) {
+            VstParamInfo info;
+            if (plugin->getParameterInfo(i, info)) params.push_back(info);
+          }
+          sendParamList(tidx, target_idx, plugin->getName(),
+                        plugin->isInstrument(), params);
+        } else {
+          sendLog("Failed to load plugin: " + vpath);
         }
-        sendParamList(tidx, target_idx, plugin->getName(),
-                      plugin->isInstrument(), params);
-      } else {
-        sendLog("Failed to load plugin: " + vpath);
       }
+      // `displaced` destroyed here, outside the mutex
       break;
     }
     case pb::commands::PluginCmd::ACTION_REMOVE: {
       int pidx = cmd.target().plugin_index();
-      std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      history.pushState(CaptureProjectState(state));
-      auto track = GetOrCreateTrack(state, tidx);
-      sendAck("REMOVE_PLUGIN", track->RemovePlugin(pidx));
+      std::unique_ptr<IPlugin> removed;
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        history.pushState(CaptureProjectState(state));
+        auto track = GetOrCreateTrack(state, tidx);
+        removed = track->RemovePlugin(pidx);
+        sendAck("REMOVE_PLUGIN", removed != nullptr);
+      }
+      // `removed` destroyed here, outside the mutex
       break;
     }
     case pb::commands::PluginCmd::ACTION_SHOW_GUI: {

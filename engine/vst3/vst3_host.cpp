@@ -165,13 +165,17 @@ Vst3Plugin::~Vst3Plugin() {
     }
   }
 
+  // VST3 spec requires: setActive(false) before terminate()
+  if (impl->component) {
+    impl->component->setActive(false);
+  }
+
   if (impl->controller) {
     impl->controller->setComponentHandler(nullptr);
     impl->controller->terminate();
   }
 
   if (impl->component) {
-    impl->component->setActive(false);
     impl->component->terminate();
   }
 
@@ -494,13 +498,15 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(
 #if defined(__APPLE__)
   uint32_t size = sizeof(executable_path);
   if (_NSGetExecutablePath(executable_path, &size) != 0) {
-    LOG(WARNING) << "ISOLATED SCAN: Could not find executable path, falling back to in-process scan";
+    LOG(WARNING) << "ISOLATED SCAN: Could not find executable path, falling "
+                    "back to in-process scan";
     return listPlugins(
         path);  // Fallback to same-process if we can't find ourselves
   }
 #elif defined(_WIN32)
   if (GetModuleFileNameA(NULL, executable_path, sizeof(executable_path)) == 0) {
-    LOG(WARNING) << "ISOLATED SCAN: GetModuleFileNameA failed, falling back to in-process scan";
+    LOG(WARNING) << "ISOLATED SCAN: GetModuleFileNameA failed, falling back to "
+                    "in-process scan";
     return listPlugins(path);
   }
 #else
@@ -511,8 +517,9 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(
   char tmp_buf[L_tmpnam];
   std::string tmp_file = std::tmpnam(tmp_buf);
 #ifdef _WIN32
-  // On Windows, std::system runs cmd /c. If the command starts and ends with quotes,
-  // they are stripped. We wrap the entire command in an extra set of quotes.
+  // On Windows, std::system runs cmd /c. If the command starts and ends with
+  // quotes, they are stripped. We wrap the entire command in an extra set of
+  // quotes.
   std::string cmd = std::string("\"\"") + executable_path + "\" --list \"" +
                     path + "\" > \"" + tmp_file + "\"\"";
 #else
@@ -523,7 +530,8 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(
   LOG(INFO) << "ISOLATED SCAN: Running command: " << cmd;
   int ret = std::system(cmd.c_str());
   if (ret != 0) {
-    LOG(ERROR) << "ISOLATED SCAN: Subprocess failed with exit code " << ret << " for " << path;
+    LOG(ERROR) << "ISOLATED SCAN: Subprocess failed with exit code " << ret
+               << " for " << path;
   }
 
   std::ifstream ifs(tmp_file);
@@ -555,7 +563,8 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(
   }
   ifs.close();
   std::remove(tmp_file.c_str());
-  LOG(INFO) << "ISOLATED SCAN: Found " << plugins.size() << " plugin(s) in " << path;
+  LOG(INFO) << "ISOLATED SCAN: Found " << plugins.size() << " plugin(s) in "
+            << path;
   return plugins;
 }
 }  // namespace hibiki

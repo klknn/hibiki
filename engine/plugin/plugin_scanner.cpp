@@ -6,8 +6,8 @@
 #include <iostream>
 #include <thread>
 
-#include "engine/vst3/vst3_host.hpp"
 #include "absl/log/log.h"
+#include "engine/vst3/vst3_host.hpp"
 
 namespace hibiki {
 
@@ -19,7 +19,8 @@ std::vector<std::string> collectVst3Bundles(
     LOG(INFO) << "Scanning directory: " << dir;
     std::error_code ec;
     if (!std::filesystem::is_directory(dir, ec)) {
-      LOG(WARNING) << "Not a directory: " << dir << " (error: " << ec.message() << ")";
+      LOG(WARNING) << "Not a directory: " << dir << " (error: " << ec.message()
+                   << ")";
       continue;
     }
     for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {

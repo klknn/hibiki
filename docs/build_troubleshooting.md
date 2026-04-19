@@ -101,5 +101,26 @@ for block in content.split('end_of_record'):
 "
 ```
 
-> [!NOTE]
 > Individual test coverage `.dat` files are also available per target in the `testlogs/` directory under `bazel-out/`.
+
+## Bazel Lockfile Stability
+
+If you work across different machines, you might notice `MODULE.bazel.lock` changes unexpectedly.
+
+### Why it happens
+- **Platform differences**: Resolution can vary between Linux/Windows or different architectures.
+- **Bazel version**: Ensure all machines use the version specified in `.bazelversion`.
+- **Environment variables**: Some module extensions respond to local env vars.
+
+### Investigation command
+To find out exactly what is causing the lockfile to be out of date on a specific machine:
+```bash
+bazel mod deps --lockfile_mode=error
+```
+This will print a detailed "Delta" explaining which extension or dependency triggered the update.
+
+### Proposed Fix
+Standardize the environment or pin the lockfile mode in `.bazelrc`:
+```bazel
+common --lockfile_mode=error
+```

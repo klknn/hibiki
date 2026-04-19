@@ -121,6 +121,40 @@ public class MenuBarFactory {
 
     menu.addSeparator();
 
+    // Restart Backend
+    JMenuItem restartBackendItem = new JMenuItem("Restart Backend");
+    restartBackendItem.setAccelerator(
+        KeyStroke.getKeyStroke(KeyEvent.VK_R, mod | InputEvent.SHIFT_DOWN_MASK));
+    restartBackendItem.addActionListener(
+        e -> new Thread(() -> BackendManager.getInstance().restart()).start());
+    menu.add(restartBackendItem);
+
+    // Restart Plugin Workers
+    JMenuItem restartWorkersItem = new JMenuItem("Restart Plugin Workers");
+    restartWorkersItem.addActionListener(
+        e -> BackendManager.getInstance().restartPluginWorkers());
+    menu.add(restartWorkersItem);
+
+    // Restart All
+    JMenuItem restartAllItem = new JMenuItem("Restart All");
+    restartAllItem.setAccelerator(
+        KeyStroke.getKeyStroke(KeyEvent.VK_R, mod | InputEvent.ALT_DOWN_MASK));
+    restartAllItem.addActionListener(
+        e ->
+            new Thread(
+                    () -> {
+                      BackendManager.getInstance().restartPluginWorkers();
+                      try {
+                        Thread.sleep(100);
+                      } catch (InterruptedException ignored) {
+                      }
+                      BackendManager.getInstance().restart();
+                    })
+                .start());
+    menu.add(restartAllItem);
+
+    menu.addSeparator();
+
     // Quit
     JMenuItem quitItem = new JMenuItem("Quit");
     quitItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Q, mod));

@@ -84,7 +84,7 @@ public class BackendManager {
 
   public synchronized void terminateProcess() {
     if (backendProcess != null && backendProcess.isAlive()) {
-      System.err.println("Terminating backend process...");
+      LOG.info("Terminating backend process...");
       backendProcess.destroy();
       try {
         if (!backendProcess.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -105,7 +105,7 @@ public class BackendManager {
   }
 
   public void restart() {
-    System.err.println("Restarting backend...");
+    LOG.info("Restarting backend...");
     terminateProcess();
     // Give it a tiny moment to release resources/ports
     try {
@@ -113,6 +113,16 @@ public class BackendManager {
     } catch (InterruptedException ignored) {
     }
     start();
+  }
+
+  /** Send a command to the engine to restart all out-of-process plugin workers. */
+  public void restartPluginWorkers() {
+    LOG.info("Requesting plugin worker restart...");
+    sendRequest(
+        Request.newBuilder()
+            .setRestartWorkers(
+                hibiki.pb.commands.RestartWorkers.getDefaultInstance())
+            .build());
   }
 
   public void addNotificationListener(Consumer<Notification> listener) {

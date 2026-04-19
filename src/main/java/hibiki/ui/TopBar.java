@@ -145,26 +145,6 @@ public class TopBar extends JPanel {
     JButton settingsBtn = Theme.getInstance().createButton("⚙", e -> showSettings());
     settingsBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
 
-    JButton rebootBtn =
-        Theme.getInstance()
-            .createButton(
-                "🔄",
-                e -> {
-                  int confirm =
-                      JOptionPane.showConfirmDialog(
-                          this,
-                          "Are you sure you want to reboot the backend engine?\n"
-                              + "This will terminate the current engine process and restart it.",
-                          "Reboot Backend",
-                          JOptionPane.YES_NO_OPTION,
-                          JOptionPane.WARNING_MESSAGE);
-                  if (confirm == JOptionPane.YES_OPTION) {
-                    BackendManager.getInstance().restart();
-                  }
-                });
-    rebootBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
-    rebootBtn.setToolTipText("Reboot backend engine and plugin workers");
-
     JButton panicBtn =
         Theme.getInstance()
             .createButton(
@@ -197,6 +177,46 @@ public class TopBar extends JPanel {
     octaveLabel.setForeground(Theme.getInstance().ACCENT_GREEN);
     octaveLabel.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(9)));
     octaveLabel.setVisible(false);
+
+    // Reboot popup button
+    JButton rebootBtn =
+        Theme.getInstance()
+            .createButton(
+                "⟳",
+                e -> {
+                  JPopupMenu popup = new JPopupMenu();
+                  JMenuItem restartBackend = new JMenuItem("Restart Backend");
+                  restartBackend.addActionListener(
+                      ev -> new Thread(() -> BackendManager.getInstance().restart()).start());
+                  popup.add(restartBackend);
+
+                  JMenuItem restartWorkers = new JMenuItem("Restart Plugin Workers");
+                  restartWorkers.addActionListener(
+                      ev -> BackendManager.getInstance().restartPluginWorkers());
+                  popup.add(restartWorkers);
+
+                  popup.addSeparator();
+
+                  JMenuItem restartAll = new JMenuItem("Restart All");
+                  restartAll.addActionListener(
+                      ev ->
+                          new Thread(
+                                  () -> {
+                                    BackendManager.getInstance().restartPluginWorkers();
+                                    try {
+                                      Thread.sleep(100);
+                                    } catch (InterruptedException ignored) {
+                                    }
+                                    BackendManager.getInstance().restart();
+                                  })
+                              .start());
+                  popup.add(restartAll);
+
+                  JButton src = (JButton) e.getSource();
+                  popup.show(src, 0, src.getHeight());
+                });
+    rebootBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
+    rebootBtn.setToolTipText("Restart backend / plugin workers");
 
     rightPanel.add(rateLabel);
     rightPanel.add(cpuLabel);

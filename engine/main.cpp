@@ -626,6 +626,23 @@ void run_ipc_loop(ProjectState& state) {
       case hibiki::pb::commands::Request::kModulation:
         handleModulationCmd(request.modulation(), state);
         break;
+      case hibiki::pb::commands::Request::kRestartWorkers: {
+        LOG(INFO) << "Restarting plugin workers...";
+        int count = 0;
+        for (auto& [idx, track] : state.tracks) {
+          for (auto& plugin : track->plugins) {
+            if (plugin) {
+              // Reload the plugin from its path to reset internal state
+              std::string path = plugin->getPath();
+              int pidx = plugin->getPluginIndex();
+              plugin->load(path, pidx, state.sample_rate);
+              count++;
+            }
+          }
+        }
+        LOG(INFO) << "Reloaded " << count << " plugins";
+        break;
+      }
     }
     if (state.quit) break;
   }

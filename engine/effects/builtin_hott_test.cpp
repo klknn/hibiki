@@ -1,6 +1,7 @@
 #include "engine/effects/builtin_hott.hpp"
 
 #include <cmath>
+#include <numbers>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -147,7 +148,7 @@ TEST_F(BuiltinHottTest, ProcessesSignal) {
   std::vector<float> inL(N), inR(N);
   for (int i = 0; i < N; ++i) {
     float t = i / 44100.0f;
-    inL[i] = 0.3f * std::sin(2.0f * M_PI * 440.0f * t);
+    inL[i] = 0.3f * std::sin(2.0f * std::numbers::pi_v<float> * 440.0f * t);
     inR[i] = inL[i];
   }
   float* bufs[] = {inL.data(), inR.data()};
@@ -170,7 +171,7 @@ TEST_F(BuiltinHottTest, DisabledBypass) {
   std::vector<float> inL(N), inR(N), origL(N), origR(N);
   for (int i = 0; i < N; ++i) {
     float t = i / 44100.0f;
-    inL[i] = origL[i] = 0.5f * std::sin(2.0f * M_PI * 1000.0f * t);
+    inL[i] = origL[i] = 0.5f * std::sin(2.0f * std::numbers::pi_v<float> * 1000.0f * t);
     inR[i] = origR[i] = inL[i];
   }
   float* bufs[] = {inL.data(), inR.data()};
@@ -189,7 +190,7 @@ TEST_F(BuiltinHottTest, BandGainReductionMetering) {
   std::vector<float> inL(N), inR(N);
   for (int i = 0; i < N; ++i) {
     float t = i / 44100.0f;
-    inL[i] = 0.8f * std::sin(2.0f * M_PI * 1000.0f * t);
+    inL[i] = 0.8f * std::sin(2.0f * std::numbers::pi_v<float> * 1000.0f * t);
     inR[i] = inL[i];
   }
   float* bufs[] = {inL.data(), inR.data()};

@@ -2,11 +2,13 @@
 
 #include "engine/audio/midi_input.hpp"
 
+// clang-format off
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <mmsystem.h>
 #include <windows.h>
+#include <mmsystem.h>
+// clang-format on
 
 #include <cstdio>
 #include <mutex>

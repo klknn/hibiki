@@ -181,7 +181,8 @@ public class PianoRoll extends JDialog {
               sequence = new javax.sound.midi.Sequence(javax.sound.midi.Sequence.PPQ, resolution);
               midiTrack = sequence.createTrack();
             } catch (Exception ex) {
-              ex.printStackTrace();
+              java.util.logging.Logger.getLogger(PianoRoll.class.getName())
+                  .log(java.util.logging.Level.WARNING, "Failed to create sequence", ex);
             }
           }
           for (int i = 0; i < data.getEventsCount(); i++) {

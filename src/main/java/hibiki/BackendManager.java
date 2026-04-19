@@ -11,8 +11,11 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class BackendManager {
+  private static final Logger LOG = Logger.getLogger(BackendManager.class.getName());
   private static final BackendManager instance = new BackendManager();
   private Process backendProcess;
   private DataOutputStream out;
@@ -35,10 +38,10 @@ public class BackendManager {
     List<String> cmd = new ArrayList<>();
     cmd.add(binaryPath);
     cmd.addAll(engineFlags);
-    // Default stderr threshold to WARNING (1) if not explicitly set
+    // Default stderr threshold to INFO (0) if not explicitly set
     boolean hasThreshold = engineFlags.stream().anyMatch(f -> f.startsWith("--stderrthreshold"));
     if (!hasThreshold) {
-      cmd.add("--stderrthreshold=1");
+      cmd.add("--stderrthreshold=0");
     }
     return cmd;
   }
@@ -56,10 +59,10 @@ public class BackendManager {
 
       String hbkPlayPath = findBinary(binaryName);
       if (hbkPlayPath == null) {
-        System.err.println("Warning: " + binaryName + " not found, defaulting to ./" + binaryName);
+        LOG.warning(binaryName + " not found, defaulting to ./" + binaryName);
         hbkPlayPath = "./" + binaryName;
       } else {
-        System.err.println("Found " + binaryName + " at " + hbkPlayPath);
+        LOG.info("Found " + binaryName + " at " + hbkPlayPath);
       }
 
       ProcessBuilder pb = new ProcessBuilder(buildEngineCommand(hbkPlayPath));
@@ -75,13 +78,13 @@ public class BackendManager {
       executor.submit(this::readStderr);
 
     } catch (IOException e) {
-      e.printStackTrace();
+      LOG.log(Level.SEVERE, "Failed to start backend", e);
     }
   }
 
   public void stop() {
     if (backendProcess != null && backendProcess.isAlive()) {
-      System.err.println("Stopping backend process...");
+      LOG.info("Stopping backend process...");
       backendProcess.destroy();
       try {
         if (!backendProcess.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -115,8 +118,8 @@ public class BackendManager {
         // Read and verify magic header
         int magic = Integer.reverseBytes(in.readInt());
         if (magic != IPC_MAGIC) {
-          System.err.println(
-              "[READSTDOUT ERROR] Invalid magic: 0x"
+          LOG.warning(
+              "Invalid magic: 0x"
                   + Integer.toHexString(magic)
                   + " at msg#"
                   + msgCount
@@ -128,14 +131,13 @@ public class BackendManager {
             int b = in.readByte() & 0xFF;
             buf = (buf << 8) | b;
             if (buf == 0x494B4248) {
-              System.err.println("[READSTDOUT] Resynced after " + resyncCount + " bytes");
+              LOG.info("Resynced after " + resyncCount + " bytes");
               break;
             }
             resyncCount++;
           }
           if (resyncCount >= 10000) {
-            System.err.println(
-                "[READSTDOUT ERROR] Could not resync after 10000 bytes, skipping...");
+            LOG.severe("Could not resync after 10000 bytes, skipping...");
             continue;
           }
         }
@@ -145,8 +147,7 @@ public class BackendManager {
 
         // Sanity check: messages should never be larger than 10MB
         if (size < 0 || size > 10 * 1024 * 1024) {
-          System.err.println(
-              "[READSTDOUT ERROR] Invalid size: " + size + " at msg#" + msgCount + ", skipping...");
+          LOG.severe("Invalid size: " + size + " at msg#" + msgCount + ", skipping...");
           continue;
         }
 
@@ -157,7 +158,7 @@ public class BackendManager {
         handleNotification(notification);
       }
     } catch (IOException e) {
-      System.err.println("Backend stdout closed: " + e.getMessage());
+      LOG.info("Backend stdout closed: " + e.getMessage());
     }
   }
 
@@ -166,10 +167,11 @@ public class BackendManager {
         new BufferedReader(new InputStreamReader(backendProcess.getErrorStream()))) {
       String line;
       while ((line = reader.readLine()) != null) {
-        System.err.println("[Backend] " + line);
+        // Bypass C++ error messages without logging format duplicate.
+        System.err.println(line);
       }
     } catch (IOException e) {
-      e.printStackTrace();
+      LOG.log(Level.WARNING, "Backend stderr reader failed", e);
     }
   }
 
@@ -184,7 +186,7 @@ public class BackendManager {
           listener.accept(notification);
         } catch (Exception e) {
           // Log listener errors but don't crash
-          e.printStackTrace();
+          LOG.log(Level.WARNING, "Notification listener error", e);
         }
       }
     }
@@ -196,7 +198,7 @@ public class BackendManager {
 
   public synchronized void sendRequest(Request request) {
     if (out == null) {
-      System.err.println("Warning: Backend not ready, request dropped.");
+      LOG.warning("Backend not ready, request dropped.");
       return;
     }
     try {
@@ -207,7 +209,7 @@ public class BackendManager {
       out.write(data);
       out.flush();
     } catch (IOException e) {
-      e.printStackTrace();
+      LOG.log(Level.SEVERE, "Failed to send request", e);
     }
   }
 

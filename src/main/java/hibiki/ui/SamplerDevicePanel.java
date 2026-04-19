@@ -289,7 +289,8 @@ public class SamplerDevicePanel extends JPanel {
                   }
                   dtde.rejectDrop();
                 } catch (Exception ex) {
-                  ex.printStackTrace();
+                  java.util.logging.Logger.getLogger(SamplerDevicePanel.class.getName())
+                      .log(java.util.logging.Level.WARNING, "Drop failed", ex);
                   dtde.rejectDrop();
                 }
               }

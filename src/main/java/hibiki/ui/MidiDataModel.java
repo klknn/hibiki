@@ -5,6 +5,8 @@ import hibiki.pb.notifications.ClipMidiData;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.sound.midi.*;
 import javax.swing.*;
 
@@ -13,6 +15,7 @@ import javax.swing.*;
  * logic from PianoRoll UI rendering.
  */
 class MidiDataModel {
+  private static final Logger LOG = Logger.getLogger(MidiDataModel.class.getName());
 
   /** A single MIDI note with pitch, timing, and velocity. */
   static class Note {
@@ -59,7 +62,7 @@ class MidiDataModel {
       }
       parseTrack(midiTrack);
     } catch (Exception e) {
-      e.printStackTrace();
+      LOG.log(Level.WARNING, "Failed to load MIDI", e);
       try {
         sequence = new Sequence(Sequence.PPQ, 96);
         midiTrack = sequence.createTrack();
@@ -149,7 +152,7 @@ class MidiDataModel {
         sequence = new Sequence(Sequence.PPQ, data.getResolution());
         midiTrack = sequence.createTrack();
       } catch (Exception e) {
-        e.printStackTrace();
+        LOG.log(Level.WARNING, "Failed to update sequence resolution", e);
       }
     }
   }

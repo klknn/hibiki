@@ -17,16 +17,17 @@ public class BackendManagerTest {
   public void testBackendCommunication() throws Exception {
     BackendManager backend = BackendManager.getInstance();
     backend.start();
-    System.err.println("DEBUG_TEST: CWD=" + new File(".").getAbsolutePath());
-    System.err.println("DEBUG_TEST: RUNFILES_DIR=" + System.getenv("RUNFILES_DIR"));
+    java.util.logging.Logger log = java.util.logging.Logger.getLogger("test");
+    log.info("DEBUG_TEST: CWD=" + new File(".").getAbsolutePath());
+    log.info("DEBUG_TEST: RUNFILES_DIR=" + System.getenv("RUNFILES_DIR"));
 
     // Debug: List testdata
     File td = new File("testdata");
     if (td.exists()) {
-      System.err.println("DEBUG_TEST: testdata exists. Contents:");
-      for (String f : td.list()) System.err.println("  " + f);
+      log.info("DEBUG_TEST: testdata exists. Contents:");
+      for (String f : td.list()) log.info("  " + f);
     } else {
-      System.err.println("DEBUG_TEST: testdata does not exist at CWD");
+      log.info("DEBUG_TEST: testdata does not exist at CWD");
     }
 
     CompletableFuture<ParamList> paramListFuture = new CompletableFuture<>();

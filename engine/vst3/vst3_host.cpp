@@ -524,9 +524,9 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(
                     "\" --stderrthreshold=2 --list=\"" + path + "\" > \"" +
                     tmp_file + "\"\"";
 #else
-  std::string cmd =
-      std::string("\"") + executable_path +
-      "\" --stderrthreshold=2 --list=\"" + path + "\" > \"" + tmp_file + "\"";
+  std::string cmd = std::string("\"") + executable_path +
+                    "\" --stderrthreshold=2 --list=\"" + path + "\" > \"" +
+                    tmp_file + "\"";
 #endif
 
   LOG(INFO) << "ISOLATED SCAN: Running command: " << cmd;

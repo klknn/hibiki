@@ -7,11 +7,26 @@ import hibiki.ui.SessionView;
 import hibiki.ui.TimelineView;
 import java.awt.*;
 import java.net.URL;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 
 public class GuiMain {
+  private static final Logger LOG = Logger.getLogger(GuiMain.class.getName());
+
   public static void main(String[] args) {
+    // Configure logging with absl-compatible format
+    Logger rootLogger = Logger.getLogger("");
+    rootLogger.setLevel(Level.INFO);
+    for (Handler h : rootLogger.getHandlers()) rootLogger.removeHandler(h);
+    ConsoleHandler handler = new ConsoleHandler();
+    handler.setLevel(Level.ALL);
+    handler.setFormatter(new AbslFormatter());
+    rootLogger.addHandler(handler);
+
     // Linux HiDPI scaling - must be set before any AWT/Swing initialization
     String os = System.getProperty("os.name").toLowerCase();
     if (os.contains("linux")) {
@@ -41,15 +56,17 @@ public class GuiMain {
     try {
       UIManager.setLookAndFeel(new FlatDarkLaf());
     } catch (Exception ex) {
-      System.err.println("Failed to initialize LaF");
+      LOG.warning("Failed to initialize LaF");
     }
 
     // Forward absl-compatible engine flags to hbk-play backend
     // Supported: --stderrthreshold=N, --minloglevel=N, --v=N, -v=N
     java.util.List<String> engineFlags = new java.util.ArrayList<>();
     for (String arg : args) {
-      if (arg.startsWith("--stderrthreshold") || arg.startsWith("--minloglevel")
-          || arg.startsWith("--v=") || arg.startsWith("-v=")) {
+      if (arg.startsWith("--stderrthreshold")
+          || arg.startsWith("--minloglevel")
+          || arg.startsWith("--v=")
+          || arg.startsWith("-v=")) {
         engineFlags.add(arg);
       }
     }
@@ -85,7 +102,7 @@ public class GuiMain {
               }
             }
           } catch (Exception e) {
-            System.err.println("Failed to load app icon: " + e.getMessage());
+            LOG.warning("Failed to load app icon: " + e.getMessage());
           }
 
           MainView mainView = new MainView();

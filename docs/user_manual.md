@@ -47,7 +47,7 @@ Both the GUI and `hbk-play` support [abseil logging flags](https://github.com/ab
 ./bazel-bin/engine/hbk-play --stderrthreshold=2 project.hbk
 ```
 
-> **Note:** The GUI defaults to `--stderrthreshold=1` (warning). Pass `--stderrthreshold=0` to see INFO-level engine logs.
+> **Note:** The GUI defaults to `--stderrthreshold=0` (info). Pass `--stderrthreshold=1` to show only warnings and errors.
 
 ---
 

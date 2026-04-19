@@ -632,7 +632,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 dtde.rejectDrop();
               }
             } catch (Exception e) {
-              e.printStackTrace();
+              java.util.logging.Logger.getLogger(TimelineView.class.getName())
+                  .log(java.util.logging.Level.WARNING, "Drop failed", e);
               dtde.rejectDrop();
             }
           }

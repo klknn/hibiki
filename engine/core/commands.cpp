@@ -805,6 +805,22 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
       }
       break;
     }
+    case pb::commands::PluginCmd::ACTION_SET_BYPASS: {
+      int pidx = cmd.target().plugin_index();
+      bool bypassed = !cmd.flag();  // flag=true means "on", so bypassed = !on
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      if (state.tracks.count(tidx)) {
+        auto& track = state.tracks[tidx];
+        if (bypassed) {
+          track->plugin_bypass[pidx] = true;
+        } else {
+          track->plugin_bypass.erase(pidx);
+        }
+        LOG(INFO) << "Plugin " << pidx << " on track " << tidx
+                  << (bypassed ? " bypassed" : " enabled");
+      }
+      break;
+    }
     default:
       break;
   }

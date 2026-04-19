@@ -373,7 +373,8 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
                 blockEvents.push_back(e);
               }
             }
-            if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
+            if (!track->plugins.empty() && track->plugins[0]->isInstrument()
+                && !track->plugin_bypass.count(0)) {
               track->plugins[0]->process(nullptr, outChannels, block_size,
                                          context, blockEvents);
             }
@@ -410,6 +411,7 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
 
       for (size_t i = 0; i < track->plugins.size(); ++i) {
         if (i == 0 && track->plugins[i]->isInstrument()) continue;
+        if (track->plugin_bypass.count((int)i)) continue;  // bypassed
         track->plugins[i]->process(outChannels, outChannels, block_size,
                                    context, {});
       }

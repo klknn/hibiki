@@ -524,8 +524,8 @@ public class PluginPane extends JPanel {
 
       setLayout(new BorderLayout());
       setPreferredSize(
-          new Dimension(Theme.getInstance().scale(250), Theme.getInstance().scale(220)));
-      setMaximumSize(new Dimension(Theme.getInstance().scale(250), Short.MAX_VALUE));
+          new Dimension(Theme.getInstance().scale(300), Theme.getInstance().scale(220)));
+      setMaximumSize(new Dimension(Theme.getInstance().scale(300), Short.MAX_VALUE));
       setBackground(Theme.getInstance().BG_MEDIUM);
       setBorder(BorderFactory.createLineBorder(Theme.getInstance().BORDER));
 
@@ -541,6 +541,28 @@ public class PluginPane extends JPanel {
 
       JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
       btnPanel.setOpaque(false);
+
+      JToggleButton onBtn = new JToggleButton("On", true);
+      onBtn.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(9.0f)));
+      onBtn.setFocusPainted(false);
+      onBtn.setToolTipText("Enable/bypass this plugin");
+      onBtn.addActionListener(
+          e -> {
+            boolean on = onBtn.isSelected();
+            BackendManager.getInstance()
+                .sendRequest(
+                    Request.newBuilder()
+                        .setPlugin(
+                            PluginCmd.newBuilder()
+                                .setAction(PluginCmd.Action.ACTION_SET_BYPASS)
+                                .setTarget(
+                                    EntityRef.newBuilder()
+                                        .setTrackIndex(trackIndex)
+                                        .setPluginIndex(pluginIndex))
+                                .setFlag(on))
+                        .build());
+          });
+      btnPanel.add(onBtn);
 
       JButton modBtn = new JButton("Mod");
       modBtn.addActionListener(

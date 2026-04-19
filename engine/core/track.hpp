@@ -140,6 +140,7 @@ class Track {
     int source_track_index = -1;  // -1 = disabled
   };
   std::map<int, SidechainRoute> plugin_sidechain;  // key = plugin_index
+  std::map<int, bool> plugin_bypass;               // key = plugin_index, true = bypassed
 
   int playing_slot = -1;
   double current_time_sec = 0.0;

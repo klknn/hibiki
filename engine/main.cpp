@@ -267,8 +267,10 @@ void playback_thread(ProjectState& state) {
           // Always call process() — instruments must render every block
           // (sustained notes, envelopes, effects tails) even without new
           // events.
-          track->plugins[0]->process(nullptr, outChannels, block_size, context,
-                                     allEvents);
+          if (!track->plugin_bypass.count(0)) {
+            track->plugins[0]->process(nullptr, outChannels, block_size, context,
+                                       allEvents);
+          }
         }
 
         // 2. Timeline clip playback
@@ -373,6 +375,7 @@ void playback_thread(ProjectState& state) {
         // 4. Process effects (skip instrument at slot 0 — already used above)
         for (size_t i = 0; i < track->plugins.size(); ++i) {
           if (i == 0 && track->plugins[i]->isInstrument()) continue;
+          if (track->plugin_bypass.count((int)i)) continue;  // bypassed
           // Check for sidechain source
           float** sc_ptr = nullptr;
           float* sc_ch[2] = {nullptr, nullptr};

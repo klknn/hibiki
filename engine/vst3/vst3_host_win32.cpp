@@ -4,6 +4,7 @@
 #include <iostream>
 #include <thread>
 
+#include "absl/log/log.h"
 #include "engine/vst3/vst3_host.hpp"
 #include "engine/vst3/vst3_host_impl.hpp"
 #include "pluginterfaces/gui/iplugview.h"
@@ -24,7 +25,7 @@ static LRESULT CALLBACK VstWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam,
 
 void Vst3Plugin::showEditor() {
   if (!impl->controller) {
-    std::cerr << "No controller available for showing editor" << std::endl;
+    LOG(INFO) << "No controller available for showing editor";
     return;
   }
 
@@ -36,7 +37,7 @@ void Vst3Plugin::showEditor() {
     Steinberg::IPtr<Steinberg::IPlugView> view = Steinberg::owned(
         impl->controller->createView(Steinberg::Vst::ViewType::kEditor));
     if (!view) {
-      std::cerr << "Plugin does not provide an editor view" << std::endl;
+      LOG(INFO) << "Plugin does not provide an editor view";
       impl->editorRunning = false;
       return;
     }
@@ -59,7 +60,7 @@ void Vst3Plugin::showEditor() {
                        width + 16, height + 39, NULL, NULL, hInstance, NULL);
 
     if (!hwnd) {
-      std::cerr << "Failed to create window" << std::endl;
+      LOG(ERROR) << "Failed to create window";
       impl->editorRunning = false;
       return;
     }
@@ -69,7 +70,7 @@ void Vst3Plugin::showEditor() {
 
     if (view->attached((void*)hwnd, Steinberg::kPlatformTypeHWND) !=
         Steinberg::kResultTrue) {
-      std::cerr << "Failed to attach view to HWND" << std::endl;
+      LOG(ERROR) << "Failed to attach view to HWND";
       DestroyWindow(hwnd);
       impl->editorRunning = false;
       return;

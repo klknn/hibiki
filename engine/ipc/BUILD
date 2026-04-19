@@ -30,6 +30,7 @@ cc_library(
         "@platforms//os:macos": [],
         "//conditions:default": ["-lrt"],
     }),
+    deps = ["@abseil-cpp//absl/log"],
 )
 
 cc_library(
@@ -39,7 +40,10 @@ cc_library(
         "worker_channel.hpp",
         "worker_channel_tcp.hpp",
     ],
-    deps = [":tcp"],
+    deps = [
+        ":tcp",
+        "@abseil-cpp//absl/log",
+    ],
 )
 
 cc_library(

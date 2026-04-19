@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 
+#include "absl/log/log.h"
 #include "engine/ipc/worker_channel_local.hpp"
 #include "engine/vst3/vst3_host.hpp"
 #include "pb/plugin_worker.pb.h"
@@ -29,7 +30,7 @@ namespace hibiki {}  // namespace hibiki
 int main(int argc, char** argv) {
   using namespace hibiki;
   if (argc < 3) {
-    std::cerr << "Usage: hbk-plugin-worker <socket_path> <shm_name>\n";
+    LOG(ERROR) << "Usage: hbk-plugin-worker <socket_path> <shm_name>";
     return 1;
   }
 
@@ -44,7 +45,7 @@ int main(int argc, char** argv) {
   // Connect to host
   auto* channel = WorkerChannelLocal::createClient(socket_path, shm_name);
   if (!channel) {
-    std::cerr << "Worker: failed to connect to host\n";
+    LOG(ERROR) << "Worker: failed to connect to host";
     return 1;
   }
 
@@ -54,13 +55,13 @@ int main(int argc, char** argv) {
   while (true) {
     std::string msg_data;
     if (channel->recvMessage(msg_data) < 0) {
-      std::cerr << "Worker: recv failed, exiting\n";
+      LOG(ERROR) << "Worker: recv failed, exiting";
       break;
     }
 
     hibiki::pb::worker::WorkerRequest req;
     if (!req.ParseFromString(msg_data)) {
-      std::cerr << "Worker: failed to parse request\n";
+      LOG(ERROR) << "Worker: failed to parse request";
       continue;
     }
 
@@ -236,7 +237,7 @@ int main(int argc, char** argv) {
     std::string resp_data;
     resp.SerializeToString(&resp_data);
     if (!channel->sendMessage(resp_data.data(), resp_data.size())) {
-      std::cerr << "Worker: send failed, exiting\n";
+      LOG(ERROR) << "Worker: send failed, exiting";
       break;
     }
   }

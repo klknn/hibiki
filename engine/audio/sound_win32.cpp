@@ -7,6 +7,7 @@
 #include <iostream>
 #include <thread>
 
+#include "absl/log/log.h"
 #include "engine/audio/sound.hpp"
 
 namespace hibiki {
@@ -32,7 +33,7 @@ class SoundDeviceWin32 : public SoundDevice {
 
     HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
     if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
-      std::cerr << "CoInitializeEx failed: " << std::hex << hr << std::endl;
+      LOG(ERROR) << "CoInitializeEx failed: " << std::hex << hr;
       return;
     }
 
@@ -40,7 +41,7 @@ class SoundDeviceWin32 : public SoundDevice {
     hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
                           __uuidof(IMMDeviceEnumerator), (void**)&pEnumerator);
     if (FAILED(hr)) {
-      std::cerr << "CoCreateInstance(MMDeviceEnumerator) failed" << std::endl;
+      LOG(ERROR) << "CoCreateInstance(MMDeviceEnumerator) failed";
       return;
     }
 
@@ -48,7 +49,7 @@ class SoundDeviceWin32 : public SoundDevice {
     hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
     pEnumerator->Release();
     if (FAILED(hr)) {
-      std::cerr << "GetDefaultAudioEndpoint failed" << std::endl;
+      LOG(ERROR) << "GetDefaultAudioEndpoint failed";
       return;
     }
 
@@ -56,42 +57,40 @@ class SoundDeviceWin32 : public SoundDevice {
                            (void**)&impl->pAudioClient);
     pDevice->Release();
     if (FAILED(hr)) {
-      std::cerr << "IAudioClient Activation failed" << std::endl;
+      LOG(ERROR) << "IAudioClient Activation failed";
       return;
     }
 
     WAVEFORMATEX* pwfx = nullptr;
     hr = impl->pAudioClient->GetMixFormat(&pwfx);
     if (FAILED(hr)) {
-      std::cerr << "GetMixFormat failed" << std::endl;
+      LOG(ERROR) << "GetMixFormat failed";
       return;
     }
 
     // Update actual sample rate and channels from mix format
     sample_rate = pwfx->nSamplesPerSec;
     channels = pwfx->nChannels;
-    std::cerr << "[SoundDeviceWin32] Selected format: " << sample_rate
-              << " Hz, " << channels << " channels" << std::endl;
+    LOG(INFO) << "[SoundDeviceWin32] Selected format: " << sample_rate
+              << " Hz, " << channels << " channels";
 
     if (pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
       WAVEFORMATEXTENSIBLE* pEx = (WAVEFORMATEXTENSIBLE*)pwfx;
       if (pEx->SubFormat != KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) {
-        std::cerr
+        LOG(INFO)
             << "[SoundDeviceWin32] Warning: Mix format is not IEEE Float. "
-               "Audio might be distorted."
-            << std::endl;
+               "Audio might be distorted.";
       }
     } else if (pwfx->wFormatTag != WAVE_FORMAT_IEEE_FLOAT) {
-      std::cerr << "[SoundDeviceWin32] Warning: Mix format is not IEEE Float."
-                << std::endl;
+      LOG(WARNING)
+          << "[SoundDeviceWin32] Warning: Mix format is not IEEE Float.";
     }
 
     REFERENCE_TIME hnsRequestedDuration = (REFERENCE_TIME)latency_ms * 10000;
     hr = impl->pAudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, 0,
                                         hnsRequestedDuration, 0, pwfx, NULL);
     if (FAILED(hr)) {
-      std::cerr << "IAudioClient::Initialize failed: " << std::hex << hr
-                << std::endl;
+      LOG(ERROR) << "IAudioClient::Initialize failed: " << std::hex << hr;
       CoTaskMemFree(pwfx);
       return;
     }
@@ -101,7 +100,7 @@ class SoundDeviceWin32 : public SoundDevice {
     hr = impl->pAudioClient->GetService(__uuidof(IAudioRenderClient),
                                         (void**)&impl->pRenderClient);
     if (FAILED(hr)) {
-      std::cerr << "GetService(IAudioRenderClient) failed" << std::endl;
+      LOG(ERROR) << "GetService(IAudioRenderClient) failed";
       return;
     }
 

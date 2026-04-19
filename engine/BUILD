@@ -52,6 +52,7 @@ cc_binary(
         "//engine/ipc:worker_channel",
         "//engine/vst3:vst3_host",
         "//pb:plugin_worker_cc_proto",
+        "@abseil-cpp//absl/log",
     ] + select({
         "@platforms//os:windows": ["//engine/vst3:vst3_host_win32"],
         "@platforms//os:macos": ["//engine/vst3:vst3_host_mac"],
@@ -75,6 +76,7 @@ cc_binary(
         "//engine/plugin:plugin_scanner",
         "//engine/vst3:vst3_host",
         "//pb:plugin_worker_cc_proto",
+        "@abseil-cpp//absl/log",
     ] + select({
         "@platforms//os:windows": ["//engine/vst3:vst3_host_win32"],
         "@platforms//os:macos": ["//engine/vst3:vst3_host_mac"],
@@ -98,6 +100,7 @@ cc_test(
     deps = [
         "//engine/ipc:tcp",
         "//pb:plugin_worker_cc_proto",
+        "@abseil-cpp//absl/log",
         "@googletest//:gtest_main",
     ],
 )

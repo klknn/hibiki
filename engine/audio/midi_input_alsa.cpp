@@ -3,9 +3,9 @@
 
 #include <alsa/asoundlib.h>
 
-#include <cstdio>
 #include <cstring>
 
+#include "absl/log/log.h"
 #include "engine/audio/midi_input.hpp"
 
 namespace hibiki {
@@ -20,8 +20,7 @@ class MidiInputAlsa : public MidiInput {
     int err =
         snd_seq_open(&seq_, "default", SND_SEQ_OPEN_INPUT, SND_SEQ_NONBLOCK);
     if (err < 0) {
-      fprintf(stderr, "[MIDI Input] Failed to open ALSA sequencer: %s\n",
-              snd_strerror(err));
+      LOG(ERROR) << "Failed to open ALSA sequencer: " << snd_strerror(err);
       return false;
     }
     snd_seq_set_client_name(seq_, "hibiki-midi-in");
@@ -31,8 +30,7 @@ class MidiInputAlsa : public MidiInput {
         seq_, "input", SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE,
         SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
     if (port_id_ < 0) {
-      fprintf(stderr, "[MIDI Input] Failed to create port: %s\n",
-              snd_strerror(port_id_));
+      LOG(ERROR) << "Failed to create port: " << snd_strerror(port_id_);
       close();
       return false;
     }
@@ -48,14 +46,13 @@ class MidiInputAlsa : public MidiInput {
       if (sscanf(device_id.c_str(), "%d:%d", &client, &port) == 2) {
         subscribePort(client, port);
       } else {
-        fprintf(stderr, "[MIDI Input] Invalid device ID: %s\n",
-                device_id.c_str());
+        LOG(ERROR) << "Invalid MIDI device ID: " << device_id;
         close();
         return false;
       }
     }
 
-    fprintf(stderr, "[MIDI Input] Opened: %s\n", device_id.c_str());
+    LOG(INFO) << "MIDI Input opened: " << device_id;
     return true;
   }
 
@@ -118,8 +115,8 @@ class MidiInputAlsa : public MidiInput {
     snd_seq_port_subscribe_set_dest(sub, &dest);
     int err = snd_seq_subscribe_port(seq_, sub);
     if (err < 0) {
-      fprintf(stderr, "[MIDI Input] Failed to subscribe %d:%d: %s\n", client,
-              port, snd_strerror(err));
+      LOG(ERROR) << "Failed to subscribe " << client << ":" << port
+                 << ": " << snd_strerror(err);
     }
   }
 
@@ -146,8 +143,8 @@ class MidiInputAlsa : public MidiInput {
              (SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_HARDWARE))) {
           int port = snd_seq_port_info_get_port(pinfo);
           subscribePort(client, port);
-          fprintf(stderr, "[MIDI Input] Subscribed to %d:%d (%s)\n", client,
-                  port, snd_seq_port_info_get_name(pinfo));
+          LOG(INFO) << "MIDI Input subscribed to " << client << ":" << port
+                    << " (" << snd_seq_port_info_get_name(pinfo) << ")";
         }
       }
     }
@@ -173,8 +170,7 @@ std::vector<MidiInputInfo> MidiInput::listDevices() {
   snd_seq_t* seq = nullptr;
   int err = snd_seq_open(&seq, "default", SND_SEQ_OPEN_INPUT, SND_SEQ_NONBLOCK);
   if (err < 0) {
-    fprintf(stderr, "[MIDI Input] Failed to open seq for enumeration: %s\n",
-            snd_strerror(err));
+    LOG(ERROR) << "Failed to open seq for enumeration: " << snd_strerror(err);
     return result;
   }
 
@@ -211,13 +207,12 @@ std::vector<MidiInputInfo> MidiInput::listDevices() {
 
         result.push_back({id, name, 1});
         port_count++;
-        fprintf(stderr, "[MIDI Input] Found: %s (%s)\n", id.c_str(),
-                name.c_str());
+        LOG(INFO) << "MIDI Input found: " << id << " (" << name << ")";
       }
     }
   }
 
-  fprintf(stderr, "[MIDI Input] Total devices found: %zu\n", result.size());
+  LOG(INFO) << "MIDI Input total devices found: " << result.size();
   snd_seq_close(seq);
   return result;
 }

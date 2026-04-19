@@ -11,9 +11,10 @@
 #include <mmsystem.h>
 // clang-format on
 
-#include <cstdio>
 #include <mutex>
 #include <vector>
+
+#include "absl/log/log.h"
 
 #pragma comment(lib, "winmm.lib")
 
@@ -41,7 +42,7 @@ class MidiInputWinMM : public MidiInput {
         }
       }
       if (handles_.empty()) {
-        fprintf(stderr, "[MIDI Input] No MIDI devices available\n");
+        LOG(ERROR) << "No MIDI devices available";
         return false;
       }
       // Set handle_ to first for close() compatibility
@@ -52,16 +53,15 @@ class MidiInputWinMM : public MidiInput {
       try {
         dev_id = (UINT)std::stoul(device_id);
       } catch (...) {
-        fprintf(stderr, "[MIDI Input] Invalid device ID: %s\n",
-                device_id.c_str());
+        LOG(ERROR) << "Invalid MIDI device ID: " << device_id;
         return false;
       }
 
       MMRESULT res = midiInOpen(&handle_, dev_id, (DWORD_PTR)midiCallback,
                                 (DWORD_PTR)this, CALLBACK_FUNCTION);
       if (res != MMSYSERR_NOERROR) {
-        fprintf(stderr, "[MIDI Input] Failed to open device %u: error %u\n",
-                dev_id, res);
+        LOG(ERROR) << "Failed to open MIDI device " << dev_id
+                   << ": error " << res;
         handle_ = nullptr;
         return false;
       }
@@ -69,7 +69,7 @@ class MidiInputWinMM : public MidiInput {
       handles_.push_back(handle_);
     }
 
-    fprintf(stderr, "[MIDI Input] Opened: %s\n", device_id.c_str());
+    LOG(INFO) << "MIDI Input opened: " << device_id;
     return true;
   }
 
@@ -163,12 +163,11 @@ std::vector<MidiInputInfo> MidiInput::listDevices() {
       std::string id = std::to_string(i);
       std::string name(caps.szPname);
       result.push_back({id, name, 1});
-      fprintf(stderr, "[MIDI Input] Found: %s (%s)\n", id.c_str(),
-              name.c_str());
+      LOG(INFO) << "MIDI Input found: " << id << " (" << name << ")";
     }
   }
 
-  fprintf(stderr, "[MIDI Input] Total devices found: %zu\n", result.size());
+  LOG(INFO) << "MIDI Input total devices found: " << result.size();
   return result;
 }
 

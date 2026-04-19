@@ -622,7 +622,7 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
         std::lock_guard<std::mutex> lock(state.tracks_mutex);
         history.pushState(CaptureProjectState(state));
         auto track = GetOrCreateTrack(state, tidx);
-        std::cerr << "BACKEND: Loading plugin: " << vpath << "\n";
+        LOG(INFO) << "BACKEND: Loading plugin: " << vpath;
         sendLog("Loading plugin: " + vpath + " ...");
         auto result =
             track->LoadPlugin(vpath, pidx, state.sample_rate,
@@ -1184,7 +1184,7 @@ void handleSetAudioBufferSize(const pb::commands::SetAudioBufferSize& cmd,
   if (ms < 10) ms = 10;
   if (ms > 2000) ms = 2000;
   state.buffer_latency_ms = ms;
-  std::cerr << "Audio buffer size set to " << ms << " ms (restart to apply)\n";
+  LOG(INFO) << "Audio buffer size set to " << ms << " ms (restart to apply)";
   sendAck("SET_AUDIO_BUFFER_SIZE", true);
   saveConfig(state);
 }
@@ -1206,7 +1206,7 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
 
       socket_t fd = socket(AF_INET, SOCK_STREAM, 0);
       if (fd == INVALID_SOCK) {
-        std::cerr << "ScanRemote: socket() failed for " << hp << "\n";
+        LOG(ERROR) << "ScanRemote: socket() failed for " << hp;
         return;
       }
 
@@ -1218,14 +1218,14 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
       // Resolve hostname
       struct hostent* he = gethostbyname(host.c_str());
       if (!he) {
-        std::cerr << "ScanRemote: cannot resolve " << host << "\n";
+        LOG(INFO) << "ScanRemote: cannot resolve " << host;
         tcp_close(fd);
         return;
       }
       memcpy(&addr.sin_addr, he->h_addr_list[0], he->h_length);
 
       if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        std::cerr << "ScanRemote: connect failed for " << hp << "\n";
+        LOG(ERROR) << "ScanRemote: connect failed for " << hp;
         tcp_close(fd);
         return;
       }
@@ -1283,7 +1283,7 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
       std::string req_data;
       req.SerializeToString(&req_data);
       if (!tcpSend(req_data)) {
-        std::cerr << "ScanRemote: send failed for " << hp << "\n";
+        LOG(ERROR) << "ScanRemote: send failed for " << hp;
         tcp_close(fd);
         return;
       }
@@ -1293,7 +1293,7 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
       while (true) {
         std::string resp_data;
         if (!tcpRecv(resp_data)) {
-          std::cerr << "ScanRemote: recv failed for " << hp << "\n";
+          LOG(ERROR) << "ScanRemote: recv failed for " << hp;
           break;
         }
 
@@ -1301,7 +1301,7 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
         if (!resp.ParseFromString(resp_data) ||
             resp.result_case() !=
                 pb::worker::WorkerResponse::kListPluginsResult) {
-          std::cerr << "ScanRemote: bad response from " << hp << "\n";
+          LOG(INFO) << "ScanRemote: bad response from " << hp;
           break;
         }
 
@@ -1332,8 +1332,8 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
         if (chunk.is_complete()) break;
       }
 
-      std::cerr << "ScanRemote: found " << total_plugins << " plugins on " << hp
-                << "\n";
+      LOG(INFO) << "ScanRemote: found " << total_plugins << " plugins on "
+                << hp;
 
       // Send shutdown to be polite, then close
       pb::worker::WorkerRequest shutdown_req;
@@ -1350,15 +1350,14 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
 void loadConfig(ProjectState& state) {
   std::ifstream in(kConfigFile);
   if (!in.is_open()) {
-    std::cerr << "No config file found (" << kConfigFile
-              << "), using defaults\n";
+    LOG(INFO) << "No config file found (" << kConfigFile << "), using defaults";
     return;
   }
   std::string content((std::istreambuf_iterator<char>(in)),
                       std::istreambuf_iterator<char>());
   pb::commands::HibikiConfig config;
   if (!google::protobuf::TextFormat::ParseFromString(content, &config)) {
-    std::cerr << "Failed to parse " << kConfigFile << ", using defaults\n";
+    LOG(ERROR) << "Failed to parse " << kConfigFile << ", using defaults";
     return;
   }
   // Apply config to state
@@ -1373,7 +1372,7 @@ void loadConfig(ProjectState& state) {
   if (config.buffer_latency_ms() > 0) {
     state.buffer_latency_ms = config.buffer_latency_ms();
   }
-  std::cerr << "Loaded config from " << kConfigFile << "\n";
+  LOG(INFO) << "Loaded config from " << kConfigFile;
 }
 
 void saveConfig(const ProjectState& state) {
@@ -1392,9 +1391,9 @@ void saveConfig(const ProjectState& state) {
   std::ofstream out(kConfigFile);
   if (out.is_open()) {
     out << text;
-    std::cerr << "Saved config to " << kConfigFile << "\n";
+    LOG(INFO) << "Saved config to " << kConfigFile;
   } else {
-    std::cerr << "Failed to save config to " << kConfigFile << "\n";
+    LOG(ERROR) << "Failed to save config to " << kConfigFile;
   }
 }
 

@@ -8,6 +8,7 @@
 #include <iostream>
 #include <random>
 
+#include "absl/log/log.h"
 #include "engine/ipc/worker_channel_tcp.hpp"
 #include "pb/plugin_worker.pb.h"
 
@@ -102,10 +103,9 @@ bool PluginProxy::load(const std::string& path, int plugin_index,
   if (!sendRequest(channel_.get(), req, resp)) return false;
 
   if (!resp.has_load_result() || !resp.load_result().success()) {
-    std::cerr << "PluginProxy: load failed: "
-              << (resp.has_load_result() ? resp.load_result().error()
-                                         : "no response")
-              << "\n";
+    LOG(ERROR) << "PluginProxy: load failed: "
+               << (resp.has_load_result() ? resp.load_result().error()
+                                          : "no response");
     return false;
   }
 

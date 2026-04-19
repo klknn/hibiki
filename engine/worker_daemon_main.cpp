@@ -20,6 +20,7 @@
 #include <string>
 #include <thread>
 
+#include "absl/log/log.h"
 #include "engine/ipc/tcp.hpp"
 #include "engine/plugin/plugin_scanner.hpp"
 #include "engine/vst3/vst3_host.hpp"
@@ -374,7 +375,7 @@ int main(int argc, char** argv) {
   // Create listening socket
   socket_t listen_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (listen_fd == INVALID_SOCK) {
-    std::cerr << "Failed to create socket: " << tcp_strerror() << "\n";
+    LOG(ERROR) << "Failed to create socket: " << tcp_strerror();
     return 1;
   }
 
@@ -387,19 +388,18 @@ int main(int argc, char** argv) {
   addr.sin_port = htons(port);
 
   if (bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-    std::cerr << "Failed to bind port " << port << ": " << tcp_strerror()
-              << "\n";
+    LOG(ERROR) << "Failed to bind port " << port << ": " << tcp_strerror();
     tcp_close(listen_fd);
     return 1;
   }
 
   if (listen(listen_fd, 8) < 0) {
-    std::cerr << "Failed to listen: " << tcp_strerror() << "\n";
+    LOG(ERROR) << "Failed to listen: " << tcp_strerror();
     tcp_close(listen_fd);
     return 1;
   }
 
-  std::cerr << "hbk-worker-daemon listening on port " << port << "\n";
+  LOG(INFO) << "hbk-worker-daemon listening on port " << port;
 
   // Start async plugin scan (non-blocking — results stream as they arrive)
   AsyncPluginCache plugin_cache;
@@ -415,14 +415,14 @@ int main(int argc, char** argv) {
     if (conn_fd == INVALID_SOCK) {
       // Note: On Windows WSAEINTR corresponds to EINTR. For simplicity we can
       // just log all failures.
-      std::cerr << "accept() failed: " << tcp_strerror() << "\n";
+      LOG(ERROR) << "accept() failed: " << tcp_strerror();
       continue;
     }
 
     // Disable Nagle's algorithm
     tcp_setsockopt(conn_fd, IPPROTO_TCP, TCP_NODELAY, 1);
 
-    std::cerr << "Accepted connection (fd=" << conn_fd << ")\n";
+    LOG(INFO) << "Accepted connection (fd=" << conn_fd << ")";
 
     // Handle each client in a detached thread
     std::thread(handleClient, conn_fd, std::ref(plugin_cache)).detach();

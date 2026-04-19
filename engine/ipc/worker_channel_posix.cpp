@@ -8,6 +8,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "absl/log/log.h"
 #include "engine/ipc/worker_channel_local.hpp"
 
 namespace hibiki {
@@ -39,7 +40,7 @@ WorkerChannelLocal* WorkerChannelLocal::createServer(
   // Create Unix domain socket
   ch->impl_->listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (ch->impl_->listen_fd < 0) {
-    std::cerr << "WorkerChannel: socket() failed: " << strerror(errno) << "\n";
+    LOG(ERROR) << "WorkerChannel: socket() failed: " << strerror(errno);
     delete ch;
     return nullptr;
   }
@@ -52,13 +53,13 @@ WorkerChannelLocal* WorkerChannelLocal::createServer(
   strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
 
   if (bind(ch->impl_->listen_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-    std::cerr << "WorkerChannel: bind() failed: " << strerror(errno) << "\n";
+    LOG(ERROR) << "WorkerChannel: bind() failed: " << strerror(errno);
     delete ch;
     return nullptr;
   }
 
   if (listen(ch->impl_->listen_fd, 1) < 0) {
-    std::cerr << "WorkerChannel: listen() failed: " << strerror(errno) << "\n";
+    LOG(ERROR) << "WorkerChannel: listen() failed: " << strerror(errno);
     delete ch;
     return nullptr;
   }
@@ -67,15 +68,13 @@ WorkerChannelLocal* WorkerChannelLocal::createServer(
   shm_unlink(shm_name.c_str());
   ch->impl_->shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0600);
   if (ch->impl_->shm_fd < 0) {
-    std::cerr << "WorkerChannel: shm_open() failed: " << strerror(errno)
-              << "\n";
+    LOG(ERROR) << "WorkerChannel: shm_open() failed: " << strerror(errno);
     delete ch;
     return nullptr;
   }
 
   if (ftruncate(ch->impl_->shm_fd, ch->shm_size_) < 0) {
-    std::cerr << "WorkerChannel: ftruncate() failed: " << strerror(errno)
-              << "\n";
+    LOG(ERROR) << "WorkerChannel: ftruncate() failed: " << strerror(errno);
     delete ch;
     return nullptr;
   }
@@ -83,7 +82,7 @@ WorkerChannelLocal* WorkerChannelLocal::createServer(
   ch->shm_ptr_ = mmap(nullptr, ch->shm_size_, PROT_READ | PROT_WRITE,
                       MAP_SHARED, ch->impl_->shm_fd, 0);
   if (ch->shm_ptr_ == MAP_FAILED) {
-    std::cerr << "WorkerChannel: mmap() failed: " << strerror(errno) << "\n";
+    LOG(ERROR) << "WorkerChannel: mmap() failed: " << strerror(errno);
     ch->shm_ptr_ = nullptr;
     delete ch;
     return nullptr;
@@ -108,7 +107,7 @@ WorkerChannelLocal* WorkerChannelLocal::createClient(
   // Connect to Unix domain socket
   ch->impl_->conn_fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (ch->impl_->conn_fd < 0) {
-    std::cerr << "WorkerChannel: socket() failed: " << strerror(errno) << "\n";
+    LOG(ERROR) << "WorkerChannel: socket() failed: " << strerror(errno);
     delete ch;
     return nullptr;
   }
@@ -119,7 +118,7 @@ WorkerChannelLocal* WorkerChannelLocal::createClient(
   strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
 
   if (connect(ch->impl_->conn_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-    std::cerr << "WorkerChannel: connect() failed: " << strerror(errno) << "\n";
+    LOG(ERROR) << "WorkerChannel: connect() failed: " << strerror(errno);
     delete ch;
     return nullptr;
   }
@@ -127,15 +126,14 @@ WorkerChannelLocal* WorkerChannelLocal::createClient(
   // Open existing shared memory
   ch->impl_->shm_fd = shm_open(shm_name.c_str(), O_RDWR, 0600);
   if (ch->impl_->shm_fd < 0) {
-    std::cerr << "WorkerChannel: shm_open() failed: " << strerror(errno)
-              << "\n";
+    LOG(ERROR) << "WorkerChannel: shm_open() failed: " << strerror(errno);
     delete ch;
     return nullptr;
   }
 
   struct stat st;
   if (fstat(ch->impl_->shm_fd, &st) < 0) {
-    std::cerr << "WorkerChannel: fstat() failed: " << strerror(errno) << "\n";
+    LOG(ERROR) << "WorkerChannel: fstat() failed: " << strerror(errno);
     delete ch;
     return nullptr;
   }
@@ -144,7 +142,7 @@ WorkerChannelLocal* WorkerChannelLocal::createClient(
   ch->shm_ptr_ = mmap(nullptr, ch->shm_size_, PROT_READ | PROT_WRITE,
                       MAP_SHARED, ch->impl_->shm_fd, 0);
   if (ch->shm_ptr_ == MAP_FAILED) {
-    std::cerr << "WorkerChannel: mmap() failed: " << strerror(errno) << "\n";
+    LOG(ERROR) << "WorkerChannel: mmap() failed: " << strerror(errno);
     ch->shm_ptr_ = nullptr;
     delete ch;
     return nullptr;
@@ -161,7 +159,7 @@ bool WorkerChannelLocal::accept() {
   if (impl_->listen_fd < 0) return false;
   impl_->conn_fd = ::accept(impl_->listen_fd, nullptr, nullptr);
   if (impl_->conn_fd < 0) {
-    std::cerr << "WorkerChannel: accept() failed: " << strerror(errno) << "\n";
+    LOG(ERROR) << "WorkerChannel: accept() failed: " << strerror(errno);
     return false;
   }
   return true;

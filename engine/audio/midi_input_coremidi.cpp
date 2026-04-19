@@ -2,10 +2,11 @@
 
 #include <CoreMIDI/CoreMIDI.h>
 
-#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <vector>
+
+#include "absl/log/log.h"
 
 #include "absl/strings/numbers.h"
 #include "engine/audio/midi_input.hpp"
@@ -22,16 +23,14 @@ class MidiInputCoreMidi : public MidiInput {
     OSStatus status =
         MIDIClientCreate(CFSTR("hibiki-midi-in"), nullptr, nullptr, &client_);
     if (status != noErr) {
-      fprintf(stderr, "[MIDI Input] Failed to create CoreMIDI client: %d\n",
-              (int)status);
+      LOG(ERROR) << "Failed to create CoreMIDI client: " << (int)status;
       return false;
     }
 
     status =
         MIDIInputPortCreate(client_, CFSTR("input"), readProc, this, &port_);
     if (status != noErr) {
-      fprintf(stderr, "[MIDI Input] Failed to create input port: %d\n",
-              (int)status);
+      LOG(ERROR) << "Failed to create input port: " << (int)status;
       close();
       return false;
     }
@@ -49,8 +48,7 @@ class MidiInputCoreMidi : public MidiInput {
       // Find source by unique ID
       int uid = 0;
       if (!absl::SimpleAtoi(device_id, &uid)) {
-        fprintf(stderr, "[MIDI Input] Invalid device ID: %s\n",
-                device_id.c_str());
+        LOG(ERROR) << "Invalid MIDI device ID: " << device_id;
         close();
         return false;
       }
@@ -66,15 +64,14 @@ class MidiInputCoreMidi : public MidiInput {
         }
       }
       if (!src) {
-        fprintf(stderr, "[MIDI Input] Source not found: %s\n",
-                device_id.c_str());
+        LOG(ERROR) << "MIDI source not found: " << device_id;
         close();
         return false;
       }
       MIDIPortConnectSource(port_, src, nullptr);
     }
 
-    fprintf(stderr, "[MIDI Input] Opened: %s\n", device_id.c_str());
+    LOG(INFO) << "MIDI Input opened: " << device_id;
     return true;
   }
 
@@ -196,10 +193,10 @@ std::vector<MidiInputInfo> MidiInput::listDevices() {
     std::string id = std::to_string(uid);
 
     result.push_back({id, name, 1});
-    fprintf(stderr, "[MIDI Input] Found: %s (%s)\n", id.c_str(), name.c_str());
+    LOG(INFO) << "MIDI Input found: " << id << " (" << name << ")";
   }
 
-  fprintf(stderr, "[MIDI Input] Total devices found: %zu\n", result.size());
+  LOG(INFO) << "MIDI Input total devices found: " << result.size();
   return result;
 }
 

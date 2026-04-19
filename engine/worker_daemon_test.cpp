@@ -27,6 +27,7 @@
 #include <unistd.h>
 #endif
 
+#include "absl/log/log.h"
 #include "engine/ipc/tcp.hpp"
 #include "pb/plugin_worker.pb.h"
 
@@ -207,8 +208,8 @@ class WorkerDaemonTest : public ::testing::Test {
     daemon_handle_ = pi.hProcess;
     CloseHandle(pi.hThread);
 
-    std::cerr << "Spawned hbk-worker-daemon (handle=" << daemon_handle_
-              << " port=" << port_ << ")\n";
+    LOG(INFO) << "Spawned hbk-worker-daemon (handle=" << daemon_handle_
+              << " port=" << port_ << ")";
 #else
     daemon_pid_ = fork();
     ASSERT_NE(daemon_pid_, -1) << "fork() failed";
@@ -221,8 +222,8 @@ class WorkerDaemonTest : public ::testing::Test {
       _exit(1);
     }
 
-    std::cerr << "Spawned hbk-worker-daemon (pid=" << daemon_pid_
-              << " port=" << port_ << ")\n";
+    LOG(INFO) << "Spawned hbk-worker-daemon (pid=" << daemon_pid_
+              << " port=" << port_ << ")";
 #endif
   }
 
@@ -233,14 +234,14 @@ class WorkerDaemonTest : public ::testing::Test {
       WaitForSingleObject(daemon_handle_, 5000);
       CloseHandle(daemon_handle_);
       daemon_handle_ = nullptr;
-      std::cerr << "Stopped hbk-worker-daemon\n";
+      LOG(INFO) << "Stopped hbk-worker-daemon";
     }
 #else
     if (daemon_pid_ > 0) {
       kill(daemon_pid_, SIGTERM);
       int status;
       waitpid(daemon_pid_, &status, 0);
-      std::cerr << "Stopped hbk-worker-daemon\n";
+      LOG(INFO) << "Stopped hbk-worker-daemon";
     }
 #endif
   }
@@ -271,7 +272,7 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
 
     auto resp = sendRequest(fd, req);
     EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kConfigAck);
-    std::cerr << "  Config accepted\n";
+    LOG(INFO) << "  Config accepted";
   }
 
   // 2. Load Dexed
@@ -287,8 +288,8 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
     ASSERT_TRUE(resp.load_result().success())
         << "Failed to load Dexed: " << resp.load_result().error();
     EXPECT_TRUE(resp.load_result().is_instrument());
-    std::cerr << "  Loaded plugin: " << resp.load_result().name()
-              << " (instrument=" << resp.load_result().is_instrument() << ")\n";
+    LOG(INFO) << "  Loaded plugin: " << resp.load_result().name()
+              << " (instrument=" << resp.load_result().is_instrument() << ")";
   }
 
   // 3. Get parameter count (sanity check)
@@ -300,7 +301,7 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
     ASSERT_EQ(resp.result_case(), pb::worker::WorkerResponse::kParamCount);
     param_count = resp.param_count().count();
     EXPECT_GT(param_count, 0) << "Dexed should have parameters";
-    std::cerr << "  Parameter count: " << param_count << "\n";
+    LOG(INFO) << "  Parameter count: " << param_count;
   }
 
   // 4. Process silence (no MIDI) — should produce silence
@@ -319,7 +320,7 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
     auto& audio = resp.process_done().output_audio();
     size_t expected_bytes = NUM_CHANNELS * BLOCK_SIZE * sizeof(float);
     EXPECT_EQ(audio.size(), expected_bytes);
-    std::cerr << "  Silence block: " << audio.size() << " bytes\n";
+    LOG(INFO) << "  Silence block: " << audio.size() << " bytes";
   }
 
   // 5. Send MIDI note-on (C4, velocity=100), then process
@@ -356,7 +357,7 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
       float v = std::abs(samples[i]);
       if (v > max_abs_sample) max_abs_sample = v;
     }
-    std::cerr << "  Note-on block: max |sample| = " << max_abs_sample << "\n";
+    LOG(INFO) << "  Note-on block: max |sample| = " << max_abs_sample;
   }
 
   // Dexed might need a few more blocks for attack envelope
@@ -380,8 +381,8 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
         float v = std::abs(samples[i]);
         if (v > max_abs_sample) max_abs_sample = v;
       }
-      std::cerr << "  Extra block " << (extra + 1)
-                << ": max |sample| = " << max_abs_sample << "\n";
+      LOG(INFO) << "  Extra block " << (extra + 1)
+                << ": max |sample| = " << max_abs_sample;
       if (max_abs_sample > 1e-6f) break;
     }
   }
@@ -407,7 +408,7 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
 
     auto resp = sendRequest(fd, req);
     ASSERT_EQ(resp.result_case(), pb::worker::WorkerResponse::kProcessDone);
-    std::cerr << "  Sent note-off\n";
+    LOG(INFO) << "  Sent note-off";
   }
 
   // 7. Shutdown
@@ -422,8 +423,8 @@ TEST_F(WorkerDaemonTest, LoadDexedAndProcessAudio) {
 
   tcp_close(fd);
 
-  std::cerr << "\n=== PASS: Daemon loaded Dexed, processed MIDI, "
-            << "produced audio (peak=" << max_abs_sample << ") ===\n";
+  LOG(INFO) << "\n=== PASS: Daemon loaded Dexed, processed MIDI, "
+            << "produced audio (peak=" << max_abs_sample << ") ===";
 }
 
 // ─── Editor RPC Tests ─────────────────────────────────────────────
@@ -466,8 +467,7 @@ TEST_F(WorkerDaemonTest, EditorShowAndStopWithoutCrash) {
     req.mutable_show_editor();
     auto resp = sendRequest(fd, req);
     EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kEditorResult);
-    std::cerr << "  ShowEditor: success=" << resp.editor_result().success()
-              << "\n";
+    LOG(INFO) << "  ShowEditor: success=" << resp.editor_result().success();
   }
 
   // GetEditorFrame — might return empty on headless, but should not crash
@@ -476,9 +476,9 @@ TEST_F(WorkerDaemonTest, EditorShowAndStopWithoutCrash) {
     req.mutable_get_editor_frame();
     auto resp = sendRequest(fd, req);
     EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kEditorFrame);
-    std::cerr << "  GetEditorFrame: " << resp.editor_frame().width() << "x"
+    LOG(INFO) << "  GetEditorFrame: " << resp.editor_frame().width() << "x"
               << resp.editor_frame().height() << " ("
-              << resp.editor_frame().image_data().size() << " bytes)\n";
+              << resp.editor_frame().image_data().size() << " bytes)";
   }
 
   // EditorInput — forward a fake mouse event, should not crash
@@ -490,8 +490,7 @@ TEST_F(WorkerDaemonTest, EditorShowAndStopWithoutCrash) {
     input->set_y(200);
     auto resp = sendRequest(fd, req);
     EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kEditorResult);
-    std::cerr << "  EditorInput: success=" << resp.editor_result().success()
-              << "\n";
+    LOG(INFO) << "  EditorInput: success=" << resp.editor_result().success();
   }
 
   // StopEditor — on headless systems, the daemon may crash during
@@ -507,11 +506,10 @@ TEST_F(WorkerDaemonTest, EditorShowAndStopWithoutCrash) {
       if (n > 0) {
         pb::worker::WorkerResponse resp;
         resp.ParseFromString(resp_data);
-        std::cerr << "  StopEditor: success=" << resp.editor_result().success()
-                  << "\n";
+        LOG(INFO) << "  StopEditor: success=" << resp.editor_result().success();
       } else {
-        std::cerr << "  StopEditor: daemon closed connection "
-                  << "(expected on headless)\n";
+        LOG(INFO) << "  StopEditor: daemon closed connection "
+                  << "(expected on headless)";
       }
     }
   }
@@ -526,7 +524,7 @@ TEST_F(WorkerDaemonTest, EditorShowAndStopWithoutCrash) {
   }
 
   tcp_close(fd);
-  std::cerr << "\n=== PASS: Editor RPCs completed without crash ===\n";
+  LOG(INFO) << "\n=== PASS: Editor RPCs completed without crash ===";
 }
 
 // ─── GetEditorFrame before loading plugin ─────────────────────────
@@ -555,7 +553,7 @@ TEST_F(WorkerDaemonTest, GetEditorFrameNoPlugin) {
     EXPECT_EQ(resp.editor_frame().width(), 0);
     EXPECT_EQ(resp.editor_frame().height(), 0);
     EXPECT_TRUE(resp.editor_frame().image_data().empty());
-    std::cerr << "  GetEditorFrame (no plugin): empty as expected\n";
+    LOG(INFO) << "  GetEditorFrame (no plugin): empty as expected";
   }
 
   // EditorInput without a loaded plugin — should be a no-op
@@ -568,7 +566,7 @@ TEST_F(WorkerDaemonTest, GetEditorFrameNoPlugin) {
     input->set_button(1);
     auto resp = sendRequest(fd, req);
     EXPECT_EQ(resp.result_case(), pb::worker::WorkerResponse::kEditorResult);
-    std::cerr << "  EditorInput (no plugin): no-op as expected\n";
+    LOG(INFO) << "  EditorInput (no plugin): no-op as expected";
   }
 
   // Shutdown
@@ -581,7 +579,7 @@ TEST_F(WorkerDaemonTest, GetEditorFrameNoPlugin) {
   }
 
   tcp_close(fd);
-  std::cerr << "\n=== PASS: Editor RPCs with no plugin ===\n";
+  LOG(INFO) << "\n=== PASS: Editor RPCs with no plugin ===";
 }
 
 }  // namespace

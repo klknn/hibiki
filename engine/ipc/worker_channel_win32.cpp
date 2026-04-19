@@ -10,6 +10,8 @@
 #include <cstring>
 #include <iostream>
 
+#include "absl/log/log.h"
+
 namespace hibiki {
 
 // Platform-specific state for Windows.
@@ -41,8 +43,8 @@ WorkerChannelLocal* WorkerChannelLocal::createServer(
                        65536, 65536, 0, NULL);
 
   if (ch->impl_->pipe_handle == INVALID_HANDLE_VALUE) {
-    std::cerr << "WorkerChannelLocal: CreateNamedPipe failed: "
-              << GetLastError() << "\n";
+    LOG(ERROR) << "WorkerChannelLocal: CreateNamedPipe failed: "
+               << GetLastError();
     delete ch;
     return nullptr;
   }
@@ -54,8 +56,8 @@ WorkerChannelLocal* WorkerChannelLocal::createServer(
                          (DWORD)ch->shm_size_, full_shm.c_str());
 
   if (ch->impl_->shm_handle == NULL) {
-    std::cerr << "WorkerChannelLocal: CreateFileMapping failed: "
-              << GetLastError() << "\n";
+    LOG(ERROR) << "WorkerChannelLocal: CreateFileMapping failed: "
+               << GetLastError();
     CloseHandle(ch->impl_->pipe_handle);
     delete ch;
     return nullptr;
@@ -65,8 +67,8 @@ WorkerChannelLocal* WorkerChannelLocal::createServer(
                                ch->shm_size_);
 
   if (ch->shm_ptr_ == nullptr) {
-    std::cerr << "WorkerChannelLocal: MapViewOfFile failed: " << GetLastError()
-              << "\n";
+    LOG(ERROR) << "WorkerChannelLocal: MapViewOfFile failed: "
+               << GetLastError();
     CloseHandle(ch->impl_->shm_handle);
     CloseHandle(ch->impl_->pipe_handle);
     delete ch;
@@ -91,7 +93,7 @@ WorkerChannelLocal* WorkerChannelLocal::createClient(
 
   std::string full_pipe = "\\\\.\\pipe\\" + pipe_name;
   if (!WaitNamedPipeA(full_pipe.c_str(), 5000)) {
-    std::cerr << "WorkerChannelLocal: WaitNamedPipe timeout\n";
+    LOG(INFO) << "WorkerChannelLocal: WaitNamedPipe timeout";
     delete ch;
     return nullptr;
   }
@@ -101,8 +103,8 @@ WorkerChannelLocal* WorkerChannelLocal::createClient(
                   OPEN_EXISTING, 0, NULL);
 
   if (ch->impl_->pipe_handle == INVALID_HANDLE_VALUE) {
-    std::cerr << "WorkerChannelLocal: CreateFile for pipe failed: "
-              << GetLastError() << "\n";
+    LOG(ERROR) << "WorkerChannelLocal: CreateFile for pipe failed: "
+               << GetLastError();
     delete ch;
     return nullptr;
   }
@@ -115,8 +117,8 @@ WorkerChannelLocal* WorkerChannelLocal::createClient(
       OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, full_shm.c_str());
 
   if (ch->impl_->shm_handle == NULL) {
-    std::cerr << "WorkerChannelLocal: OpenFileMapping failed: "
-              << GetLastError() << "\n";
+    LOG(ERROR) << "WorkerChannelLocal: OpenFileMapping failed: "
+               << GetLastError();
     CloseHandle(ch->impl_->pipe_handle);
     delete ch;
     return nullptr;
@@ -126,8 +128,8 @@ WorkerChannelLocal* WorkerChannelLocal::createClient(
       MapViewOfFile(ch->impl_->shm_handle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
 
   if (ch->shm_ptr_ == nullptr) {
-    std::cerr << "WorkerChannelLocal: MapViewOfFile failed: " << GetLastError()
-              << "\n";
+    LOG(ERROR) << "WorkerChannelLocal: MapViewOfFile failed: "
+               << GetLastError();
     CloseHandle(ch->impl_->shm_handle);
     CloseHandle(ch->impl_->pipe_handle);
     delete ch;
@@ -146,8 +148,7 @@ bool WorkerChannelLocal::accept() {
   if (!ConnectNamedPipe(impl_->pipe_handle, NULL)) {
     DWORD err = GetLastError();
     if (err != ERROR_PIPE_CONNECTED) {
-      std::cerr << "WorkerChannelLocal: ConnectNamedPipe failed: " << err
-                << "\n";
+      LOG(ERROR) << "WorkerChannelLocal: ConnectNamedPipe failed: " << err;
       return false;
     }
   }

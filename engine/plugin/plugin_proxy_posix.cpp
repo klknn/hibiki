@@ -12,6 +12,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "absl/log/log.h"
 #include "engine/ipc/worker_channel_local.hpp"
 #include "engine/plugin/plugin_proxy.hpp"
 
@@ -57,7 +58,7 @@ bool PluginProxy::spawnLocalWorker() {
   std::string worker_bin = findWorkerBinary();
   worker_pid_ = fork();
   if (worker_pid_ < 0) {
-    std::cerr << "PluginProxy: fork() failed: " << strerror(errno) << "\n";
+    LOG(ERROR) << "PluginProxy: fork() failed: " << strerror(errno);
     channel_.reset();
     return false;
   }
@@ -65,12 +66,12 @@ bool PluginProxy::spawnLocalWorker() {
   if (worker_pid_ == 0) {
     execl(worker_bin.c_str(), "hbk-plugin-worker", socket_path_.c_str(),
           shm_name_.c_str(), nullptr);
-    std::cerr << "PluginProxy: execl() failed: " << strerror(errno) << "\n";
+    LOG(ERROR) << "PluginProxy: execl() failed: " << strerror(errno);
     _exit(1);
   }
 
   if (!static_cast<WorkerChannelLocal*>(channel_.get())->accept()) {
-    std::cerr << "PluginProxy: accept() failed\n";
+    LOG(ERROR) << "PluginProxy: accept() failed";
     kill(worker_pid_, SIGTERM);
     waitpid(worker_pid_, nullptr, 0);
     worker_pid_ = -1;

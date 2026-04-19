@@ -7,6 +7,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "absl/log/log.h"
 #include "engine/ipc/tcp.hpp"
 
 namespace hibiki {
@@ -29,16 +30,15 @@ WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
 
   std::string port_str = std::to_string(port);
   if (getaddrinfo(host.c_str(), port_str.c_str(), &hints, &res) != 0) {
-    std::cerr << "WorkerChannelTcp: getaddrinfo failed for " << host << ":"
-              << port << "\n";
+    LOG(ERROR) << "WorkerChannelTcp: getaddrinfo failed for " << host << ":"
+               << port;
     delete ch;
     return nullptr;
   }
 
   ch->conn_fd_ = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
   if (ch->conn_fd_ == INVALID_SOCK) {
-    std::cerr << "WorkerChannelTcp: socket() failed: " << tcp_strerror()
-              << "\n";
+    LOG(ERROR) << "WorkerChannelTcp: socket() failed: " << tcp_strerror();
     freeaddrinfo(res);
     delete ch;
     return nullptr;
@@ -47,8 +47,7 @@ WorkerChannelTcp* WorkerChannelTcp::createClient(const std::string& host,
   tcp_setsockopt(ch->conn_fd_, IPPROTO_TCP, TCP_NODELAY, 1);
 
   if (connect(ch->conn_fd_, res->ai_addr, (int)res->ai_addrlen) != 0) {
-    std::cerr << "WorkerChannelTcp: connect() failed: " << tcp_strerror()
-              << "\n";
+    LOG(ERROR) << "WorkerChannelTcp: connect() failed: " << tcp_strerror();
     freeaddrinfo(res);
     delete ch;
     return nullptr;
@@ -65,8 +64,7 @@ WorkerChannelTcp* WorkerChannelTcp::createServer(int listen_port) {
 
   ch->listen_fd_ = socket(AF_INET, SOCK_STREAM, 0);
   if (ch->listen_fd_ == INVALID_SOCK) {
-    std::cerr << "WorkerChannelTcp: socket() failed: " << tcp_strerror()
-              << "\n";
+    LOG(ERROR) << "WorkerChannelTcp: socket() failed: " << tcp_strerror();
     delete ch;
     return nullptr;
   }
@@ -80,14 +78,13 @@ WorkerChannelTcp* WorkerChannelTcp::createServer(int listen_port) {
   addr.sin_port = htons(listen_port);
 
   if (bind(ch->listen_fd_, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
-    std::cerr << "WorkerChannelTcp: bind() failed: " << tcp_strerror() << "\n";
+    LOG(ERROR) << "WorkerChannelTcp: bind() failed: " << tcp_strerror();
     delete ch;
     return nullptr;
   }
 
   if (listen(ch->listen_fd_, 8) != 0) {
-    std::cerr << "WorkerChannelTcp: listen() failed: " << tcp_strerror()
-              << "\n";
+    LOG(ERROR) << "WorkerChannelTcp: listen() failed: " << tcp_strerror();
     delete ch;
     return nullptr;
   }
@@ -99,8 +96,7 @@ bool WorkerChannelTcp::accept() {
   if (listen_fd_ == INVALID_SOCK) return false;
   conn_fd_ = ::accept(listen_fd_, nullptr, nullptr);
   if (conn_fd_ == INVALID_SOCK) {
-    std::cerr << "WorkerChannelTcp: accept() failed: " << tcp_strerror()
-              << "\n";
+    LOG(ERROR) << "WorkerChannelTcp: accept() failed: " << tcp_strerror();
     return false;
   }
   tcp_setsockopt(conn_fd_, IPPROTO_TCP, TCP_NODELAY, 1);

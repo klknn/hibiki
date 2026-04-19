@@ -9,6 +9,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "absl/log/log.h"
 #include "engine/ipc/worker_channel_local.hpp"
 
 namespace hibiki {
@@ -61,8 +62,7 @@ bool PluginProxy::spawnLocalWorker() {
 
   if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, FALSE,
                       CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-    std::cerr << "PluginProxy: CreateProcess failed: " << GetLastError()
-              << "\n";
+    LOG(ERROR) << "PluginProxy: CreateProcess failed: " << GetLastError();
     if (hJob) CloseHandle(hJob);
     channel_.reset();
     return false;
@@ -78,7 +78,7 @@ bool PluginProxy::spawnLocalWorker() {
   }
 
   if (!static_cast<WorkerChannelLocal*>(channel_.get())->accept()) {
-    std::cerr << "PluginProxy: accept() failed\n";
+    LOG(ERROR) << "PluginProxy: accept() failed";
     TerminateProcess(worker_handle_, 1);
     CloseHandle(worker_handle_);
     worker_handle_ = nullptr;

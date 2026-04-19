@@ -6,6 +6,7 @@
 #include <iostream>
 #include <thread>
 
+#include "absl/log/log.h"
 #include "engine/audio/sound.hpp"
 
 namespace hibiki {
@@ -111,18 +112,17 @@ class SoundDeviceCoreAudio : public SoundDevice {
 
     AudioComponent comp = AudioComponentFindNext(NULL, &desc);
     if (!comp) {
-      std::cerr << "CoreAudio: Failed to find component" << std::endl;
+      LOG(ERROR) << "CoreAudio: Failed to find component";
       return;
     }
 
     if (AudioComponentInstanceNew(comp, &impl->audioUnit) != noErr) {
-      std::cerr << "CoreAudio: Failed to create AudioUnit instance"
-                << std::endl;
+      LOG(ERROR) << "CoreAudio: Failed to create AudioUnit instance";
       return;
     }
 
     if (AudioUnitInitialize(impl->audioUnit) != noErr) {
-      std::cerr << "CoreAudio: Failed to initialize AudioUnit" << std::endl;
+      LOG(ERROR) << "CoreAudio: Failed to initialize AudioUnit";
       return;
     }
 
@@ -141,7 +141,7 @@ class SoundDeviceCoreAudio : public SoundDevice {
     if (AudioUnitSetProperty(impl->audioUnit, kAudioUnitProperty_StreamFormat,
                              kAudioUnitScope_Input, 0, &format,
                              sizeof(format)) != noErr) {
-      std::cerr << "CoreAudio: Failed to set stream format" << std::endl;
+      LOG(ERROR) << "CoreAudio: Failed to set stream format";
       return;
     }
 
@@ -152,12 +152,12 @@ class SoundDeviceCoreAudio : public SoundDevice {
     if (AudioUnitSetProperty(
             impl->audioUnit, kAudioUnitProperty_SetRenderCallback,
             kAudioUnitScope_Global, 0, &callback, sizeof(callback)) != noErr) {
-      std::cerr << "CoreAudio: Failed to set render callback" << std::endl;
+      LOG(ERROR) << "CoreAudio: Failed to set render callback";
       return;
     }
 
     if (AudioOutputUnitStart(impl->audioUnit) != noErr) {
-      std::cerr << "CoreAudio: Failed to start AudioUnit" << std::endl;
+      LOG(ERROR) << "CoreAudio: Failed to start AudioUnit";
       return;
     }
 

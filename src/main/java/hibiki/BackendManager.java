@@ -645,6 +645,13 @@ public class BackendManager {
     sendRequest(Request.newBuilder().setMidi(cmdBuilder).build());
   }
 
+  public void sendPanic() {
+    sendRequest(
+        Request.newBuilder()
+            .setMidi(MidiCmd.newBuilder().setAction(MidiCmd.Action.ACTION_PANIC))
+            .build());
+  }
+
   private String findBinary(String binaryName) {
     // Try simple relative (prefer engine/ first since it's the canonical location)
     if (new File("./engine/" + binaryName).exists()) return "./engine/" + binaryName;

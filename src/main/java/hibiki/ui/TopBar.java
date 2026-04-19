@@ -165,6 +165,17 @@ public class TopBar extends JPanel {
     rebootBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
     rebootBtn.setToolTipText("Reboot backend engine and plugin workers");
 
+    JButton panicBtn =
+        Theme.getInstance()
+            .createButton(
+                "! PANIC",
+                e -> {
+                  BackendManager.getInstance().sendPanic();
+                });
+    panicBtn.setFont(new Font("SansSerif", Font.BOLD, Theme.getInstance().scale(10)));
+    panicBtn.setForeground(Color.RED);
+    panicBtn.setToolTipText("MIDI Panic: Immediately silence all notes on all tracks");
+
     // Virtual keyboard toggle
     pianoBtn =
         Theme.getInstance()
@@ -193,6 +204,7 @@ public class TopBar extends JPanel {
     rightPanel.add(octaveLabel);
     rightPanel.add(replBtn);
     rightPanel.add(rebootBtn);
+    rightPanel.add(panicBtn);
     rightPanel.add(settingsBtn);
     add(rightPanel, BorderLayout.EAST);
 

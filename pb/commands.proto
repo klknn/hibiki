@@ -127,6 +127,7 @@ message MidiCmd {
     ACTION_UNSPECIFIED = 0;
     ACTION_GET = 1;
     ACTION_UPDATE = 2;
+    ACTION_PANIC = 3;
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;

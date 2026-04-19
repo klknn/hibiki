@@ -144,6 +144,7 @@ class Track {
   int playing_slot = -1;
   double current_time_sec = 0.0;
   int current_midi_idx = 0;
+  std::atomic<bool> panic_requested_{false};
 
   Track(int idx) : index(idx) {}
 
@@ -192,6 +193,7 @@ class Track {
   void SetClipLoop(int slot, bool is_loop);
   void PlayClip(int slot);
   void Stop();
+  void Panic();
   std::unique_ptr<IPlugin> RemovePlugin(size_t pidx);
 
   void AddTimelineClip(const std::string& path, double start_time_sec,

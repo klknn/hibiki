@@ -231,6 +231,19 @@ void playback_thread(ProjectState& state) {
                              track->virtual_midi_queue.end());
             track->virtual_midi_queue.clear();
           }
+          
+          // --- MIDI Panic handling ---
+          if (track->panic_requested_.exchange(false)) {
+            for (int note = 0; note < 128; ++note) {
+              MidiNoteEvent e;
+              e.sampleOffset = 0;
+              e.channel = 0;
+              e.pitch = note;
+              e.isNoteOn = false;
+              e.velocity = 0.0f;
+              allEvents.push_back(e);
+            }
+          }
 
           // Capture MIDI events for recording (MIDI mode)
           if (state.is_recording && track->record_armed &&

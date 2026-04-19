@@ -205,6 +205,11 @@ void Track::PlayClip(int slot) {
 void Track::Stop() {
   std::lock_guard<DummyMutex> lock(mutex);
   playing_slot = -1;
+  Panic();
+}
+
+void Track::Panic() {
+  panic_requested_ = true;
 }
 
 std::unique_ptr<IPlugin> Track::RemovePlugin(size_t pidx) {

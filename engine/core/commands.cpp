@@ -1153,6 +1153,14 @@ void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
         sendAck("UPDATE_CLIP_MIDI", false);
       break;
     }
+    case pb::commands::MidiCmd::ACTION_PANIC: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      for (auto& pair : state.tracks) {
+        pair.second->Panic();
+      }
+      sendAck("MIDI_PANIC", true);
+      break;
+    }
     default:
       break;
   }

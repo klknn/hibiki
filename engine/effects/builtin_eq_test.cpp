@@ -53,7 +53,8 @@ TEST(BuiltinEqTest, BypassPassthrough) {
   constexpr int N = 64;
   float inL[N], inR[N], outL[N], outR[N];
   for (int i = 0; i < N; ++i) {
-    inL[i] = outL[i] = std::sin(2.0 * std::numbers::pi_v<float> * 440.0 * i / 44100.0);
+    inL[i] = outL[i] =
+        std::sin(2.0 * std::numbers::pi_v<float> * 440.0 * i / 44100.0);
     inR[i] = outR[i] = inL[i];
   }
 
@@ -82,7 +83,8 @@ TEST(BuiltinEqTest, BellBoostIncreasesLevel) {
   constexpr int N = 1024;
   float outL[N], outR[N];
   for (int i = 0; i < N; ++i) {
-    outL[i] = outR[i] = std::sin(2.0 * std::numbers::pi_v<float> * 440.0 * i / 44100.0) * 0.5f;
+    outL[i] = outR[i] =
+        std::sin(2.0 * std::numbers::pi_v<float> * 440.0 * i / 44100.0) * 0.5f;
   }
 
   float* outs[2] = {outL, outR};

@@ -86,6 +86,8 @@ void BuiltinDelay::process(float** inputs, float** outputs, int num_samples,
 
   int buf_size = (int)buffer_l_.size();
 
+  float in_sum_sq = 0, out_sum_sq = 0;
+
   for (int i = 0; i < num_samples; ++i) {
     float in_l = inputs[0][i];
     float in_r = inputs[1][i];
@@ -120,11 +122,23 @@ void BuiltinDelay::process(float** inputs, float** outputs, int num_samples,
     }
 
     // Mix dry + wet
-    outputs[0][i] = in_l * (1.0f - mix) + del_l * mix;
-    outputs[1][i] = in_r * (1.0f - mix) + del_r * mix;
+    float out_l = in_l * (1.0f - mix) + del_l * mix;
+    float out_r = in_r * (1.0f - mix) + del_r * mix;
+    outputs[0][i] = out_l;
+    outputs[1][i] = out_r;
+
+    in_sum_sq += in_l * in_l + in_r * in_r;
+    out_sum_sq += out_l * out_l + out_r * out_r;
 
     write_pos_ = (write_pos_ + 1) % buf_size;
   }
+
+  // Smoothed RMS metering (exponential decay)
+  float in_rms = std::sqrt(in_sum_sq / (2.0f * num_samples));
+  float out_rms = std::sqrt(out_sum_sq / (2.0f * num_samples));
+  constexpr float kSmooth = 0.15f;
+  input_rms_ = input_rms_ * (1.0f - kSmooth) + in_rms * kSmooth;
+  output_rms_ = output_rms_ * (1.0f - kSmooth) + out_rms * kSmooth;
 }
 
 // --- IPlugin interface ---
@@ -157,5 +171,13 @@ const std::string& BuiltinDelay::getName() const { return kDelayName; }
 const std::string& BuiltinDelay::getPath() const { return kDelayPath; }
 int BuiltinDelay::getPluginIndex() const { return 0; }
 bool BuiltinDelay::isInstrument() const { return false; }
+
+float BuiltinDelay::getInputDb() const {
+  return input_rms_ > 0 ? 20.0f * std::log10(input_rms_) : -100.0f;
+}
+
+float BuiltinDelay::getOutputDb() const {
+  return output_rms_ > 0 ? 20.0f * std::log10(output_rms_) : -100.0f;
+}
 
 }  // namespace hibiki

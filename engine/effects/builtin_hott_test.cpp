@@ -171,7 +171,8 @@ TEST_F(BuiltinHottTest, DisabledBypass) {
   std::vector<float> inL(N), inR(N), origL(N), origR(N);
   for (int i = 0; i < N; ++i) {
     float t = i / 44100.0f;
-    inL[i] = origL[i] = 0.5f * std::sin(2.0f * std::numbers::pi_v<float> * 1000.0f * t);
+    inL[i] = origL[i] =
+        0.5f * std::sin(2.0f * std::numbers::pi_v<float> * 1000.0f * t);
     inR[i] = origR[i] = inL[i];
   }
   float* bufs[] = {inL.data(), inR.data()};

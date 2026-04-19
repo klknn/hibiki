@@ -27,8 +27,10 @@
 #include "engine/core/project.hpp"
 #include "engine/core/track.hpp"
 #include "engine/effects/builtin_compressor.hpp"
+#include "engine/effects/builtin_delay.hpp"
 #include "engine/effects/builtin_eq.hpp"
 #include "engine/effects/builtin_hott.hpp"
+#include "engine/effects/builtin_reverb.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "engine/vst3/vst3_host.hpp"
 #include "pb/commands.pb.h"
@@ -464,6 +466,13 @@ void notification_thread(ProjectState& state) {
             sendPluginMeteringData(track_idx, (int)p, hott->getInputDb(),
                                    hott->getOutputDb(),
                                    hott->getBandGainReduction(0));
+          } else if (auto* delay = dynamic_cast<BuiltinDelay*>(plugin.get())) {
+            sendPluginMeteringData(track_idx, (int)p, delay->getInputDb(),
+                                   delay->getOutputDb(), 0.0f);
+          } else if (auto* reverb =
+                         dynamic_cast<BuiltinReverb*>(plugin.get())) {
+            sendPluginMeteringData(track_idx, (int)p, reverb->getInputDb(),
+                                   reverb->getOutputDb(), 0.0f);
           }
         }
       }

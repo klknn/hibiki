@@ -162,6 +162,8 @@ void BuiltinReverb::process(float** inputs, float** outputs, int num_samples,
 
   int pd_size = (int)predelay_l_.size();
 
+  float in_sum_sq = 0, out_sum_sq = 0;
+
   for (int i = 0; i < num_samples; ++i) {
     float in_l = inputs[0][i];
     float in_r = inputs[1][i];
@@ -206,9 +208,21 @@ void BuiltinReverb::process(float** inputs, float** outputs, int num_samples,
     wet_r = lp_state_r_;
 
     // Mix
-    outputs[0][i] = in_l * (1.0f - mix) + wet_l * mix;
-    outputs[1][i] = in_r * (1.0f - mix) + wet_r * mix;
+    float final_l = in_l * (1.0f - mix) + wet_l * mix;
+    float final_r = in_r * (1.0f - mix) + wet_r * mix;
+    outputs[0][i] = final_l;
+    outputs[1][i] = final_r;
+
+    in_sum_sq += in_l * in_l + in_r * in_r;
+    out_sum_sq += final_l * final_l + final_r * final_r;
   }
+
+  // Smoothed RMS metering (exponential decay)
+  float in_rms = std::sqrt(in_sum_sq / (2.0f * num_samples));
+  float out_rms = std::sqrt(out_sum_sq / (2.0f * num_samples));
+  constexpr float kSmooth = 0.15f;
+  input_rms_ = input_rms_ * (1.0f - kSmooth) + in_rms * kSmooth;
+  output_rms_ = output_rms_ * (1.0f - kSmooth) + out_rms * kSmooth;
 }
 
 // --- IPlugin interface ---
@@ -241,5 +255,13 @@ const std::string& BuiltinReverb::getName() const { return kReverbName; }
 const std::string& BuiltinReverb::getPath() const { return kReverbPath; }
 int BuiltinReverb::getPluginIndex() const { return 0; }
 bool BuiltinReverb::isInstrument() const { return false; }
+
+float BuiltinReverb::getInputDb() const {
+  return input_rms_ > 0 ? 20.0f * std::log10(input_rms_) : -100.0f;
+}
+
+float BuiltinReverb::getOutputDb() const {
+  return output_rms_ > 0 ? 20.0f * std::log10(output_rms_) : -100.0f;
+}
 
 }  // namespace hibiki

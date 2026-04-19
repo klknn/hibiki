@@ -187,6 +187,12 @@ public class PluginPane extends JPanel {
             } else if (bp instanceof SamplerDevicePanel) {
               ((SamplerDevicePanel) bp).handleParamChange(paramId, value);
               return;
+            } else if (bp instanceof DelayDevicePanel) {
+              ((DelayDevicePanel) bp).updateParam(paramId, value);
+              return;
+            } else if (bp instanceof ReverbDevicePanel) {
+              ((ReverbDevicePanel) bp).updateParam(paramId, value);
+              return;
             }
           }
           Map<Integer, DevicePanel> panels = trackDevicePanels.get(trackIdx);
@@ -233,6 +239,10 @@ public class PluginPane extends JPanel {
             HottDevicePanel hott = (HottDevicePanel) bp;
             hott.setInputOutputLevel(inputDb, outputDb);
             hott.setGainReduction(gainReductionDb);
+          } else if (bp instanceof DelayDevicePanel) {
+            ((DelayDevicePanel) bp).setInputOutputLevel(inputDb, outputDb);
+          } else if (bp instanceof ReverbDevicePanel) {
+            ((ReverbDevicePanel) bp).setInputOutputLevel(inputDb, outputDb);
           }
         });
   }

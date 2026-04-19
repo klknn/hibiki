@@ -33,6 +33,7 @@ public class DelayDevicePanel extends JPanel {
   private boolean updatingFromBackend = false;
   private final EchoCanvas echoCanvas;
   private boolean pingPong = false;
+  private float inputDb = -100, outputDb = -100;
 
   public Runnable modToggleCallback;
 
@@ -166,6 +167,13 @@ public class DelayDevicePanel extends JPanel {
       updatingFromBackend = false;
       echoCanvas.repaint();
     }
+  }
+
+  /** Update real-time input/output levels for wet signal display. */
+  public void setInputOutputLevel(float inDb, float outDb) {
+    this.inputDb = inDb;
+    this.outputDb = outDb;
+    echoCanvas.repaint();
   }
 
   // ─── Echo visualization ────────────────────────────────────────
@@ -345,6 +353,34 @@ public class DelayDevicePanel extends JPanel {
       g2.setColor(COLOR_R);
       g2.drawString(
           "R", plotR - Theme.getInstance().scale(14), plotB - Theme.getInstance().scale(3));
+
+      // ── Wet signal level meters ──
+      int meterW = Theme.getInstance().scale(6);
+      int meterX = plotR - meterW - Theme.getInstance().scale(2);
+      int meterH = plotH;
+      int meterTop = plotT;
+
+      // Input meter (dim gray)
+      float inAmp = (float) Math.pow(10.0, Math.max(-60, inputDb) / 20.0);
+      int inH = (int) (inAmp * meterH);
+      g2.setColor(new Color(0x555555));
+      g2.fillRect(meterX - meterW - 2, meterTop + meterH - inH, meterW, inH);
+      g2.setColor(new Color(0x777777));
+      g2.drawRect(meterX - meterW - 2, meterTop, meterW, meterH);
+
+      // Output/wet meter (blue gradient)
+      float outAmp = (float) Math.pow(10.0, Math.max(-60, outputDb) / 20.0);
+      int outH = (int) (outAmp * meterH);
+      g2.setColor(new Color(0x4A9BD9));
+      g2.fillRect(meterX, meterTop + meterH - outH, meterW, outH);
+      g2.setColor(COLOR_L);
+      g2.drawRect(meterX, meterTop, meterW, meterH);
+
+      // Labels
+      g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(6.0f)));
+      g2.setColor(LABEL_COLOR);
+      g2.drawString("In", meterX - meterW - 2, meterTop - 2);
+      g2.drawString("Out", meterX, meterTop - 2);
 
       g2.dispose();
     }

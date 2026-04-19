@@ -49,6 +49,10 @@ class BuiltinReverb : public IPlugin {
   // Parameter mapping
   static float normToPreDelayMs(double norm);
 
+  // Metering (read from UI thread)
+  float getInputDb() const;
+  float getOutputDb() const;
+
  private:
   static constexpr int kNumCombs = 8;
   static constexpr int kNumAllpasses = 4;
@@ -85,6 +89,10 @@ class BuiltinReverb : public IPlugin {
   // Output filters
   float hp_state_l_ = 0, hp_state_r_ = 0;
   float lp_state_l_ = 0, lp_state_r_ = 0;
+
+  // Metering state
+  float input_rms_ = 0;
+  float output_rms_ = 0;
 
   void reset();
   void initBuffers();

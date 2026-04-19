@@ -179,15 +179,16 @@ class Track {
   std::mutex virtual_midi_mutex;
   std::vector<MidiNoteEvent> virtual_midi_queue;
 
-  int LoadPlugin(const std::string& path, int plugin_index, double sample_rate,
-                 PluginHostMode host_mode = PluginHostMode::IN_PROCESS,
-                 const std::string& remote_host = "");
+  std::pair<int, std::unique_ptr<IPlugin>> LoadPlugin(
+      const std::string& path, int plugin_index, double sample_rate,
+      PluginHostMode host_mode = PluginHostMode::IN_PROCESS,
+      const std::string& remote_host = "");
   bool DeleteClip(int slot);
   bool LoadClip(int slot, const std::string& path, bool is_loop = false);
   void SetClipLoop(int slot, bool is_loop);
   void PlayClip(int slot);
   void Stop();
-  bool RemovePlugin(size_t pidx);
+  std::unique_ptr<IPlugin> RemovePlugin(size_t pidx);
 
   void AddTimelineClip(const std::string& path, double start_time_sec,
                        double bpm, double duration_beats = 0);

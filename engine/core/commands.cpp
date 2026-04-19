@@ -614,34 +614,56 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
     case pb::commands::PluginCmd::ACTION_LOAD: {
       std::string vpath = cmd.path();
       int pidx = cmd.target().plugin_index();
-      std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      history.pushState(CaptureProjectState(state));
-      auto track = GetOrCreateTrack(state, tidx);
-      std::cerr << "BACKEND: Loading plugin: " << vpath << "\n";
-      sendLog("Loading plugin: " + vpath + " ...");
-      int target_idx =
-          track->LoadPlugin(vpath, pidx, state.sample_rate,
-                            state.plugin_host_mode, cmd.remote_host());
-      if (target_idx != -1) {
-        std::vector<VstParamInfo> params;
-        auto& plugin = track->plugins[target_idx];
-        for (int i = 0; i < plugin->getParameterCount(); ++i) {
-          VstParamInfo info;
-          if (plugin->getParameterInfo(i, info)) params.push_back(info);
+      std::unique_ptr<IPlugin> old_plugin = nullptr;
+      int target_idx = -1;
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        history.pushState(CaptureProjectState(state));
+        auto track = GetOrCreateTrack(state, tidx);
+        std::cerr << "BACKEND: Loading plugin: " << vpath << "\n";
+        sendLog("Loading plugin: " + vpath + " ...");
+        auto result =
+            track->LoadPlugin(vpath, pidx, state.sample_rate,
+                              state.plugin_host_mode, cmd.remote_host());
+        target_idx = result.first;
+        old_plugin = std::move(result.second);
+        if (target_idx != -1) {
+          std::vector<VstParamInfo> params;
+          auto& plugin = track->plugins[target_idx];
+          for (int i = 0; i < plugin->getParameterCount(); ++i) {
+            VstParamInfo info;
+            if (plugin->getParameterInfo(i, info)) {
+              params.push_back(info);
+            }
+          }
+          sendParamList(tidx, target_idx, plugin->getName(),
+                        plugin->isInstrument(), params);
+        } else {
+          sendLog("Failed to load plugin: " + vpath);
         }
-        sendParamList(tidx, target_idx, plugin->getName(),
-                      plugin->isInstrument(), params);
-      } else {
-        sendLog("Failed to load plugin: " + vpath);
       }
       break;
     }
     case pb::commands::PluginCmd::ACTION_REMOVE: {
       int pidx = cmd.target().plugin_index();
-      std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      history.pushState(CaptureProjectState(state));
-      auto track = GetOrCreateTrack(state, tidx);
-      sendAck("REMOVE_PLUGIN", track->RemovePlugin(pidx));
+      std::unique_ptr<IPlugin> old_plugin = nullptr;
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        history.pushState(CaptureProjectState(state));
+        auto track = GetOrCreateTrack(state, tidx);
+        // For simplicity and consistency, don't allow removing the main
+        // instrument at pidx 0. Users should replace it by loading another
+        // plugin.
+        if (pidx == 0 && !track->plugins.empty() &&
+            track->plugins[0]->isInstrument()) {
+          LOG(WARNING) << "Ignoring request to remove instrument on track "
+                       << tidx;
+          sendAck("REMOVE_PLUGIN", false);
+          break;
+        }
+        old_plugin = track->RemovePlugin(pidx);
+      }
+      sendAck("REMOVE_PLUGIN", old_plugin != nullptr);
       break;
     }
     case pb::commands::PluginCmd::ACTION_SHOW_GUI: {

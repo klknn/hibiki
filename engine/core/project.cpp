@@ -118,8 +118,9 @@ static void LoadTracksFromProto(ProjectState& state,
 
     for (const auto& plugin_data : track_data.plugins()) {
       if (plugin_data.path().empty()) continue;
-      int pidx = track->LoadPlugin(
+      auto result = track->LoadPlugin(
           plugin_data.path(), plugin_data.plugin_index(), state.sample_rate);
+      int pidx = result.first;
       if (pidx >= 0) {
         for (const auto& param_data : plugin_data.params()) {
           track->plugins[pidx]->setParameterValue(param_data.id(),

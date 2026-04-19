@@ -18,9 +18,9 @@
 
 namespace hibiki {
 
-int Track::LoadPlugin(const std::string& path, int plugin_index,
-                      double sample_rate, PluginHostMode host_mode,
-                      const std::string& remote_host) {
+std::pair<int, std::unique_ptr<IPlugin>> Track::LoadPlugin(
+    const std::string& path, int plugin_index, double sample_rate,
+    PluginHostMode host_mode, const std::string& remote_host) {
   std::lock_guard<DummyMutex> lock(mutex);
   std::unique_ptr<IPlugin> plugin;
 
@@ -60,7 +60,7 @@ int Track::LoadPlugin(const std::string& path, int plugin_index,
     }
     plugin = std::make_unique<PluginProxy>(host, port);
     if (!plugin->load(path, plugin_index, sample_rate)) {
-      return -1;
+      return {-1, nullptr};
     }
   } else {
     // Local plugin — use configured host mode
@@ -74,7 +74,7 @@ int Track::LoadPlugin(const std::string& path, int plugin_index,
         break;
     }
     if (!plugin->load(path, plugin_index, sample_rate)) {
-      return -1;
+      return {-1, nullptr};
     }
   }
 
@@ -90,10 +90,12 @@ int Track::LoadPlugin(const std::string& path, int plugin_index,
     }
   }
 
+  std::unique_ptr<IPlugin> old_plugin = nullptr;
   if (target_idx != -1) {
     // Stop playback to prevent audio thread from accessing plugin during
     // replacement
     playing_slot = -1;
+    old_plugin = std::move(plugins[target_idx]);
     plugins[target_idx] = std::move(plugin);
   } else if (is_instrument) {
     // New instrument, insert at 0
@@ -123,7 +125,7 @@ int Track::LoadPlugin(const std::string& path, int plugin_index,
     }
   }
 
-  return target_idx;
+  return {target_idx, std::move(old_plugin)};
 }
 
 bool Track::DeleteClip(int slot) {
@@ -204,14 +206,17 @@ void Track::Stop() {
   playing_slot = -1;
 }
 
-bool Track::RemovePlugin(size_t pidx) {
+std::unique_ptr<IPlugin> Track::RemovePlugin(size_t pidx) {
   std::lock_guard<DummyMutex> lock(mutex);
-  if (pidx >= plugins.size()) return false;
+  if (pidx >= plugins.size()) return nullptr;
+  // Safety: don't allow removing the main instrument at slot 0 via this method.
+  if (pidx == 0 && plugins[0]->isInstrument()) return nullptr;
   // Stop playback to prevent audio thread from accessing plugin during
   // destruction
   playing_slot = -1;
+  std::unique_ptr<IPlugin> old = std::move(plugins[pidx]);
   plugins.erase(plugins.begin() + pidx);
-  return true;
+  return old;
 }
 
 void Track::AddTimelineClip(const std::string& path, double start_time_sec,

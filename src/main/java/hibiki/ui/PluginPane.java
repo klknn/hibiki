@@ -280,6 +280,9 @@ public class PluginPane extends JPanel {
           // Detect built-in devices and create specialized panels
           Class<? extends JPanel> builtinClass = BUILTIN_DEVICE_PANELS.get(pluginName);
           if (builtinClass != null) {
+            // Ensure any VST3 panel at this index is removed if we are switching to built-in
+            trackDevicePanels.computeIfAbsent(trackIdx, k -> new TreeMap<>()).remove(pIdx);
+
             Map<Integer, JPanel> bi = builtinPanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
             if (!builtinClass.isInstance(bi.get(pIdx))) {
               try {
@@ -295,6 +298,10 @@ public class PluginPane extends JPanel {
           }
 
           // Standard VST3 device panel
+          // Ensure any built-in panel at this index is removed if we are switching to VST3
+          Map<Integer, JPanel> biList = builtinPanels.get(trackIdx);
+          if (biList != null) biList.remove(pIdx);
+
           Map<Integer, DevicePanel> devicePanels =
               trackDevicePanels.computeIfAbsent(trackIdx, k -> new TreeMap<>());
           DevicePanel panel = devicePanels.get(pIdx);
@@ -553,6 +560,9 @@ public class PluginPane extends JPanel {
       btnPanel.add(editBtn);
 
       JButton delBtn = new JButton("❌");
+      if (isInstrument) {
+        delBtn.setVisible(false);
+      }
       delBtn.addActionListener(e -> sendRemovePlugin());
       btnPanel.add(delBtn);
 

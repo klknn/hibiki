@@ -22,8 +22,26 @@ public class BackendManager {
   private boolean isRecording = false; // Track recording state
   private volatile HibikiConfig currentConfig = null;
   private String defaultInputDeviceId = ""; // Default input device from Settings
+  private List<String> engineFlags = new ArrayList<>(); // CLI flags forwarded to hbk-play
 
   private BackendManager() {}
+
+  /** Set engine flags forwarded to hbk-play (e.g. --stderrthreshold=0, --v=1). */
+  public void setEngineFlags(List<String> flags) {
+    this.engineFlags = new ArrayList<>(flags);
+  }
+
+  private List<String> buildEngineCommand(String binaryPath) {
+    List<String> cmd = new ArrayList<>();
+    cmd.add(binaryPath);
+    cmd.addAll(engineFlags);
+    // Default stderr threshold to WARNING (1) if not explicitly set
+    boolean hasThreshold = engineFlags.stream().anyMatch(f -> f.startsWith("--stderrthreshold"));
+    if (!hasThreshold) {
+      cmd.add("--stderrthreshold=1");
+    }
+    return cmd;
+  }
 
   public static BackendManager getInstance() {
     return instance;
@@ -44,7 +62,7 @@ public class BackendManager {
         System.err.println("Found " + binaryName + " at " + hbkPlayPath);
       }
 
-      ProcessBuilder pb = new ProcessBuilder(hbkPlayPath);
+      ProcessBuilder pb = new ProcessBuilder(buildEngineCommand(hbkPlayPath));
       backendProcess = pb.start();
       out = new DataOutputStream(backendProcess.getOutputStream());
 

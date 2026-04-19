@@ -23,9 +23,11 @@ cc_binary(
         "//engine/core:project",
         "//engine/core:track",
         "//engine/ipc",
+        "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:absl_log",
         "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/log:flags",
         "@abseil-cpp//absl/log:globals",
         "@abseil-cpp//absl/log:initialize",
     ] + select({

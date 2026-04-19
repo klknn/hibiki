@@ -9,7 +9,10 @@
 #include <thread>
 #include <vector>
 
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
 #include "absl/log/check.h"
+#include "absl/log/flags.h"
 #include "absl/log/globals.h"
 #include "absl/log/initialize.h"
 #include "absl/log/log.h"
@@ -36,6 +39,9 @@
 #include "engine/vst3/vst3_host.hpp"
 #include "pb/commands.pb.h"
 #include "pb/notifications.pb.h"
+
+ABSL_FLAG(std::string, list, "",
+          "List plugins in the given .vst3 bundle path and exit.");
 
 namespace hibiki {
 
@@ -616,11 +622,13 @@ void run_ipc_loop(ProjectState& state) {
 
 int main(int argc, char** argv) {
   using namespace hibiki;
+  absl::ParseCommandLine(argc, argv);
   absl::InitializeLog();
-  absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfo);
 
-  if (argc >= 2 && std::string(argv[1]) == "--list") {
-    auto plugins = Vst3Plugin::listPlugins(argv[2]);
+  // --list mode: used by listPluginsIsolated subprocess
+  std::string list_path = absl::GetFlag(FLAGS_list);
+  if (!list_path.empty()) {
+    auto plugins = Vst3Plugin::listPlugins(list_path);
     for (const auto& p : plugins) {
       std::cout << p.index << ":" << p.name << ":" << p.vendor << "\n";
     }

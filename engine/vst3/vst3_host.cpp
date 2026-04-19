@@ -520,11 +520,13 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(
   // On Windows, std::system runs cmd /c. If the command starts and ends with
   // quotes, they are stripped. We wrap the entire command in an extra set of
   // quotes.
-  std::string cmd = std::string("\"\"") + executable_path + "\" --list \"" +
-                    path + "\" > \"" + tmp_file + "\"\"";
+  std::string cmd = std::string("\"\"") + executable_path +
+                    "\" --stderrthreshold=2 --list=\"" + path + "\" > \"" +
+                    tmp_file + "\"\"";
 #else
-  std::string cmd = std::string("\"") + executable_path + "\" --list \"" +
-                    path + "\" > \"" + tmp_file + "\"";
+  std::string cmd =
+      std::string("\"") + executable_path +
+      "\" --stderrthreshold=2 --list=\"" + path + "\" > \"" + tmp_file + "\"";
 #endif
 
   LOG(INFO) << "ISOLATED SCAN: Running command: " << cmd;

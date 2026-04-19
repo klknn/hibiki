@@ -29,6 +29,26 @@ bazel build -c opt //:hibiki-gui-java
 ./bazel-bin/hibiki-gui-java
 ```
 
+#### Log Verbosity Flags
+
+Both the GUI and `hbk-play` support [abseil logging flags](https://github.com/abseil/abseil-cpp/blob/master/absl/log/flags.h):
+
+| Flag | Values | Description |
+|------|--------|-------------|
+| `--stderrthreshold=N` | 0=info, 1=warning, 2=error | Log messages at or above this level go to stderr |
+| `--minloglevel=N` | 0=info, 1=warning, 2=error | Discard messages below this level |
+| `--v=N` | 0, 1, 2, ... | Verbose logging level (higher = more detail) |
+
+```bash
+# GUI with verbose engine logging
+./bazel-bin/hibiki-gui-java --stderrthreshold=0
+
+# CLI with only errors
+./bazel-bin/engine/hbk-play --stderrthreshold=2 project.hbk
+```
+
+> **Note:** The GUI defaults to `--stderrthreshold=1` (warning). Pass `--stderrthreshold=0` to see INFO-level engine logs.
+
 ---
 
 ## Keyboard Shortcuts

@@ -44,8 +44,20 @@ public class GuiMain {
       System.err.println("Failed to initialize LaF");
     }
 
+    // Forward absl-compatible engine flags to hbk-play backend
+    // Supported: --stderrthreshold=N, --minloglevel=N, --v=N, -v=N
+    java.util.List<String> engineFlags = new java.util.ArrayList<>();
+    for (String arg : args) {
+      if (arg.startsWith("--stderrthreshold") || arg.startsWith("--minloglevel")
+          || arg.startsWith("--v=") || arg.startsWith("-v=")) {
+        engineFlags.add(arg);
+      }
+    }
+    BackendManager backend = BackendManager.getInstance();
+    backend.setEngineFlags(engineFlags);
+
     // Start backend connection
-    BackendManager.getInstance().start();
+    backend.start();
 
     SwingUtilities.invokeLater(
         () -> {

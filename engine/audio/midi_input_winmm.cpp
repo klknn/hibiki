@@ -6,6 +6,7 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+// windows.h must be included before mmsystem.h
 #include <windows.h>
 #include <mmsystem.h>
 // clang-format on

@@ -34,6 +34,8 @@ cc_library(
     deps = [
         ":iplugin",
         "//engine/vst3:vst3_host",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:check",
     ],
 )
 

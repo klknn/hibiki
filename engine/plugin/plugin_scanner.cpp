@@ -7,22 +7,33 @@
 #include <thread>
 
 #include "engine/vst3/vst3_host.hpp"
+#include "absl/log/log.h"
 
 namespace hibiki {
 
 std::vector<std::string> collectVst3Bundles(
     const std::vector<std::string>& dirs) {
+  LOG(INFO) << "Collecting VST3 bundles from " << dirs.size() << " directories";
   std::vector<std::string> bundles;
   for (const auto& dir : dirs) {
+    LOG(INFO) << "Scanning directory: " << dir;
     std::error_code ec;
-    if (!std::filesystem::is_directory(dir, ec)) continue;
+    if (!std::filesystem::is_directory(dir, ec)) {
+      LOG(WARNING) << "Not a directory: " << dir << " (error: " << ec.message() << ")";
+      continue;
+    }
     for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+      std::string path = entry.path().string();
       std::string name = entry.path().filename().string();
       if (name.size() > 5 && name.substr(name.size() - 5) == ".vst3") {
-        bundles.push_back(entry.path().string());
+        LOG(INFO) << "Found bundle: " << path;
+        bundles.push_back(path);
+      } else {
+        VLOG(1) << "Skipping non-vst3 file/directory: " << path;
       }
     }
   }
+  LOG(INFO) << "Total bundles found: " << bundles.size();
   return bundles;
 }
 
@@ -81,8 +92,8 @@ void startPluginScan(AsyncPluginCache& cache) {
     auto ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     std::lock_guard<std::mutex> lock(cache.mu);
-    std::cerr << "Plugin cache: " << cache.entries.size() << " plugins in "
-              << ms << " ms (" << bundles.size() << " bundles)\n";
+    LOG(INFO) << "Plugin cache: " << cache.entries.size() << " plugins in "
+              << ms << " ms (" << bundles.size() << " bundles)";
   }).detach();
 }
 

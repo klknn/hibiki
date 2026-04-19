@@ -373,23 +373,15 @@ public class BrowserPane extends JPanel {
     if (files == null) return;
 
     for (File f : files) {
-      if (f.isDirectory()) {
-        if (f.getName().endsWith(".vst3")) {
-          bundlePaths.add(f.getAbsolutePath());
-        } else {
-          collectFiles(f, pluginsNode, midiNode, audioNode, bundlePaths);
-        }
-      } else {
-        String name = f.getName().toLowerCase();
-        if (name.endsWith(".mid") || name.endsWith(".midi")) {
-          if (midiNode != null) {
-            midiNode.add(new DefaultMutableTreeNode(new FileItem(f, "midi", f.getName())));
-          }
-        } else if (name.endsWith(".wav")) {
-          if (audioNode != null) {
-            audioNode.add(new DefaultMutableTreeNode(new FileItem(f, "audio", f.getName())));
-          }
-        }
+      String name = f.getName().toLowerCase();
+      if (name.endsWith(".vst3")) {
+        bundlePaths.add(f.getAbsolutePath());
+      } else if (f.isDirectory()) {
+        collectFiles(f, pluginsNode, midiNode, audioNode, bundlePaths);
+      } else if (midiNode != null && (name.endsWith(".mid") || name.endsWith(".midi"))) {
+        midiNode.add(new DefaultMutableTreeNode(new FileItem(f, "midi", f.getName())));
+      } else if (audioNode != null && name.endsWith(".wav")) {
+        audioNode.add(new DefaultMutableTreeNode(new FileItem(f, "audio", f.getName())));
       }
     }
   }

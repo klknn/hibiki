@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "absl/log/check.h"
+#include "absl/log/globals.h"
 #include "absl/log/initialize.h"
 #include "absl/log/log.h"
 
@@ -615,6 +616,9 @@ void run_ipc_loop(ProjectState& state) {
 
 int main(int argc, char** argv) {
   using namespace hibiki;
+  absl::InitializeLog();
+  absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfo);
+
   if (argc >= 2 && std::string(argv[1]) == "--list") {
     auto plugins = Vst3Plugin::listPlugins(argv[2]);
     for (const auto& p : plugins) {
@@ -628,8 +632,6 @@ int main(int argc, char** argv) {
   _setmode(_fileno(stdin), _O_BINARY);
   _setmode(_fileno(stdout), _O_BINARY);
 #endif
-
-  absl::InitializeLog();
 
   hibiki::ProjectState state;
   state.bpm = 140.0;            // Explicitly set default BPM

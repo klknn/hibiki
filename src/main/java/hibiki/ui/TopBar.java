@@ -145,6 +145,26 @@ public class TopBar extends JPanel {
     JButton settingsBtn = Theme.getInstance().createButton("⚙", e -> showSettings());
     settingsBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
 
+    JButton rebootBtn =
+        Theme.getInstance()
+            .createButton(
+                "🔄",
+                e -> {
+                  int confirm =
+                      JOptionPane.showConfirmDialog(
+                          this,
+                          "Are you sure you want to reboot the backend engine?\n"
+                              + "This will terminate the current engine process and restart it.",
+                          "Reboot Backend",
+                          JOptionPane.YES_NO_OPTION,
+                          JOptionPane.WARNING_MESSAGE);
+                  if (confirm == JOptionPane.YES_OPTION) {
+                    BackendManager.getInstance().restart();
+                  }
+                });
+    rebootBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
+    rebootBtn.setToolTipText("Reboot backend engine and plugin workers");
+
     // Virtual keyboard toggle
     pianoBtn =
         Theme.getInstance()
@@ -172,6 +192,7 @@ public class TopBar extends JPanel {
     rightPanel.add(pianoBtn);
     rightPanel.add(octaveLabel);
     rightPanel.add(replBtn);
+    rightPanel.add(rebootBtn);
     rightPanel.add(settingsBtn);
     add(rightPanel, BorderLayout.EAST);
 

@@ -82,9 +82,9 @@ public class BackendManager {
     }
   }
 
-  public void stop() {
+  public synchronized void terminateProcess() {
     if (backendProcess != null && backendProcess.isAlive()) {
-      LOG.info("Stopping backend process...");
+      System.err.println("Terminating backend process...");
       backendProcess.destroy();
       try {
         if (!backendProcess.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -94,7 +94,25 @@ public class BackendManager {
         backendProcess.destroyForcibly();
       }
     }
+    backendProcess = null;
+    out = null;
+    currentConfig = null;
+  }
+
+  public void stop() {
+    terminateProcess();
     executor.shutdownNow();
+  }
+
+  public void restart() {
+    System.err.println("Restarting backend...");
+    terminateProcess();
+    // Give it a tiny moment to release resources/ports
+    try {
+      Thread.sleep(200);
+    } catch (InterruptedException ignored) {
+    }
+    start();
   }
 
   public void addNotificationListener(Consumer<Notification> listener) {

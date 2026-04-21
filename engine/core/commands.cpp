@@ -349,6 +349,15 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
       state.playhead_pos_sec = cmd.seek_pos();
       sendAck("SEEK", true);
       break;
+    case pb::commands::TransportCmd::ACTION_SET_LOOP:
+      state.loop_enabled = cmd.loop_enabled();
+      state.loop_start_sec = cmd.loop_start();
+      state.loop_end_sec = cmd.loop_end();
+      LOG(INFO) << "Loop " << (state.loop_enabled ? "enabled" : "disabled")
+                << " [" << state.loop_start_sec << "s, " << state.loop_end_sec
+                << "s]";
+      sendAck("SET_LOOP", true);
+      break;
     default:
       break;
   }

@@ -268,6 +268,19 @@ public class BackendManager {
     isRecording = true;
   }
 
+  /** Set or clear the loop region */
+  public void sendSetLoop(boolean enabled, float startSec, float endSec) {
+    sendRequest(
+        Request.newBuilder()
+            .setTransport(
+                TransportCmd.newBuilder()
+                    .setAction(TransportCmd.Action.ACTION_SET_LOOP)
+                    .setLoopEnabled(enabled)
+                    .setLoopStart(startSec)
+                    .setLoopEnd(endSec))
+            .build());
+  }
+
   public boolean isRecording() {
     return isRecording;
   }

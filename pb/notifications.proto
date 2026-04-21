@@ -38,6 +38,9 @@ message PlayheadInfo {
   float position_sec = 1;
   float bpm = 2;
   hibiki.pb.core.TransportState transport_state = 3;
+  bool loop_enabled = 4;
+  float loop_start = 5;
+  float loop_end = 6;
 }
 
 // ─── Plugin Discovery ───────────────────────────────────────────────

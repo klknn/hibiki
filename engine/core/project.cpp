@@ -295,10 +295,17 @@ double GetProjectDuration(const ProjectState& state) {
 void BounceProject(ProjectState& live_state, const std::string& path) {
   std::vector<uint8_t> snapshot;
   double duration = 0.0;
+  double start_sec = 0.0;
   {
     std::lock_guard<std::mutex> lock(live_state.tracks_mutex);
     snapshot = CaptureProjectState(live_state);
     duration = GetProjectDuration(live_state);
+  }
+
+  // Use loop region for bounce if markers are set
+  if (live_state.loop_end_sec > live_state.loop_start_sec) {
+    start_sec = live_state.loop_start_sec;
+    duration = live_state.loop_end_sec;
   }
 
   if (duration <= 0.0) {
@@ -310,7 +317,7 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
   state.sample_rate = live_state.sample_rate;
   ApplyProjectState(state, snapshot);
   state.is_timeline_playing = true;
-  state.playhead_pos_sec = 0.0;
+  state.playhead_pos_sec = start_sec;
 
   int block_size = 512;
   float sample_rate = state.sample_rate;

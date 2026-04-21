@@ -39,6 +39,11 @@ struct ProjectState {
   bool is_recording = false;
   double record_start_sec = 0.0;  // Playhead position when recording started
   std::string project_dir;        // "" = unsaved, set on save/load
+
+  // Loop region
+  bool loop_enabled = false;
+  double loop_start_sec = 0.0;
+  double loop_end_sec = 0.0;
 };
 
 // Returns a pointer to the track, creating it if it doesn't exist

@@ -22,6 +22,8 @@ public class TopBar extends JPanel {
   private JTextField bpmField;
   private JLabel timeSigLabel;
   private JLabel positionLabel;
+  private JLabel loopStartLabel;
+  private JLabel loopEndLabel;
   private JLabel cpuLabel;
   private ViewToggleListener viewToggleListener;
   private ReplToggleListener replToggleListener;
@@ -113,6 +115,10 @@ public class TopBar extends JPanel {
     loopBtn.setToolTipText("Loop toggle");
 
     positionLabel = createDisplayLabel("1. 1. 1", Theme.getInstance().scale(80));
+    loopStartLabel = createDisplayLabel("", Theme.getInstance().scale(110));
+    loopStartLabel.setVisible(false);
+    loopEndLabel = createDisplayLabel("", Theme.getInstance().scale(110));
+    loopEndLabel.setVisible(false);
 
     centerPanel.add(playBtn);
     centerPanel.add(stopBtn);
@@ -120,6 +126,10 @@ public class TopBar extends JPanel {
     centerPanel.add(loopBtn);
     centerPanel.add(Box.createHorizontalStrut(Theme.getInstance().scale(10)));
     centerPanel.add(positionLabel);
+    centerPanel.add(Box.createHorizontalStrut(Theme.getInstance().scale(4)));
+    centerPanel.add(loopStartLabel);
+    centerPanel.add(Box.createHorizontalStrut(Theme.getInstance().scale(2)));
+    centerPanel.add(loopEndLabel);
     add(centerPanel, BorderLayout.CENTER);
 
     // Right section: Device Info
@@ -241,6 +251,32 @@ public class TopBar extends JPanel {
         .start();
   }
 
+  /** Convert seconds to "bar.beat.sub" string given BPM (4/4 time). */
+  static String secToBarBeatSub(float sec, float bpm) {
+    if (bpm <= 0) return "1. 1. 1";
+    float secPerBeat = 60.0f / bpm;
+    float totalBeats = sec / secPerBeat;
+    int bar = (int) (totalBeats / 4) + 1;
+    int beat = (int) (totalBeats % 4) + 1;
+    int sub = (int) ((totalBeats % 1.0f) * 4) + 1;
+    return bar + ". " + beat + ". " + sub;
+  }
+
+  /** Update position display from playhead notification. */
+  public void updatePosition(float playheadSec, float bpm,
+      boolean loopEnabled, float loopStart, float loopEnd) {
+    positionLabel.setText(secToBarBeatSub(playheadSec, bpm));
+
+    // Show loop markers if window has enough width
+    boolean showLoop = loopEnabled && loopEnd > loopStart && getWidth() > 600;
+    loopStartLabel.setVisible(showLoop);
+    loopEndLabel.setVisible(showLoop);
+    if (showLoop) {
+      loopStartLabel.setText("L: " + secToBarBeatSub(loopStart, bpm));
+      loopEndLabel.setText("R: " + secToBarBeatSub(loopEnd, bpm));
+    }
+  }
+
   public void showSettings() {
     SettingsDialog dialog = new SettingsDialog((Frame) SwingUtilities.getWindowAncestor(this));
     dialog.setVisible(true);
@@ -297,7 +333,11 @@ public class TopBar extends JPanel {
     } else {
       loopBtn.setForeground(Theme.getInstance().TEXT_NORMAL);
     }
-    // TODO: Send loop state to backend when implemented
+    // Send loop state to backend
+    TimelineView tv = TimelineView.getInstance();
+    float loopStart = tv != null ? tv.loopStartSec : 0;
+    float loopEnd = tv != null ? tv.loopEndSec : 0;
+    BackendManager.getInstance().sendSetLoop(isLooping, loopStart, loopEnd);
   }
 
   public void showSaveDialog() {

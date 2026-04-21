@@ -26,10 +26,14 @@ message TransportCmd {
     ACTION_STOP = 2;
     ACTION_SEEK = 3;
     ACTION_RECORD = 4;
+    ACTION_SET_LOOP = 5;  // Set or clear the loop region
   }
   Action action = 1;
   float seek_pos = 2;
   uint32 scene_index = 3;
+  bool loop_enabled = 4;
+  float loop_start = 5;   // loop start in seconds
+  float loop_end = 6;     // loop end in seconds
 }
 
 message TrackCmd {

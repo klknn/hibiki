@@ -157,7 +157,8 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
   sendProto(notification);
 }
 
-void sendPlayheadInfo(float position_sec, float bpm, bool is_playing) {
+void sendPlayheadInfo(float position_sec, float bpm, bool is_playing,
+                      bool loop_enabled, float loop_start, float loop_end) {
   hibiki::pb::notifications::Notification notification;
   auto* phi = notification.mutable_playhead_info();
   phi->set_position_sec(position_sec);
@@ -165,6 +166,9 @@ void sendPlayheadInfo(float position_sec, float bpm, bool is_playing) {
   phi->set_transport_state(is_playing
                                ? hibiki::pb::core::TRANSPORT_STATE_PLAYING
                                : hibiki::pb::core::TRANSPORT_STATE_STOPPED);
+  phi->set_loop_enabled(loop_enabled);
+  phi->set_loop_start(loop_start);
+  phi->set_loop_end(loop_end);
   sendProto(notification);
 }
 

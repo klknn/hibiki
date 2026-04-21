@@ -55,13 +55,51 @@ class TimelineMouseHandler {
   // ─── Mouse press ────────────────────────────────────────────────────
 
   private void handleMousePressed(MouseEvent e) {
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
-    if (e.getY() < scaleTimeRuler) {
-      view.updatePlayhead(e.getX());
+    int scaleSeekRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTotalRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
+
+    if (e.getY() < scaleTotalRuler) {
+      if (e.getY() < scaleSeekRuler) {
+        // Top lane: seek playhead
+        view.updatePlayhead(e.getX());
+      } else {
+        // Bottom lane: loop region
+        if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
+          // Double-click: toggle loop enable/disable
+          if (view.loopEndSec > view.loopStartSec) {
+            view.loopEnabled = !view.loopEnabled;
+            BackendManager.getInstance()
+                .sendSetLoop(view.loopEnabled, view.loopStartSec, view.loopEndSec);
+            view.contentPanel.repaint();
+          }
+        } else if (SwingUtilities.isLeftMouseButton(e)) {
+          float pps = view.getPixelsPerSecond();
+          int hitThreshold = Theme.getInstance().scale(6);
+          // Check if near an existing loop marker
+          if (view.loopEndSec > view.loopStartSec) {
+            int startPx = (int) (view.loopStartSec * pps);
+            int endPx = (int) (view.loopEndSec * pps);
+            if (Math.abs(e.getX() - startPx) <= hitThreshold) {
+              view.draggingLoopEnd = false;
+              view.dragMode = TimelineView.DragMode.DRAG_LOOP_MARKER;
+              return;
+            } else if (Math.abs(e.getX() - endPx) <= hitThreshold) {
+              view.draggingLoopEnd = true;
+              view.dragMode = TimelineView.DragMode.DRAG_LOOP_MARKER;
+              return;
+            }
+          }
+          // Not near a marker: create new loop region
+          float clickTime = Math.max(0, e.getX() / pps);
+          if (!e.isShiftDown()) clickTime = view.snapToGrid(clickTime);
+          view.loopDragStartSec = clickTime;
+          view.dragMode = TimelineView.DragMode.DRAG_LOOP_REGION;
+        }
+      }
       return;
     }
 
-    int trackIdx = view.getTrackIdxAtY(e.getY() - scaleTimeRuler);
+    int trackIdx = view.getTrackIdxAtY(e.getY() - scaleTotalRuler);
     if (trackIdx < 0 || trackIdx >= view.tracks.size()) return;
 
     // Check if click is in an automation lane
@@ -181,6 +219,33 @@ class TimelineMouseHandler {
       }
     }
 
+    // Handle loop marker drag completion
+    if (view.dragMode == TimelineView.DragMode.DRAG_LOOP_MARKER) {
+      if (view.loopEndSec > view.loopStartSec) {
+        BackendManager.getInstance()
+            .sendSetLoop(view.loopEnabled, view.loopStartSec, view.loopEndSec);
+      }
+    }
+
+    // Handle loop region drag completion
+    if (view.dragMode == TimelineView.DragMode.DRAG_LOOP_REGION) {
+      float dragStart = view.loopDragStartSec;
+      float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
+      if (!e.isShiftDown()) mouseTime = view.snapToGrid(mouseTime);
+      float lo = Math.min(dragStart, mouseTime);
+      float hi = Math.max(dragStart, mouseTime);
+      if (hi - lo > 0.05f) {
+        // Dragged a region: set loop markers and auto-enable
+        view.loopStartSec = lo;
+        view.loopEndSec = hi;
+        view.loopEnabled = true;
+        BackendManager.getInstance().sendSetLoop(true, lo, hi);
+      } else {
+        // Single click (no drag): seek playhead
+        view.updatePlayhead(e.getX());
+      }
+    }
+
     // Reset all drag state
     view.dragMode = TimelineView.DragMode.NONE;
     view.draggingClip = null;
@@ -193,7 +258,7 @@ class TimelineMouseHandler {
   }
 
   private void completeDrag(MouseEvent e) {
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
     int targetTrackIdx = view.getTrackIdxAtY(e.getY() - scaleTimeRuler);
     targetTrackIdx = Math.max(0, Math.min(view.tracks.size() - 1, targetTrackIdx));
 
@@ -320,7 +385,31 @@ class TimelineMouseHandler {
     // Delegate automation drags
     if (autoHandler.handleDrag(e)) return;
 
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
+
+    // Handle loop marker drag
+    if (view.dragMode == TimelineView.DragMode.DRAG_LOOP_MARKER) {
+      float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
+      if (!e.isShiftDown()) mouseTime = view.snapToGrid(mouseTime);
+      if (view.draggingLoopEnd) {
+        view.loopEndSec = Math.max(view.loopStartSec + 0.05f, mouseTime);
+      } else {
+        view.loopStartSec = Math.min(view.loopEndSec - 0.05f, Math.max(0, mouseTime));
+      }
+      view.contentPanel.repaint();
+      return;
+    }
+
+    // Handle loop region drag on ruler
+    if (view.dragMode == TimelineView.DragMode.DRAG_LOOP_REGION) {
+      float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
+      if (!e.isShiftDown()) mouseTime = view.snapToGrid(mouseTime);
+      view.loopStartSec = Math.min(view.loopDragStartSec, mouseTime);
+      view.loopEndSec = Math.max(view.loopDragStartSec, mouseTime);
+      view.contentPanel.repaint();
+      return;
+    }
+
     if (e.getY() < scaleTimeRuler
         && view.draggingClip == null
         && view.dragMode != TimelineView.DragMode.CREATE_CLIP
@@ -378,10 +467,29 @@ class TimelineMouseHandler {
   // ─── Mouse move (cursor changes) ────────────────────────────────────
 
   private void handleMouseMoved(MouseEvent e) {
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
-    if (e.getY() < scaleTimeRuler) return;
+    int scaleSeekRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTotalRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
+    if (e.getY() < scaleTotalRuler) {
+      if (e.getY() >= scaleSeekRuler) {
+        // In loop lane: check for loop marker hover
+        if (view.loopEndSec > view.loopStartSec) {
+          float pps = view.getPixelsPerSecond();
+          int hitThreshold = Theme.getInstance().scale(6);
+          int startPx = (int) (view.loopStartSec * pps);
+          int endPx = (int) (view.loopEndSec * pps);
+          if (Math.abs(e.getX() - startPx) <= hitThreshold
+              || Math.abs(e.getX() - endPx) <= hitThreshold) {
+            view.contentPanel.setCursor(
+                java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.E_RESIZE_CURSOR));
+            return;
+          }
+        }
+      }
+      view.contentPanel.setCursor(java.awt.Cursor.getDefaultCursor());
+      return;
+    }
 
-    int trackIdx = view.getTrackIdxAtY(e.getY() - scaleTimeRuler);
+    int trackIdx = view.getTrackIdxAtY(e.getY() - scaleTotalRuler);
     if (trackIdx < 0 || trackIdx >= view.tracks.size()) return;
 
     TimelineView.ClipRect clip = view.findClipAtPosition(trackIdx, e.getX());

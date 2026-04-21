@@ -36,7 +36,7 @@ public class TimelineMouseHandlerTest {
   @Test
   public void testDragMode_values() {
     TimelineView.DragMode[] modes = TimelineView.DragMode.values();
-    assertEquals(5, modes.length);
+    assertEquals(7, modes.length);
     assertEquals(TimelineView.DragMode.NONE, TimelineView.DragMode.valueOf("NONE"));
     assertEquals(TimelineView.DragMode.MOVE_CLIP, TimelineView.DragMode.valueOf("MOVE_CLIP"));
     assertEquals(TimelineView.DragMode.CREATE_CLIP, TimelineView.DragMode.valueOf("CREATE_CLIP"));
@@ -68,7 +68,7 @@ public class TimelineMouseHandlerTest {
     handler.install();
 
     // Click inside clip at 3.0s (within [2.0, 5.0])
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
     int trackTopY = scaleTimeRuler + 10; // within track 0
     int x = (int) (3.0f * view.getPixelsPerSecond());
 
@@ -101,7 +101,7 @@ public class TimelineMouseHandlerTest {
     TimelineMouseHandler handler = new TimelineMouseHandler(view);
     handler.install();
 
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
     int trackTopY = scaleTimeRuler + 10;
     // Right edge at 5.0s
     int rightEdgeX = (int) (5.0f * view.getPixelsPerSecond());
@@ -135,7 +135,7 @@ public class TimelineMouseHandlerTest {
     TimelineMouseHandler handler = new TimelineMouseHandler(view);
     handler.install();
 
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
     int trackTopY = scaleTimeRuler + 10;
     int x = (int) (4.0f * view.getPixelsPerSecond());
 
@@ -238,7 +238,7 @@ public class TimelineMouseHandlerTest {
     TimelineMouseHandler handler = new TimelineMouseHandler(view);
     handler.install();
 
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
     // Drag 10px — above the 5px threshold
     MouseEvent drag =
         new MouseEvent(
@@ -275,7 +275,7 @@ public class TimelineMouseHandlerTest {
 
     // Drag to 4.0s
     int x = (int) (4.0f * view.getPixelsPerSecond());
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
     MouseEvent drag =
         new MouseEvent(
             view.contentPanel,
@@ -309,7 +309,7 @@ public class TimelineMouseHandlerTest {
 
     // Drag to 8.0s (clip starts at 2.0, so duration ~ 6.0)
     int x = (int) (8.0f * view.getPixelsPerSecond());
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
     MouseEvent drag =
         new MouseEvent(
             view.contentPanel,
@@ -336,7 +336,7 @@ public class TimelineMouseHandlerTest {
     TimelineMouseHandler handler = new TimelineMouseHandler(view);
     handler.install();
 
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
     int rightEdgeX = (int) (5.0f * view.getPixelsPerSecond());
 
     MouseEvent move =
@@ -362,7 +362,7 @@ public class TimelineMouseHandlerTest {
     TimelineMouseHandler handler = new TimelineMouseHandler(view);
     handler.install();
 
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
     // Far from any clip edge
     int x = (int) (1.0f * view.getPixelsPerSecond());
 
@@ -399,7 +399,7 @@ public class TimelineMouseHandlerTest {
     TimelineMouseHandler handler = new TimelineMouseHandler(view);
     handler.install();
 
-    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
     int trackTopY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(0));
     int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight());
     int y = trackTopY + scaleBaseTrack + 10; // In automation lane

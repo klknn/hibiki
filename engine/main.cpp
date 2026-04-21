@@ -435,6 +435,11 @@ void playback_thread(ProjectState& state) {
 
     if (state.is_timeline_playing) {
       state.playhead_pos_sec += time_per_block;
+      // Loop wrapping
+      if (state.loop_enabled && state.loop_end_sec > state.loop_start_sec &&
+          state.playhead_pos_sec >= state.loop_end_sec) {
+        state.playhead_pos_sec = state.loop_start_sec;
+      }
     }
     context.continuousTimeSamples =
         (int64_t)(state.playhead_pos_sec * context.sampleRate);
@@ -449,7 +454,9 @@ void notification_thread(ProjectState& state) {
     std::this_thread::sleep_for(std::chrono::milliseconds(33));  // ~30Hz
 
     hibiki::sendPlayheadInfo((float)state.playhead_pos_sec, (float)state.bpm,
-                             state.is_timeline_playing);
+                             state.is_timeline_playing, state.loop_enabled,
+                             (float)state.loop_start_sec,
+                             (float)state.loop_end_sec);
 
     hibiki::pb::notifications::Notification notification;
     auto* tl = notification.mutable_track_levels();

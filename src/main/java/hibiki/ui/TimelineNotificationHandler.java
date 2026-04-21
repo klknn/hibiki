@@ -54,6 +54,19 @@ class TimelineNotificationHandler {
     var info = n.getPlayheadInfo();
     view.playheadPos = info.getPositionSec();
     view.bpm = info.getBpm();
+    // Don't overwrite loop state from engine during active loop drag (prevents flicker)
+    if (view.dragMode != TimelineView.DragMode.DRAG_LOOP_REGION
+        && view.dragMode != TimelineView.DragMode.DRAG_LOOP_MARKER) {
+      view.loopEnabled = info.getLoopEnabled();
+      view.loopStartSec = info.getLoopStart();
+      view.loopEndSec = info.getLoopEnd();
+    }
+    // Update top bar position display
+    if (TopBar.getInstance() != null) {
+      TopBar.getInstance().updatePosition(
+          view.playheadPos, view.bpm,
+          view.loopEnabled, view.loopStartSec, view.loopEndSec);
+    }
     boolean wasPlaying = view.isPlaying;
     view.isPlaying =
         info.getTransportState() == hibiki.pb.core.TransportState.TRANSPORT_STATE_PLAYING

@@ -335,7 +335,10 @@ class TimelineRenderer {
       TimelineView.ClipRect creatingClipRect,
       int creatingAutoLaneIdx,
       int trackHeight,
-      int timeRulerHeight) {
+      int timeRulerHeight,
+      boolean loopEnabled,
+      float loopStartSec,
+      float loopEndSec) {
     Graphics2D g2 = (Graphics2D) g;
     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
@@ -484,6 +487,49 @@ class TimelineRenderer {
 
     // Draw time ruler
     drawTimeRuler(g2, contentPanel, scaleTimeRuler, scaleLabelWidth, pps, bpm, gridMode);
+
+    // Draw loop lane separator
+    int scaleLoopLane = Theme.getInstance().scale(TimelineView.LOOP_RULER_HEIGHT);
+    int loopLaneY = scaleTimeRuler - scaleLoopLane;
+    g2.setColor(new Color(255, 255, 255, 30));
+    g2.drawLine(0, loopLaneY, contentPanel.getWidth(), loopLaneY);
+
+    // Draw loop region
+    if (loopEndSec > loopStartSec) {
+      int lx1 = scaleLabelWidth + (int) (loopStartSec * pps);
+      int lx2 = scaleLabelWidth + (int) (loopEndSec * pps);
+      int lw = lx2 - lx1;
+
+      // Loop lane bar highlight (bottom lane only)
+      Color loopColor = loopEnabled
+          ? new Color(80, 200, 120, 180)
+          : new Color(140, 140, 140, 120);
+      g2.setColor(loopColor);
+      g2.fillRect(lx1, loopLaneY, lw, scaleLoopLane);
+
+      // Semi-transparent overlay across all tracks
+      Composite oldComp = g2.getComposite();
+      g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER,
+          loopEnabled ? 0.06f : 0.03f));
+      g2.setColor(loopEnabled ? new Color(80, 200, 120) : new Color(140, 140, 140));
+      g2.fillRect(lx1, scaleTimeRuler, lw, contentPanel.getHeight() - scaleTimeRuler);
+      g2.setComposite(oldComp);
+
+      // Edge lines (full height)
+      g2.setColor(loopEnabled ? new Color(80, 200, 120, 200) : new Color(140, 140, 140, 150));
+      g2.setStroke(new BasicStroke(1.5f));
+      g2.drawLine(lx1, loopLaneY, lx1, contentPanel.getHeight());
+      g2.drawLine(lx2, loopLaneY, lx2, contentPanel.getHeight());
+
+      // Triangular markers in loop lane
+      int[] xStartTri = {lx1, lx1 + 5, lx1};
+      int[] yStartTri = {loopLaneY, loopLaneY, loopLaneY + scaleLoopLane / 2};
+      g2.fillPolygon(xStartTri, yStartTri, 3);
+      int[] xEndTri = {lx2, lx2 - 5, lx2};
+      int[] yEndTri = {loopLaneY, loopLaneY, loopLaneY + scaleLoopLane / 2};
+      g2.fillPolygon(xEndTri, yEndTri, 3);
+      g2.setStroke(new BasicStroke(1.0f));
+    }
 
     // Draw playhead
     int px = scaleLabelWidth + (int) (playheadPos * pps);

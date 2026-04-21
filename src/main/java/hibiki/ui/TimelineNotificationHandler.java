@@ -63,9 +63,9 @@ class TimelineNotificationHandler {
     }
     // Update top bar position display
     if (TopBar.getInstance() != null) {
-      TopBar.getInstance().updatePosition(
-          view.playheadPos, view.bpm,
-          view.loopEnabled, view.loopStartSec, view.loopEndSec);
+      TopBar.getInstance()
+          .updatePosition(
+              view.playheadPos, view.bpm, view.loopEnabled, view.loopStartSec, view.loopEndSec);
     }
     boolean wasPlaying = view.isPlaying;
     view.isPlaying =

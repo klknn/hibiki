@@ -37,6 +37,7 @@ public class TopBar extends JPanel {
   private int subsPerBeat() {
     return Math.max(1, 16 / beatDenominator);
   }
+
   private ViewToggleListener viewToggleListener;
   private ReplToggleListener replToggleListener;
   private JButton replBtn;
@@ -78,17 +79,19 @@ public class TopBar extends JPanel {
     bpmField = createEditableDisplayField("140.00", Theme.getInstance().scale(60));
     bpmField.addActionListener(e -> sendSetBpm(bpmField.getText()));
     timeSigField = createEditableDisplayField("4 / 4", Theme.getInstance().scale(50));
-    timeSigField.addActionListener(e -> {
-      String text = timeSigField.getText().replaceAll("\\s", "");
-      String[] parts = text.split("/");
-      if (parts.length == 2) {
-        try {
-          beatsPerBar = Integer.parseInt(parts[0]);
-          beatDenominator = Integer.parseInt(parts[1]);
-        } catch (NumberFormatException ex) {}
-      }
-      timeSigField.transferFocus();
-    });
+    timeSigField.addActionListener(
+        e -> {
+          String text = timeSigField.getText().replaceAll("\\s", "");
+          String[] parts = text.split("/");
+          if (parts.length == 2) {
+            try {
+              beatsPerBar = Integer.parseInt(parts[0]);
+              beatDenominator = Integer.parseInt(parts[1]);
+            } catch (NumberFormatException ex) {
+            }
+          }
+          timeSigField.transferFocus();
+        });
 
     leftPanel.add(bpmField);
     leftPanel.add(timeSigField);
@@ -138,39 +141,44 @@ public class TopBar extends JPanel {
     loopBtn.setToolTipText("Loop toggle");
 
     positionField = createEditableDisplayField("1. 1. 1", Theme.getInstance().scale(80));
-    positionField.addActionListener(e -> {
-      float sec = barBeatSubToSec(positionField.getText(), currentBpm);
-      if (sec >= 0) BackendManager.getInstance().seek(sec);
-      positionField.transferFocus();
-    });
+    positionField.addActionListener(
+        e -> {
+          float sec = barBeatSubToSec(positionField.getText(), currentBpm);
+          if (sec >= 0) BackendManager.getInstance().seek(sec);
+          positionField.transferFocus();
+        });
     loopStartField = createEditableDisplayField("", Theme.getInstance().scale(110));
     loopStartField.setVisible(false);
-    loopStartField.addActionListener(e -> {
-      String text = loopStartField.getText().replaceFirst("^L:\\s*", "");
-      float sec = barBeatSubToSec(text, currentBpm);
-      if (sec >= 0) {
-        TimelineView tv = TimelineView.getInstance();
-        if (tv != null) {
-          tv.loopStartSec = sec;
-          BackendManager.getInstance().sendSetLoop(tv.loopEnabled, tv.loopStartSec, tv.loopEndSec);
-        }
-      }
-      loopStartField.transferFocus();
-    });
+    loopStartField.addActionListener(
+        e -> {
+          String text = loopStartField.getText().replaceFirst("^L:\\s*", "");
+          float sec = barBeatSubToSec(text, currentBpm);
+          if (sec >= 0) {
+            TimelineView tv = TimelineView.getInstance();
+            if (tv != null) {
+              tv.loopStartSec = sec;
+              BackendManager.getInstance()
+                  .sendSetLoop(tv.loopEnabled, tv.loopStartSec, tv.loopEndSec);
+            }
+          }
+          loopStartField.transferFocus();
+        });
     loopEndField = createEditableDisplayField("", Theme.getInstance().scale(110));
     loopEndField.setVisible(false);
-    loopEndField.addActionListener(e -> {
-      String text = loopEndField.getText().replaceFirst("^R:\\s*", "");
-      float sec = barBeatSubToSec(text, currentBpm);
-      if (sec >= 0) {
-        TimelineView tv = TimelineView.getInstance();
-        if (tv != null) {
-          tv.loopEndSec = sec;
-          BackendManager.getInstance().sendSetLoop(tv.loopEnabled, tv.loopStartSec, tv.loopEndSec);
-        }
-      }
-      loopEndField.transferFocus();
-    });
+    loopEndField.addActionListener(
+        e -> {
+          String text = loopEndField.getText().replaceFirst("^R:\\s*", "");
+          float sec = barBeatSubToSec(text, currentBpm);
+          if (sec >= 0) {
+            TimelineView tv = TimelineView.getInstance();
+            if (tv != null) {
+              tv.loopEndSec = sec;
+              BackendManager.getInstance()
+                  .sendSetLoop(tv.loopEnabled, tv.loopStartSec, tv.loopEndSec);
+            }
+          }
+          loopEndField.transferFocus();
+        });
 
     centerPanel.add(playBtn);
     centerPanel.add(stopBtn);
@@ -335,8 +343,8 @@ public class TopBar extends JPanel {
   }
 
   /** Update position display from playhead notification. */
-  public void updatePosition(float playheadSec, float bpm,
-      boolean loopEnabled, float loopStart, float loopEnd) {
+  public void updatePosition(
+      float playheadSec, float bpm, boolean loopEnabled, float loopStart, float loopEnd) {
     this.currentBpm = bpm;
     // Don't overwrite fields while user is editing
     if (!positionField.hasFocus()) {

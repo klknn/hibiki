@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "absl/log/log.h"
-
 #include "absl/strings/numbers.h"
 #include "engine/audio/midi_input.hpp"
 

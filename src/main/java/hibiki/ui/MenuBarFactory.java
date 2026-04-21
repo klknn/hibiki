@@ -131,8 +131,7 @@ public class MenuBarFactory {
 
     // Restart Plugin Workers
     JMenuItem restartWorkersItem = new JMenuItem("Restart Plugin Workers");
-    restartWorkersItem.addActionListener(
-        e -> BackendManager.getInstance().restartPluginWorkers());
+    restartWorkersItem.addActionListener(e -> BackendManager.getInstance().restartPluginWorkers());
     menu.add(restartWorkersItem);
 
     // Restart All

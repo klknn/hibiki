@@ -115,8 +115,8 @@ class MidiInputAlsa : public MidiInput {
     snd_seq_port_subscribe_set_dest(sub, &dest);
     int err = snd_seq_subscribe_port(seq_, sub);
     if (err < 0) {
-      LOG(ERROR) << "Failed to subscribe " << client << ":" << port
-                 << ": " << snd_strerror(err);
+      LOG(ERROR) << "Failed to subscribe " << client << ":" << port << ": "
+                 << snd_strerror(err);
     }
   }
 

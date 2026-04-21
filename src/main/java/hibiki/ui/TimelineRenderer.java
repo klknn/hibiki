@@ -502,16 +502,14 @@ class TimelineRenderer {
       int lw = lx2 - lx1;
 
       // Loop lane bar highlight (bottom lane only)
-      Color loopColor = loopEnabled
-          ? new Color(80, 200, 120, 180)
-          : new Color(140, 140, 140, 120);
+      Color loopColor = loopEnabled ? new Color(80, 200, 120, 180) : new Color(140, 140, 140, 120);
       g2.setColor(loopColor);
       g2.fillRect(lx1, loopLaneY, lw, scaleLoopLane);
 
       // Semi-transparent overlay across all tracks
       Composite oldComp = g2.getComposite();
-      g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER,
-          loopEnabled ? 0.06f : 0.03f));
+      g2.setComposite(
+          AlphaComposite.getInstance(AlphaComposite.SRC_OVER, loopEnabled ? 0.06f : 0.03f));
       g2.setColor(loopEnabled ? new Color(80, 200, 120) : new Color(140, 140, 140));
       g2.fillRect(lx1, scaleTimeRuler, lw, contentPanel.getHeight() - scaleTimeRuler);
       g2.setComposite(oldComp);

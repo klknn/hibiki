@@ -231,7 +231,7 @@ void playback_thread(ProjectState& state) {
                              track->virtual_midi_queue.end());
             track->virtual_midi_queue.clear();
           }
-          
+
           // --- MIDI Panic handling ---
           if (track->panic_requested_.exchange(false)) {
             for (int note = 0; note < 128; ++note) {
@@ -268,8 +268,8 @@ void playback_thread(ProjectState& state) {
           // (sustained notes, envelopes, effects tails) even without new
           // events.
           if (!track->plugin_bypass.count(0)) {
-            track->plugins[0]->process(nullptr, outChannels, block_size, context,
-                                       allEvents);
+            track->plugins[0]->process(nullptr, outChannels, block_size,
+                                       context, allEvents);
           }
         }
 

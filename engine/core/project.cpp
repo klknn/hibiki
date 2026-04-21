@@ -380,8 +380,8 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
                 blockEvents.push_back(e);
               }
             }
-            if (!track->plugins.empty() && track->plugins[0]->isInstrument()
-                && !track->plugin_bypass.count(0)) {
+            if (!track->plugins.empty() && track->plugins[0]->isInstrument() &&
+                !track->plugin_bypass.count(0)) {
               track->plugins[0]->process(nullptr, outChannels, block_size,
                                          context, blockEvents);
             }

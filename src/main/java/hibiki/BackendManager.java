@@ -120,8 +120,7 @@ public class BackendManager {
     LOG.info("Requesting plugin worker restart...");
     sendRequest(
         Request.newBuilder()
-            .setRestartWorkers(
-                hibiki.pb.commands.RestartWorkers.getDefaultInstance())
+            .setRestartWorkers(hibiki.pb.commands.RestartWorkers.getDefaultInstance())
             .build());
   }
 

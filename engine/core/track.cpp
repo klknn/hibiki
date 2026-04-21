@@ -208,9 +208,7 @@ void Track::Stop() {
   Panic();
 }
 
-void Track::Panic() {
-  panic_requested_ = true;
-}
+void Track::Panic() { panic_requested_ = true; }
 
 std::unique_ptr<IPlugin> Track::RemovePlugin(size_t pidx) {
   std::lock_guard<DummyMutex> lock(mutex);

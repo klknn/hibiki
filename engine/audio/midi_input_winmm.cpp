@@ -60,8 +60,8 @@ class MidiInputWinMM : public MidiInput {
       MMRESULT res = midiInOpen(&handle_, dev_id, (DWORD_PTR)midiCallback,
                                 (DWORD_PTR)this, CALLBACK_FUNCTION);
       if (res != MMSYSERR_NOERROR) {
-        LOG(ERROR) << "Failed to open MIDI device " << dev_id
-                   << ": error " << res;
+        LOG(ERROR) << "Failed to open MIDI device " << dev_id << ": error "
+                   << res;
         handle_ = nullptr;
         return false;
       }

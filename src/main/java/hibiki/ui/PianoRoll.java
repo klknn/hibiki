@@ -244,7 +244,8 @@ public class PianoRoll extends JDialog {
       minPitch = 48;
       maxPitch = 72; // Default C3-C5 range
       minTick = 0;
-      maxTick = sequence.getResolution() * 4 * 4;
+      int bpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
+      maxTick = sequence.getResolution() * bpb * 4;
     }
 
     // Calculate baseTickWidth so that scale=1.0 fits entire clip
@@ -305,7 +306,8 @@ public class PianoRoll extends JDialog {
                 maxT = n.startTick + n.durationTicks;
               }
             }
-            maxT = Math.max(maxT, sequence.getResolution() * 4 * 4); // At least 4 bars
+            int bpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
+            maxT = Math.max(maxT, sequence.getResolution() * bpb * 4); // At least 4 bars
             return new Dimension(
                 (int) (maxT * getTickWidth()) + 200, NUM_KEYS * mouseHandler.getScaledKeyHeight());
           }
@@ -507,7 +509,8 @@ public class PianoRoll extends JDialog {
     mainContent.add(pianoAndVelocity, BorderLayout.CENTER);
 
     // Zoom controls using shared ZoomControlPanel
-    int ticksPerBar = sequence.getResolution() * 4;
+    int bpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
+    int ticksPerBar = sequence.getResolution() * bpb;
     int zoomViewWidth = Theme.getInstance().scale(700);
     int maxZoomPercent = Math.max(500, (int) (zoomViewWidth / (ticksPerBar * baseTickWidth) * 100));
 

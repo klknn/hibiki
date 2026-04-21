@@ -73,7 +73,8 @@ class PianoRollRenderer {
 
     // Draw vertical grid lines
     int res = sequence.getResolution();
-    int ticksPerBar = res * 4;
+    int bpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
+    int ticksPerBar = res * bpb;
     int gridTicks = pianoRoll.getGridTickInterval();
     float gridWidth = gridTicks * tw;
     Graphics2D g2 = (Graphics2D) g;
@@ -170,7 +171,8 @@ class PianoRollRenderer {
 
     float tw = tickWidth;
     int res = sequence.getResolution();
-    float ticksPerBar = res * 4;
+    int bpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
+    float ticksPerBar = res * bpb;
 
     g2.setFont(
         Theme.getInstance().FONT_UI.deriveFont(Font.PLAIN, Theme.getInstance().scale(10.0f)));
@@ -181,7 +183,7 @@ class PianoRollRenderer {
       g2.drawLine(x, 0, x, panel.getHeight());
       g2.setColor(Theme.getInstance().TEXT_BRIGHT);
       g2.drawString(String.valueOf(bar + 1), x + 3, 14);
-      for (int beat = 1; beat < 4; beat++) {
+      for (int beat = 1; beat < bpb; beat++) {
         int bx = (int) ((bar * ticksPerBar + beat * res) * tw);
         g2.setColor(new Color(255, 255, 255, 30));
         g2.drawLine(bx, panel.getHeight() - 6, bx, panel.getHeight());

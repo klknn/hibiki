@@ -380,7 +380,8 @@ class TimelineRenderer {
 
     // Draw grid lines
     int trackAreaBottom = scaleTimeRuler + Theme.getInstance().scale(view.getTotalTracksHeight());
-    float secondsPerBar = secondsPerBeat * 4;
+    int bpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
+    float secondsPerBar = secondsPerBeat * bpb;
     float gridSeconds = view.getGridSnapSeconds(gridMode, secondsPerBeat);
 
     drawGridLines(
@@ -834,7 +835,8 @@ class TimelineRenderer {
         g2.drawString(s + "s", x + 2, scaleTimeRuler - 12);
       }
     } else {
-      float rulerSecondsPerBar = (60.0f / bpm) * 4;
+      int bpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
+      float rulerSecondsPerBar = (60.0f / bpm) * bpb;
       for (int bar = 0; bar < 200; bar++) {
         int x = scaleLabelWidth + (int) (bar * rulerSecondsPerBar * pps);
         if (x > contentPanel.getWidth()) break;

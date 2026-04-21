@@ -20,11 +20,23 @@ public class TopBar extends JPanel {
   }
 
   private JTextField bpmField;
-  private JLabel timeSigLabel;
-  private JLabel positionLabel;
-  private JLabel loopStartLabel;
-  private JLabel loopEndLabel;
+  private JTextField timeSigField;
+  private JTextField positionField;
+  private JTextField loopStartField;
+  private JTextField loopEndField;
   private JLabel cpuLabel;
+  private float currentBpm = 140.0f;
+  private int beatsPerBar = 4;
+  private int beatDenominator = 4; // e.g., 4 = quarter note, 8 = eighth note
+
+  public int getBeatsPerBar() {
+    return beatsPerBar;
+  }
+
+  /** Number of subdivisions per beat: 4 for quarter-note beats, 2 for eighth-note beats. */
+  private int subsPerBeat() {
+    return Math.max(1, 16 / beatDenominator);
+  }
   private ViewToggleListener viewToggleListener;
   private ReplToggleListener replToggleListener;
   private JButton replBtn;
@@ -65,10 +77,21 @@ public class TopBar extends JPanel {
 
     bpmField = createEditableDisplayField("140.00", Theme.getInstance().scale(60));
     bpmField.addActionListener(e -> sendSetBpm(bpmField.getText()));
-    timeSigLabel = createDisplayLabel("4 / 4", Theme.getInstance().scale(50));
+    timeSigField = createEditableDisplayField("4 / 4", Theme.getInstance().scale(50));
+    timeSigField.addActionListener(e -> {
+      String text = timeSigField.getText().replaceAll("\\s", "");
+      String[] parts = text.split("/");
+      if (parts.length == 2) {
+        try {
+          beatsPerBar = Integer.parseInt(parts[0]);
+          beatDenominator = Integer.parseInt(parts[1]);
+        } catch (NumberFormatException ex) {}
+      }
+      timeSigField.transferFocus();
+    });
 
     leftPanel.add(bpmField);
-    leftPanel.add(timeSigLabel);
+    leftPanel.add(timeSigField);
 
     leftPanel.add(Theme.getInstance().createButton("Save", e -> showSaveDialog()));
     leftPanel.add(Theme.getInstance().createButton("Load", e -> showLoadDialog()));
@@ -114,22 +137,51 @@ public class TopBar extends JPanel {
     loopBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
     loopBtn.setToolTipText("Loop toggle");
 
-    positionLabel = createDisplayLabel("1. 1. 1", Theme.getInstance().scale(80));
-    loopStartLabel = createDisplayLabel("", Theme.getInstance().scale(110));
-    loopStartLabel.setVisible(false);
-    loopEndLabel = createDisplayLabel("", Theme.getInstance().scale(110));
-    loopEndLabel.setVisible(false);
+    positionField = createEditableDisplayField("1. 1. 1", Theme.getInstance().scale(80));
+    positionField.addActionListener(e -> {
+      float sec = barBeatSubToSec(positionField.getText(), currentBpm);
+      if (sec >= 0) BackendManager.getInstance().seek(sec);
+      positionField.transferFocus();
+    });
+    loopStartField = createEditableDisplayField("", Theme.getInstance().scale(110));
+    loopStartField.setVisible(false);
+    loopStartField.addActionListener(e -> {
+      String text = loopStartField.getText().replaceFirst("^L:\\s*", "");
+      float sec = barBeatSubToSec(text, currentBpm);
+      if (sec >= 0) {
+        TimelineView tv = TimelineView.getInstance();
+        if (tv != null) {
+          tv.loopStartSec = sec;
+          BackendManager.getInstance().sendSetLoop(tv.loopEnabled, tv.loopStartSec, tv.loopEndSec);
+        }
+      }
+      loopStartField.transferFocus();
+    });
+    loopEndField = createEditableDisplayField("", Theme.getInstance().scale(110));
+    loopEndField.setVisible(false);
+    loopEndField.addActionListener(e -> {
+      String text = loopEndField.getText().replaceFirst("^R:\\s*", "");
+      float sec = barBeatSubToSec(text, currentBpm);
+      if (sec >= 0) {
+        TimelineView tv = TimelineView.getInstance();
+        if (tv != null) {
+          tv.loopEndSec = sec;
+          BackendManager.getInstance().sendSetLoop(tv.loopEnabled, tv.loopStartSec, tv.loopEndSec);
+        }
+      }
+      loopEndField.transferFocus();
+    });
 
     centerPanel.add(playBtn);
     centerPanel.add(stopBtn);
     centerPanel.add(recordButton);
     centerPanel.add(loopBtn);
     centerPanel.add(Box.createHorizontalStrut(Theme.getInstance().scale(10)));
-    centerPanel.add(positionLabel);
+    centerPanel.add(positionField);
     centerPanel.add(Box.createHorizontalStrut(Theme.getInstance().scale(4)));
-    centerPanel.add(loopStartLabel);
+    centerPanel.add(loopStartField);
     centerPanel.add(Box.createHorizontalStrut(Theme.getInstance().scale(2)));
-    centerPanel.add(loopEndLabel);
+    centerPanel.add(loopEndField);
     add(centerPanel, BorderLayout.CENTER);
 
     // Right section: Device Info
@@ -251,29 +303,57 @@ public class TopBar extends JPanel {
         .start();
   }
 
-  /** Convert seconds to "bar.beat.sub" string given BPM (4/4 time). */
-  static String secToBarBeatSub(float sec, float bpm) {
+  /** Convert seconds to "bar.beat.sub" string given BPM. */
+  String secToBarBeatSub(float sec, float bpm) {
     if (bpm <= 0) return "1. 1. 1";
     float secPerBeat = 60.0f / bpm;
     float totalBeats = sec / secPerBeat;
-    int bar = (int) (totalBeats / 4) + 1;
-    int beat = (int) (totalBeats % 4) + 1;
-    int sub = (int) ((totalBeats % 1.0f) * 4) + 1;
+    int spb = subsPerBeat();
+    int bar = (int) (totalBeats / beatsPerBar) + 1;
+    int beat = (int) (totalBeats % beatsPerBar) + 1;
+    int sub = (int) ((totalBeats % 1.0f) * spb) + 1;
     return bar + ". " + beat + ". " + sub;
+  }
+
+  /** Parse "bar. beat. sub" back to seconds. Returns -1 on parse failure. */
+  float barBeatSubToSec(String text, float bpm) {
+    if (bpm <= 0) return -1;
+    String cleaned = text.replaceAll("\\s", "");
+    String[] parts = cleaned.split("\\.");
+    if (parts.length < 2) return -1;
+    try {
+      int bar = Integer.parseInt(parts[0]) - 1;
+      int beat = Integer.parseInt(parts[1]) - 1;
+      int sub = parts.length >= 3 ? Integer.parseInt(parts[2]) - 1 : 0;
+      int spb = subsPerBeat();
+      float secPerBeat = 60.0f / bpm;
+      float totalBeats = bar * beatsPerBar + beat + sub / (float) spb;
+      return totalBeats * secPerBeat;
+    } catch (NumberFormatException e) {
+      return -1;
+    }
   }
 
   /** Update position display from playhead notification. */
   public void updatePosition(float playheadSec, float bpm,
       boolean loopEnabled, float loopStart, float loopEnd) {
-    positionLabel.setText(secToBarBeatSub(playheadSec, bpm));
+    this.currentBpm = bpm;
+    // Don't overwrite fields while user is editing
+    if (!positionField.hasFocus()) {
+      positionField.setText(secToBarBeatSub(playheadSec, bpm));
+    }
 
     // Show loop markers if window has enough width
     boolean showLoop = loopEnabled && loopEnd > loopStart && getWidth() > 600;
-    loopStartLabel.setVisible(showLoop);
-    loopEndLabel.setVisible(showLoop);
+    loopStartField.setVisible(showLoop);
+    loopEndField.setVisible(showLoop);
     if (showLoop) {
-      loopStartLabel.setText("L: " + secToBarBeatSub(loopStart, bpm));
-      loopEndLabel.setText("R: " + secToBarBeatSub(loopEnd, bpm));
+      if (!loopStartField.hasFocus()) {
+        loopStartField.setText("L: " + secToBarBeatSub(loopStart, bpm));
+      }
+      if (!loopEndField.hasFocus()) {
+        loopEndField.setText("R: " + secToBarBeatSub(loopEnd, bpm));
+      }
     }
   }
 

@@ -647,6 +647,20 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
           }
           sendParamList(tidx, target_idx, plugin->getName(),
                         plugin->isInstrument(), params);
+          // If instrument was inserted at front, re-send param lists for all
+          // shifted effect plugins so Java panel indices stay in sync.
+          if (plugin->isInstrument() && !displaced) {
+            for (int i = 0; i < (int)track->plugins.size(); ++i) {
+              if (i == target_idx) continue;
+              auto& p = track->plugins[i];
+              std::vector<VstParamInfo> ep;
+              for (int j = 0; j < p->getParameterCount(); ++j) {
+                VstParamInfo info;
+                if (p->getParameterInfo(j, info)) ep.push_back(info);
+              }
+              sendParamList(tidx, i, p->getName(), p->isInstrument(), ep);
+            }
+          }
         } else {
           sendLog("Failed to load plugin: " + vpath);
         }
@@ -663,6 +677,20 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
         auto track = GetOrCreateTrack(state, tidx);
         removed = track->RemovePlugin(pidx);
         sendAck("REMOVE_PLUGIN", removed != nullptr);
+        if (removed) {
+          // Notify Java: send empty param list for removed index
+          sendParamList(tidx, pidx, "", false, {});
+          // Re-send param lists for all remaining plugins at their new indices
+          for (int i = 0; i < (int)track->plugins.size(); ++i) {
+            auto& p = track->plugins[i];
+            std::vector<VstParamInfo> params;
+            for (int j = 0; j < p->getParameterCount(); ++j) {
+              VstParamInfo info;
+              if (p->getParameterInfo(j, info)) params.push_back(info);
+            }
+            sendParamList(tidx, i, p->getName(), p->isInstrument(), params);
+          }
+        }
       }
       // `removed` destroyed here, outside the mutex
       break;

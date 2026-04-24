@@ -399,6 +399,7 @@ public class TimelineViewTest {
     tv.removeTrack(3); // should be no-op
     assertEquals(1, tv.getVisibleTrackCount());
   }
+
   @Test
   public void testComputeBarPositions_noMarkers() {
     java.util.List<TimelineView.TimelineMarker> markers = new java.util.ArrayList<>();
@@ -459,8 +460,15 @@ public class TimelineViewTest {
       int px0 = (int) (positions.get(i - 1) * pps);
       int px1 = (int) (positions.get(i) * pps);
       assertNotEquals(
-          "Bar " + i + " and " + (i + 1) + " at same pixel (times: "
-              + positions.get(i - 1) + ", " + positions.get(i) + ")",
+          "Bar "
+              + i
+              + " and "
+              + (i + 1)
+              + " at same pixel (times: "
+              + positions.get(i - 1)
+              + ", "
+              + positions.get(i)
+              + ")",
           px0,
           px1);
     }
@@ -488,8 +496,15 @@ public class TimelineViewTest {
       int px0 = (int) (positions.get(i - 1) * pps);
       int px1 = (int) (positions.get(i) * pps);
       assertNotEquals(
-          "Bar " + i + " and " + (i + 1) + " at same pixel (times: "
-              + positions.get(i - 1) + ", " + positions.get(i) + ")",
+          "Bar "
+              + i
+              + " and "
+              + (i + 1)
+              + " at same pixel (times: "
+              + positions.get(i - 1)
+              + ", "
+              + positions.get(i)
+              + ")",
           px0,
           px1);
     }
@@ -511,9 +526,17 @@ public class TimelineViewTest {
       int px0 = (int) (positions.get(i - 1) * pps);
       int px1 = (int) (positions.get(i) * pps);
       assertNotEquals(
-          "Exact: Bar " + i + " and " + (i + 1) + " at same pixel (times: "
-              + positions.get(i - 1) + ", " + positions.get(i) + ")",
-          px0, px1);
+          "Exact: Bar "
+              + i
+              + " and "
+              + (i + 1)
+              + " at same pixel (times: "
+              + positions.get(i - 1)
+              + ", "
+              + positions.get(i)
+              + ")",
+          px0,
+          px1);
     }
 
     // Test with slight positive offset (simulates dialog rounding up)
@@ -526,9 +549,17 @@ public class TimelineViewTest {
       int px0 = (int) (positions.get(i - 1) * pps);
       int px1 = (int) (positions.get(i) * pps);
       assertNotEquals(
-          "Offset+0.01: Bar " + i + " and " + (i + 1) + " at same pixel (times: "
-              + positions.get(i - 1) + ", " + positions.get(i) + ")",
-          px0, px1);
+          "Offset+0.01: Bar "
+              + i
+              + " and "
+              + (i + 1)
+              + " at same pixel (times: "
+              + positions.get(i - 1)
+              + ", "
+              + positions.get(i)
+              + ")",
+          px0,
+          px1);
     }
 
     // Test with slight negative offset (simulates dialog rounding down)
@@ -541,9 +572,17 @@ public class TimelineViewTest {
       int px0 = (int) (positions.get(i - 1) * pps);
       int px1 = (int) (positions.get(i) * pps);
       assertNotEquals(
-          "Offset-0.01: Bar " + i + " and " + (i + 1) + " at same pixel (times: "
-              + positions.get(i - 1) + ", " + positions.get(i) + ")",
-          px0, px1);
+          "Offset-0.01: Bar "
+              + i
+              + " and "
+              + (i + 1)
+              + " at same pixel (times: "
+              + positions.get(i - 1)
+              + ", "
+              + positions.get(i)
+              + ")",
+          px0,
+          px1);
     }
   }
 }

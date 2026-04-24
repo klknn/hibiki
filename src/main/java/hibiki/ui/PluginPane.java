@@ -25,7 +25,9 @@ public class PluginPane extends JPanel {
           Map.entry("Delay", DelayDevicePanel.class),
           Map.entry("Reverb", ReverbDevicePanel.class),
           Map.entry("Limiter", LimiterDevicePanel.class),
-          Map.entry("Hott", HottDevicePanel.class));
+          Map.entry("Hott", HottDevicePanel.class),
+          Map.entry("EnvShaper", EnvelopeShaperDevicePanel.class),
+          Map.entry("Phaser", PhaserDevicePanel.class));
 
   private static PluginPane instance;
   private final JPanel deviceChainContent;
@@ -149,6 +151,16 @@ public class PluginPane extends JPanel {
                         mi.getTrackIndex(), mi.getPluginIndex(), mi.getSlotsList());
                     break;
                   }
+                case PLUGIN_SCOPE_DATA:
+                  {
+                    var sd = notification.getPluginScopeData();
+                    handlePluginScopeData(
+                        sd.getTrackIndex(),
+                        sd.getPluginIndex(),
+                        sd.getLeftSamplesList(),
+                        sd.getRightSamplesList());
+                    break;
+                  }
                 default:
                   break;
               }
@@ -192,6 +204,12 @@ public class PluginPane extends JPanel {
               return;
             } else if (bp instanceof ReverbDevicePanel) {
               ((ReverbDevicePanel) bp).updateParam(paramId, value);
+              return;
+            } else if (bp instanceof EnvelopeShaperDevicePanel) {
+              ((EnvelopeShaperDevicePanel) bp).updateParam(paramId, value);
+              return;
+            } else if (bp instanceof PhaserDevicePanel) {
+              ((PhaserDevicePanel) bp).updateParam(paramId, value);
               return;
             }
           }
@@ -243,6 +261,24 @@ public class PluginPane extends JPanel {
             ((DelayDevicePanel) bp).setInputOutputLevel(inputDb, outputDb);
           } else if (bp instanceof ReverbDevicePanel) {
             ((ReverbDevicePanel) bp).setInputOutputLevel(inputDb, outputDb);
+          } else if (bp instanceof EnvelopeShaperDevicePanel) {
+            ((EnvelopeShaperDevicePanel) bp).setInputOutputLevel(inputDb, outputDb);
+          } else if (bp instanceof PhaserDevicePanel) {
+            ((PhaserDevicePanel) bp).setInputOutputLevel(inputDb, outputDb);
+          }
+        });
+  }
+
+  /** Handle scope data for Phaser Lissajous visualization. */
+  private void handlePluginScopeData(
+      int trackIdx, int pluginIdx, List<Float> leftSamples, List<Float> rightSamples) {
+    SwingUtilities.invokeLater(
+        () -> {
+          Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
+          if (builtins == null) return;
+          JPanel bp = builtins.get(pluginIdx);
+          if (bp instanceof PhaserDevicePanel) {
+            ((PhaserDevicePanel) bp).setScopeData(leftSamples, rightSamples);
           }
         });
   }
@@ -452,6 +488,10 @@ public class PluginPane extends JPanel {
       ((LimiterDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     } else if (device instanceof HottDevicePanel) {
       ((HottDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof EnvelopeShaperDevicePanel) {
+      ((EnvelopeShaperDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof PhaserDevicePanel) {
+      ((PhaserDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     }
 
     return wrapper;

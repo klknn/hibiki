@@ -17,6 +17,8 @@ BuiltinDelay::BuiltinDelay() {
   params_[PARAM_LP_FREQ] = 0.75;  // ~12kHz
   params_[PARAM_PING_PONG] = 0.0;
   params_[PARAM_ENABLE] = 1.0;
+  params_[PARAM_SYNC] = 0.0;
+  params_[PARAM_SYNC_DIV] = 0.5;  // ~1/4 note
   buffer_l_.resize(kMaxDelaySamples, 0.0f);
   buffer_r_.resize(kMaxDelaySamples, 0.0f);
 }
@@ -53,8 +55,36 @@ float BuiltinDelay::normToLpFreq(double norm) {
   return 1000.0f * std::pow(20.0f, (float)norm);
 }
 
+// Beat division lookup table: 16 entries covering common divisions
+// including dotted and triplet values.
+static const struct {
+  float beats;  // Duration in quarter-note beats
+  const char* label;
+} kDivisions[] = {
+    {0.09375f, "1/32 d"},  // dotted 1/32
+    {0.125f, "1/32"},     {0.08333f, "1/32 T"}, {0.1875f, "1/16 d"},
+    {0.25f, "1/16"},      {0.1667f, "1/16 T"},  {0.375f, "1/8 d"},
+    {0.5f, "1/8"},        {0.333f, "1/8 T"},    {0.75f, "1/4 d"},
+    {1.0f, "1/4"},        {0.667f, "1/4 T"},    {1.5f, "1/2 d"},
+    {2.0f, "1/2"},        {3.0f, "3/4"},        {4.0f, "1 bar"},
+    {8.0f, "2 bars"},     {16.0f, "4 bars"},
+};
+static constexpr int kNumDivisions = sizeof(kDivisions) / sizeof(kDivisions[0]);
+
+float BuiltinDelay::normToDivisionBeats(double norm) {
+  int idx =
+      std::clamp((int)(norm * (kNumDivisions - 1) + 0.5), 0, kNumDivisions - 1);
+  return kDivisions[idx].beats;
+}
+
+const char* BuiltinDelay::normToDivisionLabel(double norm) {
+  int idx =
+      std::clamp((int)(norm * (kNumDivisions - 1) + 0.5), 0, kNumDivisions - 1);
+  return kDivisions[idx].label;
+}
+
 void BuiltinDelay::process(float** inputs, float** outputs, int num_samples,
-                           const HostProcessContext& /*context*/,
+                           const HostProcessContext& context,
                            const std::vector<MidiNoteEvent>& /*events*/,
                            float** /*sidechain*/) {
   if (!enabled_) {
@@ -65,8 +95,18 @@ void BuiltinDelay::process(float** inputs, float** outputs, int num_samples,
     return;
   }
 
-  float time_l_ms = normToTimeMs(params_[PARAM_TIME_L]);
-  float time_r_ms = normToTimeMs(params_[PARAM_TIME_R]);
+  float time_l_ms, time_r_ms;
+  bool sync = params_[PARAM_SYNC] >= 0.5;
+  if (sync && context.tempo > 0) {
+    // Tempo-synced: convert beat division to milliseconds
+    float div_beats = normToDivisionBeats(params_[PARAM_SYNC_DIV]);
+    float ms = (float)(div_beats * 60000.0 / context.tempo);
+    time_l_ms = ms;
+    time_r_ms = ms;
+  } else {
+    time_l_ms = normToTimeMs(params_[PARAM_TIME_L]);
+    time_r_ms = normToTimeMs(params_[PARAM_TIME_R]);
+  }
   int delay_l = std::clamp((int)(time_l_ms * 0.001f * (float)sample_rate_), 1,
                            kMaxDelaySamples - 1);
   int delay_r = std::clamp((int)(time_r_ms * 0.001f * (float)sample_rate_), 1,
@@ -148,8 +188,10 @@ int BuiltinDelay::getParameterCount() const { return kTotalParams; }
 bool BuiltinDelay::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
   static const char* names[] = {"Time L",  "Time R",  "Feedback",  "Mix",
-                                "HP Freq", "LP Freq", "Ping-Pong", "Enable"};
-  static const double defaults[] = {0.35, 0.35, 0.4, 0.3, 0.15, 0.75, 0.0, 1.0};
+                                "HP Freq", "LP Freq", "Ping-Pong", "Enable",
+                                "Sync",    "Division"};
+  static const double defaults[] = {0.35, 0.35, 0.4, 0.3, 0.15,
+                                    0.75, 0.0,  1.0, 0.0, 0.5};
   info.id = index;
   info.name = names[index];
   info.defaultValue = defaults[index];

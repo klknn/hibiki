@@ -32,8 +32,10 @@
 #include "engine/core/track.hpp"
 #include "engine/effects/builtin_compressor.hpp"
 #include "engine/effects/builtin_delay.hpp"
+#include "engine/effects/builtin_envelope_shaper.hpp"
 #include "engine/effects/builtin_eq.hpp"
 #include "engine/effects/builtin_hott.hpp"
+#include "engine/effects/builtin_phaser.hpp"
 #include "engine/effects/builtin_reverb.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "engine/vst3/vst3_host.hpp"
@@ -503,6 +505,31 @@ void notification_thread(ProjectState& state) {
                          dynamic_cast<BuiltinReverb*>(plugin.get())) {
             sendPluginMeteringData(track_idx, (int)p, reverb->getInputDb(),
                                    reverb->getOutputDb(), 0.0f);
+          } else if (auto* envs =
+                         dynamic_cast<BuiltinEnvelopeShaper*>(plugin.get())) {
+            sendPluginMeteringData(track_idx, (int)p, envs->getInputDb(),
+                                   envs->getOutputDb(), 0.0f);
+          } else if (auto* phaser =
+                         dynamic_cast<BuiltinPhaser*>(plugin.get())) {
+            sendPluginMeteringData(track_idx, (int)p, phaser->getInputDb(),
+                                   phaser->getOutputDb(), 0.0f);
+            // Send scope data for Lissajous visualization
+            {
+              hibiki::pb::notifications::Notification notif;
+              auto* scope = notif.mutable_plugin_scope_data();
+              scope->set_track_index(track_idx);
+              scope->set_plugin_index((int)p);
+              float scope_l[256], scope_r[256];
+              phaser->getScopeData(scope_l, scope_r, 256);
+              for (int si = 0; si < 256; ++si) {
+                scope->add_left_samples(scope_l[si]);
+                scope->add_right_samples(scope_r[si]);
+              }
+              std::string data;
+              notif.SerializeToString(&data);
+              sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
+                               data.size());
+            }
           }
         }
       }

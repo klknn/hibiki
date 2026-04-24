@@ -10,7 +10,7 @@ namespace hibiki {
 // Stereo delay with ping-pong mode, feedback filters, and tempo-sync option.
 class BuiltinDelay : public IPlugin {
  public:
-  static constexpr int kTotalParams = 8;
+  static constexpr int kTotalParams = 10;
   static constexpr const char* kPath = "builtin://delay";
   static constexpr const char* kName = "Delay";
 
@@ -23,6 +23,8 @@ class BuiltinDelay : public IPlugin {
     PARAM_LP_FREQ = 5,
     PARAM_PING_PONG = 6,
     PARAM_ENABLE = 7,
+    PARAM_SYNC = 8,
+    PARAM_SYNC_DIV = 9,
   };
 
   BuiltinDelay();
@@ -49,6 +51,11 @@ class BuiltinDelay : public IPlugin {
   static float normToTimeMs(double norm);
   static float normToHpFreq(double norm);
   static float normToLpFreq(double norm);
+
+  // Returns delay time in beats for synchronized mode.
+  static float normToDivisionBeats(double norm);
+  // Labels for display ("1/4", "1/8 T", etc.)
+  static const char* normToDivisionLabel(double norm);
 
   // Metering (read from UI thread)
   float getInputDb() const;

@@ -23,7 +23,9 @@ public class DelayDevicePanel extends JPanel {
   private static final int PARAM_LP_FREQ = 5;
   private static final int PARAM_PING_PONG = 6;
   private static final int PARAM_ENABLE = 7;
-  private static final int TOTAL_PARAMS = 8;
+  private static final int PARAM_SYNC = 8;
+  private static final int PARAM_SYNC_DIV = 9;
+  private static final int TOTAL_PARAMS = 10;
 
   private final int trackIndex;
   private final int pluginIndex;
@@ -49,6 +51,8 @@ public class DelayDevicePanel extends JPanel {
     params[PARAM_LP_FREQ] = 0.75;
     params[PARAM_PING_PONG] = 0.0;
     params[PARAM_ENABLE] = 1.0;
+    params[PARAM_SYNC] = 0.0;
+    params[PARAM_SYNC_DIV] = 0.5;
 
     Theme theme = Theme.getInstance();
     setLayout(new BorderLayout());
@@ -103,7 +107,7 @@ public class DelayDevicePanel extends JPanel {
     add(echoCanvas, BorderLayout.CENTER);
 
     // Knob row
-    JPanel knobRow = new JPanel(new GridLayout(1, 7, 4, 0));
+    JPanel knobRow = new JPanel(new GridLayout(1, 10, 4, 0));
     knobRow.setBackground(theme.BG_DARK);
     knobRow.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
     knobRow.setPreferredSize(new Dimension(0, theme.scale(80)));
@@ -136,6 +140,26 @@ public class DelayDevicePanel extends JPanel {
           echoCanvas.repaint();
         });
     knobRow.add(ppBtn);
+
+    // Sync toggle
+    JToggleButton syncBtn = new JToggleButton("Sync", false);
+    syncBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
+    syncBtn.setFocusPainted(false);
+    syncBtn.addActionListener(
+        e -> {
+          sendParam(PARAM_SYNC, syncBtn.isSelected() ? 1.0 : 0.0);
+        });
+    knobRow.add(syncBtn);
+
+    // Division knob
+    KnobPanel divKnob = new KnobPanel("Div", 0.5, PARAM_SYNC_DIV);
+    divKnob.addChangeListener(
+        e -> {
+          if (!updatingFromBackend) {
+            sendParam(PARAM_SYNC_DIV, divKnob.getValue());
+          }
+        });
+    knobRow.add(divKnob);
 
     add(knobRow, BorderLayout.SOUTH);
   }

@@ -277,6 +277,12 @@ public class BrowserPane extends JPanel {
     FileItem hottItem = new FileItem(new File("builtin"), "builtin", "Hott", "Hibiki", 0);
     hottItem.rawPath = "builtin://hott";
     builtinNode.add(new DefaultMutableTreeNode(hottItem));
+    FileItem envShaperItem = new FileItem(new File("builtin"), "builtin", "EnvShaper", "Hibiki", 0);
+    envShaperItem.rawPath = "builtin://envelope_shaper";
+    builtinNode.add(new DefaultMutableTreeNode(envShaperItem));
+    FileItem phaserItem = new FileItem(new File("builtin"), "builtin", "Phaser", "Hibiki", 0);
+    phaserItem.rawPath = "builtin://phaser";
+    builtinNode.add(new DefaultMutableTreeNode(phaserItem));
     root.add(builtinNode);
 
     root.add(pluginsNode);

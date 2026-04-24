@@ -926,8 +926,8 @@ class TimelineRenderer {
   }
 
   /**
-   * Compute bar positions (in seconds) using the tempo map from markers.
-   * Package-private for testing. Returns a list of bar start times.
+   * Compute bar positions (in seconds) using the tempo map from markers. Package-private for
+   * testing. Returns a list of bar start times.
    */
   static java.util.List<Float> computeBarPositions(
       float globalBpm,

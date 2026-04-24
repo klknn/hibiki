@@ -53,13 +53,29 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_envelope_shaper",
+    srcs = ["builtin_envelope_shaper.cpp"],
+    hdrs = ["builtin_envelope_shaper.hpp"],
+    deps = ["//engine/plugin:iplugin"],
+)
+
+cc_library(
+    name = "builtin_phaser",
+    srcs = ["builtin_phaser.cpp"],
+    hdrs = ["builtin_phaser.hpp"],
+    deps = ["//engine/plugin:iplugin"],
+)
+
+cc_library(
     name = "effects",
     deps = [
         ":builtin_compressor",
         ":builtin_delay",
+        ":builtin_envelope_shaper",
         ":builtin_eq",
         ":builtin_hott",
         ":builtin_limiter",
+        ":builtin_phaser",
         ":builtin_reverb",
     ],
 )
@@ -121,6 +137,26 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_hott",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_envelope_shaper_test",
+    srcs = ["builtin_envelope_shaper_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_envelope_shaper",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_phaser_test",
+    srcs = ["builtin_phaser_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_phaser",
         "@googletest//:gtest_main",
     ],
 )

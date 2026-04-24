@@ -240,6 +240,14 @@ message PluginMeteringData {
   float sidechain_db = 6;  // Sidechain detection level (-200 = no SC active)
 }
 
+// Scope sample data for XY / Lissajous visualization (e.g. Phaser).
+message PluginScopeData {
+  int32 track_index = 1;
+  int32 plugin_index = 2;
+  repeated float left_samples = 3;   // 256 samples
+  repeated float right_samples = 4;  // 256 samples
+}
+
 // ─── Notification Envelope ──────────────────────────────────────────
 
 // Top-level notification wrapper.
@@ -291,6 +299,9 @@ message Notification {
 
     // Modulation state
     ModulationInfo modulation_info = 27;
+
+    // Scope data (XY visualization)
+    PluginScopeData plugin_scope_data = 28;
   }
 }
 

@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: linux
+            display_name: Linux (x64)
+          - os: macos-latest
+            name: macos
+            display_name: macOS (x64)
+          - os: windows-latest
+            name: windows
+            display_name: Windows (x64)
+
+    name: ${{ matrix.display_name }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install platform-specific dependencies
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libx11-dev libxcursor-dev
+
+      # Cache Bazel build artifacts
+      - name: Cache Bazel
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
+
+      - name: Cache Bazel (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/Users/runneradmin/_bazel_runneradmin
+          key: bazel-windows-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          restore-keys: |
+            bazel-windows-
+
+      # Build
+      - name: Build
+        run: bazel build -c opt --enable_platform_specific_config //:hibiki-gui-java //engine:hbk-play //engine:hbk-plugin-worker
+
+      # Package
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p hibiki-gui
+          cp -r bazel-bin/hibiki-gui-java bazel-bin/hibiki-gui-java.runfiles hibiki-gui/
+          cp -r bazel-bin/engine/hbk-play bazel-bin/engine/hbk-plugin-worker hibiki-gui/
+          zip -r hibiki-${{ matrix.name }}.zip hibiki-gui
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir hibiki-gui
+          Copy-Item -Path bazel-bin/hibiki-gui-java* -Destination hibiki-gui/ -Recurse
+          Copy-Item -Path bazel-bin/engine/hbk-play.exe -Destination hibiki-gui/
+          Copy-Item -Path bazel-bin/engine/hbk-plugin-worker.exe -Destination hibiki-gui/
+          Compress-Archive -Path hibiki-gui -DestinationPath hibiki-${{ matrix.name }}.zip
+
+      # Upload
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: hibiki-${{ matrix.name }}.zip

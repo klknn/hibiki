@@ -99,6 +99,22 @@ class TimelineNotificationHandler {
     if (!paramList.getPluginName().isEmpty()) {
       view.tracks.get(tidx).pluginName = paramList.getPluginName();
       view.tracks.get(tidx).isInstrument = paramList.getIsInstrument();
+    } else {
+      // Plugin removed — if it was the instrument at this index, clear the track name
+      int pidx = paramList.getPluginIndex();
+      if (pidx == 0) {
+        view.tracks.get(tidx).pluginName = null;
+        view.tracks.get(tidx).isInstrument = false;
+      }
+      // Update session view header
+      if (SessionView.getInstance() != null
+          && SessionView.getInstance().trackHeaders.size() > tidx) {
+        javax.swing.JLabel header = SessionView.getInstance().trackHeaders.get(tidx);
+        if (header != null) {
+          String displayName = view.tracks.get(tidx).getDisplayName();
+          header.setText(tidx + " " + displayName);
+        }
+      }
     }
   }
 

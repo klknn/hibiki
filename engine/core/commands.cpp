@@ -678,6 +678,11 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
         removed = track->RemovePlugin(pidx);
         sendAck("REMOVE_PLUGIN", removed != nullptr);
         if (removed) {
+          // If we removed an instrument, close MIDI input so track
+          // becomes a pure audio/effects track.
+          if (removed->isInstrument()) {
+            track->midi_input_device.reset();
+          }
           // Notify Java: send empty param list for removed index
           sendParamList(tidx, pidx, "", false, {});
           // Re-send param lists for all remaining plugins at their new indices

@@ -95,6 +95,10 @@ public class SamplerDevicePanel extends JPanel {
     loadBtn.addActionListener(e -> loadSample());
     btnPanel.add(loadBtn);
 
+    JButton delBtn = new JButton("\u274C");
+    delBtn.addActionListener(e -> sendRemove());
+    btnPanel.add(delBtn);
+
     JToggleButton enableBtn = new JToggleButton("On", enabled);
     enableBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     enableBtn.setFocusPainted(false);
@@ -532,5 +536,19 @@ public class SamplerDevicePanel extends JPanel {
       g2.fillOval(cx - 2, cy - 2, 4, 4);
       g2.dispose();
     }
+  }
+
+  private void sendRemove() {
+    BackendManager.getInstance()
+        .sendRequest(
+            Request.newBuilder()
+                .setPlugin(
+                    PluginCmd.newBuilder()
+                        .setAction(PluginCmd.Action.ACTION_REMOVE)
+                        .setTarget(
+                            EntityRef.newBuilder()
+                                .setTrackIndex(trackIndex)
+                                .setPluginIndex(pluginIndex)))
+                .build());
   }
 }

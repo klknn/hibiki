@@ -20,7 +20,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   private static final int AUTOMATION_LANE_HEIGHT = 60;
   static final int TIME_RULER_HEIGHT = 30;
   static final int LOOP_RULER_HEIGHT = 12;
-  static final int TOTAL_RULER_HEIGHT = TIME_RULER_HEIGHT + LOOP_RULER_HEIGHT;
+  static final int MARKER_LANE_HEIGHT = 16;
+  static final int TOTAL_RULER_HEIGHT = MARKER_LANE_HEIGHT + TIME_RULER_HEIGHT + LOOP_RULER_HEIGHT;
   private int trackLabelWidth = 140;
   private static final float BASE_PIXELS_PER_SECOND = 50.0f;
 
@@ -134,6 +135,31 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   volatile boolean loopEnabled = false;
   volatile float loopStartSec = 0.0f;
   volatile float loopEndSec = 0.0f;
+
+  /** A named marker on the timeline with optional local BPM/time-sig overrides. */
+  static class TimelineMarker implements Comparable<TimelineMarker> {
+    String name;
+    float positionSec;
+    float bpm; // 0 = inherit global
+    int beatsPerBar; // 0 = inherit global
+    int beatDenominator; // 0 = inherit global
+    Color color;
+
+    TimelineMarker(String name, float positionSec) {
+      this.name = name;
+      this.positionSec = positionSec;
+      this.color = Theme.getInstance().ACCENT_BLUE;
+    }
+
+    @Override
+    public int compareTo(TimelineMarker o) {
+      return Float.compare(positionSec, o.positionSec);
+    }
+  }
+
+  final List<TimelineMarker> markers = new ArrayList<>();
+  int draggingMarkerIdx = -1;
+
   final List<TrackTimeline> tracks = new ArrayList<>();
   private int selectedTrack = 0; // Currently selected track for plugin/clip operations
   private static TimelineView instance; // Static reference for global access
@@ -155,7 +181,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     RESIZE_CLIP,
     TRIM_LEFT,
     DRAG_LOOP_REGION,
-    DRAG_LOOP_MARKER
+    DRAG_LOOP_MARKER,
+    DRAG_MARKER
   }
 
   DragMode dragMode = DragMode.NONE;

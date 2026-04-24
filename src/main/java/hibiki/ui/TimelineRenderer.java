@@ -378,22 +378,19 @@ class TimelineRenderer {
       }
     }
 
-    // Draw grid lines
+    // Draw grid lines — uses tempo map from markers
     int trackAreaBottom = scaleTimeRuler + Theme.getInstance().scale(view.getTotalTracksHeight());
-    int bpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
-    float secondsPerBar = secondsPerBeat * bpb;
-    float gridSeconds = view.getGridSnapSeconds(gridMode, secondsPerBeat);
-
-    drawGridLines(
+    drawGridLinesWithTempoMap(
         g2,
         contentPanel,
         scaleTimeRuler,
         trackAreaBottom,
         scaleLabelWidth,
         pps,
-        gridSeconds,
+        bpm,
         secondsPerBeat,
-        secondsPerBar);
+        gridMode,
+        view.markers);
 
     boolean isDragging = (dragMode == TimelineView.DragMode.MOVE_CLIP);
     boolean creatingClip = (dragMode == TimelineView.DragMode.CREATE_CLIP);
@@ -486,8 +483,13 @@ class TimelineRenderer {
       g2.setComposite(AlphaComposite.SrcOver);
     }
 
-    // Draw time ruler
-    drawTimeRuler(g2, contentPanel, scaleTimeRuler, scaleLabelWidth, pps, bpm, gridMode);
+    // Draw time ruler (below marker lane)
+    int scaleMarkerLane = Theme.getInstance().scale(TimelineView.MARKER_LANE_HEIGHT);
+    drawTimeRuler(
+        g2, contentPanel, scaleTimeRuler, scaleMarkerLane, scaleLabelWidth, pps, bpm, gridMode);
+
+    // Draw marker lane (topmost)
+    drawMarkerLane(g2, contentPanel, scaleMarkerLane, scaleLabelWidth, pps, view.markers);
 
     // Draw loop lane separator
     int scaleLoopLane = Theme.getInstance().scale(TimelineView.LOOP_RULER_HEIGHT);
@@ -561,41 +563,80 @@ class TimelineRenderer {
     return Math.max(0, tracks.size() - 1);
   }
 
-  private void drawGridLines(
+  /** Draw grid lines using tempo map from markers. Each marker region uses its own BPM/time-sig. */
+  private void drawGridLinesWithTempoMap(
       Graphics2D g2,
       JPanel contentPanel,
       int scaleTimeRuler,
       int trackAreaBottom,
       int scaleLabelWidth,
       float pps,
-      float gridSeconds,
-      float secondsPerBeat,
-      float secondsPerBar) {
-    if (gridSeconds > 0) {
-      float gridWidth = gridSeconds * pps;
-      if (gridWidth >= 2) {
-        g2.setColor(new Color(255, 255, 255, 15));
-        for (float t = 0; t * pps < contentPanel.getWidth(); t += gridSeconds) {
+      float globalBpm,
+      float globalSecsPerBeat,
+      GridMode gridMode,
+      java.util.List<TimelineView.TimelineMarker> markers) {
+    int globalBpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
+    float maxSec = contentPanel.getWidth() / pps;
+
+    // Build tempo regions: [{startSec, endSec, bpm, bpb}]
+    float regionStart = 0;
+    for (int mi = 0; mi <= markers.size(); mi++) {
+      float regionEnd = (mi < markers.size()) ? markers.get(mi).positionSec : maxSec;
+      if (regionEnd <= regionStart) {
+        regionStart = regionEnd;
+        continue;
+      }
+
+      // Determine effective BPM/bpb for this region (from preceding marker or global)
+      float effBpm = globalBpm;
+      int effBpb = globalBpb;
+      if (mi > 0) {
+        TimelineView.TimelineMarker prev = markers.get(mi - 1);
+        if (prev.bpm > 0) effBpm = prev.bpm;
+        if (prev.beatsPerBar > 0) effBpb = prev.beatsPerBar;
+      }
+
+      float secPerBeat = 60.0f / effBpm;
+      float secPerBar = secPerBeat * effBpb;
+      float gridSec = view.getGridSnapSeconds(gridMode, secPerBeat);
+
+      // Subdivision grid
+      if (gridSec > 0) {
+        float gridWidth = gridSec * pps;
+        if (gridWidth >= 2) {
+          g2.setColor(new Color(255, 255, 255, 15));
+          // First region: align to multiples from 0. After markers: start at marker pos.
+          float t = (mi == 0) ? 0 : regionStart;
+          for (; t < regionEnd; t += gridSec) {
+            int x = scaleLabelWidth + (int) (t * pps);
+            if (x > contentPanel.getWidth()) break;
+            g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
+          }
+        }
+      }
+      // Beat lines
+      float beatWidth = secPerBeat * pps;
+      if (beatWidth >= 4 && gridSec < secPerBeat) {
+        g2.setColor(new Color(255, 255, 255, 25));
+        float t = (mi == 0) ? 0 : regionStart;
+        for (; t < regionEnd; t += secPerBeat) {
           int x = scaleLabelWidth + (int) (t * pps);
+          if (x > contentPanel.getWidth()) break;
           g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
         }
       }
-    }
-    float beatWidth = secondsPerBeat * pps;
-    if (beatWidth >= 4 && gridSeconds < secondsPerBeat) {
-      g2.setColor(new Color(255, 255, 255, 25));
-      for (float t = 0; t * pps < contentPanel.getWidth(); t += secondsPerBeat) {
-        int x = scaleLabelWidth + (int) (t * pps);
-        g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
+      // Bar lines
+      float barWidth = secPerBar * pps;
+      if (barWidth >= 4) {
+        g2.setColor(new Color(255, 255, 255, 40));
+        float t = (mi == 0) ? 0 : regionStart;
+        for (; t < regionEnd; t += secPerBar) {
+          int x = scaleLabelWidth + (int) (t * pps);
+          if (x > contentPanel.getWidth()) break;
+          g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
+        }
       }
-    }
-    float barWidth = secondsPerBar * pps;
-    if (barWidth >= 4) {
-      g2.setColor(new Color(255, 255, 255, 40));
-      for (float t = 0; t * pps < contentPanel.getWidth(); t += secondsPerBar) {
-        int x = scaleLabelWidth + (int) (t * pps);
-        g2.drawLine(x, scaleTimeRuler, x, trackAreaBottom);
-      }
+      regionStart = regionEnd;
     }
   }
 
@@ -817,30 +858,168 @@ class TimelineRenderer {
       Graphics2D g2,
       JPanel contentPanel,
       int scaleTimeRuler,
+      int markerLaneHeight,
       int scaleLabelWidth,
       float pps,
       float bpm,
       GridMode gridMode) {
     g2.setColor(Theme.getInstance().BG_DARKER);
-    g2.fillRect(scaleLabelWidth, 0, contentPanel.getWidth() - scaleLabelWidth, scaleTimeRuler);
+    g2.fillRect(
+        scaleLabelWidth,
+        markerLaneHeight,
+        contentPanel.getWidth() - scaleLabelWidth,
+        scaleTimeRuler - markerLaneHeight);
     g2.setColor(Theme.getInstance().TEXT_DIM);
+
+    int seekBottom = scaleTimeRuler - Theme.getInstance().scale(TimelineView.LOOP_RULER_HEIGHT);
 
     if (gridMode == GridMode.SECONDS) {
       for (int s = 0; s < 600; s += 5) {
         int x = scaleLabelWidth + (int) (s * pps);
         if (x > contentPanel.getWidth()) break;
-        g2.drawLine(x, scaleTimeRuler - 10, x, scaleTimeRuler);
-        g2.drawString(s + "s", x + 2, scaleTimeRuler - 12);
+        g2.drawLine(x, seekBottom - 10, x, seekBottom);
+        g2.drawString(s + "s", x + 2, seekBottom - 12);
       }
     } else {
-      int bpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
-      float rulerSecondsPerBar = (60.0f / bpm) * bpb;
-      for (int bar = 0; bar < 200; bar++) {
-        int x = scaleLabelWidth + (int) (bar * rulerSecondsPerBar * pps);
+      // Tempo-map-aware bar numbering
+      int globalBpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
+      java.util.List<TimelineView.TimelineMarker> markers = view.markers;
+      int barNum = 1;
+      float timeSec = 0;
+      int mi = 0; // current marker index
+
+      float effBpm = bpm;
+      int effBpb = globalBpb;
+
+      int lastX = -100; // Track last drawn bar pixel to prevent doubles
+
+      for (int iter = 0; iter < 2000; iter++) {
+        // Consume markers at or before current position (epsilon for float drift)
+        while (mi < markers.size() && markers.get(mi).positionSec <= timeSec + 0.01f) {
+          TimelineView.TimelineMarker m = markers.get(mi);
+          if (m.bpm > 0) effBpm = m.bpm;
+          if (m.beatsPerBar > 0) effBpb = m.beatsPerBar;
+          mi++;
+        }
+
+        float secPerBar = (60.0f / effBpm) * effBpb;
+        int x = scaleLabelWidth + (int) (timeSec * pps);
         if (x > contentPanel.getWidth()) break;
-        g2.drawLine(x, scaleTimeRuler - 10, x, scaleTimeRuler);
-        g2.drawString(String.valueOf(bar + 1), x + 3, scaleTimeRuler - 12);
+        // Skip if this bar would land on same pixel as previous
+        if (x != lastX) {
+          g2.setColor(Theme.getInstance().TEXT_DIM);
+          g2.drawLine(x, seekBottom - 10, x, seekBottom);
+          g2.drawString(String.valueOf(barNum), x + 3, seekBottom - 12);
+          lastX = x;
+        }
+        barNum++;
+
+        // If next marker falls before the next bar, force downbeat at marker position
+        float nextBarTime = timeSec + secPerBar;
+        if (mi < markers.size() && markers.get(mi).positionSec < nextBarTime) {
+          timeSec = markers.get(mi).positionSec;
+        } else {
+          timeSec = nextBarTime;
+        }
       }
+    }
+  }
+
+  /**
+   * Compute bar positions (in seconds) using the tempo map from markers.
+   * Package-private for testing. Returns a list of bar start times.
+   */
+  static java.util.List<Float> computeBarPositions(
+      float globalBpm,
+      int globalBpb,
+      java.util.List<TimelineView.TimelineMarker> markers,
+      float maxTimeSec) {
+    java.util.List<Float> positions = new java.util.ArrayList<>();
+    float effBpm = globalBpm;
+    int effBpb = globalBpb;
+    float timeSec = 0;
+    int mi = 0;
+
+    for (int iter = 0; iter < 2000; iter++) {
+      // Consume markers at or before current position (epsilon for float drift)
+      while (mi < markers.size() && markers.get(mi).positionSec <= timeSec + 0.01f) {
+        TimelineView.TimelineMarker m = markers.get(mi);
+        if (m.bpm > 0) effBpm = m.bpm;
+        if (m.beatsPerBar > 0) effBpb = m.beatsPerBar;
+        mi++;
+      }
+
+      if (timeSec > maxTimeSec) break;
+      // Skip positions too close to the previous bar (pixel-level dedup)
+      if (!positions.isEmpty()) {
+        float prev = positions.get(positions.size() - 1);
+        if (Math.abs(timeSec - prev) < 0.01f) {
+          // Merge: update the previous position to the marker-snapped time
+          positions.set(positions.size() - 1, timeSec);
+        } else {
+          positions.add(timeSec);
+        }
+      } else {
+        positions.add(timeSec);
+      }
+
+      float secPerBar = (60.0f / effBpm) * effBpb;
+
+      // If next marker falls before the next bar, force downbeat at marker position
+      float nextBarTime = timeSec + secPerBar;
+      if (mi < markers.size() && markers.get(mi).positionSec < nextBarTime) {
+        timeSec = markers.get(mi).positionSec;
+      } else {
+        timeSec = nextBarTime;
+      }
+    }
+    return positions;
+  }
+
+  /** Draw the marker lane at the top of the ruler. */
+  private void drawMarkerLane(
+      Graphics2D g2,
+      JPanel contentPanel,
+      int markerLaneHeight,
+      int scaleLabelWidth,
+      float pps,
+      java.util.List<TimelineView.TimelineMarker> markers) {
+    // Background
+    g2.setColor(new Color(25, 25, 35));
+    g2.fillRect(scaleLabelWidth, 0, contentPanel.getWidth() - scaleLabelWidth, markerLaneHeight);
+    // Label area
+    g2.setColor(Theme.getInstance().BG_DARK);
+    g2.fillRect(0, 0, scaleLabelWidth, markerLaneHeight);
+    g2.setColor(Theme.getInstance().TEXT_DIM);
+    g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.PLAIN, Theme.getInstance().scale(9.0f)));
+    g2.drawString("Markers", 4, markerLaneHeight - 4);
+    // Separator line
+    g2.setColor(new Color(255, 255, 255, 30));
+    g2.drawLine(0, markerLaneHeight - 1, contentPanel.getWidth(), markerLaneHeight - 1);
+
+    // Draw each marker
+    g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(9.0f)));
+    for (TimelineView.TimelineMarker m : markers) {
+      int x = scaleLabelWidth + (int) (m.positionSec * pps);
+      if (x > contentPanel.getWidth()) break;
+      if (x < scaleLabelWidth) continue;
+
+      // Flag triangle
+      g2.setColor(m.color);
+      int[] xp = {x, x, x + 6};
+      int[] yp = {1, markerLaneHeight - 2, 1};
+      g2.fillPolygon(xp, yp, 3);
+      // Vertical line
+      g2.drawLine(x, 0, x, markerLaneHeight - 1);
+
+      // Marker name
+      String label = m.name;
+      if (m.bpm > 0) label += String.format(" %.0f", m.bpm);
+      if (m.beatsPerBar > 0 && m.beatDenominator > 0) {
+        label += " " + m.beatsPerBar + "/" + m.beatDenominator;
+      }
+      g2.setColor(Theme.getInstance().TEXT_BRIGHT);
+      g2.drawString(label, x + 8, markerLaneHeight - 4);
     }
   }
 }

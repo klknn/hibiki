@@ -71,15 +71,20 @@ class PianoRollRenderer {
       g.drawLine(0, y, gridPanel.getWidth(), y);
     }
 
-    // Draw vertical grid lines
+    // Draw vertical grid lines — marker-aware bar/beat spacing
     int res = sequence.getResolution();
-    int bpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
-    int ticksPerBar = res * bpb;
+    int globalBpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
     int gridTicks = pianoRoll.getGridTickInterval();
     float gridWidth = gridTicks * tw;
     Graphics2D g2 = (Graphics2D) g;
 
-    // Subdivision lines (finest)
+    // Get timeline markers for tempo map
+    java.util.List<TimelineView.TimelineMarker> markers =
+        TimelineView.getInstance() != null
+            ? TimelineView.getInstance().markers
+            : java.util.Collections.emptyList();
+
+    // Subdivision lines (finest) — always uniform
     if (gridWidth >= 2) {
       g2.setColor(new Color(60, 60, 60));
       for (long tick = 0; tick * tw < gridPanel.getWidth(); tick += gridTicks) {
@@ -88,7 +93,7 @@ class PianoRollRenderer {
       }
     }
 
-    // Beat lines (quarter notes)
+    // Beat lines (quarter notes) — always uniform
     float beatWidth = res * tw;
     if (beatWidth >= 4 && gridTicks < res) {
       g2.setColor(new Color(90, 90, 90));
@@ -98,17 +103,20 @@ class PianoRollRenderer {
       }
     }
 
-    // Bar lines (brightest)
-    float barWidth = ticksPerBar * tw;
-    if (barWidth >= 4) {
-      g2.setColor(new Color(120, 120, 120));
-      g2.setStroke(new BasicStroke(1.5f));
-      for (long tick = 0; tick * tw < gridPanel.getWidth(); tick += ticksPerBar) {
-        int x = (int) (tick * tw);
+    // Bar lines — marker-aware (time sig changes affect bar grouping)
+    g2.setColor(new Color(120, 120, 120));
+    g2.setStroke(new BasicStroke(1.5f));
+    long tick = 0;
+    while (tick * tw < gridPanel.getWidth()) {
+      int effBpb = getEffectiveBpbAtTick(tick, res, clipStartTime, bpm, globalBpb, markers);
+      int tpb = res * effBpb;
+      int x = (int) (tick * tw);
+      if (tpb * tw >= 4) {
         g2.drawLine(x, 0, x, gridPanel.getHeight());
       }
-      g2.setStroke(new BasicStroke(1.0f));
+      tick += tpb;
     }
+    g2.setStroke(new BasicStroke(1.0f));
 
     // Draw ghost shadow of dragged note
     if (isDraggingNote && draggingNote != null && dragOriginalPitch >= 0) {
@@ -171,23 +179,33 @@ class PianoRollRenderer {
 
     float tw = tickWidth;
     int res = sequence.getResolution();
-    int bpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
-    float ticksPerBar = res * bpb;
+    int globalBpb = TopBar.getInstance() != null ? TopBar.getInstance().getBeatsPerBar() : 4;
+    java.util.List<TimelineView.TimelineMarker> markers =
+        TimelineView.getInstance() != null
+            ? TimelineView.getInstance().markers
+            : java.util.Collections.emptyList();
 
     g2.setFont(
         Theme.getInstance().FONT_UI.deriveFont(Font.PLAIN, Theme.getInstance().scale(10.0f)));
 
-    for (int bar = 0; bar * ticksPerBar * tw < panel.getWidth() + 200; bar++) {
-      int x = (int) (bar * ticksPerBar * tw);
+    // Marker-aware bar numbering
+    long tick = 0;
+    int barNum = 1;
+    while (tick * tw < panel.getWidth() + 200) {
+      int effBpb = getEffectiveBpbAtTick(tick, res, clipStartTime, bpm, globalBpb, markers);
+      float ticksPerBar = res * effBpb;
+      int x = (int) (tick * tw);
       g2.setColor(new Color(255, 255, 255, 60));
       g2.drawLine(x, 0, x, panel.getHeight());
       g2.setColor(Theme.getInstance().TEXT_BRIGHT);
-      g2.drawString(String.valueOf(bar + 1), x + 3, 14);
-      for (int beat = 1; beat < bpb; beat++) {
-        int bx = (int) ((bar * ticksPerBar + beat * res) * tw);
+      g2.drawString(String.valueOf(barNum), x + 3, 14);
+      for (int beat = 1; beat < effBpb; beat++) {
+        int bx = (int) ((tick + beat * res) * tw);
         g2.setColor(new Color(255, 255, 255, 30));
         g2.drawLine(bx, panel.getHeight() - 6, bx, panel.getHeight());
       }
+      barNum++;
+      tick += (long) ticksPerBar;
     }
 
     // Playhead indicator
@@ -247,5 +265,29 @@ class PianoRollRenderer {
       g2.setColor(new Color(255, 255, 255, 80));
       g2.drawRect(x, y, thinBarWidth, barHeight);
     }
+  }
+
+  /**
+   * Get effective beatsPerBar at a given MIDI tick, considering timeline markers. Converts tick to
+   * absolute seconds using clipStartTime + BPM, then finds the active marker.
+   */
+  private int getEffectiveBpbAtTick(
+      long tick,
+      int resolution,
+      float clipStartTime,
+      float bpm,
+      int globalBpb,
+      java.util.List<TimelineView.TimelineMarker> markers) {
+    if (markers.isEmpty()) return globalBpb;
+    // Convert tick to absolute seconds
+    float secPerBeat = 60.0f / bpm;
+    float absSec = clipStartTime + (tick / (float) resolution) * secPerBeat;
+    // Find the last marker at or before absSec
+    int effBpb = globalBpb;
+    for (TimelineView.TimelineMarker m : markers) {
+      if (m.positionSec > absSec) break;
+      if (m.beatsPerBar > 0) effBpb = m.beatsPerBar;
+    }
+    return effBpb;
   }
 }

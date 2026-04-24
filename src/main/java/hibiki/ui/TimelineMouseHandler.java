@@ -3,6 +3,7 @@ package hibiki.ui;
 import hibiki.BackendManager;
 import hibiki.pb.commands.*;
 import hibiki.pb.core.EntityRef;
+import java.awt.*;
 import java.awt.event.*;
 import javax.swing.*;
 
@@ -55,17 +56,21 @@ class TimelineMouseHandler {
   // ─── Mouse press ────────────────────────────────────────────────────
 
   private void handleMousePressed(MouseEvent e) {
-    int scaleSeekRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleMarkerLane = Theme.getInstance().scale(TimelineView.MARKER_LANE_HEIGHT);
+    int scaleSeekBottom =
+        scaleMarkerLane + Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
     int scaleTotalRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
 
     if (e.getY() < scaleTotalRuler) {
-      if (e.getY() < scaleSeekRuler) {
-        // Top lane: seek playhead
+      if (e.getY() < scaleMarkerLane) {
+        // Marker lane
+        handleMarkerPress(e, scaleMarkerLane);
+      } else if (e.getY() < scaleSeekBottom) {
+        // Seek lane: seek playhead
         view.updatePlayhead(e.getX());
       } else {
-        // Bottom lane: loop region
+        // Loop lane
         if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
-          // Double-click: toggle loop enable/disable
           if (view.loopEndSec > view.loopStartSec) {
             view.loopEnabled = !view.loopEnabled;
             BackendManager.getInstance()
@@ -75,7 +80,6 @@ class TimelineMouseHandler {
         } else if (SwingUtilities.isLeftMouseButton(e)) {
           float pps = view.getPixelsPerSecond();
           int hitThreshold = Theme.getInstance().scale(6);
-          // Check if near an existing loop marker
           if (view.loopEndSec > view.loopStartSec) {
             int startPx = (int) (view.loopStartSec * pps);
             int endPx = (int) (view.loopEndSec * pps);
@@ -89,7 +93,6 @@ class TimelineMouseHandler {
               return;
             }
           }
-          // Not near a marker: create new loop region
           float clickTime = Math.max(0, e.getX() / pps);
           if (!e.isShiftDown()) clickTime = view.snapToGrid(clickTime);
           view.loopDragStartSec = clickTime;
@@ -235,15 +238,21 @@ class TimelineMouseHandler {
       float lo = Math.min(dragStart, mouseTime);
       float hi = Math.max(dragStart, mouseTime);
       if (hi - lo > 0.05f) {
-        // Dragged a region: set loop markers and auto-enable
         view.loopStartSec = lo;
         view.loopEndSec = hi;
         view.loopEnabled = true;
         BackendManager.getInstance().sendSetLoop(true, lo, hi);
       } else {
-        // Single click (no drag): seek playhead
         view.updatePlayhead(e.getX());
       }
+    }
+
+    // Handle marker drag completion
+    if (view.dragMode == TimelineView.DragMode.DRAG_MARKER) {
+      if (view.draggingMarkerIdx >= 0 && view.draggingMarkerIdx < view.markers.size()) {
+        java.util.Collections.sort(view.markers);
+      }
+      view.draggingMarkerIdx = -1;
     }
 
     // Reset all drag state
@@ -387,6 +396,17 @@ class TimelineMouseHandler {
 
     int scaleTimeRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
 
+    // Handle marker drag
+    if (view.dragMode == TimelineView.DragMode.DRAG_MARKER
+        && view.draggingMarkerIdx >= 0
+        && view.draggingMarkerIdx < view.markers.size()) {
+      float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
+      if (!e.isShiftDown()) mouseTime = view.snapToGrid(mouseTime);
+      view.markers.get(view.draggingMarkerIdx).positionSec = mouseTime;
+      view.contentPanel.repaint();
+      return;
+    }
+
     // Handle loop marker drag
     if (view.dragMode == TimelineView.DragMode.DRAG_LOOP_MARKER) {
       float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
@@ -467,10 +487,20 @@ class TimelineMouseHandler {
   // ─── Mouse move (cursor changes) ────────────────────────────────────
 
   private void handleMouseMoved(MouseEvent e) {
-    int scaleSeekRuler = Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
+    int scaleMarkerLane = Theme.getInstance().scale(TimelineView.MARKER_LANE_HEIGHT);
+    int scaleSeekBottom =
+        scaleMarkerLane + Theme.getInstance().scale(TimelineView.TIME_RULER_HEIGHT);
     int scaleTotalRuler = Theme.getInstance().scale(TimelineView.TOTAL_RULER_HEIGHT);
     if (e.getY() < scaleTotalRuler) {
-      if (e.getY() >= scaleSeekRuler) {
+      if (e.getY() < scaleMarkerLane) {
+        // In marker lane: check for marker hover
+        int hitIdx = findMarkerAtX(e.getX());
+        if (hitIdx >= 0) {
+          view.contentPanel.setCursor(
+              java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+          return;
+        }
+      } else if (e.getY() >= scaleSeekBottom) {
         // In loop lane: check for loop marker hover
         if (view.loopEndSec > view.loopStartSec) {
           float pps = view.getPixelsPerSecond();
@@ -502,5 +532,104 @@ class TimelineMouseHandler {
     } else {
       view.contentPanel.setCursor(java.awt.Cursor.getDefaultCursor());
     }
+  }
+
+  // ─── Marker interaction helpers ──────────────────────────────────────
+
+  private void handleMarkerPress(MouseEvent e, int scaleMarkerLane) {
+    float pps = view.getPixelsPerSecond();
+    int hitIdx = findMarkerAtX(e.getX());
+
+    if (SwingUtilities.isRightMouseButton(e) && hitIdx >= 0) {
+      showMarkerContextMenu(hitIdx, e);
+      return;
+    }
+
+    if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
+      if (hitIdx >= 0) {
+        editMarker(hitIdx);
+      } else {
+        // Create new marker at click position
+        float clickTime = Math.max(0, e.getX() / pps);
+        if (!e.isShiftDown()) clickTime = view.snapToGrid(clickTime);
+        TimelineView.TimelineMarker m = new TimelineView.TimelineMarker("Marker", clickTime);
+        MarkerDialog dlg =
+            new MarkerDialog(
+                (Frame) SwingUtilities.getWindowAncestor(view),
+                "New Marker",
+                m.name,
+                m.positionSec,
+                0,
+                0,
+                0,
+                view.bpm);
+        dlg.setVisible(true);
+        if (dlg.isConfirmed()) {
+          m.name = dlg.markerName;
+          m.positionSec = dlg.positionSec;
+          m.bpm = dlg.bpm;
+          m.beatsPerBar = dlg.beatsPerBar;
+          m.beatDenominator = dlg.beatDenominator;
+          view.markers.add(m);
+          java.util.Collections.sort(view.markers);
+          view.contentPanel.repaint();
+        }
+      }
+      return;
+    }
+
+    if (SwingUtilities.isLeftMouseButton(e) && hitIdx >= 0) {
+      view.draggingMarkerIdx = hitIdx;
+      view.dragMode = TimelineView.DragMode.DRAG_MARKER;
+    }
+  }
+
+  private int findMarkerAtX(int mouseX) {
+    float pps = view.getPixelsPerSecond();
+    int hitThreshold = Theme.getInstance().scale(8);
+    for (int i = 0; i < view.markers.size(); i++) {
+      int mx = (int) (view.markers.get(i).positionSec * pps);
+      if (Math.abs(mouseX - mx) <= hitThreshold) return i;
+    }
+    return -1;
+  }
+
+  private void editMarker(int idx) {
+    TimelineView.TimelineMarker m = view.markers.get(idx);
+    MarkerDialog dlg =
+        new MarkerDialog(
+            (Frame) SwingUtilities.getWindowAncestor(view),
+            "Edit Marker",
+            m.name,
+            m.positionSec,
+            m.bpm,
+            m.beatsPerBar,
+            m.beatDenominator,
+            view.bpm);
+    dlg.setVisible(true);
+    if (dlg.isConfirmed()) {
+      m.name = dlg.markerName;
+      m.positionSec = dlg.positionSec;
+      m.bpm = dlg.bpm;
+      m.beatsPerBar = dlg.beatsPerBar;
+      m.beatDenominator = dlg.beatDenominator;
+      java.util.Collections.sort(view.markers);
+      view.contentPanel.repaint();
+    }
+  }
+
+  private void showMarkerContextMenu(int idx, MouseEvent e) {
+    JPopupMenu menu = new JPopupMenu();
+    JMenuItem editItem = new JMenuItem("Edit Marker");
+    editItem.addActionListener(ev -> editMarker(idx));
+    menu.add(editItem);
+    JMenuItem deleteItem = new JMenuItem("Delete Marker");
+    deleteItem.addActionListener(
+        ev -> {
+          view.markers.remove(idx);
+          view.contentPanel.repaint();
+        });
+    menu.add(deleteItem);
+    menu.show(view.contentPanel, e.getX(), e.getY());
   }
 }

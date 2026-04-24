@@ -399,4 +399,151 @@ public class TimelineViewTest {
     tv.removeTrack(3); // should be no-op
     assertEquals(1, tv.getVisibleTrackCount());
   }
+  @Test
+  public void testComputeBarPositions_noMarkers() {
+    java.util.List<TimelineView.TimelineMarker> markers = new java.util.ArrayList<>();
+    // 120 BPM, 4/4: bars at 0, 2, 4, 6, 8
+    java.util.List<Float> positions =
+        TimelineRenderer.computeBarPositions(120.0f, 4, markers, 10.0f);
+    assertTrue(positions.size() >= 5);
+    assertEquals(0.0f, positions.get(0), 0.001f);
+    assertEquals(2.0f, positions.get(1), 0.001f);
+    assertEquals(4.0f, positions.get(2), 0.001f);
+    assertEquals(6.0f, positions.get(3), 0.001f);
+    assertEquals(8.0f, positions.get(4), 0.001f);
+  }
+
+  @Test
+  public void testComputeBarPositions_singleMarkerTimeSigChange() {
+    java.util.List<TimelineView.TimelineMarker> markers = new java.util.ArrayList<>();
+    // Marker at 4.0s: change to 3/4
+    TimelineView.TimelineMarker m = new TimelineView.TimelineMarker("A", 4.0f);
+    m.beatsPerBar = 3;
+    markers.add(m);
+    // 120 BPM, 4/4 → 3/4 at 4.0s
+    // Before marker: bars at 0, 2, 4 (secPerBar=2.0)
+    // After marker: bars at 4.0, 5.5, 7.0 (secPerBar=1.5)
+    java.util.List<Float> positions =
+        TimelineRenderer.computeBarPositions(120.0f, 4, markers, 10.0f);
+    assertEquals(0.0f, positions.get(0), 0.001f);
+    assertEquals(2.0f, positions.get(1), 0.001f);
+    assertEquals(4.0f, positions.get(2), 0.001f);
+    assertEquals(5.5f, positions.get(3), 0.001f);
+    assertEquals(7.0f, positions.get(4), 0.001f);
+  }
+
+  @Test
+  public void testComputeBarPositions_noDoubledPositions_irrationalBpm() {
+    // Simulate real-world float drift: marker position is set from a different
+    // computation path than the bar accumulation, causing a tiny epsilon offset.
+    // At 140 BPM, 3/4: secPerBar = 60/140*3 ≈ 1.28571...
+    // After 5 bars of accumulation: timeSec ≈ 6.42857
+    // But if the marker was placed from an independent calculation, it may
+    // differ by a tiny epsilon, causing the marker to not be consumed.
+    java.util.List<TimelineView.TimelineMarker> markers = new java.util.ArrayList<>();
+    // Compute marker position with a slightly different float path to cause drift
+    float secPerBeat = 60.0f / 140.0f;
+    float markerAt = secPerBeat * 3 * 5; // different grouping than secPerBar * 5
+    // Nudge by a tiny epsilon to simulate the mismatch
+    markerAt = Math.nextUp(markerAt);
+    TimelineView.TimelineMarker m = new TimelineView.TimelineMarker("B", markerAt);
+    m.beatsPerBar = 5;
+    markers.add(m);
+
+    java.util.List<Float> positions =
+        TimelineRenderer.computeBarPositions(140.0f, 3, markers, 20.0f);
+
+    // Verify no two bars are at the same pixel (at 100 pps)
+    float pps = 100.0f;
+    for (int i = 1; i < positions.size(); i++) {
+      int px0 = (int) (positions.get(i - 1) * pps);
+      int px1 = (int) (positions.get(i) * pps);
+      assertNotEquals(
+          "Bar " + i + " and " + (i + 1) + " at same pixel (times: "
+              + positions.get(i - 1) + ", " + positions.get(i) + ")",
+          px0,
+          px1);
+    }
+  }
+
+  @Test
+  public void testComputeBarPositions_twoMarkersNoDoubles() {
+    // Two markers: 3/4 at start, 5/4 at bar 4
+    java.util.List<TimelineView.TimelineMarker> markers = new java.util.ArrayList<>();
+    TimelineView.TimelineMarker m1 = new TimelineView.TimelineMarker("A", 0.0f);
+    m1.beatsPerBar = 3;
+    markers.add(m1);
+    // At 120 BPM 3/4: secPerBar=1.5, bars at 0, 1.5, 3.0, 4.5
+    // Marker B at bar 4 start = 4.5s
+    TimelineView.TimelineMarker m2 = new TimelineView.TimelineMarker("B", 4.5f);
+    m2.beatsPerBar = 5;
+    markers.add(m2);
+
+    java.util.List<Float> positions =
+        TimelineRenderer.computeBarPositions(120.0f, 4, markers, 15.0f);
+
+    // Verify no two bars at same pixel (100 pps)
+    float pps = 100.0f;
+    for (int i = 1; i < positions.size(); i++) {
+      int px0 = (int) (positions.get(i - 1) * pps);
+      int px1 = (int) (positions.get(i) * pps);
+      assertNotEquals(
+          "Bar " + i + " and " + (i + 1) + " at same pixel (times: "
+              + positions.get(i - 1) + ", " + positions.get(i) + ")",
+          px0,
+          px1);
+    }
+  }
+
+  @Test
+  public void testComputeBarPositions_markerAtBarBoundary_noDoubles() {
+    // Reproduce user's scenario: 120 BPM 4/4, 3/4 marker placed at bar 3.
+    // Bar 3 starts at 4.0s. Dialog may parse position with tiny offset.
+    java.util.List<TimelineView.TimelineMarker> markers = new java.util.ArrayList<>();
+    // Test with exact position
+    TimelineView.TimelineMarker m = new TimelineView.TimelineMarker("A", 4.0f);
+    m.beatsPerBar = 3;
+    markers.add(m);
+    java.util.List<Float> positions =
+        TimelineRenderer.computeBarPositions(120.0f, 4, markers, 12.0f);
+    float pps = 100.0f;
+    for (int i = 1; i < positions.size(); i++) {
+      int px0 = (int) (positions.get(i - 1) * pps);
+      int px1 = (int) (positions.get(i) * pps);
+      assertNotEquals(
+          "Exact: Bar " + i + " and " + (i + 1) + " at same pixel (times: "
+              + positions.get(i - 1) + ", " + positions.get(i) + ")",
+          px0, px1);
+    }
+
+    // Test with slight positive offset (simulates dialog rounding up)
+    markers.clear();
+    TimelineView.TimelineMarker m2 = new TimelineView.TimelineMarker("A", 4.01f);
+    m2.beatsPerBar = 3;
+    markers.add(m2);
+    positions = TimelineRenderer.computeBarPositions(120.0f, 4, markers, 12.0f);
+    for (int i = 1; i < positions.size(); i++) {
+      int px0 = (int) (positions.get(i - 1) * pps);
+      int px1 = (int) (positions.get(i) * pps);
+      assertNotEquals(
+          "Offset+0.01: Bar " + i + " and " + (i + 1) + " at same pixel (times: "
+              + positions.get(i - 1) + ", " + positions.get(i) + ")",
+          px0, px1);
+    }
+
+    // Test with slight negative offset (simulates dialog rounding down)
+    markers.clear();
+    TimelineView.TimelineMarker m3 = new TimelineView.TimelineMarker("A", 3.99f);
+    m3.beatsPerBar = 3;
+    markers.add(m3);
+    positions = TimelineRenderer.computeBarPositions(120.0f, 4, markers, 12.0f);
+    for (int i = 1; i < positions.size(); i++) {
+      int px0 = (int) (positions.get(i - 1) * pps);
+      int px1 = (int) (positions.get(i) * pps);
+      assertNotEquals(
+          "Offset-0.01: Bar " + i + " and " + (i + 1) + " at same pixel (times: "
+              + positions.get(i - 1) + ", " + positions.get(i) + ")",
+          px0, px1);
+    }
+  }
 }

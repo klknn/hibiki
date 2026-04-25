@@ -230,6 +230,41 @@ std::unique_ptr<IPlugin> Track::RemovePlugin(size_t pidx) {
   return removed;
 }
 
+void Track::ReorderPlugin(int from_index, int to_index) {
+  std::lock_guard<DummyMutex> lock(mutex);
+  int n = (int)plugins.size();
+  if (from_index < 0 || from_index >= n || to_index < 0 || to_index >= n ||
+      from_index == to_index)
+    return;
+
+  // Move the plugin
+  auto plugin = std::move(plugins[from_index]);
+  plugins.erase(plugins.begin() + from_index);
+  plugins.insert(plugins.begin() + to_index, std::move(plugin));
+
+  // Remap index-keyed maps (plugin_bypass, plugin_sidechain)
+  // Build a mapping: old_index -> new_index
+  auto remap = [&](int old_idx) -> int {
+    if (old_idx == from_index) return to_index;
+    if (from_index < to_index) {
+      // Moved forward: indices in (from, to] shift down by 1
+      if (old_idx > from_index && old_idx <= to_index) return old_idx - 1;
+    } else {
+      // Moved backward: indices in [to, from) shift up by 1
+      if (old_idx >= to_index && old_idx < from_index) return old_idx + 1;
+    }
+    return old_idx;
+  };
+
+  std::map<int, bool> new_bypass;
+  for (auto& [idx, val] : plugin_bypass) new_bypass[remap(idx)] = val;
+  plugin_bypass = std::move(new_bypass);
+
+  std::map<int, SidechainRoute> new_sidechain;
+  for (auto& [idx, val] : plugin_sidechain) new_sidechain[remap(idx)] = val;
+  plugin_sidechain = std::move(new_sidechain);
+}
+
 void Track::AddTimelineClip(const std::string& path, double start_time_sec,
                             double bpm, double duration_beats,
                             double sample_rate) {

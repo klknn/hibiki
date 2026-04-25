@@ -7,6 +7,8 @@ import hibiki.pb.notifications.*;
 import hibiki.pb.notifications.ModulationSlotInfo;
 import hibiki.pb.notifications.ParamInfo;
 import java.awt.*;
+import java.awt.datatransfer.*;
+import java.awt.dnd.*;
 import java.awt.event.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -361,15 +363,30 @@ public class PluginPane extends JPanel {
     }
   }
 
+  /** Transferable data for plugin drag-and-drop reordering. */
+  static final DataFlavor PLUGIN_FLAVOR;
+
+  static {
+    DataFlavor f = null;
+    try {
+      f = new DataFlavor(DataFlavor.javaJVMLocalObjectMimeType + ";class=\"[I\"");
+    } catch (ClassNotFoundException e) {
+      e.printStackTrace();
+    }
+    PLUGIN_FLAVOR = f;
+  }
+
   /**
    * Wraps a device panel + a ModulationPanel side-by-side. The modPanel starts hidden and is
-   * toggled by the Mod button.
+   * toggled by the Mod button. Supports drag-and-drop reordering.
    */
-  private static class DeviceWrapper extends JPanel {
+  private class DeviceWrapper extends JPanel {
     final JPanel device;
     final ModulationPanel modPanel;
     final int trackIndex;
     final int pluginIndex;
+    private boolean dropLeft = false;
+    private boolean dropRight = false;
 
     DeviceWrapper(JPanel device, int trackIndex, int pluginIndex) {
       this.device = device;
@@ -383,6 +400,97 @@ public class PluginPane extends JPanel {
       add(device);
       add(Box.createHorizontalStrut(5));
       add(modPanel);
+
+      // --- Drag support ---
+      setTransferHandler(new DeviceTransferHandler());
+      addMouseMotionListener(
+          new MouseMotionAdapter() {
+            @Override
+            public void mouseDragged(MouseEvent e) {
+              // Skip instruments (index 0 with isInstrument)
+              if (device instanceof DevicePanel && ((DevicePanel) device).isInstrument) return;
+              TransferHandler handler = getTransferHandler();
+              handler.exportAsDrag(DeviceWrapper.this, e, TransferHandler.MOVE);
+            }
+          });
+
+      // --- Drop support ---
+      new DropTarget(
+          this,
+          DnDConstants.ACTION_MOVE,
+          new DropTargetAdapter() {
+            @Override
+            public void dragOver(DropTargetDragEvent dtde) {
+              if (!dtde.isDataFlavorSupported(PLUGIN_FLAVOR)) {
+                dtde.rejectDrag();
+                return;
+              }
+              dtde.acceptDrag(DnDConstants.ACTION_MOVE);
+              // Determine drop side
+              Point p = dtde.getLocation();
+              boolean left = p.x < getWidth() / 2;
+              if (left != dropLeft || !left != dropRight) {
+                dropLeft = left;
+                dropRight = !left;
+                repaint();
+              }
+            }
+
+            @Override
+            public void dragExit(DropTargetEvent dte) {
+              dropLeft = false;
+              dropRight = false;
+              repaint();
+            }
+
+            @Override
+            public void drop(DropTargetDropEvent dtde) {
+              dropLeft = false;
+              dropRight = false;
+              repaint();
+              try {
+                if (!dtde.isDataFlavorSupported(PLUGIN_FLAVOR)) {
+                  dtde.rejectDrop();
+                  return;
+                }
+                dtde.acceptDrop(DnDConstants.ACTION_MOVE);
+                int[] data = (int[]) dtde.getTransferable().getTransferData(PLUGIN_FLAVOR);
+                int srcTrack = data[0];
+                int srcPlugin = data[1];
+                if (srcTrack != trackIndex) {
+                  dtde.dropComplete(false);
+                  return;
+                }
+                // Determine target index based on drop side
+                Point p = dtde.getLocation();
+                int targetIdx = (p.x < getWidth() / 2) ? pluginIndex : pluginIndex + 1;
+                // Adjust if dragging from before the target
+                if (srcPlugin < targetIdx) targetIdx--;
+                if (srcPlugin != targetIdx) {
+                  sendReorderCommand(srcTrack, srcPlugin, targetIdx);
+                }
+                dtde.dropComplete(true);
+              } catch (Exception ex) {
+                ex.printStackTrace();
+                dtde.dropComplete(false);
+              }
+            }
+          });
+    }
+
+    @Override
+    protected void paintChildren(Graphics g) {
+      super.paintChildren(g);
+      // Paint drop indicator
+      Graphics2D g2 = (Graphics2D) g;
+      g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+      g2.setStroke(new BasicStroke(3));
+      g2.setColor(Theme.getInstance().ACCENT_BLUE);
+      if (dropLeft) {
+        g2.drawLine(1, 0, 1, getHeight());
+      } else if (dropRight) {
+        g2.drawLine(getWidth() - 2, 0, getWidth() - 2, getHeight());
+      }
     }
 
     void toggleMod() {
@@ -390,6 +498,56 @@ public class PluginPane extends JPanel {
       revalidate();
       repaint();
     }
+  }
+
+  /** TransferHandler for drag-and-drop reordering of device wrappers. */
+  private static class DeviceTransferHandler extends TransferHandler {
+    @Override
+    public int getSourceActions(JComponent c) {
+      return MOVE;
+    }
+
+    @Override
+    protected Transferable createTransferable(JComponent c) {
+      if (c instanceof DeviceWrapper) {
+        DeviceWrapper w = (DeviceWrapper) c;
+        int[] data = {w.trackIndex, w.pluginIndex};
+        return new Transferable() {
+          @Override
+          public DataFlavor[] getTransferDataFlavors() {
+            return new DataFlavor[] {PLUGIN_FLAVOR};
+          }
+
+          @Override
+          public boolean isDataFlavorSupported(DataFlavor flavor) {
+            return PLUGIN_FLAVOR.equals(flavor);
+          }
+
+          @Override
+          public Object getTransferData(DataFlavor flavor) {
+            return data;
+          }
+        };
+      }
+      return null;
+    }
+
+    @Override
+    protected void exportDone(JComponent source, Transferable data, int action) {
+      // Rebuild happens via param list notifications from engine
+    }
+  }
+
+  /** Send ACTION_REORDER_PLUGIN command to backend. */
+  private static void sendReorderCommand(int trackIndex, int fromIndex, int toIndex) {
+    PluginCmd cmd =
+        PluginCmd.newBuilder()
+            .setAction(PluginCmd.Action.ACTION_REORDER_PLUGIN)
+            .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex).setPluginIndex(fromIndex))
+            .setTargetPluginIndex(toIndex)
+            .build();
+    Request request = Request.newBuilder().setPlugin(cmd).build();
+    BackendManager.getInstance().sendRequest(request);
   }
 
   /** Find the DeviceWrapper for a given track+plugin in the current device chain. */

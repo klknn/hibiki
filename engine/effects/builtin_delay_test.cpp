@@ -35,11 +35,13 @@ TEST_F(BuiltinDelayTest, SilenceInSilenceOut) {
 TEST_F(BuiltinDelayTest, ImpulseProducesDelayedOutput) {
   in_l[0] = 1.0f;
   in_r[0] = 1.0f;
-  // Set short delay: ~5ms
+  // Set short delay: ~5ms (free-running, sync off)
+  delay.setParameterValue(BuiltinDelay::PARAM_SYNC, 0.0);
   delay.setParameterValue(BuiltinDelay::PARAM_TIME_L, 0.22);  // ~5ms
   delay.setParameterValue(BuiltinDelay::PARAM_TIME_R, 0.22);
   delay.setParameterValue(BuiltinDelay::PARAM_MIX, 0.5);
   delay.setParameterValue(BuiltinDelay::PARAM_FEEDBACK, 0.0);
+  delay.setParameterValue(BuiltinDelay::PARAM_PING_PONG, 0.0);
 
   // Process enough blocks to see the delayed impulse
   delay.process(inputs, outputs, kBlockSize, ctx, {});
@@ -83,9 +85,11 @@ TEST_F(BuiltinDelayTest, Metadata) {
 
 TEST_F(BuiltinDelayTest, FeedbackProducesRepeats) {
   in_l[0] = 1.0f;
+  delay.setParameterValue(BuiltinDelay::PARAM_SYNC, 0.0);    // Free-running
   delay.setParameterValue(BuiltinDelay::PARAM_TIME_L, 0.1);  // very short
   delay.setParameterValue(BuiltinDelay::PARAM_FEEDBACK, 0.8);
   delay.setParameterValue(BuiltinDelay::PARAM_MIX, 1.0);
+  delay.setParameterValue(BuiltinDelay::PARAM_PING_PONG, 0.0);
 
   // Process several blocks
   delay.process(inputs, outputs, kBlockSize, ctx, {});
@@ -102,8 +106,9 @@ TEST_F(BuiltinDelayTest, FeedbackProducesRepeats) {
 }
 
 TEST_F(BuiltinDelayTest, TempoSyncUsesBeats) {
-  delay.setParameterValue(BuiltinDelay::PARAM_SYNC, 1.0);        // Enable sync
-  delay.setParameterValue(BuiltinDelay::PARAM_SYNC_DIV, 0.588);  // ~1/4
+  delay.setParameterValue(BuiltinDelay::PARAM_SYNC, 1.0);  // Enable sync
+  delay.setParameterValue(BuiltinDelay::PARAM_SYNC_DIV,
+                          0.667);  // 1/4 note (index 10 of 16)
   delay.setParameterValue(BuiltinDelay::PARAM_MIX, 0.5);
   delay.setParameterValue(BuiltinDelay::PARAM_FEEDBACK, 0.0);
 

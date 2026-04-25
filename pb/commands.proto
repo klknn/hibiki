@@ -82,8 +82,9 @@ message PluginCmd {
     ACTION_SEND_EDITOR_INPUT = 7;
     ACTION_STOP_GUI = 8;
     ACTION_LOAD_SAMPLE = 9;
-    ACTION_SET_SIDECHAIN = 10;  // Set/clear sidechain source track
-    ACTION_SET_BYPASS = 11;     // Enable/disable (bypass) a plugin
+    ACTION_SET_SIDECHAIN = 10;   // Set/clear sidechain source track
+    ACTION_SET_BYPASS = 11;      // Enable/disable (bypass) a plugin
+    ACTION_REORDER_PLUGIN = 12;  // Reorder plugin in signal chain
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -103,6 +104,8 @@ message PluginCmd {
   int32 sidechain_track_index =
       15;          // Source track index for ACTION_SET_SIDECHAIN (-1 = disable)
   bool flag = 16;  // Generic boolean flag (e.g. bypass on/off)
+  int32 target_plugin_index =
+      17;  // Destination index for ACTION_REORDER_PLUGIN
 }
 
 message AutomationCmd {

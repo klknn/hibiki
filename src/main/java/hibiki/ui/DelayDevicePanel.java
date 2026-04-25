@@ -34,7 +34,7 @@ public class DelayDevicePanel extends JPanel {
   private final KnobPanel[] knobs = new KnobPanel[6];
   private boolean updatingFromBackend = false;
   private final EchoCanvas echoCanvas;
-  private boolean pingPong = false;
+  private boolean pingPong = true;
   private float inputDb = -100, outputDb = -100;
 
   public Runnable modToggleCallback;
@@ -49,10 +49,10 @@ public class DelayDevicePanel extends JPanel {
     params[PARAM_MIX] = 0.3;
     params[PARAM_HP_FREQ] = 0.15;
     params[PARAM_LP_FREQ] = 0.75;
-    params[PARAM_PING_PONG] = 0.0;
+    params[PARAM_PING_PONG] = 1.0;
     params[PARAM_ENABLE] = 1.0;
-    params[PARAM_SYNC] = 0.0;
-    params[PARAM_SYNC_DIV] = 0.5;
+    params[PARAM_SYNC] = 1.0;
+    params[PARAM_SYNC_DIV] = 0.6;
 
     Theme theme = Theme.getInstance();
     setLayout(new BorderLayout());
@@ -130,7 +130,7 @@ public class DelayDevicePanel extends JPanel {
     }
 
     // Ping-pong toggle
-    JToggleButton ppBtn = new JToggleButton("P-P", false);
+    JToggleButton ppBtn = new JToggleButton("P-P", true);
     ppBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     ppBtn.setFocusPainted(false);
     ppBtn.addActionListener(
@@ -142,7 +142,7 @@ public class DelayDevicePanel extends JPanel {
     knobRow.add(ppBtn);
 
     // Sync toggle
-    JToggleButton syncBtn = new JToggleButton("Sync", false);
+    JToggleButton syncBtn = new JToggleButton("Sync", true);
     syncBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     syncBtn.setFocusPainted(false);
     syncBtn.addActionListener(
@@ -151,8 +151,8 @@ public class DelayDevicePanel extends JPanel {
         });
     knobRow.add(syncBtn);
 
-    // Division knob
-    KnobPanel divKnob = new KnobPanel("Div", 0.5, PARAM_SYNC_DIV);
+    // Division knob — shows beat label
+    KnobPanel divKnob = new KnobPanel("Div", 0.6, PARAM_SYNC_DIV);
     divKnob.addChangeListener(
         e -> {
           if (!updatingFromBackend) {
@@ -415,6 +415,21 @@ public class DelayDevicePanel extends JPanel {
     return 1.0 * Math.pow(2000.0, norm);
   }
 
+  /** Maps normalized [0,1] to beat division label, mirroring C++ kDivisions table. */
+  private static final String[] DIVISION_LABELS = {
+    "1/32 T", "1/32", "1/16 T", "1/32 D", "1/16", "1/8 T", "1/16 D", "1/8",
+    "1/4 T", "1/8 D", "1/4", "1/2 T", "1/4 D", "1/2", "1/2 D", "1 bar"
+  };
+
+  private static String getDivisionLabel(double norm) {
+    int idx =
+        Math.max(
+            0,
+            Math.min(
+                DIVISION_LABELS.length - 1, (int) (norm * (DIVISION_LABELS.length - 1) + 0.5)));
+    return DIVISION_LABELS[idx];
+  }
+
   // ─── Knob panel ────────────────────────────────────────────────
 
   private class KnobPanel extends JPanel {
@@ -503,6 +518,9 @@ public class DelayDevicePanel extends JPanel {
       }
       if (paramId == PARAM_FEEDBACK || paramId == PARAM_MIX) {
         return String.format("%.0f%%", value * 100);
+      }
+      if (paramId == PARAM_SYNC_DIV) {
+        return getDivisionLabel(value);
       }
       return String.format("%.2f", value);
     }

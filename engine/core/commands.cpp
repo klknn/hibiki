@@ -864,6 +864,30 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
       }
       break;
     }
+    case pb::commands::PluginCmd::ACTION_REORDER_PLUGIN: {
+      int from_idx = cmd.target().plugin_index();
+      int to_idx = cmd.target_plugin_index();
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        history.pushState(CaptureProjectState(state));
+        auto track = GetOrCreateTrack(state, tidx);
+        track->ReorderPlugin(from_idx, to_idx);
+        // Re-send param lists for all plugins at their new indices
+        for (int i = 0; i < (int)track->plugins.size(); ++i) {
+          auto& p = track->plugins[i];
+          std::vector<VstParamInfo> params;
+          for (int j = 0; j < p->getParameterCount(); ++j) {
+            VstParamInfo info;
+            if (p->getParameterInfo(j, info)) params.push_back(info);
+          }
+          sendParamList(tidx, i, p->getName(), p->isInstrument(), params);
+        }
+      }
+      LOG(INFO) << "Reordered plugin on track " << tidx << ": " << from_idx
+                << " -> " << to_idx;
+      sendAck("REORDER_PLUGIN", true);
+      break;
+    }
     default:
       break;
   }

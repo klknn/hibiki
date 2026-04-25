@@ -13,12 +13,12 @@ BuiltinDelay::BuiltinDelay() {
   params_[PARAM_TIME_R] = 0.35;  // ~250ms
   params_[PARAM_FEEDBACK] = 0.4;
   params_[PARAM_MIX] = 0.3;
-  params_[PARAM_HP_FREQ] = 0.15;  // ~80Hz
-  params_[PARAM_LP_FREQ] = 0.75;  // ~12kHz
-  params_[PARAM_PING_PONG] = 0.0;
+  params_[PARAM_HP_FREQ] = 0.15;   // ~80Hz
+  params_[PARAM_LP_FREQ] = 0.75;   // ~12kHz
+  params_[PARAM_PING_PONG] = 1.0;  // Ping-pong ON by default
   params_[PARAM_ENABLE] = 1.0;
-  params_[PARAM_SYNC] = 0.0;
-  params_[PARAM_SYNC_DIV] = 0.5;  // ~1/4 note
+  params_[PARAM_SYNC] = 1.0;      // Tempo sync ON by default
+  params_[PARAM_SYNC_DIV] = 0.6;  // 1/8 D (dotted eighth)
   buffer_l_.resize(kMaxDelaySamples, 0.0f);
   buffer_r_.resize(kMaxDelaySamples, 0.0f);
 }
@@ -55,19 +55,28 @@ float BuiltinDelay::normToLpFreq(double norm) {
   return 1000.0f * std::pow(20.0f, (float)norm);
 }
 
-// Beat division lookup table: 16 entries covering common divisions
-// including dotted and triplet values.
+// Beat division lookup table: 16 entries sorted by ascending beat value,
+// covering straight, dotted (D), and triplet (T) divisions.
 static const struct {
   float beats;  // Duration in quarter-note beats
   const char* label;
 } kDivisions[] = {
-    {0.09375f, "1/32 d"},  // dotted 1/32
-    {0.125f, "1/32"},     {0.08333f, "1/32 T"}, {0.1875f, "1/16 d"},
-    {0.25f, "1/16"},      {0.1667f, "1/16 T"},  {0.375f, "1/8 d"},
-    {0.5f, "1/8"},        {0.333f, "1/8 T"},    {0.75f, "1/4 d"},
-    {1.0f, "1/4"},        {0.667f, "1/4 T"},    {1.5f, "1/2 d"},
-    {2.0f, "1/2"},        {3.0f, "3/4"},        {4.0f, "1 bar"},
-    {8.0f, "2 bars"},     {16.0f, "4 bars"},
+    {0.08333f, "1/32 T"},  // triplet 1/32
+    {0.125f, "1/32"},      // straight 1/32
+    {0.16667f, "1/16 T"},  // triplet 1/16
+    {0.1875f, "1/32 D"},   // dotted 1/32
+    {0.25f, "1/16"},       // straight 1/16
+    {0.33333f, "1/8 T"},   // triplet 1/8
+    {0.375f, "1/16 D"},    // dotted 1/16
+    {0.5f, "1/8"},         // straight 1/8
+    {0.66667f, "1/4 T"},   // triplet 1/4
+    {0.75f, "1/8 D"},      // dotted 1/8
+    {1.0f, "1/4"},         // straight 1/4
+    {1.33333f, "1/2 T"},   // triplet 1/2
+    {1.5f, "1/4 D"},       // dotted 1/4
+    {2.0f, "1/2"},         // straight 1/2
+    {3.0f, "1/2 D"},       // dotted 1/2
+    {4.0f, "1 bar"},       // whole note
 };
 static constexpr int kNumDivisions = sizeof(kDivisions) / sizeof(kDivisions[0]);
 
@@ -191,7 +200,7 @@ bool BuiltinDelay::getParameterInfo(int index, VstParamInfo& info) const {
                                 "HP Freq", "LP Freq", "Ping-Pong", "Enable",
                                 "Sync",    "Division"};
   static const double defaults[] = {0.35, 0.35, 0.4, 0.3, 0.15,
-                                    0.75, 0.0,  1.0, 0.0, 0.5};
+                                    0.75, 1.0,  1.0, 1.0, 0.6};
   info.id = index;
   info.name = names[index];
   info.defaultValue = defaults[index];

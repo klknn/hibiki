@@ -197,6 +197,7 @@ class Track {
   void Stop();
   void Panic();
   std::unique_ptr<IPlugin> RemovePlugin(size_t pidx);
+  void ReorderPlugin(int from_index, int to_index);
 
   void AddTimelineClip(const std::string& path, double start_time_sec,
                        double bpm, double duration_beats = 0,

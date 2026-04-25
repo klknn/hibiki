@@ -61,9 +61,13 @@ void playback_thread(ProjectState& state) {
   CHECK_GT(block_size, 0);
   CHECK_LE(block_size, 4096) << "Block size unreasonably large";
 
-  alignas(32) float bufferL[512];
-  alignas(32) float bufferR[512];
-  float* outChannels[] = {bufferL, bufferR};
+  // Double-precision mixing buffers for accumulation
+  alignas(32) double bufferL[512];
+  alignas(32) double bufferR[512];
+  // Float shim buffers for plugin I/O (plugins use float**)
+  alignas(32) float plugBufL[512];
+  alignas(32) float plugBufR[512];
+  float* outChannels[] = {plugBufL, plugBufR};
 
   HostProcessContext context;
   context.sampleRate = sample_rate;
@@ -77,8 +81,8 @@ void playback_thread(ProjectState& state) {
   CHECK_GT(time_per_block, 0.0);
 
   while (!state.quit) {
-    std::vector<float> mixBufferL(block_size, 0.0f);
-    std::vector<float> mixBufferR(block_size, 0.0f);
+    std::vector<double> mixBufferL(block_size, 0.0);
+    std::vector<double> mixBufferR(block_size, 0.0);
 
     // Sidechain buffer capture: stores post-effects output per track
     // so downstream tracks can use it as sidechain input.
@@ -101,8 +105,8 @@ void playback_thread(ProjectState& state) {
 
       for (auto& pair : state.tracks) {
         Track* track = pair.second.get();
-        std::fill(bufferL, bufferL + block_size, 0.0f);
-        std::fill(bufferR, bufferR + block_size, 0.0f);
+        std::fill(bufferL, bufferL + block_size, 0.0);
+        std::fill(bufferR, bufferR + block_size, 0.0);
 
         // 1. Session clip playback
         std::vector<MidiNoteEvent> clipMidiEvents;
@@ -125,7 +129,7 @@ void playback_thread(ProjectState& state) {
                 bufferR[i] += clip->audio_data[sample_pos * 2 + 1];
               } else if (clip->num_channels == 1 &&
                          sample_pos < (int)clip->audio_data.size()) {
-                float s = clip->audio_data[sample_pos];
+                double s = clip->audio_data[sample_pos];
                 bufferL[i] += s;
                 bufferR[i] += s;
               }
@@ -272,6 +276,13 @@ void playback_thread(ProjectState& state) {
           if (!track->plugin_bypass.count(0)) {
             track->plugins[0]->process(nullptr, outChannels, block_size,
                                        context, allEvents);
+            // Copy plugin float output to double mix buffer
+            for (int i = 0; i < block_size; ++i) {
+              bufferL[i] += plugBufL[i];
+              bufferR[i] += plugBufR[i];
+            }
+            std::fill(plugBufL, plugBufL + block_size, 0.0f);
+            std::fill(plugBufR, plugBufR + block_size, 0.0f);
           }
         }
 
@@ -303,7 +314,7 @@ void playback_thread(ProjectState& state) {
                     bufferR[i] += tc->clip->audio_data[sample_pos * 2 + 1];
                   } else if (tc->clip->num_channels == 1 &&
                              sample_pos < (int)tc->clip->audio_data.size()) {
-                    float s = tc->clip->audio_data[sample_pos];
+                    double s = tc->clip->audio_data[sample_pos];
                     bufferL[i] += s;
                     bufferR[i] += s;
                   }
@@ -391,33 +402,46 @@ void playback_thread(ProjectState& state) {
               sc_ptr = sc_ch;
             }
           }
+          // Convert double mix buffer to float for plugin processing
+          for (int j = 0; j < block_size; ++j) {
+            plugBufL[j] = (float)bufferL[j];
+            plugBufR[j] = (float)bufferR[j];
+          }
           track->plugins[i]->process(outChannels, outChannels, block_size,
                                      context, {}, sc_ptr);
+          // Copy float result back to double mix buffer
+          for (int j = 0; j < block_size; ++j) {
+            bufferL[j] = plugBufL[j];
+            bufferR[j] = plugBufR[j];
+          }
         }
 
         // 4b. Capture post-effects output for sidechain use by later tracks
         {
           auto& buf = sc_buffers[pair.first];
-          std::copy(bufferL, bufferL + block_size, buf.first.begin());
-          std::copy(bufferR, bufferR + block_size, buf.second.begin());
+          for (int i = 0; i < block_size; ++i) {
+            buf.first[i] = (float)bufferL[i];
+            buf.second[i] = (float)bufferR[i];
+          }
         }
 
         // 5. Apply volume and pan, mix to master, compute peak levels
         bool is_silenced = track->muted || (any_soloed && !track->soloed);
-        float vol = is_silenced ? 0.0f : track->volume;
+        double vol = is_silenced ? 0.0 : (double)track->volume;
         // Constant-power pan: pan_angle maps [-1,1] to [0, pi/2]
-        float pan_angle = (track->pan + 1.0f) * 0.25f *
-                          3.14159265f;  // 0 = full left, pi/2 = full right
-        float panL = std::cos(pan_angle);
-        float panR = std::sin(pan_angle);
+        double pan_angle =
+            (track->pan + 1.0) * 0.25 *
+            3.14159265358979;  // 0 = full left, pi/2 = full right
+        double panL = std::cos(pan_angle);
+        double panR = std::sin(pan_angle);
         float peakL = 0.0f, peakR = 0.0f;
         for (int i = 0; i < block_size; ++i) {
-          float l = bufferL[i] * vol * panL;
-          float r = bufferR[i] * vol * panR;
+          double l = bufferL[i] * vol * panL;
+          double r = bufferR[i] * vol * panR;
           mixBufferL[i] += l;
           mixBufferR[i] += r;
-          peakL = std::max(peakL, std::abs(l));
-          peakR = std::max(peakR, std::abs(r));
+          peakL = std::max(peakL, (float)std::abs(l));
+          peakR = std::max(peakR, (float)std::abs(r));
         }
         {
           std::lock_guard<std::mutex> llock(state.levels_mutex);
@@ -429,8 +453,8 @@ void playback_thread(ProjectState& state) {
     // Mix to output
     std::vector<float> interleaved(block_size * actual_channels, 0.0f);
     for (int i = 0; i < block_size; ++i) {
-      interleaved[i * actual_channels] = mixBufferL[i];
-      interleaved[i * actual_channels + 1] = mixBufferR[i];
+      interleaved[i * actual_channels] = (float)mixBufferL[i];
+      interleaved[i * actual_channels + 1] = (float)mixBufferR[i];
     }
     CHECK_GE((int)interleaved.size(), block_size * actual_channels);
     audio->write(interleaved, block_size);
@@ -680,6 +704,9 @@ void run_ipc_loop(ProjectState& state) {
         LOG(INFO) << "Reloaded " << count << " plugins";
         break;
       }
+      case hibiki::pb::commands::Request::kSetProcessingPrecision:
+        handleSetProcessingPrecision(request.set_processing_precision(), state);
+        break;
     }
     if (state.quit) break;
   }

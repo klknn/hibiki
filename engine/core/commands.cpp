@@ -1256,6 +1256,15 @@ void handleSetAudioBufferSize(const pb::commands::SetAudioBufferSize& cmd,
   saveConfig(state);
 }
 
+void handleSetProcessingPrecision(
+    const pb::commands::SetProcessingPrecision& cmd, ProjectState& state) {
+  state.use_double_precision = cmd.use_double();
+  LOG(INFO) << "Processing precision set to "
+            << (state.use_double_precision ? "64-bit double" : "32-bit float");
+  sendAck("SET_PROCESSING_PRECISION", true);
+  saveConfig(state);
+}
+
 void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
   // Query each remote daemon for its plugin list in parallel.
   for (const auto& host_port : cmd.remote_hosts()) {
@@ -1439,6 +1448,7 @@ void loadConfig(ProjectState& state) {
   if (config.buffer_latency_ms() > 0) {
     state.buffer_latency_ms = config.buffer_latency_ms();
   }
+  state.use_double_precision = config.use_double_precision();
   LOG(INFO) << "Loaded config from " << kConfigFile;
 }
 
@@ -1452,6 +1462,7 @@ void saveConfig(const ProjectState& state) {
     config.add_remote_hosts(host);
   }
   config.set_buffer_latency_ms(state.buffer_latency_ms);
+  config.set_use_double_precision(state.use_double_precision);
 
   std::string text;
   google::protobuf::TextFormat::PrintToString(config, &text);

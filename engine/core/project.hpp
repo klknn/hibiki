@@ -34,6 +34,7 @@ struct ProjectState {
   PluginHostMode plugin_host_mode = PluginHostMode::IN_PROCESS;
   std::vector<std::string> remote_hosts;  // ["host:port", ...] for REMOTE mode
   int buffer_latency_ms = 200;  // Audio buffer latency in ms (configurable)
+  bool use_double_precision = false;  // 64-bit float engine processing
 
   // Recording state
   bool is_recording = false;

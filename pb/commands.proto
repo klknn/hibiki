@@ -182,6 +182,7 @@ message HibikiConfig {
   PluginHostMode plugin_host_mode = 1;
   repeated string remote_hosts = 2;
   int32 buffer_latency_ms = 3;
+  bool use_double_precision = 4;  // 64-bit float engine processing
 }
 
 // Request to list available audio input devices.
@@ -219,6 +220,11 @@ message ModulationCmd {
 // Request the engine to restart all out-of-process plugin worker processes.
 message RestartWorkers {}
 
+// Set engine processing precision (32-bit or 64-bit float).
+message SetProcessingPrecision {
+  bool use_double = 1;  // true = 64-bit double, false = 32-bit float
+}
+
 // ─── Request Envelope ───────────────────────────────────────────────
 
 // Contains the new domain-grouped commands.
@@ -238,5 +244,6 @@ message Request {
     SendVirtualMidi send_virtual_midi = 51;
     ModulationCmd modulation = 52;
     RestartWorkers restart_workers = 53;
+    SetProcessingPrecision set_processing_precision = 54;
   }
 }

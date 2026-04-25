@@ -99,6 +99,62 @@ public class SettingsDialog extends JDialog {
         });
     p.add(applyBtn, gbc);
 
+    // ── Processing Precision ──
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    gbc.gridwidth = 2;
+    JLabel precHeader = new JLabel("── Processing Precision ──");
+    precHeader.setFont(Theme.getInstance().FONT_UI_BOLD);
+    p.add(precHeader, gbc);
+    gbc.gridwidth = 1;
+
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    p.add(new JLabel("Mixer Precision:"), gbc);
+    gbc.gridx = 1;
+    String[] precisionOptions = {"32-bit float", "64-bit double"};
+    JComboBox<String> precCombo = new JComboBox<>(precisionOptions);
+    if (cfg != null && cfg.getUseDoublePrecision()) {
+      precCombo.setSelectedIndex(1);
+    }
+    p.add(precCombo, gbc);
+
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    gbc.gridwidth = 2;
+    JLabel precDesc =
+        new JLabel(
+            "<html><small>"
+                + "64-bit doubles improve dynamic range during mixing.<br>"
+                + "Builtin effects and VST3 plugins remain 32-bit float."
+                + "</small></html>");
+    precDesc.setFont(Theme.getInstance().FONT_UI.deriveFont(11.0f));
+    p.add(precDesc, gbc);
+    gbc.gridwidth = 1;
+
+    row++;
+    gbc.gridx = 1;
+    gbc.gridy = row;
+    JButton precApplyBtn = new JButton("Apply");
+    precApplyBtn.addActionListener(
+        e -> {
+          boolean useDouble = precCombo.getSelectedIndex() == 1;
+          hibiki.pb.commands.Request request =
+              hibiki.pb.commands.Request.newBuilder()
+                  .setSetProcessingPrecision(
+                      hibiki.pb.commands.SetProcessingPrecision.newBuilder()
+                          .setUseDouble(useDouble))
+                  .build();
+          hibiki.BackendManager.getInstance().sendRequest(request);
+          JOptionPane.showMessageDialog(
+              this,
+              "Mixer precision set to " + precisionOptions[precCombo.getSelectedIndex()] + ".");
+        });
+    p.add(precApplyBtn, gbc);
+
     // ── Audio Input Device ──
     row++;
     gbc.gridx = 0;

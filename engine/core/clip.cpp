@@ -8,32 +8,31 @@
 #include "engine/core/audio_file.hpp"
 
 namespace hibiki {
-/*
-std::unique_ptr<Clip> LoadClip(const std::string& path, bool is_loop) {
-    auto clip = MaybeLoadClip(path, is_loop);
-    if (clip) {
-        auto ret = std::make_unique<Clip>();
-        *ret = *clip;
-        return ret;
-    }
-    return nullptr;
-}
 
-std::expected<Clip, std::string> MaybeLoadClip(const std::string& path, bool
-is_loop) {
-*/
-absl::StatusOr<Clip> LoadClip(const std::string& path, bool is_loop) {
+absl::StatusOr<Clip> LoadClip(const std::string& path, bool is_loop,
+                              double target_sample_rate) {
   Clip clip;
   clip.path = path;
   clip.is_loop = is_loop;
 
-  if (path.size() > 4 && path.substr(path.size() - 4) == ".wav") {
-    auto status =
-        LoadWav(path, clip.audio_data, clip.num_channels, clip.duration_sec);
+  // Try audio loading via ffmpeg for any audio format
+  // Check extension: anything that's not .mid is treated as audio
+  std::string ext;
+  if (path.size() > 4) {
+    ext = path.substr(path.size() - 4);
+    for (auto& c : ext) c = std::tolower(c);
+  }
+  bool is_midi = (ext == ".mid" || ext == ".smf");
+
+  if (!is_midi) {
+    int out_sr = 0;
+    auto status = LoadAudioFile(path, target_sample_rate, clip.audio_data,
+                                clip.num_channels, out_sr, clip.duration_sec);
     if (!status.ok()) {
       return status;
     }
     clip.type = Clip::Type::AUDIO;
+    clip.sample_rate = out_sr;
 
     // Generate waveform summary for AUDIO clips
     if (!clip.audio_data.empty()) {

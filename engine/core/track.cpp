@@ -149,10 +149,11 @@ bool Track::DeleteClip(int slot) {
   return false;
 }
 
-bool Track::LoadClip(int slot, const std::string& path, bool is_loop) {
+bool Track::LoadClip(int slot, const std::string& path, bool is_loop,
+                     double sample_rate) {
   std::lock_guard<DummyMutex> lock(mutex);
 
-  auto result = hibiki::LoadClip(path, is_loop);
+  auto result = hibiki::LoadClip(path, is_loop, sample_rate);
   if (!result.ok()) return false;
   auto clip = std::make_unique<Clip>(std::move(*result));
 
@@ -230,7 +231,8 @@ std::unique_ptr<IPlugin> Track::RemovePlugin(size_t pidx) {
 }
 
 void Track::AddTimelineClip(const std::string& path, double start_time_sec,
-                            double bpm, double duration_beats) {
+                            double bpm, double duration_beats,
+                            double sample_rate) {
   std::lock_guard<DummyMutex> lock(mutex);
   std::unique_ptr<Clip> clip;
   if (path.empty()) {
@@ -241,7 +243,7 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec,
     clip->duration_beats = (duration_beats > 0) ? duration_beats : 4.0;
     clip->duration_sec = 0.0;
   } else {
-    auto result = hibiki::LoadClip(path);
+    auto result = hibiki::LoadClip(path, false, sample_rate);
     if (!result.ok()) return;
     clip = std::make_unique<Clip>(std::move(*result));
   }

@@ -11,7 +11,7 @@ namespace hibiki {
 TEST(ClipTest, LoadAudioClip) {
   auto clip =
       hibiki::LoadClip(hibiki::find_test_file("testdata/loop140.wav"), true);
-  ASSERT_TRUE(clip.ok());
+  ASSERT_TRUE(clip.ok()) << clip.status().message();
   EXPECT_EQ(clip->type, hibiki::Clip::Type::AUDIO);
   EXPECT_TRUE(clip->is_loop);
   EXPECT_GT(clip->audio_data.size(), 0);

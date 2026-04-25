@@ -392,7 +392,7 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       history.pushState(CaptureProjectState(state));
       auto track = GetOrCreateTrack(state, tidx);
-      if (track->LoadClip(sidx, mpath, is_loop)) {
+      if (track->LoadClip(sidx, mpath, is_loop, state.sample_rate)) {
         sendAck("LOAD_CLIP", true);
         std::string name = mpath;
         size_t last_slash = mpath.find_last_of("/\\");
@@ -431,7 +431,8 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       history.pushState(CaptureProjectState(state));
       GetOrCreateTrack(state, tidx)
-          ->AddTimelineClip(path, start, state.bpm, dur_beats);
+          ->AddTimelineClip(path, start, state.bpm, dur_beats,
+                            state.sample_rate);
       sendAck("ADD_TIMELINE_CLIP", true);
       break;
     }

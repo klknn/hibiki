@@ -37,6 +37,10 @@ cc_library(
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:absl_log",
         "@abseil-cpp//absl/strings",
+        "@ffmpeg//:with_defaults/avcodec",
+        "@ffmpeg//:with_defaults/avformat",
+        "@ffmpeg//:with_defaults/avutil",
+        "@ffmpeg//:with_defaults/swresample",
     ],
 )
 

@@ -6,6 +6,15 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/opt.h>
+#include <libavutil/samplefmt.h>
+#include <libswresample/swresample.h>
+}
+
 namespace hibiki {
 
 absl::Status LoadWav(const std::string& path, std::vector<float>& out_data,
@@ -68,6 +77,241 @@ absl::Status LoadWav(const std::string& path, std::vector<float>& out_data,
     }
   }
   return absl::DataLossError(absl::StrCat("No 'data' chunk found in: ", path));
+}
+
+// AVIO read callback for in-memory buffer
+struct MemBuffer {
+  const uint8_t* data;
+  size_t size;
+  size_t pos;
+};
+
+static int mem_read(void* opaque, uint8_t* buf, int buf_size) {
+  auto* mb = static_cast<MemBuffer*>(opaque);
+  int remaining = (int)(mb->size - mb->pos);
+  if (remaining <= 0) return AVERROR_EOF;
+  int to_read = std::min(buf_size, remaining);
+  memcpy(buf, mb->data + mb->pos, to_read);
+  mb->pos += to_read;
+  return to_read;
+}
+
+static int64_t mem_seek(void* opaque, int64_t offset, int whence) {
+  auto* mb = static_cast<MemBuffer*>(opaque);
+  if (whence == AVSEEK_SIZE) return (int64_t)mb->size;
+  if (whence == SEEK_SET)
+    mb->pos = (size_t)offset;
+  else if (whence == SEEK_CUR)
+    mb->pos += (size_t)offset;
+  else if (whence == SEEK_END)
+    mb->pos = mb->size + (size_t)offset;
+  return (int64_t)mb->pos;
+}
+
+absl::Status LoadAudioFile(const std::string& path, double target_sample_rate,
+                           std::vector<float>& out_data, int& out_channels,
+                           int& out_sample_rate, double& out_duration_sec) {
+  // Read file into memory (works with bazel sandbox symlinks)
+  std::ifstream f(path, std::ios::binary | std::ios::ate);
+  if (!f) {
+    return absl::NotFoundError(absl::StrCat("Cannot open audio file: ", path));
+  }
+  size_t file_size = f.tellg();
+  f.seekg(0);
+  std::vector<uint8_t> file_data(file_size);
+  f.read(reinterpret_cast<char*>(file_data.data()), file_size);
+
+  MemBuffer mb{file_data.data(), file_size, 0};
+
+  // Create custom AVIO context
+  const int avio_buf_size = 32768;
+  auto* avio_buf = static_cast<uint8_t*>(av_malloc(avio_buf_size));
+  AVIOContext* avio_ctx = avio_alloc_context(avio_buf, avio_buf_size, 0, &mb,
+                                             mem_read, nullptr, mem_seek);
+  if (!avio_ctx) {
+    av_free(avio_buf);
+    return absl::InternalError("Failed to allocate AVIO context");
+  }
+
+  // Open format context with custom I/O
+  AVFormatContext* fmt_ctx = avformat_alloc_context();
+  fmt_ctx->pb = avio_ctx;
+  // Hint the format demuxer using file extension
+  const AVInputFormat* ifmt = nullptr;
+  std::string ext;
+  if (path.size() > 4) {
+    ext = path.substr(path.size() - 4);
+    for (auto& c : ext) c = std::tolower(c);
+    if (ext == ".wav")
+      ifmt = av_find_input_format("wav");
+    else if (ext == ".mp3")
+      ifmt = av_find_input_format("mp3");
+    else if (ext == "flac" || ext == "lac\0")
+      ifmt = av_find_input_format("flac");
+    else if (ext == ".ogg")
+      ifmt = av_find_input_format("ogg");
+    else if (ext == ".aif" || ext == "aiff")
+      ifmt = av_find_input_format("aiff");
+  }
+  if (avformat_open_input(&fmt_ctx, nullptr, ifmt, nullptr) < 0) {
+    avio_context_free(&avio_ctx);
+    return absl::InvalidArgumentError(
+        absl::StrCat("Cannot parse audio file: ", path));
+  }
+  // RAII cleanup for format context
+  struct FmtGuard {
+    AVFormatContext* ctx;
+    ~FmtGuard() { avformat_close_input(&ctx); }
+  } fmt_guard{fmt_ctx};
+
+  if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Cannot find stream info in: ", path));
+  }
+
+  // Find audio stream
+  int audio_stream_idx = -1;
+  const AVCodec* codec = nullptr;
+  for (unsigned i = 0; i < fmt_ctx->nb_streams; ++i) {
+    if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+      audio_stream_idx = (int)i;
+      codec = avcodec_find_decoder(fmt_ctx->streams[i]->codecpar->codec_id);
+      break;
+    }
+  }
+  if (audio_stream_idx < 0 || !codec) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("No audio stream found in: ", path));
+  }
+
+  AVCodecParameters* codecpar = fmt_ctx->streams[audio_stream_idx]->codecpar;
+
+  // Open codec
+  AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
+  if (!codec_ctx) {
+    return absl::InternalError("Failed to allocate codec context");
+  }
+  struct CodecGuard {
+    AVCodecContext* ctx;
+    ~CodecGuard() { avcodec_free_context(&ctx); }
+  } codec_guard{codec_ctx};
+
+  if (avcodec_parameters_to_context(codec_ctx, codecpar) < 0) {
+    return absl::InternalError("Failed to copy codec parameters");
+  }
+  if (avcodec_open2(codec_ctx, codec, nullptr) < 0) {
+    return absl::InternalError(absl::StrCat("Cannot open codec for: ", path));
+  }
+
+  int src_sample_rate = codec_ctx->sample_rate;
+  int src_channels = codec_ctx->ch_layout.nb_channels;
+  int dst_sample_rate =
+      (target_sample_rate > 0) ? (int)target_sample_rate : src_sample_rate;
+
+  // Set up resampler: convert to interleaved float at target rate
+  SwrContext* swr_ctx = nullptr;
+  AVChannelLayout dst_layout;
+  if (src_channels == 1) {
+    dst_layout = AV_CHANNEL_LAYOUT_MONO;
+  } else {
+    dst_layout = AV_CHANNEL_LAYOUT_STEREO;
+    src_channels = 2;  // Force stereo output for multi-channel
+  }
+
+  if (swr_alloc_set_opts2(&swr_ctx, &dst_layout, AV_SAMPLE_FMT_FLT,
+                          dst_sample_rate, &codec_ctx->ch_layout,
+                          codec_ctx->sample_fmt, src_sample_rate, 0,
+                          nullptr) < 0) {
+    return absl::InternalError("Failed to set resampler options");
+  }
+  struct SwrGuard {
+    SwrContext* ctx;
+    ~SwrGuard() { swr_free(&ctx); }
+  } swr_guard{swr_ctx};
+
+  if (swr_init(swr_ctx) < 0) {
+    return absl::InternalError("Failed to init resampler");
+  }
+
+  // Decode and resample
+  AVPacket* pkt = av_packet_alloc();
+  AVFrame* frame = av_frame_alloc();
+  struct PktFrameGuard {
+    AVPacket* pkt;
+    AVFrame* frame;
+    ~PktFrameGuard() {
+      av_packet_free(&pkt);
+      av_frame_free(&frame);
+    }
+  } pf_guard{pkt, frame};
+
+  std::vector<float> all_samples;
+
+  while (av_read_frame(fmt_ctx, pkt) >= 0) {
+    if (pkt->stream_index == audio_stream_idx) {
+      if (avcodec_send_packet(codec_ctx, pkt) >= 0) {
+        while (avcodec_receive_frame(codec_ctx, frame) >= 0) {
+          // Calculate output size
+          int out_nb_samples = swr_get_out_samples(swr_ctx, frame->nb_samples);
+          if (out_nb_samples <= 0) continue;
+
+          std::vector<float> tmp(out_nb_samples * src_channels);
+          uint8_t* out_buf = reinterpret_cast<uint8_t*>(tmp.data());
+          int converted = swr_convert(swr_ctx, &out_buf, out_nb_samples,
+                                      (const uint8_t**)frame->extended_data,
+                                      frame->nb_samples);
+          if (converted > 0) {
+            all_samples.insert(all_samples.end(), tmp.begin(),
+                               tmp.begin() + converted * src_channels);
+          }
+        }
+      }
+    }
+    av_packet_unref(pkt);
+  }
+
+  // Flush decoder
+  avcodec_send_packet(codec_ctx, nullptr);
+  while (avcodec_receive_frame(codec_ctx, frame) >= 0) {
+    int out_nb_samples = swr_get_out_samples(swr_ctx, frame->nb_samples);
+    if (out_nb_samples <= 0) continue;
+    std::vector<float> tmp(out_nb_samples * src_channels);
+    uint8_t* out_buf = reinterpret_cast<uint8_t*>(tmp.data());
+    int converted =
+        swr_convert(swr_ctx, &out_buf, out_nb_samples,
+                    (const uint8_t**)frame->extended_data, frame->nb_samples);
+    if (converted > 0) {
+      all_samples.insert(all_samples.end(), tmp.begin(),
+                         tmp.begin() + converted * src_channels);
+    }
+  }
+
+  // Flush resampler
+  {
+    int out_nb_samples = swr_get_out_samples(swr_ctx, 0);
+    if (out_nb_samples > 0) {
+      std::vector<float> tmp(out_nb_samples * src_channels);
+      uint8_t* out_buf = reinterpret_cast<uint8_t*>(tmp.data());
+      int converted =
+          swr_convert(swr_ctx, &out_buf, out_nb_samples, nullptr, 0);
+      if (converted > 0) {
+        all_samples.insert(all_samples.end(), tmp.begin(),
+                           tmp.begin() + converted * src_channels);
+      }
+    }
+  }
+
+  if (all_samples.empty()) {
+    return absl::DataLossError(
+        absl::StrCat("No audio data decoded from: ", path));
+  }
+
+  out_data = std::move(all_samples);
+  out_channels = src_channels;
+  out_sample_rate = dst_sample_rate;
+  out_duration_sec = (double)out_data.size() / (src_channels * dst_sample_rate);
+
+  return absl::OkStatus();
 }
 
 absl::Status SaveWav(const std::string& path,

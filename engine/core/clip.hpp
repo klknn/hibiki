@@ -26,6 +26,7 @@ struct Clip {
   std::vector<hibiki::pb::core::AutomationPoint> automation_points;
 };
 
-absl::StatusOr<Clip> LoadClip(const std::string& path, bool is_loop = false);
+absl::StatusOr<Clip> LoadClip(const std::string& path, bool is_loop = false,
+                              double target_sample_rate = 0.0);
 
 }  // namespace hibiki

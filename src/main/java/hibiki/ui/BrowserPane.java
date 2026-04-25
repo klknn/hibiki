@@ -419,9 +419,8 @@ public class BrowserPane extends JPanel {
   }
 
   /**
-   * Build a tree node that mirrors the real directory structure under {@code dir}.
-   * Leaf nodes are FileItems for supported file types (.wav, .mid/.midi, .vst3).
-   * Empty directories are pruned.
+   * Build a tree node that mirrors the real directory structure under {@code dir}. Leaf nodes are
+   * FileItems for supported file types (.wav, .mid/.midi, .vst3). Empty directories are pruned.
    */
   private DefaultMutableTreeNode buildDirectoryTree(File dir) {
     DefaultMutableTreeNode dirNode = new DefaultMutableTreeNode(dir.getName());
@@ -429,10 +428,12 @@ public class BrowserPane extends JPanel {
     if (children == null) return null;
 
     // Sort: directories first, then files, both alphabetically
-    java.util.Arrays.sort(children, (a, b) -> {
-      if (a.isDirectory() != b.isDirectory()) return a.isDirectory() ? -1 : 1;
-      return a.getName().compareToIgnoreCase(b.getName());
-    });
+    java.util.Arrays.sort(
+        children,
+        (a, b) -> {
+          if (a.isDirectory() != b.isDirectory()) return a.isDirectory() ? -1 : 1;
+          return a.getName().compareToIgnoreCase(b.getName());
+        });
 
     java.util.List<String> bundlePaths = new java.util.ArrayList<>();
     for (File f : children) {
@@ -449,8 +450,11 @@ public class BrowserPane extends JPanel {
         }
       } else if (name.endsWith(".mid") || name.endsWith(".midi")) {
         dirNode.add(new DefaultMutableTreeNode(new FileItem(f, "midi", f.getName())));
-      } else if (name.endsWith(".wav") || name.endsWith(".flac")
-          || name.endsWith(".mp3") || name.endsWith(".ogg") || name.endsWith(".aiff")) {
+      } else if (name.endsWith(".wav")
+          || name.endsWith(".flac")
+          || name.endsWith(".mp3")
+          || name.endsWith(".ogg")
+          || name.endsWith(".aiff")) {
         dirNode.add(new DefaultMutableTreeNode(new FileItem(f, "audio", f.getName())));
       }
     }

@@ -190,7 +190,8 @@ class Track {
                         PluginHostMode host_mode = PluginHostMode::IN_PROCESS,
                         const std::string& remote_host = "");
   bool DeleteClip(int slot);
-  bool LoadClip(int slot, const std::string& path, bool is_loop = false);
+  bool LoadClip(int slot, const std::string& path, bool is_loop = false,
+                double sample_rate = 0.0);
   void SetClipLoop(int slot, bool is_loop);
   void PlayClip(int slot);
   void Stop();
@@ -198,7 +199,8 @@ class Track {
   std::unique_ptr<IPlugin> RemovePlugin(size_t pidx);
 
   void AddTimelineClip(const std::string& path, double start_time_sec,
-                       double bpm, double duration_beats = 0);
+                       double bpm, double duration_beats = 0,
+                       double sample_rate = 0.0);
   void RemoveTimelineClip(int clip_index);
 
   int AddAutomationLane(int plugin_idx, uint32_t param_id);

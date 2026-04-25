@@ -31,10 +31,10 @@ public class DelayDevicePanel extends JPanel {
   private final int pluginIndex;
   private final double[] params = new double[TOTAL_PARAMS];
   private boolean enabled = true;
-  private final KnobPanel[] knobs = new KnobPanel[6];
+  private final KnobPanel[] knobs;
   private boolean updatingFromBackend = false;
   private final EchoCanvas echoCanvas;
-  private boolean pingPong = true;
+  private boolean pingPong = false; // legacy, replaced by cross-talk knob
   private float inputDb = -100, outputDb = -100;
 
   public Runnable modToggleCallback;
@@ -43,13 +43,13 @@ public class DelayDevicePanel extends JPanel {
     this.trackIndex = trackIndex;
     this.pluginIndex = pluginIndex;
 
-    params[PARAM_TIME_L] = 0.35;
-    params[PARAM_TIME_R] = 0.35;
+    params[PARAM_TIME_L] = 0.6;
+    params[PARAM_TIME_R] = 0.6;
     params[PARAM_FEEDBACK] = 0.4;
     params[PARAM_MIX] = 0.3;
     params[PARAM_HP_FREQ] = 0.15;
     params[PARAM_LP_FREQ] = 0.75;
-    params[PARAM_PING_PONG] = 1.0;
+    params[PARAM_PING_PONG] = 1.0; // X-Talk: 100% = full ping-pong
     params[PARAM_ENABLE] = 1.0;
     params[PARAM_SYNC] = 1.0;
     params[PARAM_SYNC_DIV] = 0.6;
@@ -107,16 +107,18 @@ public class DelayDevicePanel extends JPanel {
     add(echoCanvas, BorderLayout.CENTER);
 
     // Knob row
-    JPanel knobRow = new JPanel(new GridLayout(1, 10, 4, 0));
+    JPanel knobRow = new JPanel(new GridLayout(1, 9, 4, 0));
     knobRow.setBackground(theme.BG_DARK);
     knobRow.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
     knobRow.setPreferredSize(new Dimension(0, theme.scale(80)));
 
-    String[] names = {"Time L", "Time R", "Feedback", "Mix", "HP", "LP"};
+    String[] names = {"Time L", "Time R", "Feedback", "Mix", "HP", "LP", "X-Talk"};
     int[] paramIds = {
-      PARAM_TIME_L, PARAM_TIME_R, PARAM_FEEDBACK, PARAM_MIX, PARAM_HP_FREQ, PARAM_LP_FREQ
+      PARAM_TIME_L, PARAM_TIME_R, PARAM_FEEDBACK, PARAM_MIX, PARAM_HP_FREQ, PARAM_LP_FREQ,
+      PARAM_PING_PONG
     };
-    for (int i = 0; i < 6; i++) {
+    knobs = new KnobPanel[7];
+    for (int i = 0; i < 7; i++) {
       final int pi = paramIds[i];
       knobs[i] = new KnobPanel(names[i], params[pi], pi);
       knobs[i].addChangeListener(
@@ -129,44 +131,26 @@ public class DelayDevicePanel extends JPanel {
       knobRow.add(knobs[i]);
     }
 
-    // Ping-pong toggle
-    JToggleButton ppBtn = new JToggleButton("P-P", true);
-    ppBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
-    ppBtn.setFocusPainted(false);
-    ppBtn.addActionListener(
-        e -> {
-          pingPong = ppBtn.isSelected();
-          sendParam(PARAM_PING_PONG, pingPong ? 1.0 : 0.0);
-          echoCanvas.repaint();
-        });
-    knobRow.add(ppBtn);
-
     // Sync toggle
     JToggleButton syncBtn = new JToggleButton("Sync", true);
     syncBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     syncBtn.setFocusPainted(false);
     syncBtn.addActionListener(
         e -> {
-          sendParam(PARAM_SYNC, syncBtn.isSelected() ? 1.0 : 0.0);
+          boolean on = syncBtn.isSelected();
+          sendParam(PARAM_SYNC, on ? 1.0 : 0.0);
+          // Refresh Time L/R labels to show beat or ms
+          for (int i = 0; i < 2; i++) knobs[i].refreshLabel();
         });
     knobRow.add(syncBtn);
-
-    // Division knob — shows beat label
-    KnobPanel divKnob = new KnobPanel("Div", 0.6, PARAM_SYNC_DIV);
-    divKnob.addChangeListener(
-        e -> {
-          if (!updatingFromBackend) {
-            sendParam(PARAM_SYNC_DIV, divKnob.getValue());
-          }
-        });
-    knobRow.add(divKnob);
 
     add(knobRow, BorderLayout.SOUTH);
   }
 
   private int findKnobIndex(int paramId) {
     int[] ids = {
-      PARAM_TIME_L, PARAM_TIME_R, PARAM_FEEDBACK, PARAM_MIX, PARAM_HP_FREQ, PARAM_LP_FREQ
+      PARAM_TIME_L, PARAM_TIME_R, PARAM_FEEDBACK, PARAM_MIX, PARAM_HP_FREQ, PARAM_LP_FREQ,
+      PARAM_PING_PONG
     };
     for (int i = 0; i < ids.length; i++) {
       if (ids[i] == paramId) return i;
@@ -180,7 +164,8 @@ public class DelayDevicePanel extends JPanel {
       if (paramId == PARAM_PING_PONG) pingPong = value > 0.5;
       updatingFromBackend = true;
       int[] ids = {
-        PARAM_TIME_L, PARAM_TIME_R, PARAM_FEEDBACK, PARAM_MIX, PARAM_HP_FREQ, PARAM_LP_FREQ
+        PARAM_TIME_L, PARAM_TIME_R, PARAM_FEEDBACK, PARAM_MIX, PARAM_HP_FREQ, PARAM_LP_FREQ,
+        PARAM_PING_PONG
       };
       for (int i = 0; i < ids.length; i++) {
         if (ids[i] == paramId) {
@@ -505,6 +490,9 @@ public class DelayDevicePanel extends JPanel {
 
     private String formatValue() {
       if (paramId == PARAM_TIME_L || paramId == PARAM_TIME_R) {
+        if (params[PARAM_SYNC] >= 0.5) {
+          return getDivisionLabel(value);
+        }
         float ms = (float) normToTimeMs(value);
         return ms < 100 ? String.format("%.1fms", ms) : String.format("%.0fms", ms);
       }
@@ -519,10 +507,12 @@ public class DelayDevicePanel extends JPanel {
       if (paramId == PARAM_FEEDBACK || paramId == PARAM_MIX) {
         return String.format("%.0f%%", value * 100);
       }
-      if (paramId == PARAM_SYNC_DIV) {
-        return getDivisionLabel(value);
-      }
       return String.format("%.2f", value);
+    }
+
+    void refreshLabel() {
+      valLabel.setText(formatValue());
+      repaint();
     }
   }
 

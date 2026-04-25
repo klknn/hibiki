@@ -9,8 +9,8 @@ static const std::string kDelayName = "Delay";
 static const std::string kDelayPath = "builtin://delay";
 
 BuiltinDelay::BuiltinDelay() {
-  params_[PARAM_TIME_L] = 0.35;  // ~250ms
-  params_[PARAM_TIME_R] = 0.35;  // ~250ms
+  params_[PARAM_TIME_L] = 0.6;    // 1/8 D when synced, ~250ms when free
+  params_[PARAM_TIME_R] = 0.6;    // 1/8 D when synced, ~250ms when free
   params_[PARAM_FEEDBACK] = 0.4;
   params_[PARAM_MIX] = 0.3;
   params_[PARAM_HP_FREQ] = 0.15;   // ~80Hz
@@ -18,7 +18,7 @@ BuiltinDelay::BuiltinDelay() {
   params_[PARAM_PING_PONG] = 1.0;  // Ping-pong ON by default
   params_[PARAM_ENABLE] = 1.0;
   params_[PARAM_SYNC] = 1.0;      // Tempo sync ON by default
-  params_[PARAM_SYNC_DIV] = 0.6;  // 1/8 D (dotted eighth)
+  params_[PARAM_SYNC_DIV] = 0.6;  // Legacy, unused when L/R are independent
   buffer_l_.resize(kMaxDelaySamples, 0.0f);
   buffer_r_.resize(kMaxDelaySamples, 0.0f);
 }
@@ -107,11 +107,11 @@ void BuiltinDelay::process(float** inputs, float** outputs, int num_samples,
   float time_l_ms, time_r_ms;
   bool sync = params_[PARAM_SYNC] >= 0.5;
   if (sync && context.tempo > 0) {
-    // Tempo-synced: convert beat division to milliseconds
-    float div_beats = normToDivisionBeats(params_[PARAM_SYNC_DIV]);
-    float ms = (float)(div_beats * 60000.0 / context.tempo);
-    time_l_ms = ms;
-    time_r_ms = ms;
+    // Tempo-synced: use TIME_L/R as independent division selectors
+    float div_l = normToDivisionBeats(params_[PARAM_TIME_L]);
+    float div_r = normToDivisionBeats(params_[PARAM_TIME_R]);
+    time_l_ms = (float)(div_l * 60000.0 / context.tempo);
+    time_r_ms = (float)(div_r * 60000.0 / context.tempo);
   } else {
     time_l_ms = normToTimeMs(params_[PARAM_TIME_L]);
     time_r_ms = normToTimeMs(params_[PARAM_TIME_R]);
@@ -123,7 +123,7 @@ void BuiltinDelay::process(float** inputs, float** outputs, int num_samples,
 
   float feedback = std::clamp((float)params_[PARAM_FEEDBACK], 0.0f, 0.95f);
   float mix = std::clamp((float)params_[PARAM_MIX], 0.0f, 1.0f);
-  bool ping_pong = params_[PARAM_PING_PONG] >= 0.5;
+  float cross_talk = std::clamp((float)params_[PARAM_PING_PONG], 0.0f, 1.0f);
 
   // 1-pole filter coefficients
   float hp_freq = normToHpFreq(params_[PARAM_HP_FREQ]);
@@ -160,15 +160,11 @@ void BuiltinDelay::process(float** inputs, float** outputs, int num_samples,
     lp_state_r_ += lp_coeff * (filtered_r - lp_state_r_);
     filtered_r = lp_state_r_;
 
-    // Write to delay buffers with feedback
-    if (ping_pong) {
-      // Cross-feed: L input → R buffer, R input → L buffer
-      buffer_l_[write_pos_] = in_l + filtered_r * feedback;
-      buffer_r_[write_pos_] = in_r + filtered_l * feedback;
-    } else {
-      buffer_l_[write_pos_] = in_l + filtered_l * feedback;
-      buffer_r_[write_pos_] = in_r + filtered_r * feedback;
-    }
+    // Write to delay buffers with cross-talk blended feedback
+    float fb_l = filtered_l * (1.0f - cross_talk) + filtered_r * cross_talk;
+    float fb_r = filtered_r * (1.0f - cross_talk) + filtered_l * cross_talk;
+    buffer_l_[write_pos_] = in_l + fb_l * feedback;
+    buffer_r_[write_pos_] = in_r + fb_r * feedback;
 
     // Mix dry + wet
     float out_l = in_l * (1.0f - mix) + del_l * mix;
@@ -196,10 +192,10 @@ int BuiltinDelay::getParameterCount() const { return kTotalParams; }
 
 bool BuiltinDelay::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
-  static const char* names[] = {"Time L",  "Time R",  "Feedback",  "Mix",
-                                "HP Freq", "LP Freq", "Ping-Pong", "Enable",
+  static const char* names[] = {"Time L",  "Time R",   "Feedback",  "Mix",
+                                "HP Freq", "LP Freq",  "X-Talk",    "Enable",
                                 "Sync",    "Division"};
-  static const double defaults[] = {0.35, 0.35, 0.4, 0.3, 0.15,
+  static const double defaults[] = {0.6,  0.6,  0.4, 0.3, 0.15,
                                     0.75, 1.0,  1.0, 1.0, 0.6};
   info.id = index;
   info.name = names[index];

@@ -99,6 +99,7 @@ message TimelineClip {
   uint32 clip_index = 1;     // Index within the track's timeline
   Clip clip = 2;             // Full clip data
   float start_time_sec = 3;  // Position on timeline in seconds
+  int32 alias_source = 4;    // Source clip index for aliases (-1 = not alias)
 }
 
 // A session slot — one cell in the clip launcher grid.

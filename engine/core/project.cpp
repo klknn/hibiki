@@ -75,6 +75,7 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
       clip->set_path(tc->clip->path);
       tcs->set_start_time_sec(tc->start_time_sec);
       clip->set_duration_sec(tc->duration_sec);
+      tcs->set_alias_source(tc->alias_source);
     }
 
     for (const auto& lane : track->automation_lanes) {
@@ -150,6 +151,7 @@ static void LoadTracksFromProto(ProjectState& state,
       tc->duration_sec =
           tc->clip ? tc->clip->duration_sec : tc_data.clip().duration_sec();
       tc->duration_beats = tc->clip ? tc->clip->duration_beats : 0.0;
+      tc->alias_source = tc_data.alias_source();
       track->timeline_clips.push_back(std::move(tc));
     }
 
@@ -265,7 +267,8 @@ void SyncProjectToGui(const ProjectState& state) {
               : (float)tc->duration_sec;
       hibiki::sendTimelineClipInfo(tidx, tc_idx, cname, tc->clip->path,
                                    tc->start_time_sec, duration_for_gui,
-                                   tc->clip->waveform_summary);
+                                   tc->clip->waveform_summary,
+                                   tc->clip->is_loop, tc->alias_source);
     }
     // Sync Automation Lanes
     if (!track->automation_lanes.empty()) {
@@ -386,10 +389,17 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
                                          context, blockEvents);
             }
           } else {
+            // Audio playback with loop support
+            int content_samples = (int)tc->clip->audio_data.size();
+            if (tc->clip->num_channels == 2) content_samples /= 2;
             int start_sample = (int)(clip_local_time * sample_rate);
             for (int i = 0; i < block_size; ++i) {
               int sample_pos = start_sample + i;
               if (sample_pos < 0) continue;
+              // Loop wrapping
+              if (tc->clip->is_loop && content_samples > 0) {
+                sample_pos = sample_pos % content_samples;
+              }
               if (tc->clip->num_channels == 2 &&
                   sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
                 bufferL[i] += tc->clip->audio_data[sample_pos * 2];

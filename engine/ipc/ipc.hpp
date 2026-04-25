@@ -25,7 +25,8 @@ void sendPluginList(const std::string& path,
                     const std::vector<PluginDescription>& plugins);
 void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
                           const std::string& path, float start_time,
-                          float duration, const std::vector<float>& waveform);
+                          float duration, const std::vector<float>& waveform,
+                          bool is_looped = false, int alias_source = -1);
 void sendPlayheadInfo(float position_sec, float bpm, bool is_playing,
                       bool loop_enabled = false, float loop_start = 0,
                       float loop_end = 0);

@@ -9,8 +9,8 @@ static const std::string kDelayName = "Delay";
 static const std::string kDelayPath = "builtin://delay";
 
 BuiltinDelay::BuiltinDelay() {
-  params_[PARAM_TIME_L] = 0.6;    // 1/8 D when synced, ~250ms when free
-  params_[PARAM_TIME_R] = 0.6;    // 1/8 D when synced, ~250ms when free
+  params_[PARAM_TIME_L] = 0.6;  // 1/8 D when synced, ~250ms when free
+  params_[PARAM_TIME_R] = 0.6;  // 1/8 D when synced, ~250ms when free
   params_[PARAM_FEEDBACK] = 0.4;
   params_[PARAM_MIX] = 0.3;
   params_[PARAM_HP_FREQ] = 0.15;   // ~80Hz
@@ -192,11 +192,11 @@ int BuiltinDelay::getParameterCount() const { return kTotalParams; }
 
 bool BuiltinDelay::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
-  static const char* names[] = {"Time L",  "Time R",   "Feedback",  "Mix",
-                                "HP Freq", "LP Freq",  "X-Talk",    "Enable",
+  static const char* names[] = {"Time L",  "Time R",  "Feedback", "Mix",
+                                "HP Freq", "LP Freq", "X-Talk",   "Enable",
                                 "Sync",    "Division"};
-  static const double defaults[] = {0.6,  0.6,  0.4, 0.3, 0.15,
-                                    0.75, 1.0,  1.0, 1.0, 0.6};
+  static const double defaults[] = {0.6,  0.6, 0.4, 0.3, 0.15,
+                                    0.75, 1.0, 1.0, 1.0, 0.6};
   info.id = index;
   info.name = names[index];
   info.defaultValue = defaults[index];

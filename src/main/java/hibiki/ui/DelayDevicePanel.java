@@ -114,7 +114,12 @@ public class DelayDevicePanel extends JPanel {
 
     String[] names = {"Time L", "Time R", "Feedback", "Mix", "HP", "LP", "X-Talk"};
     int[] paramIds = {
-      PARAM_TIME_L, PARAM_TIME_R, PARAM_FEEDBACK, PARAM_MIX, PARAM_HP_FREQ, PARAM_LP_FREQ,
+      PARAM_TIME_L,
+      PARAM_TIME_R,
+      PARAM_FEEDBACK,
+      PARAM_MIX,
+      PARAM_HP_FREQ,
+      PARAM_LP_FREQ,
       PARAM_PING_PONG
     };
     knobs = new KnobPanel[7];
@@ -149,7 +154,12 @@ public class DelayDevicePanel extends JPanel {
 
   private int findKnobIndex(int paramId) {
     int[] ids = {
-      PARAM_TIME_L, PARAM_TIME_R, PARAM_FEEDBACK, PARAM_MIX, PARAM_HP_FREQ, PARAM_LP_FREQ,
+      PARAM_TIME_L,
+      PARAM_TIME_R,
+      PARAM_FEEDBACK,
+      PARAM_MIX,
+      PARAM_HP_FREQ,
+      PARAM_LP_FREQ,
       PARAM_PING_PONG
     };
     for (int i = 0; i < ids.length; i++) {
@@ -164,7 +174,12 @@ public class DelayDevicePanel extends JPanel {
       if (paramId == PARAM_PING_PONG) pingPong = value > 0.5;
       updatingFromBackend = true;
       int[] ids = {
-        PARAM_TIME_L, PARAM_TIME_R, PARAM_FEEDBACK, PARAM_MIX, PARAM_HP_FREQ, PARAM_LP_FREQ,
+        PARAM_TIME_L,
+        PARAM_TIME_R,
+        PARAM_FEEDBACK,
+        PARAM_MIX,
+        PARAM_HP_FREQ,
+        PARAM_LP_FREQ,
         PARAM_PING_PONG
       };
       for (int i = 0; i < ids.length; i++) {

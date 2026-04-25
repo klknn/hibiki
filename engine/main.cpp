@@ -183,27 +183,59 @@ void playback_thread(ProjectState& state) {
               double clip_local_time =
                   state.playhead_pos_sec - tc->start_time_sec;
               double beats_per_sec = state.bpm / 60.0;
+              // Compute content duration for loop wrapping
+              double content_dur_beats = tc->clip->duration_beats;
               double window_start_beats =
                   clip_local_time * beats_per_sec + tc->trim_start_beats;
               double window_end_beats =
                   (clip_local_time + time_per_block) * beats_per_sec +
                   tc->trim_start_beats;
+              // Loop wrapping for MIDI
+              if (tc->clip->is_loop && content_dur_beats > 0) {
+                window_start_beats =
+                    std::fmod(window_start_beats, content_dur_beats);
+                window_end_beats =
+                    window_start_beats + time_per_block * beats_per_sec;
+              }
               for (const auto& me : tc->clip->midi_events) {
-                if (me.beats >= window_start_beats &&
-                    me.beats < window_end_beats) {
-                  MidiNoteEvent e;
-                  double event_local_sec =
-                      me.beats / beats_per_sec - clip_local_time;
-                  e.sampleOffset =
-                      std::max(0, (int)(event_local_sec * sample_rate));
-                  if (e.sampleOffset >= block_size)
-                    e.sampleOffset = block_size - 1;
-                  e.channel = me.channel;
-                  e.pitch = me.note;
-                  e.isNoteOn = hibiki::isNoteOn(me);
-                  e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
-                  timelineMidiEvents.push_back(e);
+                double me_beats = me.beats;
+                // Handle wrap-around at content boundary
+                if (tc->clip->is_loop && content_dur_beats > 0 &&
+                    window_end_beats > content_dur_beats) {
+                  // Check both the normal range and the wrapped range
+                  bool in_range = (me_beats >= window_start_beats &&
+                                   me_beats < window_end_beats) ||
+                                  (me_beats < std::fmod(window_end_beats,
+                                                        content_dur_beats));
+                  if (!in_range) continue;
+                } else {
+                  if (me_beats < window_start_beats ||
+                      me_beats >= window_end_beats)
+                    continue;
                 }
+                MidiNoteEvent e;
+                double event_local_sec =
+                    me.beats / beats_per_sec - clip_local_time;
+                // For loop, adjust event timing
+                if (tc->clip->is_loop && content_dur_beats > 0) {
+                  double wrapped_beat = std::fmod(me.beats, content_dur_beats);
+                  // Find the correct repetition offset
+                  double content_dur_sec = content_dur_beats / beats_per_sec;
+                  double local_in_content =
+                      std::fmod(clip_local_time, content_dur_sec);
+                  event_local_sec =
+                      wrapped_beat / beats_per_sec - local_in_content;
+                  if (event_local_sec < 0) event_local_sec += content_dur_sec;
+                }
+                e.sampleOffset =
+                    std::max(0, (int)(event_local_sec * sample_rate));
+                if (e.sampleOffset >= block_size)
+                  e.sampleOffset = block_size - 1;
+                e.channel = me.channel;
+                e.pitch = me.note;
+                e.isNoteOn = hibiki::isNoteOn(me);
+                e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+                timelineMidiEvents.push_back(e);
               }
             }
           }
@@ -304,10 +336,17 @@ void playback_thread(ProjectState& state) {
                 // MIDI events already merged above in step 1b
                 // (no separate process() call needed)
               } else {
+                // Audio playback with loop support
+                int content_samples = (int)tc->clip->audio_data.size();
+                if (tc->clip->num_channels == 2) content_samples /= 2;
                 int start_sample = (int)(clip_local_time * sample_rate);
                 for (int i = 0; i < block_size; ++i) {
                   int sample_pos = start_sample + i;
                   if (sample_pos < 0) continue;
+                  // Loop wrapping
+                  if (tc->clip->is_loop && content_samples > 0) {
+                    sample_pos = sample_pos % content_samples;
+                  }
                   if (tc->clip->num_channels == 2 &&
                       sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
                     bufferL[i] += tc->clip->audio_data[sample_pos * 2];

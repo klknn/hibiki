@@ -560,6 +560,40 @@ public class BackendManager {
             .build());
   }
 
+  public void setTimelineClipLoop(int trackIndex, int clipIndex, boolean isLoop) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_CLIP_LOOP)
+                    .setTarget(
+                        EntityRef.newBuilder().setTrackIndex(trackIndex).setTimelineClip(clipIndex))
+                    .setFlag(isLoop))
+            .build());
+  }
+
+  /** Copy (or alias) a timeline clip from source track/clip to target track at given time. */
+  public void copyTimelineClip(
+      int sourceTrackIndex,
+      int clipIndex,
+      float newStartTimeSec,
+      int targetTrackIndex,
+      boolean isAlias) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_COPY_TIMELINE_CLIP)
+                    .setTarget(
+                        EntityRef.newBuilder()
+                            .setTrackIndex(sourceTrackIndex)
+                            .setTimelineClip(clipIndex))
+                    .setValue(newStartTimeSec)
+                    .setTargetTrackIndex(targetTrackIndex)
+                    .setFlag(isAlias))
+            .build());
+  }
+
   public void moveTimelineClip(
       int sourceTrackIndex, int clipIndex, float newStartTimeSec, int targetTrackIndex) {
     sendRequest(

@@ -116,6 +116,8 @@ message TimelineClipInfo {
   float start_time = 5;
   float duration = 6;
   repeated float waveform = 7;
+  bool is_looped = 8;      // Clip content repeats (loop-extended)
+  int32 alias_source = 9;  // Source clip index for aliases (-1 = not alias)
 }
 
 // Track name metadata.

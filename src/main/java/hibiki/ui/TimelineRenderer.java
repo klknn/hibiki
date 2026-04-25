@@ -679,6 +679,7 @@ class TimelineRenderer {
       boolean isDragging,
       TimelineView.ClipRect draggingClip) {
     Color accentBlue = Theme.getInstance().ACCENT_BLUE;
+    Color aliasColor = new Color(130, 130, 150); // Desaturated gray-blue for aliases
     for (int i = 0; i < tracks.size(); i++) {
       if (tracks.get(i).hidden) continue;
       int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight(i));
@@ -689,27 +690,31 @@ class TimelineRenderer {
         int w = (int) (clip.duration * pps);
         int h = scaleBaseTrack - 10;
 
+        // Pick color based on alias status
+        Color clipColor = clip.isAlias ? aliasColor : accentBlue;
+
         // Transparent content background
-        g2.setColor(
-            new Color(accentBlue.getRed(), accentBlue.getGreen(), accentBlue.getBlue(), 30));
+        g2.setColor(new Color(clipColor.getRed(), clipColor.getGreen(), clipColor.getBlue(), 30));
         g2.fillRoundRect(x, y, w, h, 8, 8);
 
         // Clip header
         Shape oldClip = g2.getClip();
         g2.clipRect(x, y, w, h);
-        g2.setColor(
-            new Color(accentBlue.getRed(), accentBlue.getGreen(), accentBlue.getBlue(), 140));
+        g2.setColor(new Color(clipColor.getRed(), clipColor.getGreen(), clipColor.getBlue(), 140));
         g2.fillRect(x, y, w, CLIP_HEADER_H);
         g2.setClip(oldClip);
 
-        // Clip name in header
+        // Clip name in header (with emoji prefix for loop/alias)
         if (w > 20) {
           oldClip = g2.getClip();
           g2.clipRect(x, y, w, CLIP_HEADER_H);
           g2.setColor(Color.WHITE);
           g2.setFont(
               Theme.getInstance().FONT_UI.deriveFont(Font.BOLD, Theme.getInstance().scale(10.0f)));
-          g2.drawString(clip.name != null ? clip.name : "", x + 5, y + 11);
+          String displayName = clip.name != null ? clip.name : "";
+          if (clip.isLooped) displayName = "\uD83D\uDD01 " + displayName;
+          if (clip.isAlias) displayName = "\uD83D\uDCCE " + displayName;
+          g2.drawString(displayName, x + 5, y + 11);
           g2.setClip(oldClip);
         }
 
@@ -729,8 +734,39 @@ class TimelineRenderer {
           drawAudioWaveform(g2, clip, x, contentY, w, contentH);
         }
 
+        // Draw loop region dividers and dimmed repeat regions
+        if (clip.isLooped && clip.contentDuration > 0 && clip.duration > clip.contentDuration) {
+          float contentW = clip.contentDuration * pps;
+          int numRepeats = (int) Math.ceil(clip.duration / clip.contentDuration);
+
+          // Draw dimmed overlay on repeat regions (after first content)
+          Composite oldComp = g2.getComposite();
+          g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.35f));
+          int repeatStartX = x + (int) contentW;
+          int repeatW = x + w - repeatStartX;
+          if (repeatW > 0) {
+            g2.setColor(new Color(0, 0, 0));
+            g2.fillRect(repeatStartX, contentY, repeatW, contentH);
+          }
+          g2.setComposite(oldComp);
+
+          // Draw dashed vertical dividers at content boundaries
+          Stroke oldStroke = g2.getStroke();
+          g2.setStroke(
+              new BasicStroke(
+                  1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL, 0, new float[] {4, 4}, 0));
+          g2.setColor(new Color(255, 255, 255, 80));
+          for (int r = 1; r < numRepeats; r++) {
+            int divX = x + (int) (r * contentW);
+            if (divX >= x && divX <= x + w) {
+              g2.drawLine(divX, y, divX, y + h);
+            }
+          }
+          g2.setStroke(oldStroke);
+        }
+
         // Border
-        g2.setColor(accentBlue);
+        g2.setColor(clipColor);
         g2.drawRoundRect(x, y, w, h, 8, 8);
       }
     }

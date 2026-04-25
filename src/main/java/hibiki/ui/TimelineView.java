@@ -179,6 +179,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     MOVE_CLIP,
     CREATE_CLIP,
     RESIZE_CLIP,
+    LOOP_EXTEND,
     TRIM_LEFT,
     DRAG_LOOP_REGION,
     DRAG_LOOP_MARKER,
@@ -834,7 +835,24 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     return null;
   }
 
-  /** Check if x position is near the right edge of a clip */
+  /** Check if x position is near the right edge of a clip (bottom half only — top half is loop) */
+  boolean isNearRightEdge(ClipRect clip, int x, int mouseY, int clipY, int clipH) {
+    int rightEdgeX = (int) ((clip.startTime + clip.duration) * getPixelsPerSecond());
+    boolean nearX = Math.abs(x - rightEdgeX) <= TimelineConstants.RESIZE_EDGE_PX;
+    // Bottom half only for trim/pad
+    boolean bottomHalf = (mouseY - clipY) > clipH / 2;
+    return nearX && bottomHalf;
+  }
+
+  /** Check if position is near the top-right corner of a clip (loop extend handle) */
+  boolean isNearTopRightCorner(ClipRect clip, int x, int mouseY, int clipY, int clipH) {
+    int rightEdgeX = (int) ((clip.startTime + clip.duration) * getPixelsPerSecond());
+    boolean nearX = Math.abs(x - rightEdgeX) <= TimelineConstants.RESIZE_EDGE_PX;
+    boolean topHalf = (mouseY - clipY) <= clipH / 2;
+    return nearX && topHalf;
+  }
+
+  /** Legacy: check near right edge without Y (used by callers that don't have Y context) */
   boolean isNearRightEdge(ClipRect clip, int x) {
     int rightEdgeX = (int) ((clip.startTime + clip.duration) * getPixelsPerSecond());
     return Math.abs(x - rightEdgeX) <= TimelineConstants.RESIZE_EDGE_PX;
@@ -1382,6 +1400,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       if (cr.contentDuration <= 0 && cr.duration > 0) {
         cr.contentDuration = cr.duration;
       }
+      cr.isLooped = info.getIsLooped();
+      cr.isAlias = info.getAliasSource() >= 0;
+      cr.aliasSourceIndex = info.getAliasSource();
       // Extract waveform data
       int wfLen = info.getWaveformCount();
       if (wfLen > 0) {
@@ -1411,6 +1432,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     float trimStartSec; // Head-trim offset in seconds
     float[] waveform;
     boolean isAutomation = false;
+    boolean isLooped = false; // Clip content repeats (loop-extended)
+    boolean isAlias = false; // Clip is an alias (shallow copy)
+    int aliasSourceIndex = -1; // Source clip index for aliases
     List<AutomationEditor.AutoPoint> automationPoints = new ArrayList<>();
   }
 

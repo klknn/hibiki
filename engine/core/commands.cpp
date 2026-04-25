@@ -419,8 +419,36 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
     case pb::commands::TrackCmd::ACTION_SET_CLIP_LOOP: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       history.pushState(CaptureProjectState(state));
-      GetOrCreateTrack(state, tidx)
-          ->SetClipLoop(cmd.target().session_slot(), cmd.flag());
+      auto* track = GetOrCreateTrack(state, tidx);
+      if (cmd.target().timeline_clip() > 0 ||
+          cmd.target().session_slot() == 0) {
+        // Timeline clip loop
+        int tcidx = cmd.target().timeline_clip();
+        if (tcidx >= 0 && tcidx < (int)track->timeline_clips.size()) {
+          auto& tc = track->timeline_clips[tcidx];
+          if (tc->clip) {
+            tc->clip->is_loop = cmd.flag();
+            // Notify GUI of the change
+            std::string clipname = tc->clip->path;
+            if (clipname.empty())
+              clipname = tc->clip->name.empty() ? "Clip" : tc->clip->name;
+            size_t pos = clipname.find_last_of("/\\");
+            if (pos != std::string::npos) clipname = clipname.substr(pos + 1);
+            float duration_for_gui =
+                (tc->duration_beats > 0)
+                    ? (float)(tc->duration_beats * 60.0 /
+                              (state.bpm > 0 ? state.bpm : 120.0))
+                    : (float)tc->duration_sec;
+            sendTimelineClipInfo(tidx, tcidx, clipname, tc->clip->path,
+                                 (float)tc->start_time_sec, duration_for_gui,
+                                 tc->clip->waveform_summary, tc->clip->is_loop,
+                                 tc->alias_source);
+          }
+        }
+      } else {
+        // Session clip loop
+        track->SetClipLoop(cmd.target().session_slot(), cmd.flag());
+      }
       sendAck("SET_CLIP_LOOP", true);
       break;
     }
@@ -468,7 +496,8 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
           sendTimelineClipInfo(
               tidx, cidx, clipname, tc->clip ? tc->clip->path : "",
               (float)tc->start_time_sec, duration_for_gui,
-              tc->clip ? tc->clip->waveform_summary : std::vector<float>{});
+              tc->clip ? tc->clip->waveform_summary : std::vector<float>{},
+              tc->clip ? tc->clip->is_loop : false, tc->alias_source);
         }
       }
       sendAck("RESIZE_TIMELINE_CLIP", true);
@@ -498,6 +527,66 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
         }
       }
       sendAck("MOVE_TIMELINE_CLIP", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_COPY_TIMELINE_CLIP: {
+      int src_cidx = cmd.target().timeline_clip();
+      float new_start_sec = cmd.value();
+      int target_tidx = cmd.target_track_index();
+      bool is_alias = cmd.flag();
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
+      if (state.tracks.count(tidx)) {
+        auto& src_track = state.tracks[tidx];
+        if (src_cidx >= 0 && src_cidx < (int)src_track->timeline_clips.size() &&
+            src_track->timeline_clips[src_cidx] &&
+            src_track->timeline_clips[src_cidx]->clip) {
+          auto& src_tc = src_track->timeline_clips[src_cidx];
+          auto new_tc = std::make_unique<TimelineClip>();
+          new_tc->clip = std::make_unique<Clip>();
+          // Copy clip data
+          new_tc->clip->path = src_tc->clip->path;
+          new_tc->clip->type = src_tc->clip->type;
+          new_tc->clip->audio_data = src_tc->clip->audio_data;
+          new_tc->clip->sample_rate = src_tc->clip->sample_rate;
+          new_tc->clip->num_channels = src_tc->clip->num_channels;
+          new_tc->clip->duration_sec = src_tc->clip->duration_sec;
+          new_tc->clip->duration_beats = src_tc->clip->duration_beats;
+          new_tc->clip->midi_events = src_tc->clip->midi_events;
+          new_tc->clip->waveform_summary = src_tc->clip->waveform_summary;
+          new_tc->clip->is_loop = src_tc->clip->is_loop;
+          new_tc->clip->name = src_tc->clip->name;
+          // Copy timeline position
+          new_tc->start_time_sec = new_start_sec;
+          new_tc->duration_sec = src_tc->duration_sec;
+          new_tc->duration_beats = src_tc->duration_beats;
+          new_tc->trim_start_beats = src_tc->trim_start_beats;
+          if (is_alias) {
+            new_tc->alias_source = src_cidx;
+          }
+          // Add to target track
+          auto* dest_track = GetOrCreateTrack(state, target_tidx);
+          dest_track->timeline_clips.push_back(std::move(new_tc));
+          int new_cidx = (int)dest_track->timeline_clips.size() - 1;
+          auto& added = dest_track->timeline_clips[new_cidx];
+          // Compute display info
+          std::string clipname = added->clip->path;
+          if (clipname.empty())
+            clipname = added->clip->name.empty() ? "Clip" : added->clip->name;
+          size_t pos = clipname.find_last_of("/\\");
+          if (pos != std::string::npos) clipname = clipname.substr(pos + 1);
+          float duration_for_gui =
+              (added->duration_beats > 0)
+                  ? (float)(added->duration_beats * 60.0 /
+                            (state.bpm > 0 ? state.bpm : 120.0))
+                  : (float)added->duration_sec;
+          sendTimelineClipInfo(target_tidx, new_cidx, clipname,
+                               added->clip->path, (float)added->start_time_sec,
+                               duration_for_gui, added->clip->waveform_summary,
+                               added->clip->is_loop, added->alias_source);
+        }
+      }
+      sendAck("COPY_TIMELINE_CLIP", true);
       break;
     }
     case pb::commands::TrackCmd::ACTION_ARM_RECORD: {

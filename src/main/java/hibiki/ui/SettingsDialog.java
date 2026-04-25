@@ -1,6 +1,8 @@
 package hibiki.ui;
 
 import java.awt.*;
+import java.io.File;
+import java.util.List;
 import javax.swing.*;
 import javax.swing.Timer;
 
@@ -18,6 +20,7 @@ public class SettingsDialog extends JDialog {
 
     JTabbedPane tabs = new JTabbedPane();
     tabs.addTab("Audio", createAudioPanel());
+    tabs.addTab("Paths", createPathsPanel());
     tabs.addTab("Plugins", createPluginsPanel());
     tabs.addTab("Appearance", createAppearancePanel());
 
@@ -196,6 +199,117 @@ public class SettingsDialog extends JDialog {
     p.add(inputBtnPanel, gbc);
 
     return p;
+  }
+
+  private JPanel createPathsPanel() {
+    JPanel p = new JPanel(new GridBagLayout());
+    p.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+    GridBagConstraints gbc = new GridBagConstraints();
+    gbc.fill = GridBagConstraints.HORIZONTAL;
+    gbc.insets = new Insets(5, 5, 5, 5);
+    int row = 0;
+
+    // Header
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    gbc.gridwidth = 2;
+    JLabel header = new JLabel("Custom Audio / MIDI Search Paths");
+    header.setFont(Theme.getInstance().FONT_UI_BOLD);
+    p.add(header, gbc);
+    gbc.gridwidth = 1;
+
+    // Description
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    gbc.gridwidth = 2;
+    JLabel desc =
+        new JLabel(
+            "<html><small>"
+                + "Add directories containing .wav, .mid, or .vst3 files.<br>"
+                + "These will appear in the Browser alongside built-in paths."
+                + "</small></html>");
+    desc.setFont(Theme.getInstance().FONT_UI.deriveFont(11.0f));
+    p.add(desc, gbc);
+    gbc.gridwidth = 1;
+
+    // Path list
+    DefaultListModel<String> pathListModel = new DefaultListModel<>();
+    List<String> currentPaths = BrowserPane.getCustomSearchPaths();
+    for (String path : currentPaths) {
+      pathListModel.addElement(path);
+    }
+    JList<String> pathList = new JList<>(pathListModel);
+    pathList.setVisibleRowCount(8);
+    pathList.setFont(Theme.getInstance().FONT_UI);
+    JScrollPane pathScroll = new JScrollPane(pathList);
+    pathScroll.setPreferredSize(new Dimension(350, 160));
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    gbc.gridwidth = 2;
+    gbc.fill = GridBagConstraints.BOTH;
+    gbc.weighty = 1.0;
+    p.add(pathScroll, gbc);
+    gbc.fill = GridBagConstraints.HORIZONTAL;
+    gbc.weighty = 0;
+    gbc.gridwidth = 1;
+
+    // Buttons
+    row++;
+    gbc.gridx = 0;
+    gbc.gridy = row;
+    gbc.gridwidth = 2;
+    JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+
+    JButton addBtn = new JButton("Add…");
+    addBtn.addActionListener(
+        e -> {
+          JFileChooser chooser = new JFileChooser();
+          chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+          chooser.setDialogTitle("Select Search Directory");
+          if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File dir = chooser.getSelectedFile();
+            String path = dir.getAbsolutePath();
+            // Avoid duplicates
+            for (int i = 0; i < pathListModel.size(); i++) {
+              if (pathListModel.get(i).equals(path)) return;
+            }
+            pathListModel.addElement(path);
+            applyPathChanges(pathListModel);
+          }
+        });
+    btnPanel.add(addBtn);
+
+    JButton removeBtn = new JButton("Remove");
+    removeBtn.addActionListener(
+        e -> {
+          int sel = pathList.getSelectedIndex();
+          if (sel >= 0) {
+            pathListModel.remove(sel);
+            applyPathChanges(pathListModel);
+          }
+        });
+    btnPanel.add(removeBtn);
+
+    p.add(btnPanel, gbc);
+    gbc.gridwidth = 1;
+
+    return p;
+  }
+
+  /** Persist the path list model and trigger a browser rescan. */
+  private void applyPathChanges(DefaultListModel<String> model) {
+    java.util.List<String> paths = new java.util.ArrayList<>();
+    for (int i = 0; i < model.size(); i++) {
+      paths.add(model.get(i));
+    }
+    BrowserPane.setCustomSearchPaths(paths);
+    // Live-refresh the browser tree
+    BrowserPane browser = BrowserPane.getInstance();
+    if (browser != null) {
+      browser.rescan();
+    }
   }
 
   private JPanel createPluginsPanel() {

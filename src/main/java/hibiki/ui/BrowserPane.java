@@ -13,16 +13,21 @@ import java.io.File;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.prefs.Preferences;
 import javax.swing.*;
 import javax.swing.tree.*;
 
 public class BrowserPane extends JPanel {
+  private static final String PREFS_KEY = "customSearchPaths";
+  private static final Preferences PREFS = Preferences.userNodeForPackage(BrowserPane.class);
+
   private JTree tree;
   private DefaultTreeModel treeModel;
   private DefaultMutableTreeNode root;
   private DefaultMutableTreeNode pluginsNode;
   private DefaultMutableTreeNode midiNode;
   private DefaultMutableTreeNode audioNode;
+  private DefaultMutableTreeNode userNode;
 
   private Map<String, List<PluginMetadata>> bundlesDiscovered = new ConcurrentHashMap<>();
   // Remote plugins: key = "host:port", value = list of plugins from that daemon
@@ -30,6 +35,27 @@ public class BrowserPane extends JPanel {
   // Tree nodes for each remote host
   private Map<String, DefaultMutableTreeNode> remoteHostNodes = new ConcurrentHashMap<>();
   private javax.swing.Timer refreshDebounceTimer;
+
+  private static BrowserPane instance;
+
+  /** Return the singleton instance (set during construction). */
+  public static BrowserPane getInstance() {
+    return instance;
+  }
+
+  // ── Custom search path persistence ──────────────────────────────────
+
+  /** Get the persisted list of custom audio/MIDI search directories. */
+  public static List<String> getCustomSearchPaths() {
+    String raw = PREFS.get(PREFS_KEY, "");
+    if (raw.isEmpty()) return new ArrayList<>();
+    return new ArrayList<>(Arrays.asList(raw.split("\\|")));
+  }
+
+  /** Persist the list of custom audio/MIDI search directories. */
+  public static void setCustomSearchPaths(List<String> paths) {
+    PREFS.put(PREFS_KEY, String.join("|", paths));
+  }
 
   private static class PluginMetadata {
     int index;
@@ -46,6 +72,7 @@ public class BrowserPane extends JPanel {
   }
 
   public BrowserPane() {
+    instance = this;
     setLayout(new BorderLayout());
     setBackground(Theme.getInstance().BG_DARK);
     setPreferredSize(new Dimension(Theme.getInstance().scale(220), 0));
@@ -310,7 +337,29 @@ public class BrowserPane extends JPanel {
       scanDirectory(new File("/usr/local/lib/vst3"), pluginsNode, null, null);
     }
 
+    // User-defined search paths — shown in a separate "User" tree with dir structure
+    userNode = new DefaultMutableTreeNode("User");
+    for (String customPath : getCustomSearchPaths()) {
+      File customDir = new File(customPath);
+      if (customDir.exists() && customDir.isDirectory()) {
+        DefaultMutableTreeNode dirNode = buildDirectoryTree(customDir);
+        if (dirNode != null) {
+          userNode.add(dirNode);
+        }
+      }
+    }
+    if (userNode.getChildCount() > 0) {
+      root.add(userNode);
+    }
+
     treeModel.reload();
+  }
+
+  /** Re-scan all directories and rebuild the tree (called after custom paths change). */
+  public void rescan() {
+    root.removeAllChildren();
+    bundlesDiscovered.clear();
+    populateTree();
   }
 
   private void sortAndGroupPlugins(DefaultMutableTreeNode pluginsRoot) {
@@ -367,6 +416,48 @@ public class BrowserPane extends JPanel {
     collectFiles(dir, pluginsNode, midiNode, audioNode, bundlePaths);
     // Send all .vst3 bundles as a single batch request for parallel scanning
     requestPluginsInBundles(bundlePaths);
+  }
+
+  /**
+   * Build a tree node that mirrors the real directory structure under {@code dir}.
+   * Leaf nodes are FileItems for supported file types (.wav, .mid/.midi, .vst3).
+   * Empty directories are pruned.
+   */
+  private DefaultMutableTreeNode buildDirectoryTree(File dir) {
+    DefaultMutableTreeNode dirNode = new DefaultMutableTreeNode(dir.getName());
+    File[] children = dir.listFiles();
+    if (children == null) return null;
+
+    // Sort: directories first, then files, both alphabetically
+    java.util.Arrays.sort(children, (a, b) -> {
+      if (a.isDirectory() != b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.getName().compareToIgnoreCase(b.getName());
+    });
+
+    java.util.List<String> bundlePaths = new java.util.ArrayList<>();
+    for (File f : children) {
+      String name = f.getName().toLowerCase();
+      if (f.isDirectory()) {
+        if (name.endsWith(".vst3")) {
+          // VST3 bundles are directories — treat as plugin leaf
+          bundlePaths.add(f.getAbsolutePath());
+        } else {
+          DefaultMutableTreeNode childDir = buildDirectoryTree(f);
+          if (childDir != null && childDir.getChildCount() > 0) {
+            dirNode.add(childDir);
+          }
+        }
+      } else if (name.endsWith(".mid") || name.endsWith(".midi")) {
+        dirNode.add(new DefaultMutableTreeNode(new FileItem(f, "midi", f.getName())));
+      } else if (name.endsWith(".wav") || name.endsWith(".flac")
+          || name.endsWith(".mp3") || name.endsWith(".ogg") || name.endsWith(".aiff")) {
+        dirNode.add(new DefaultMutableTreeNode(new FileItem(f, "audio", f.getName())));
+      }
+    }
+    // Kick off VST3 bundle scanning for any found in this user directory
+    requestPluginsInBundles(bundlePaths);
+
+    return dirNode.getChildCount() > 0 ? dirNode : null;
   }
 
   private void collectFiles(

@@ -66,6 +66,11 @@ public class FilmDevicePanel extends JPanel {
   private final KnobPanel[] matrixKnobs = new KnobPanel[MATRIX_PARAMS];
   private final java.util.Map<Integer, KnobPanel> allKnobs = new java.util.HashMap<>();
 
+  // Envelope editors: one per operator + one per filter
+  private final EnvelopeEditorPanel[] opEnvelopes = new EnvelopeEditorPanel[NUM_OPS];
+  private final EnvelopeEditorPanel[] filterEnvelopes = new EnvelopeEditorPanel[NUM_FILTERS];
+  private EnvelopeEditorPanel mainEnvelope; // MAIN tab shows OP1 envelope
+
   public Runnable modToggleCallback;
 
   // Colors — purple/yellow Sytrus theme
@@ -208,10 +213,10 @@ public class FilmDevicePanel extends JPanel {
 
     main.add(Box.createVerticalStrut(theme.scale(6)));
 
-    // Row 3: Gain ADSR (from op1 — shared view)
-    JPanel adsrPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(8), 0));
-    adsrPanel.setOpaque(false);
-    adsrPanel.setBorder(
+    // Row 3: Gain Envelope (OP1) — visual editor
+    JPanel envPanel = new JPanel(new BorderLayout());
+    envPanel.setOpaque(false);
+    envPanel.setBorder(
         BorderFactory.createTitledBorder(
             BorderFactory.createLineBorder(new Color(0x444444)),
             "Gain Envelope (OP1)",
@@ -219,11 +224,26 @@ public class FilmDevicePanel extends JPanel {
             0,
             theme.FONT_UI.deriveFont(theme.scale(9.0f)),
             new Color(0x999999)));
-    adsrPanel.add(createKnob("A", OP_ENV_A, 0.0, theme));
-    adsrPanel.add(createKnob("D", OP_ENV_D + 0, 0.2, theme));
-    adsrPanel.add(createKnob("S", OP_ENV_S + 0, 0.7, theme));
-    adsrPanel.add(createKnob("R", OP_ENV_R + 0, 0.3, theme));
-    main.add(adsrPanel);
+    mainEnvelope = new EnvelopeEditorPanel();
+    mainEnvelope.setValues(0.0f, 0.2f, 0.7f, 0.3f);
+    mainEnvelope.setPreferredSize(new Dimension(theme.scale(350), theme.scale(130)));
+    mainEnvelope.addListener(
+        (a, d, s, r) -> {
+          params[OP_ENV_A] = a;
+          params[OP_ENV_D] = d;
+          params[OP_ENV_S] = s;
+          params[OP_ENV_R] = r;
+          sendParam(OP_ENV_A, a);
+          sendParam(OP_ENV_D, d);
+          sendParam(OP_ENV_S, s);
+          sendParam(OP_ENV_R, r);
+          // Sync OP1 tab envelope
+          if (opEnvelopes[0] != null) {
+            opEnvelopes[0].setValues(a, d, s, r);
+          }
+        });
+    envPanel.add(mainEnvelope, BorderLayout.CENTER);
+    main.add(envPanel);
 
     return main;
   }
@@ -273,16 +293,38 @@ public class FilmDevicePanel extends JPanel {
     subTabs.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
     subTabs.setBackground(theme.BG_DARK);
 
-    // VOL sub-tab
-    JPanel volTab = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(6), theme.scale(2)));
+    // VOL sub-tab — knobs + envelope editor
+    JPanel volTab = new JPanel();
+    volTab.setLayout(new BoxLayout(volTab, BoxLayout.Y_AXIS));
     volTab.setBackground(theme.BG_DARK);
-    volTab.add(createKnob("Level", base + OP_LEVEL, op == 0 ? 1.0 : 0.0, theme));
-    volTab.add(createKnob("Pan", base + OP_PAN, 0.5, theme));
-    volTab.add(createKnob("FB", base + OP_FEEDBACK, 0.0, theme));
-    volTab.add(createKnob("A", base + OP_ENV_A, 0.0, theme));
-    volTab.add(createKnob("D", base + OP_ENV_D, 0.2, theme));
-    volTab.add(createKnob("S", base + OP_ENV_S, 0.7, theme));
-    volTab.add(createKnob("R", base + OP_ENV_R, 0.3, theme));
+    JPanel volKnobs = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(6), theme.scale(2)));
+    volKnobs.setOpaque(false);
+    volKnobs.add(createKnob("Level", base + OP_LEVEL, op == 0 ? 1.0 : 0.0, theme));
+    volKnobs.add(createKnob("Pan", base + OP_PAN, 0.5, theme));
+    volKnobs.add(createKnob("FB", base + OP_FEEDBACK, 0.0, theme));
+    volTab.add(volKnobs);
+    // Envelope editor
+    EnvelopeEditorPanel envEditor = new EnvelopeEditorPanel();
+    envEditor.setValues(0.0f, 0.2f, 0.7f, 0.3f);
+    envEditor.setPreferredSize(new Dimension(theme.scale(350), theme.scale(120)));
+    opEnvelopes[op] = envEditor;
+    final int opIdx = op;
+    envEditor.addListener(
+        (a, d, s, r) -> {
+          params[base + OP_ENV_A] = a;
+          params[base + OP_ENV_D] = d;
+          params[base + OP_ENV_S] = s;
+          params[base + OP_ENV_R] = r;
+          sendParam(base + OP_ENV_A, a);
+          sendParam(base + OP_ENV_D, d);
+          sendParam(base + OP_ENV_S, s);
+          sendParam(base + OP_ENV_R, r);
+          // Sync MAIN tab envelope if this is OP1
+          if (opIdx == 0 && mainEnvelope != null) {
+            mainEnvelope.setValues(a, d, s, r);
+          }
+        });
+    volTab.add(envEditor);
     subTabs.addTab("VOL", volTab);
 
     // PITCH sub-tab
@@ -409,13 +451,25 @@ public class FilmDevicePanel extends JPanel {
     ctrlTab.add(createKnob("Mix", base + FLT_MIX, 1.0, theme));
     subTabs.addTab("CTRL", ctrlTab);
 
-    // ENV sub-tab
-    JPanel envTab = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(6), theme.scale(2)));
+    // ENV sub-tab — visual envelope editor
+    JPanel envTab = new JPanel(new BorderLayout());
     envTab.setBackground(theme.BG_DARK);
-    envTab.add(createKnob("A", base + FLT_ENV_A, 0.0, theme));
-    envTab.add(createKnob("D", base + FLT_ENV_D, 0.2, theme));
-    envTab.add(createKnob("S", base + FLT_ENV_S, 0.7, theme));
-    envTab.add(createKnob("R", base + FLT_ENV_R, 0.3, theme));
+    EnvelopeEditorPanel fltEnvEditor = new EnvelopeEditorPanel();
+    fltEnvEditor.setValues(0.0f, 0.2f, 0.7f, 0.3f);
+    fltEnvEditor.setPreferredSize(new Dimension(theme.scale(350), theme.scale(120)));
+    filterEnvelopes[flt] = fltEnvEditor;
+    fltEnvEditor.addListener(
+        (a, d, s, r) -> {
+          params[base + FLT_ENV_A] = a;
+          params[base + FLT_ENV_D] = d;
+          params[base + FLT_ENV_S] = s;
+          params[base + FLT_ENV_R] = r;
+          sendParam(base + FLT_ENV_A, a);
+          sendParam(base + FLT_ENV_D, d);
+          sendParam(base + FLT_ENV_S, s);
+          sendParam(base + FLT_ENV_R, r);
+        });
+    envTab.add(fltEnvEditor, BorderLayout.CENTER);
     subTabs.addTab("ENV", envTab);
 
     // LFO sub-tab
@@ -547,7 +601,49 @@ public class FilmDevicePanel extends JPanel {
       if (knob != null) {
         knob.value = value;
       }
+      // Sync envelope editors when ADSR params change externally
+      syncEnvelopeEditors(paramId);
       repaint();
+    }
+  }
+
+  /** Sync envelope editor widgets when ADSR-related params change. */
+  private void syncEnvelopeEditors(int paramId) {
+    // Check operator envelopes
+    for (int op = 0; op < NUM_OPS; op++) {
+      int base = op * PARAMS_PER_OP;
+      if (paramId >= base + OP_ENV_A && paramId <= base + OP_ENV_R) {
+        if (opEnvelopes[op] != null) {
+          opEnvelopes[op].setValues(
+              (float) params[base + OP_ENV_A],
+              (float) params[base + OP_ENV_D],
+              (float) params[base + OP_ENV_S],
+              (float) params[base + OP_ENV_R]);
+        }
+        // Sync MAIN tab if OP1
+        if (op == 0 && mainEnvelope != null) {
+          mainEnvelope.setValues(
+              (float) params[OP_ENV_A],
+              (float) params[OP_ENV_D],
+              (float) params[OP_ENV_S],
+              (float) params[OP_ENV_R]);
+        }
+        return;
+      }
+    }
+    // Check filter envelopes
+    for (int f = 0; f < NUM_FILTERS; f++) {
+      int base = OP_PARAMS + f * PARAMS_PER_FILTER;
+      if (paramId >= base + FLT_ENV_A && paramId <= base + FLT_ENV_R) {
+        if (filterEnvelopes[f] != null) {
+          filterEnvelopes[f].setValues(
+              (float) params[base + FLT_ENV_A],
+              (float) params[base + FLT_ENV_D],
+              (float) params[base + FLT_ENV_S],
+              (float) params[base + FLT_ENV_R]);
+        }
+        return;
+      }
     }
   }
 

@@ -198,6 +198,16 @@ java_test(
 )
 
 java_test(
+    name = "envelope_editor_panel_test",
+    srcs = ["src/test/java/hibiki/ui/EnvelopeEditorPanelTest.java"],
+    test_class = "hibiki.ui.EnvelopeEditorPanelTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
     name = "automation_mouse_handler_test",
     srcs = ["src/test/java/hibiki/ui/AutomationMouseHandlerTest.java"],
     test_class = "hibiki.ui.AutomationMouseHandlerTest",

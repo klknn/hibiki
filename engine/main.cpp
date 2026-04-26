@@ -197,7 +197,8 @@ void playback_thread(ProjectState& state) {
                   tc->trim_start_beats;
               // Loop wrapping for MIDI within trimmed range
               if (tc->clip->is_loop && loop_length_beats > 0) {
-                window_start_beats = tc->trim_start_beats +
+                window_start_beats =
+                    tc->trim_start_beats +
                     std::fmod(window_start_beats - tc->trim_start_beats,
                               loop_length_beats);
                 window_end_beats =
@@ -219,9 +220,9 @@ void playback_thread(ProjectState& state) {
                        me_beats < window_end_beats) ||
                       (me_beats >= tc->trim_start_beats &&
                        me_beats < tc->trim_start_beats +
-                           std::fmod(
-                               window_end_beats - tc->trim_start_beats,
-                               loop_length_beats));
+                                      std::fmod(window_end_beats -
+                                                    tc->trim_start_beats,
+                                                loop_length_beats));
                   if (!in_range) continue;
                 } else {
                   if (me_beats < window_start_beats ||
@@ -237,10 +238,8 @@ void playback_thread(ProjectState& state) {
                   double loop_length_sec = loop_length_beats / beats_per_sec;
                   double local_in_content =
                       std::fmod(clip_local_time, loop_length_sec);
-                  event_local_sec =
-                      rel_beat / beats_per_sec - local_in_content;
-                  if (event_local_sec < 0)
-                    event_local_sec += loop_length_sec;
+                  event_local_sec = rel_beat / beats_per_sec - local_in_content;
+                  if (event_local_sec < 0) event_local_sec += loop_length_sec;
                 }
                 e.sampleOffset =
                     std::max(0, (int)(event_local_sec * sample_rate));
@@ -355,9 +354,9 @@ void playback_thread(ProjectState& state) {
                 int content_samples = (int)tc->clip->audio_data.size();
                 if (tc->clip->num_channels == 2) content_samples /= 2;
                 double bps = state.bpm / 60.0;
-                int trim_samples = (bps > 0)
-                    ? (int)(tc->trim_start_beats / bps * sample_rate)
-                    : 0;
+                int trim_samples =
+                    (bps > 0) ? (int)(tc->trim_start_beats / bps * sample_rate)
+                              : 0;
                 int start_sample =
                     trim_samples + (int)(clip_local_time * sample_rate);
                 // Use explicit loop interval if set, else content - trim
@@ -372,19 +371,15 @@ void playback_thread(ProjectState& state) {
                   if (sample_pos < 0) continue;
                   // Loop wrapping within trimmed content
                   if (tc->clip->is_loop && loop_len > 0) {
-                    sample_pos = trim_samples +
-                                 ((sample_pos - trim_samples) % loop_len);
+                    sample_pos =
+                        trim_samples + ((sample_pos - trim_samples) % loop_len);
                   }
                   if (tc->clip->num_channels == 2 &&
-                      sample_pos * 2 + 1 <
-                          (int)tc->clip->audio_data.size()) {
-                    bufferL[i] +=
-                        tc->clip->audio_data[sample_pos * 2];
-                    bufferR[i] +=
-                        tc->clip->audio_data[sample_pos * 2 + 1];
+                      sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
+                    bufferL[i] += tc->clip->audio_data[sample_pos * 2];
+                    bufferR[i] += tc->clip->audio_data[sample_pos * 2 + 1];
                   } else if (tc->clip->num_channels == 1 &&
-                             sample_pos <
-                                 (int)tc->clip->audio_data.size()) {
+                             sample_pos < (int)tc->clip->audio_data.size()) {
                     double s = tc->clip->audio_data[sample_pos];
                     bufferL[i] += s;
                     bufferR[i] += s;

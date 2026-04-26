@@ -560,8 +560,8 @@ public class BackendManager {
             .build());
   }
 
-  public void setTimelineClipLoop(int trackIndex, int clipIndex, boolean isLoop,
-      float loopIntervalBeats) {
+  public void setTimelineClipLoop(
+      int trackIndex, int clipIndex, boolean isLoop, float loopIntervalBeats) {
     sendRequest(
         Request.newBuilder()
             .setTrack(

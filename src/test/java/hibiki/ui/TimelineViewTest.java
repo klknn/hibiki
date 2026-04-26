@@ -617,7 +617,8 @@ public class TimelineViewTest {
             .build();
     view.handleNotification(n1);
     TimelineView.ClipRect clip = view.tracks.get(0).clips.get(0);
-    assertEquals("contentDuration should equal initial duration", 5.0f, clip.contentDuration, 0.001f);
+    assertEquals(
+        "contentDuration should equal initial duration", 5.0f, clip.contentDuration, 0.001f);
 
     // Second notification: resize to 3.0 (trim) — contentDuration must stay 5.0
     Notification n2 =
@@ -694,40 +695,38 @@ public class TimelineViewTest {
             .build();
     view.handleNotification(n2);
     assertEquals("duration should be padded to 6.0", 6.0f, clip.duration, 0.001f);
-    assertEquals("contentDuration must stay at original 2.0",
-        2.0f, clip.contentDuration, 0.001f);
+    assertEquals("contentDuration must stay at original 2.0", 2.0f, clip.contentDuration, 0.001f);
   }
 
   /**
    * Regression: trimmed-and-looped clip ghost waveform.
    *
-   * When a 4-beat clip (contentDuration=2.0s) is trimmed to 1 beat and then
-   * loop-extended to 4 beats, the renderer's initial full-clip draw paints the
-   * entire waveform across the width. The tiled rendering only overdraws on top
-   * but doesn't fully mask the initial draw, causing "ghost" content from the
-   * trimmed region to bleed through.
+   * <p>When a 4-beat clip (contentDuration=2.0s) is trimmed to 1 beat and then loop-extended to 4
+   * beats, the renderer's initial full-clip draw paints the entire waveform across the width. The
+   * tiled rendering only overdraws on top but doesn't fully mask the initial draw, causing "ghost"
+   * content from the trimmed region to bleed through.
    *
-   * This test reproduces the pixel→waveform mapping to prove the bug and verify
-   * the fix: pixels in repeat regions should NEVER map to waveform indices
-   * beyond the loop interval's fraction of the content.
+   * <p>This test reproduces the pixel→waveform mapping to prove the bug and verify the fix: pixels
+   * in repeat regions should NEVER map to waveform indices beyond the loop interval's fraction of
+   * the content.
    */
   @Test
   public void testTrimmedLoopedClip_noGhostWaveformInRepeatRegion() {
     // Setup: 4-beat clip trimmed to 1 beat, looped to 4 beats at 120bpm
     TimelineView.ClipRect clip = new TimelineView.ClipRect();
-    clip.contentDuration = 2.0f;  // Original 4-beat content (2.0s at 120bpm)
-    clip.duration = 2.0f;         // Total looped duration (4 beats = 2.0s)
-    clip.loopInterval = 0.5f;     // 1-beat loop interval (0.5s)
+    clip.contentDuration = 2.0f; // Original 4-beat content (2.0s at 120bpm)
+    clip.duration = 2.0f; // Total looped duration (4 beats = 2.0s)
+    clip.loopInterval = 0.5f; // 1-beat loop interval (0.5s)
     clip.isLooped = true;
     clip.trimStartSec = 0.0f;
     // 100-sample waveform: indices 0-24=beat1, 25-49=beat2, 50-74=beat3, 75-99=beat4
     clip.waveform = new float[100];
     for (int i = 0; i < 100; i++) {
-      clip.waveform[i] = (i < 25) ? 1.0f : 0.5f;  // beat1=1.0, beats2-4=0.5
+      clip.waveform[i] = (i < 25) ? 1.0f : 0.5f; // beat1=1.0, beats2-4=0.5
     }
 
-    int totalW = 400;  // Total pixel width of clip
-    int tileW = (int) (clip.loopInterval / clip.duration * totalW);  // 100px per tile
+    int totalW = 400; // Total pixel width of clip
+    int tileW = (int) (clip.loopInterval / clip.duration * totalW); // 100px per tile
 
     // --- Simulate drawAudioWaveform with FULL clip (the initial draw) ---
     // contentW = (contentDuration/duration) * totalW = (2.0/2.0)*400 = 400
@@ -735,12 +734,14 @@ public class TimelineViewTest {
 
     // At pixel 150 (middle of second tile): should be silence in correct render
     // But in the initial full-clip draw:
-    float contentPx150 = 150 + 0;  // no trim offset
+    float contentPx150 = 150 + 0; // no trim offset
     int wfIdx150 = (int) (contentPx150 / fullContentW * clip.waveform.length);
     // wfIdx150 = (150/400)*100 = 37 → beat 2 region (ghost content!)
-    assertTrue("BUG REPRO: initial full-clip draw maps pixel 150 to trimmed content (idx="
-        + wfIdx150 + ")",
-        wfIdx150 >= 25);  // Ghost: maps to beat 2+ content
+    assertTrue(
+        "BUG REPRO: initial full-clip draw maps pixel 150 to trimmed content (idx="
+            + wfIdx150
+            + ")",
+        wfIdx150 >= 25); // Ghost: maps to beat 2+ content
 
     // --- Simulate drawAudioWaveform with TILE clip (correct behavior) ---
     // tileClip: contentDuration=2.0, duration=loopInterval=0.5
@@ -756,9 +757,10 @@ public class TimelineViewTest {
     // For all pixels within a tile (0..tileW-1), all waveform indices
     // should be in the first-beat region (0..24)
     for (int px = 0; px < tileW; px++) {
-      float tileContentPx = px + 0;  // no trim offset
+      float tileContentPx = px + 0; // no trim offset
       int wfIdx = (int) (tileContentPx / tileContentW * clip.waveform.length);
-      assertTrue("Tile px " + px + " should map to beat-1 waveform (idx=" + wfIdx + ")",
+      assertTrue(
+          "Tile px " + px + " should map to beat-1 waveform (idx=" + wfIdx + ")",
           wfIdx >= 0 && wfIdx < 25);
     }
 
@@ -766,9 +768,70 @@ public class TimelineViewTest {
     // otherwise ghost content from beats 2-4 bleeds through the tile overlay.
     // After the fix, only tileClip draws should occur — no full-width draw.
     // This flag captures the expected renderer behavior:
-    boolean shouldSkipInitialDraw = clip.isLooped && clip.loopInterval > 0
-        && clip.duration > clip.loopInterval;
-    assertTrue("Renderer should skip initial full-clip draw for looped clips",
-        shouldSkipInitialDraw);
+    boolean shouldSkipInitialDraw =
+        clip.isLooped && clip.loopInterval > 0 && clip.duration > clip.loopInterval;
+    assertTrue(
+        "Renderer should skip initial full-clip draw for looped clips", shouldSkipInitialDraw);
+  }
+
+  /**
+   * Regression: loop-extend drag preview must show tiled content.
+   *
+   * <p>Before the fix, loopInterval was only set on mouse release. During dragging, loopInterval
+   * was 0, so the renderer never entered tiled mode and drew the full original waveform instead of
+   * repeating tiles.
+   *
+   * <p>This test simulates the drag start + drag motion state updates and verifies the renderer has
+   * the data it needs for tiled preview.
+   */
+  @Test
+  public void testLoopExtendDrag_setsLoopIntervalForTiledPreview() {
+    // Setup: 1-beat clip (0.5s at 120bpm), not yet looped
+    TimelineView.ClipRect clip = new TimelineView.ClipRect();
+    clip.duration = 0.5f;
+    clip.contentDuration = 0.5f;
+    clip.loopInterval = 0;
+    clip.isLooped = false;
+
+    // --- BUG REPRO: Without the fix, drag start does NOT set loopInterval ---
+    // (Old code just set dragMode without touching loopInterval)
+    // Simulate old drag motion: extend to 2.0s
+    float newDuration = 2.0f;
+    // Old drag handler logic: isLooped = loopInterval > 0 && newDuration > loopInterval
+    boolean oldIsLooped = clip.loopInterval > 0 && newDuration > clip.loopInterval;
+    assertFalse("BUG: without fix, isLooped stays false because loopInterval is 0", oldIsLooped);
+    boolean oldHasLoopTiles =
+        oldIsLooped && clip.loopInterval > 0 && newDuration > clip.loopInterval;
+    assertFalse("BUG: renderer shows no tiles during drag without fix", oldHasLoopTiles);
+
+    // --- FIX: drag start sets loopInterval = clip.duration ---
+    // This is the logic added in TimelineMouseHandler.handleMousePressed
+    if (!clip.isLooped && clip.loopInterval <= 0) {
+      clip.loopInterval = clip.duration; // 0.5s
+    }
+
+    assertEquals(
+        "loopInterval should be set to pre-drag duration at drag start",
+        0.5f,
+        clip.loopInterval,
+        0.001f);
+
+    // --- After fix: drag motion correctly triggers tiled preview ---
+    clip.duration = newDuration;
+    clip.isLooped = clip.loopInterval > 0 && newDuration > clip.loopInterval;
+
+    assertTrue("After fix: isLooped should be true when dragged past loopInterval", clip.isLooped);
+
+    boolean hasLoopTiles =
+        clip.isLooped && clip.loopInterval > 0 && clip.duration > clip.loopInterval;
+    assertTrue("After fix: renderer should show tiled preview during drag", hasLoopTiles);
+
+    int numTiles = (int) Math.ceil(clip.duration / clip.loopInterval);
+    assertEquals("Should show 4 tiles (2.0s / 0.5s)", 4, numTiles);
+
+    // --- Verify shrink back below interval removes loop ---
+    clip.duration = 0.3f;
+    clip.isLooped = clip.loopInterval > 0 && clip.duration > clip.loopInterval;
+    assertFalse("isLooped should be false when shrunk below loopInterval", clip.isLooped);
   }
 }

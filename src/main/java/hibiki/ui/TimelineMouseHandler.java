@@ -138,6 +138,10 @@ class TimelineMouseHandler {
         boolean topHalf = (e.getY() - clipY) <= clipH / 2;
         if (topHalf) {
           view.dragMode = TimelineView.DragMode.LOOP_EXTEND;
+          // Set loopInterval at drag start so renderer shows tiled preview
+          if (!clip.isLooped && clip.loopInterval <= 0) {
+            clip.loopInterval = clip.duration;
+          }
         } else {
           view.dragMode = TimelineView.DragMode.RESIZE_CLIP;
         }
@@ -421,8 +425,8 @@ class TimelineMouseHandler {
       // Compute loop interval in beats from the pre-drag duration (in seconds)
       float loopIntervalBeats = view.resizeClip.loopInterval * (view.bpm / 60.0f);
       // Set loop FIRST so the resize notification has correct loop state
-      BackendManager.getInstance().setTimelineClipLoop(
-          view.resizeTrackIdx, clipIndex, shouldLoop, loopIntervalBeats);
+      BackendManager.getInstance()
+          .setTimelineClipLoop(view.resizeTrackIdx, clipIndex, shouldLoop, loopIntervalBeats);
       BackendManager.getInstance()
           .resizeTimelineClip(view.resizeTrackIdx, clipIndex, durationBeats, trimStartBeats);
     }

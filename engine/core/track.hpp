@@ -33,7 +33,8 @@ struct TimelineClip {
   double duration_beats = 0.0;    // Duration in beats (for MIDI clips)
   double trim_start_beats = 0.0;  // Head-trim offset into clip content
   int alias_source = -1;  // Source clip index for aliases (-1 = not alias)
-  double loop_interval_beats = 0.0;  // Loop repeat period in beats (0 = full content)
+  double loop_interval_beats =
+      0.0;  // Loop repeat period in beats (0 = full content)
 };
 
 // Automation lane targeting a single plugin parameter

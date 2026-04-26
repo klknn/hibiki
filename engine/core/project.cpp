@@ -78,7 +78,8 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
       tcs->set_alias_source(tc->alias_source);
       clip->set_is_loop(tc->clip->is_loop);
       clip->set_trim_start_beats(tc->trim_start_beats);
-      clip->set_duration_beats(tc->loop_interval_beats);  // reuse field for loop interval
+      clip->set_duration_beats(
+          tc->loop_interval_beats);  // reuse field for loop interval
     }
 
     for (const auto& lane : track->automation_lanes) {
@@ -274,12 +275,12 @@ void SyncProjectToGui(const ProjectState& state) {
               ? (float)(tc->duration_beats * 60.0 / state.bpm)
               : (float)tc->duration_sec;
       float li_sec = (tc->loop_interval_beats > 0)
-          ? (float)(tc->loop_interval_beats * 60.0 / state.bpm) : 0.0f;
+                         ? (float)(tc->loop_interval_beats * 60.0 / state.bpm)
+                         : 0.0f;
       hibiki::sendTimelineClipInfo(tidx, tc_idx, cname, tc->clip->path,
                                    tc->start_time_sec, duration_for_gui,
                                    tc->clip->waveform_summary,
-                                   tc->clip->is_loop, tc->alias_source,
-                                   li_sec);
+                                   tc->clip->is_loop, tc->alias_source, li_sec);
     }
     // Sync Automation Lanes
     if (!track->automation_lanes.empty()) {

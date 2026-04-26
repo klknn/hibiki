@@ -731,8 +731,8 @@ class TimelineRenderer {
         // Draw content — skip initial full-clip draw for looped clips since
         // the tiled rendering below handles all tile draws. Drawing the full clip
         // first would cause ghost waveform from trimmed regions to bleed through.
-        boolean hasLoopTiles = clip.isLooped && clip.loopInterval > 0
-            && clip.duration > clip.loopInterval;
+        boolean hasLoopTiles =
+            clip.isLooped && clip.loopInterval > 0 && clip.duration > clip.loopInterval;
         if (!hasLoopTiles) {
           if (isMidi) {
             drawMidiPreview(g2, clip, x, contentY, w, contentH);

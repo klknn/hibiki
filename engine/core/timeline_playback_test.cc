@@ -488,9 +488,11 @@ struct LoopMidiEvent {
   bool isNoteOn;
 };
 
-std::vector<LoopMidiEvent> collectLoopMidiEvents(
-    const Track* track, double playhead_sec, double time_per_block,
-    double bpm, double sample_rate) {
+std::vector<LoopMidiEvent> collectLoopMidiEvents(const Track* track,
+                                                 double playhead_sec,
+                                                 double time_per_block,
+                                                 double bpm,
+                                                 double sample_rate) {
   std::vector<LoopMidiEvent> events;
   int block_size = (int)(time_per_block * sample_rate);
   for (const auto& tc : track->timeline_clips) {
@@ -514,17 +516,16 @@ std::vector<LoopMidiEvent> collectLoopMidiEvents(
           tc->trim_start_beats;
       // Loop wrapping for MIDI within trimmed range
       if (tc->clip->is_loop && loop_length_beats > 0) {
-        window_start_beats = tc->trim_start_beats +
+        window_start_beats =
+            tc->trim_start_beats +
             std::fmod(window_start_beats - tc->trim_start_beats,
                       loop_length_beats);
-        window_end_beats =
-            window_start_beats + time_per_block * beats_per_sec;
+        window_end_beats = window_start_beats + time_per_block * beats_per_sec;
       }
       for (const auto& me : tc->clip->midi_events) {
         double me_beats = me.beats;
         // Skip events outside the trimmed content range
-        if (me_beats < tc->trim_start_beats ||
-            me_beats >= content_dur_beats)
+        if (me_beats < tc->trim_start_beats || me_beats >= content_dur_beats)
           continue;
         double loop_end_beats = tc->trim_start_beats + loop_length_beats;
         if (tc->clip->is_loop && loop_length_beats > 0 &&
@@ -533,8 +534,8 @@ std::vector<LoopMidiEvent> collectLoopMidiEvents(
               (me_beats >= window_start_beats && me_beats < window_end_beats) ||
               (me_beats >= tc->trim_start_beats &&
                me_beats < tc->trim_start_beats +
-                   std::fmod(window_end_beats - tc->trim_start_beats,
-                             loop_length_beats));
+                              std::fmod(window_end_beats - tc->trim_start_beats,
+                                        loop_length_beats));
           if (!in_range) continue;
         } else {
           if (me_beats < window_start_beats || me_beats >= window_end_beats)
@@ -545,8 +546,7 @@ std::vector<LoopMidiEvent> collectLoopMidiEvents(
         if (tc->clip->is_loop && loop_length_beats > 0) {
           double rel_beat = me.beats - tc->trim_start_beats;
           double loop_length_sec = loop_length_beats / beats_per_sec;
-          double local_in_content =
-              std::fmod(clip_local_time, loop_length_sec);
+          double local_in_content = std::fmod(clip_local_time, loop_length_sec);
           event_local_sec = rel_beat / beats_per_sec - local_in_content;
           if (event_local_sec < 0) event_local_sec += loop_length_sec;
         }
@@ -590,22 +590,22 @@ TEST_F(TimelinePlaybackTest, MidiLoopWrapsWithinTrimmedRange) {
 
   // At playhead 0.0s: first block of trimmed loop starts at beat 2
   // Note at beat 2 (pitch 62) should play
-  auto events = collectLoopMidiEvents(
-      track, 0.0, time_per_block, state.bpm, state.sample_rate);
+  auto events = collectLoopMidiEvents(track, 0.0, time_per_block, state.bpm,
+                                      state.sample_rate);
   ASSERT_EQ(events.size(), 1) << "Note at beat 2 should play at start";
   EXPECT_EQ(events[0].pitch, 62) << "Should be the note at beat 2";
 
   // At playhead corresponding to beat 3 (0.5s at 120bpm):
   // Note at beat 3 (pitch 63) should play
-  events = collectLoopMidiEvents(
-      track, 0.5, time_per_block, state.bpm, state.sample_rate);
+  events = collectLoopMidiEvents(track, 0.5, time_per_block, state.bpm,
+                                 state.sample_rate);
   ASSERT_EQ(events.size(), 1) << "Note at beat 3 should play at 0.5s";
   EXPECT_EQ(events[0].pitch, 63);
 
   // Second repetition: loop length = 2 beats = 1.0s
   // At playhead 1.0s: should wrap back to beat 2 (note 62)
-  events = collectLoopMidiEvents(
-      track, 1.0, time_per_block, state.bpm, state.sample_rate);
+  events = collectLoopMidiEvents(track, 1.0, time_per_block, state.bpm,
+                                 state.sample_rate);
   ASSERT_EQ(events.size(), 1) << "Loop should repeat note at beat 2";
   EXPECT_EQ(events[0].pitch, 62) << "Second repetition should be beat 2 note";
 }
@@ -640,8 +640,8 @@ TEST_F(TimelinePlaybackTest, TrimmedMidiEventsBeforeTrimStartExcluded) {
   // Sweep through the clip: collect all events
   std::set<int> pitches_heard;
   for (double t = 0.0; t < 1.0; t += time_per_block) {
-    auto events = collectLoopMidiEvents(
-        track, t, time_per_block, state.bpm, state.sample_rate);
+    auto events = collectLoopMidiEvents(track, t, time_per_block, state.bpm,
+                                        state.sample_rate);
     for (auto& e : events) pitches_heard.insert(e.pitch);
   }
 
@@ -671,7 +671,7 @@ TEST_F(TimelinePlaybackTest, AudioLoopWrapsWithinTrimmedRange) {
 
   auto tc = std::make_unique<TimelineClip>();
   tc->start_time_sec = 0.0;
-  tc->duration_sec = 4.0;  // looped: 1s content × 4
+  tc->duration_sec = 4.0;      // looped: 1s content × 4
   tc->trim_start_beats = 2.0;  // At 120bpm: 2 beats = 1 second = half the clip
   tc->clip = std::move(clip);
   track->timeline_clips.push_back(std::move(tc));
@@ -683,7 +683,9 @@ TEST_F(TimelinePlaybackTest, AudioLoopWrapsWithinTrimmedRange) {
   double time_per_block = block_size / state.sample_rate;
   double clip_local_time = 0.0;
   double bps = state.bpm / 60.0;
-  int trim_samples = (bps > 0) ? (int)(stored_tc->trim_start_beats / bps * state.sample_rate) : 0;
+  int trim_samples =
+      (bps > 0) ? (int)(stored_tc->trim_start_beats / bps * state.sample_rate)
+                : 0;
   int content_samples = total_samples;
   int loop_len = content_samples - trim_samples;
   int start_sample = trim_samples + (int)(clip_local_time * state.sample_rate);
@@ -754,8 +756,8 @@ TEST_F(TimelinePlaybackTest, TrimmedClipDenseRepeat) {
   std::vector<double> expected_times = {0.0, 0.5, 1.0, 1.5};
   int found = 0;
   for (double t : expected_times) {
-    auto events = collectLoopMidiEvents(
-        track, t, time_per_block, state.bpm, state.sample_rate);
+    auto events = collectLoopMidiEvents(track, t, time_per_block, state.bpm,
+                                        state.sample_rate);
     EXPECT_GE(events.size(), 1)
         << "Note should play at t=" << t << "s (dense repeat)";
     if (!events.empty()) {
@@ -766,8 +768,8 @@ TEST_F(TimelinePlaybackTest, TrimmedClipDenseRepeat) {
   EXPECT_EQ(found, 4) << "Note should repeat exactly 4 times";
 
   // Between repeats (at 0.25s = beat 0.5): no note should play
-  auto events = collectLoopMidiEvents(
-      track, 0.25, time_per_block, state.bpm, state.sample_rate);
+  auto events = collectLoopMidiEvents(track, 0.25, time_per_block, state.bpm,
+                                      state.sample_rate);
   EXPECT_EQ(events.size(), 0)
       << "No note should play between repeat boundaries";
 }
@@ -797,7 +799,8 @@ TEST_F(TimelinePlaybackTest, PaddedClipSparseRepeat) {
   tc->duration_sec = 4.0;
   tc->duration_beats = 8.0;
   tc->trim_start_beats = 0.0;
-  tc->loop_interval_beats = 4.0;  // Repeat every 4 beats (2.0s) — includes padding
+  tc->loop_interval_beats =
+      4.0;  // Repeat every 4 beats (2.0s) — includes padding
   tc->clip = std::move(clip);
   track->timeline_clips.push_back(std::move(tc));
 
@@ -808,12 +811,14 @@ TEST_F(TimelinePlaybackTest, PaddedClipSparseRepeat) {
   // Helper: compute sample position for a given playhead time
   auto getSampleAt = [&](double playhead_sec) -> int {
     double clip_local = playhead_sec - stored_tc->start_time_sec;
-    int trim_samp = (bps > 0) ? (int)(stored_tc->trim_start_beats / bps *
-                                       state.sample_rate) : 0;
+    int trim_samp =
+        (bps > 0) ? (int)(stored_tc->trim_start_beats / bps * state.sample_rate)
+                  : 0;
     int start_samp = trim_samp + (int)(clip_local * state.sample_rate);
-    int loop_len = (stored_tc->loop_interval_beats > 0 && bps > 0)
-        ? (int)(stored_tc->loop_interval_beats / bps * state.sample_rate)
-        : content_samples - trim_samp;
+    int loop_len =
+        (stored_tc->loop_interval_beats > 0 && bps > 0)
+            ? (int)(stored_tc->loop_interval_beats / bps * state.sample_rate)
+            : content_samples - trim_samp;
     if (stored_clip->is_loop && loop_len > 0) {
       start_samp = trim_samp + ((start_samp - trim_samp) % loop_len);
     }
@@ -828,8 +833,7 @@ TEST_F(TimelinePlaybackTest, PaddedClipSparseRepeat) {
 
   // First repetition: t=0.25s → sample in audio region (within 0.5s content)
   int s1 = getSampleAt(0.25);
-  EXPECT_LT(s1, content_samples)
-      << "t=0.25s should be in audio region";
+  EXPECT_LT(s1, content_samples) << "t=0.25s should be in audio region";
   EXPECT_FLOAT_EQ(stored_clip->audio_data[s1], 1.0f)
       << "Audio region should have content";
 
@@ -843,8 +847,7 @@ TEST_F(TimelinePlaybackTest, PaddedClipSparseRepeat) {
   // Second repetition: t=2.0s → wraps to start of loop interval
   // Should be back at sample 0 (audio region again)
   int s3 = getSampleAt(2.0);
-  EXPECT_EQ(s3, 0)
-      << "t=2.0s should wrap to start of loop (second repetition)";
+  EXPECT_EQ(s3, 0) << "t=2.0s should wrap to start of loop (second repetition)";
 
   // Second repetition: t=3.0s → 1.0s into second period → padding
   int s4 = getSampleAt(3.0);
@@ -853,4 +856,3 @@ TEST_F(TimelinePlaybackTest, PaddedClipSparseRepeat) {
 }
 
 }  // namespace hibiki
-

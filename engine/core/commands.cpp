@@ -755,6 +755,12 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
           }
           sendParamList(tidx, target_idx, plugin->getName(),
                         plugin->isInstrument(), params);
+          // Push all current param values to UI so knobs reflect
+          // the state set during load() (e.g. DX7 preset import).
+          for (int i = 0; i < plugin->getParameterCount(); ++i) {
+            sendParamValueChange(tidx, target_idx, i,
+                                 plugin->getParameterValue(i));
+          }
           // If instrument was inserted at front, re-send param lists for all
           // shifted effect plugins so Java panel indices stay in sync.
           if (plugin->isInstrument() && !displaced) {

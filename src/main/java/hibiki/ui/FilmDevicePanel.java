@@ -12,17 +12,17 @@ import javax.swing.*;
  * (Main/Op1-6/Filter1-3/FX), right side has always-visible 6×12 modulation matrix.
  */
 public class FilmDevicePanel extends JPanel {
-  private static final int NUM_OPS = 6;
-  private static final int NUM_FILTERS = 3;
-  private static final int PARAMS_PER_OP = 23;
-  private static final int PARAMS_PER_FILTER = 12;
+  static final int NUM_OPS = 6;
+  static final int NUM_FILTERS = 3;
+  static final int PARAMS_PER_OP = 23;
+  static final int PARAMS_PER_FILTER = 12;
   private static final int OP_PARAMS = NUM_OPS * PARAMS_PER_OP; // 138
   private static final int FILTER_PARAMS = NUM_FILTERS * PARAMS_PER_FILTER; // 36
-  private static final int GLOBAL_PARAMS = 7;
+  static final int NUM_GLOBAL = 7;
   private static final int MATRIX_COLS = 12;
   private static final int MATRIX_PARAMS = NUM_OPS * MATRIX_COLS; // 72
-  private static final int TOTAL_PARAMS = OP_PARAMS + FILTER_PARAMS + GLOBAL_PARAMS + MATRIX_PARAMS;
-  private static final int MATRIX_BASE = OP_PARAMS + FILTER_PARAMS + GLOBAL_PARAMS;
+  private static final int TOTAL_PARAMS = OP_PARAMS + FILTER_PARAMS + NUM_GLOBAL + MATRIX_PARAMS;
+  private static final int MATRIX_BASE = OP_PARAMS + FILTER_PARAMS + NUM_GLOBAL;
 
   // Waveform names and normalized values
   private static final String[] WAVE_NAMES = {"Sin", "Saw", "Sq", "Tri", "Nse"};
@@ -45,7 +45,7 @@ public class FilmDevicePanel extends JPanel {
   private static final int G_PORTAMENTO = G_ALGORITHM + 6;
 
   // Per-op param offsets (relative)
-  private static final int OP_WAVEFORM = 0, OP_LEVEL = 1, OP_RATIO = 2, OP_FINE = 3;
+  static final int OP_WAVEFORM = 0, OP_LEVEL = 1, OP_RATIO = 2, OP_FINE = 3;
   private static final int OP_ENV_A = 4, OP_ENV_D = 5, OP_ENV_S = 6, OP_ENV_R = 7;
   private static final int OP_FEEDBACK = 8, OP_PAN = 9;
   private static final int OP_LFO_RATE = 10, OP_LFO_DEPTH = 11, OP_LFO_WAVE = 12, OP_PHASE = 13;
@@ -64,6 +64,7 @@ public class FilmDevicePanel extends JPanel {
   private final double[] params = new double[TOTAL_PARAMS];
   private boolean enabled = true;
   private final KnobPanel[] matrixKnobs = new KnobPanel[MATRIX_PARAMS];
+  private final java.util.Map<Integer, KnobPanel> allKnobs = new java.util.HashMap<>();
 
   public Runnable modToggleCallback;
 
@@ -502,6 +503,7 @@ public class FilmDevicePanel extends JPanel {
         Color knobColor = r == c ? OP_COLORS[r] : (c < 6 ? ACCENT_YELLOW : ACCENT_PURPLE);
         KnobPanel knob = new MatrixKnobPanel(paramIdx, defaultVal, knobColor);
         matrixKnobs[r * MATRIX_COLS + c] = knob;
+        allKnobs.put(paramIdx, knob);
         JPanel cell = new JPanel(new BorderLayout());
         cell.setBackground(MATRIX_BG);
         cell.add(knob, BorderLayout.CENTER);
@@ -525,6 +527,7 @@ public class FilmDevicePanel extends JPanel {
     p.setPreferredSize(new Dimension(theme.scale(40), theme.scale(52)));
 
     KnobPanel knob = new KnobPanel(paramId, defaultVal);
+    allKnobs.put(paramId, knob);
     p.add(knob, BorderLayout.CENTER);
 
     JLabel l = new JLabel(label, SwingConstants.CENTER);
@@ -540,8 +543,23 @@ public class FilmDevicePanel extends JPanel {
   public void handleParamChange(int paramId, double value) {
     if (paramId >= 0 && paramId < TOTAL_PARAMS) {
       params[paramId] = value;
+      KnobPanel knob = allKnobs.get(paramId);
+      if (knob != null) {
+        knob.value = value;
+      }
       repaint();
     }
+  }
+
+  /** Test accessor: get the params[] array value for a given paramId. */
+  double getParamValue(int paramId) {
+    return params[paramId];
+  }
+
+  /** Test accessor: get the KnobPanel's rendered value for a given paramId. */
+  double getKnobValue(int paramId) {
+    KnobPanel knob = allKnobs.get(paramId);
+    return knob != null ? knob.value : Double.NaN;
   }
 
   private void sendParam(int paramId, double value) {

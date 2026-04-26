@@ -237,6 +237,21 @@ TEST(BuiltinFilmTest, LoadWithSyxPathProducesOutput) {
 
   // Verify the path still starts with the expected prefix.
   EXPECT_EQ(load_path.substr(0, 14), "builtin://film");
+
+  // After loading a DX7 voice, getParameterValue should return non-default
+  // values for multiple operators (the BRASS patch has several active ops).
+  // This is what the UI needs to query to update knobs.
+  bool any_non_default_level = false;
+  for (int op = 0; op < BuiltinFilm::kNumOps; ++op) {
+    double level = film.getParameterValue(op * BuiltinFilm::kParamsPerOp +
+                                          BuiltinFilm::OP_LEVEL);
+    if (level > 0.01 && level < 0.99) {
+      any_non_default_level = true;
+    }
+  }
+  EXPECT_TRUE(any_non_default_level)
+      << "DX7 voice should set non-trivial operator levels readable via "
+         "getParameterValue";
 }
 
 TEST(BuiltinFilmTest, Dx7SysexImport) {

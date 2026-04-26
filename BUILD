@@ -188,6 +188,16 @@ java_test(
 )
 
 java_test(
+    name = "film_device_panel_test",
+    srcs = ["src/test/java/hibiki/ui/FilmDevicePanelTest.java"],
+    test_class = "hibiki.ui.FilmDevicePanelTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
     name = "automation_mouse_handler_test",
     srcs = ["src/test/java/hibiki/ui/AutomationMouseHandlerTest.java"],
     test_class = "hibiki.ui.AutomationMouseHandlerTest",

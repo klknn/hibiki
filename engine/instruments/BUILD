@@ -82,6 +82,7 @@ cc_test(
 cc_test(
     name = "builtin_film_test",
     srcs = ["builtin_film_test.cpp"],
+    data = ["//testdata"],
     linkstatic = True,
     deps = [
         ":builtin_film",

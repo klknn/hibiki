@@ -313,6 +313,35 @@ public class BrowserPane extends JPanel {
     FileItem filmItem = new FileItem(new File("builtin"), "builtin", "FilM", "Hibiki", 0);
     filmItem.rawPath = "builtin://film";
     builtinNode.add(new DefaultMutableTreeNode(filmItem));
+
+    // DX7 SysEx presets: scan testdata/ for .syx files and list patches.
+    DefaultMutableTreeNode dx7Node = new DefaultMutableTreeNode("DX7 Presets");
+    File testDataDir = new File("testdata");
+    if (testDataDir.exists() && testDataDir.isDirectory()) {
+      File[] syxFiles = testDataDir.listFiles((dir, name) -> name.toLowerCase().endsWith(".syx"));
+      if (syxFiles != null) {
+        Arrays.sort(syxFiles);
+        for (File syxFile : syxFiles) {
+          String[] names = readDx7PatchNames(syxFile);
+          if (names != null && names.length > 0) {
+            DefaultMutableTreeNode bankNode =
+                new DefaultMutableTreeNode(syxFile.getName().replace(".syx", ""));
+            for (int i = 0; i < names.length; i++) {
+              String patchName = String.format("%02d: %s", i + 1, names[i].trim());
+              FileItem presetItem = new FileItem(syxFile, "builtin", patchName, "DX7", 0);
+              presetItem.rawPath =
+                  "builtin://film?syx=" + syxFile.getAbsolutePath() + "&voice=" + i;
+              bankNode.add(new DefaultMutableTreeNode(presetItem));
+            }
+            dx7Node.add(bankNode);
+          }
+        }
+      }
+    }
+    if (dx7Node.getChildCount() > 0) {
+      builtinNode.add(dx7Node);
+    }
+
     root.add(builtinNode);
 
     root.add(pluginsNode);
@@ -541,6 +570,34 @@ public class BrowserPane extends JPanel {
                             EntityRef.newBuilder().setTrackIndex(trackIndex).setSessionSlot(0))
                         .setClipData(Clip.newBuilder().setPath(path).setIsLoop(isLoop)))
                 .build());
+  }
+
+  // --- DX7 SysEx patch name reader ---
+  // Reads a 32-voice bulk dump and returns 32 patch name strings.
+  private static String[] readDx7PatchNames(File syxFile) {
+    try {
+      java.io.FileInputStream fis = new java.io.FileInputStream(syxFile);
+      byte[] data = fis.readAllBytes();
+      fis.close();
+      if (data.length < 4104) return null;
+      // Validate header: F0 43 0x 09 20 00
+      if ((data[0] & 0xFF) != 0xF0 || (data[1] & 0xFF) != 0x43) return null;
+      if ((data[3] & 0xFF) != 0x09) return null;
+
+      String[] names = new String[32];
+      for (int v = 0; v < 32; v++) {
+        int offset = 6 + v * 128; // skip 6-byte header
+        char[] nameChars = new char[10];
+        for (int c = 0; c < 10; c++) {
+          int b = data[offset + 118 + c] & 0x7F;
+          nameChars[c] = (b >= 32 && b < 127) ? (char) b : ' ';
+        }
+        names[v] = new String(nameChars);
+      }
+      return names;
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   public static class FileItem {

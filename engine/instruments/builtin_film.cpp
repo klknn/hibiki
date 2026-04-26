@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
+#include <fstream>
 
 #include "absl/base/optimization.h"
 
@@ -36,10 +38,41 @@ float whiteNoise() {
 
 BuiltinFilm::BuiltinFilm() { reset(); }
 
-bool BuiltinFilm::load(const std::string& /*path*/, int /*plugin_index*/,
+bool BuiltinFilm::load(const std::string& path, int /*plugin_index*/,
                        double sample_rate) {
   sample_rate_ = sample_rate;
   reset();
+
+  // Support loading DX7 presets: builtin://film?syx=PATH&voice=N
+  auto syx_pos = path.find("syx=");
+  auto voice_pos = path.find("voice=");
+  if (syx_pos != std::string::npos && voice_pos != std::string::npos) {
+    // Extract syx file path and voice index.
+    std::string syx_path;
+    size_t syx_start = syx_pos + 4;
+    size_t syx_end = path.find('&', syx_start);
+    if (syx_end == std::string::npos) syx_end = path.size();
+    syx_path = path.substr(syx_start, syx_end - syx_start);
+
+    int voice_idx = 0;
+    size_t v_start = voice_pos + 6;
+    size_t v_end = path.find('&', v_start);
+    if (v_end == std::string::npos) v_end = path.size();
+    voice_idx = std::atoi(path.substr(v_start, v_end - v_start).c_str());
+
+    // Read .syx file.
+    std::ifstream file(syx_path, std::ios::binary);
+    if (file.good()) {
+      std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)),
+                                std::istreambuf_iterator<char>());
+      Dx7Voice voices[32];
+      int count = parseDx7Sysex(data.data(), data.size(), voices);
+      if (voice_idx >= 0 && voice_idx < count) {
+        loadDx7Voice(voices[voice_idx]);
+      }
+    }
+  }
+
   return true;
 }
 
@@ -639,6 +672,194 @@ void BuiltinFilm::reset() {
       v.filters[f].lfo_phase = 0;
     }
   }
+}
+// --- DX7 SysEx Import ---
+
+int BuiltinFilm::parseDx7Sysex(const uint8_t* data, size_t len,
+                               Dx7Voice voices[32]) {
+  // Validate 32-voice bulk dump: F0 43 0s 09 20 00 ... checksum F7
+  if (len < 4104) return 0;
+  if (data[0] != 0xF0 || data[1] != 0x43) return 0;
+  if ((data[2] & 0xF0) != 0x00) return 0;            // sub-status 0
+  if (data[3] != 0x09) return 0;                     // format 9 = 32 voices
+  if (data[4] != 0x20 || data[5] != 0x00) return 0;  // 4096 bytes
+
+  const uint8_t* voice_data = data + 6;
+
+  for (int v = 0; v < 32; ++v) {
+    const uint8_t* vd = voice_data + v * 128;
+    std::memcpy(voices[v].data, vd, 128);
+    // Extract name from bytes 118-127.
+    for (int c = 0; c < 10; ++c) {
+      char ch = (char)(vd[118 + c] & 0x7F);
+      voices[v].name[c] = (ch >= 32 && ch < 127) ? ch : ' ';
+    }
+    voices[v].name[10] = '\0';
+  }
+  return 32;
+}
+
+std::vector<std::string> BuiltinFilm::getDx7PatchNames(const uint8_t* data,
+                                                       size_t len) {
+  Dx7Voice voices[32];
+  int count = parseDx7Sysex(data, len, voices);
+  std::vector<std::string> names;
+  names.reserve(count);
+  for (int i = 0; i < count; ++i) {
+    names.emplace_back(voices[i].name);
+  }
+  return names;
+}
+
+void BuiltinFilm::loadDx7Voice(const Dx7Voice& voice) {
+  reset();  // start clean
+
+  const uint8_t* d = voice.data;
+
+  // --- Parse 6 operators (DX7 stores op6 first, op1 last) ---
+  for (int dx_op = 0; dx_op < 6; ++dx_op) {
+    // DX7: op6=bytes[0..16], op5=[17..33], ... op1=[85..101]
+    // FilM: op0=OP1, op1=OP2, ... op5=OP6
+    int film_op = 5 - dx_op;  // DX7 op6 → FilM op5 (OP6)
+    int dx_base = dx_op * 17;
+    int base = opBase(film_op);
+
+    // EG rates (0-99) → approximate ADSR.
+    // DX7 has 4 rates + 4 levels. We map:
+    //   Attack  = rate1 + level1 determines attack time
+    //   Decay   = rate2 determines decay time
+    //   Sustain = level3 determines sustain level
+    //   Release = rate4 determines release time
+    float r1 = d[dx_base + 0] / 99.0f;
+    float r2 = d[dx_base + 1] / 99.0f;
+    float r4 = d[dx_base + 3] / 99.0f;
+    float l3 = d[dx_base + 6] / 99.0f;
+
+    // DX7 rates: high = fast. Invert for ADSR time params.
+    params_[base + OP_ENV_A] = 1.0f - r1;  // attack time
+    params_[base + OP_ENV_D] = 1.0f - r2;  // decay time
+    params_[base + OP_ENV_S] = l3;         // sustain level
+    params_[base + OP_ENV_R] = 1.0f - r4;  // release time
+
+    // Output level (byte 14, 0-99) → level (0-1).
+    float ol = d[dx_base + 14] / 99.0f;
+    params_[base + OP_LEVEL] = ol;
+
+    // Osc mode (byte 15, bit 0): 0=ratio, 1=fixed.
+    // Freq coarse (byte 15, bits 1-5, 0-31).
+    // Freq fine (byte 16, 0-99).
+    int mode = d[dx_base + 15] & 0x01;
+    int coarse = (d[dx_base + 15] >> 1) & 0x1F;
+    int fine = d[dx_base + 16] & 0x7F;
+
+    if (mode == 0) {
+      // Ratio mode: coarse=0→0.5x, 1→1x, 2→2x... 31→31x
+      // Map to FilM ratio knob (0→0.5x, 0.5→1x, 1→16x exponential).
+      float ratio;
+      if (coarse == 0) {
+        ratio = 0.5f;
+      } else {
+        ratio = (float)coarse;
+      }
+      ratio *= (1.0f + fine / 100.0f);
+      // Inverse of normToRatio: ratio = 0.5 * 32^norm → norm =
+      // log(ratio/0.5)/log(32)
+      float norm = std::log(ratio / 0.5f) / std::log(32.0f);
+      params_[base + OP_RATIO] = std::clamp(norm, 0.0f, 1.0f);
+    } else {
+      // Fixed freq mode: approximate. coarse sets power of 10, fine adds.
+      float fixed_hz = std::pow(10.0f, coarse % 4) * (1.0f + fine / 100.0f);
+      // Map to freq offset (center = 0.5 = 0Hz, range ±100Hz).
+      float norm_offset = std::clamp(fixed_hz / 200.0f + 0.5f, 0.0f, 1.0f);
+      params_[base + OP_FREQ_OFFSET] = norm_offset;
+      params_[base + OP_RATIO] = 0.5f;  // 1x base
+    }
+
+    // Detune (byte 12, bits 3-6, 0-14, center=7)
+    int detune = (d[dx_base + 12] >> 3) & 0x0F;
+    float fine_norm = 0.5f + (detune - 7) / 14.0f;
+    params_[base + OP_FINE] = std::clamp(fine_norm, 0.0f, 1.0f);
+
+    // Amp mod sensitivity (byte 13, bits 0-1)
+    // Key velocity sensitivity (byte 13, bits 2-4)
+    // Rate scaling (byte 12, bits 0-2)
+    // We map amp mod sensitivity to LFO depth.
+    int ams = d[dx_base + 13] & 0x03;
+    params_[base + OP_LFO_DEPTH] = ams / 3.0f;
+
+    // Waveform: DX7 only has sine. Keep as sine.
+    params_[base + OP_WAVEFORM] = 0.0f;
+    params_[base + OP_PAN] = 0.5f;
+  }
+
+  // --- Global parameters ---
+  // Algorithm (byte 110, bits 0-4, 0-31) → normalize to 0..1.
+  int algo = d[110] & 0x1F;
+  params_[G_ALGORITHM] = algo / 31.0f;
+
+  // Feedback (byte 111, bits 0-2, 0-7).
+  int fb = d[111] & 0x07;
+  // Apply feedback to all ops via the OP_FEEDBACK param on the carrier.
+  // In DX7, feedback only applies to the last op in the algorithm chain.
+  // We'll distribute it to the diagonal of the mod matrix.
+  float fb_norm = fb / 7.0f;
+  // Set op1 self-feedback in matrix (diagonal).
+  for (int o = 0; o < kNumOps; ++o) {
+    params_[matrixIdx(o, o)] = 0.5f + fb_norm * 0.3f;  // slight self-mod
+  }
+
+  // LFO speed (byte 112, 0-99) → LFO rate for all ops.
+  float lfo_speed = d[112] / 99.0f;
+  for (int o = 0; o < kNumOps; ++o) {
+    params_[opBase(o) + OP_LFO_RATE] = lfo_speed;
+  }
+
+  // LFO pitch mod depth (byte 114, 0-99).
+  // LFO amp mod depth (byte 115, 0-99).
+  float lf_pmd = d[114] / 99.0f;
+  float lf_amd = d[115] / 99.0f;
+  (void)lf_pmd;  // pitch mod: not directly mapped yet
+  for (int o = 0; o < kNumOps; ++o) {
+    // Combine AMS and global amp mod depth.
+    float existing = params_[opBase(o) + OP_LFO_DEPTH];
+    params_[opBase(o) + OP_LFO_DEPTH] = std::min(1.0f, existing * lf_amd);
+  }
+
+  // LFO waveform (byte 116, bits 1-3, 0-5): TR/SD/SU/SQ/SI/SH
+  // Map to FilM: 0=Sin, 0.5=Tri, 1.0=Sq
+  int lfo_wf = (d[116] >> 1) & 0x07;
+  float lfo_wf_norm = 0.0f;  // default sin
+  if (lfo_wf == 0)
+    lfo_wf_norm = 0.5f;  // triangle
+  else if (lfo_wf == 3)
+    lfo_wf_norm = 1.0f;  // square
+  else if (lfo_wf == 4)
+    lfo_wf_norm = 0.0f;  // sine
+  for (int o = 0; o < kNumOps; ++o) {
+    params_[opBase(o) + OP_LFO_WAVE] = lfo_wf_norm;
+  }
+
+  // Set op1 direct output in matrix to be audible.
+  params_[matrixIdx(0, kNumOps + 3 + 2)] = 0.75f;  // output col
+  // Also set some carrier ops to output based on algorithm.
+  // Simple heuristic: for common algorithms, ops 1-3 are carriers.
+  if (algo <= 3) {
+    params_[matrixIdx(0, kNumOps + 3 + 2)] = 0.75f;
+  } else if (algo <= 7) {
+    params_[matrixIdx(0, kNumOps + 3 + 2)] = 0.75f;
+    params_[matrixIdx(2, kNumOps + 3 + 2)] = 0.75f;
+  } else {
+    // Default: all ops with high output level get some direct output.
+    for (int o = 0; o < kNumOps; ++o) {
+      if (params_[opBase(o) + OP_LEVEL] > 0.5f) {
+        params_[matrixIdx(o, kNumOps + 3 + 2)] = 0.7f;
+      }
+    }
+  }
+
+  // Master volume.
+  params_[G_MASTER_VOL] = 0.8f;
+  enabled_ = true;
 }
 
 }  // namespace hibiki

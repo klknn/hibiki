@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <fstream>
 #include <vector>
 
 namespace hibiki {
@@ -202,6 +203,85 @@ TEST(BuiltinFilmTest, NameAndPath) {
   EXPECT_TRUE(film.isInstrument());
   EXPECT_EQ(film.getParameterCount(), BuiltinFilm::kTotalParams);
   EXPECT_EQ(film.getParameterCount(), 253);
+}
+
+TEST(BuiltinFilmTest, LoadWithSyxPathProducesOutput) {
+  // Simulate what BrowserPane sends: builtin://film?syx=PATH&voice=N
+  // The engine should parse the syx/voice params and auto-load the DX7 voice.
+  std::string syx_path = "testdata/rom1a.syx";
+  std::string load_path = "builtin://film?syx=" + syx_path + "&voice=0";
+
+  BuiltinFilm film;
+  film.load(load_path, 0, 44100.0);
+
+  // Play a note and verify output.
+  constexpr int N = 1024;
+  float outL[N], outR[N];
+  float* outs[2] = {outL, outR};
+  std::vector<MidiNoteEvent> events;
+  MidiNoteEvent ev{};
+  ev.pitch = 60;
+  ev.velocity = 1.0f;
+  ev.isNoteOn = true;
+  events.push_back(ev);
+
+  auto ctx = MakeContext();
+  film.process(nullptr, outs, N, ctx, events);
+
+  float peak = 0;
+  for (int i = 0; i < N; ++i) {
+    peak = std::max(peak, std::abs(outL[i]));
+  }
+  EXPECT_GT(peak, 0.01f)
+      << "Loading via syx path should produce audible output";
+
+  // Verify the path still starts with the expected prefix.
+  EXPECT_EQ(load_path.substr(0, 14), "builtin://film");
+}
+
+TEST(BuiltinFilmTest, Dx7SysexImport) {
+  // Read the DX7 ROM1A sysex testdata.
+  std::ifstream file("testdata/rom1a.syx", std::ios::binary);
+  ASSERT_TRUE(file.good()) << "Could not open testdata/rom1a.syx";
+  std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)),
+                            std::istreambuf_iterator<char>());
+  ASSERT_EQ(data.size(), 4104u);
+
+  // Parse patch names.
+  auto names = BuiltinFilm::getDx7PatchNames(data.data(), data.size());
+  ASSERT_EQ(names.size(), 32u);
+  // First patch in ROM1A is "BRASS   1 ".
+  EXPECT_TRUE(names[0].find("BRASS") != std::string::npos)
+      << "First patch name: '" << names[0] << "'";
+
+  // Parse voices.
+  BuiltinFilm::Dx7Voice voices[32];
+  int count = BuiltinFilm::parseDx7Sysex(data.data(), data.size(), voices);
+  ASSERT_EQ(count, 32);
+
+  // Load voice and verify it produces audio.
+  BuiltinFilm film;
+  film.load("", 0, 44100.0);
+  film.loadDx7Voice(voices[0]);
+
+  constexpr int N = 1024;
+  float outL[N], outR[N];
+  float* outs[2] = {outL, outR};
+  std::vector<MidiNoteEvent> events;
+  MidiNoteEvent ev{};
+  ev.pitch = 60;
+  ev.velocity = 1.0f;
+  ev.isNoteOn = true;
+  events.push_back(ev);
+
+  auto ctx = MakeContext();
+  film.process(nullptr, outs, N, ctx, events);
+
+  float peak = 0;
+  for (int i = 0; i < N; ++i) {
+    peak = std::max(peak, std::abs(outL[i]));
+  }
+  EXPECT_GT(peak, 0.01f) << "DX7 BRASS patch should produce audible output";
 }
 
 }  // namespace

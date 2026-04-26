@@ -59,7 +59,7 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
   } else if (path == BuiltinPhaser::kPath) {
     plugin = std::make_unique<BuiltinPhaser>();
     plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinFilm::kPath) {
+  } else if (path.rfind(BuiltinFilm::kPath, 0) == 0) {
     plugin = std::make_unique<BuiltinFilm>();
     plugin->load(path, 0, sample_rate);
   } else if (!remote_host.empty()) {

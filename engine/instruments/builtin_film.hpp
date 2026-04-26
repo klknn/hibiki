@@ -92,7 +92,22 @@ class BuiltinFilm : public IPlugin {
 
   // Mod matrix base offset.
   static constexpr int kMatrixBase =
-      kOpParams + kFilterParams + kGlobalParams;  // 127
+      kOpParams + kFilterParams + kGlobalParams;  // 181
+
+  // DX7 SysEx support.
+  struct Dx7Voice {
+    char name[11];      // 10 chars + null
+    uint8_t data[128];  // packed voice data
+  };
+
+  // Parse a 32-voice bulk dump (.syx file). Returns number of voices parsed.
+  static int parseDx7Sysex(const uint8_t* data, size_t len,
+                           Dx7Voice voices[32]);
+  // Apply a parsed DX7 voice to this instance's parameters.
+  void loadDx7Voice(const Dx7Voice& voice);
+  // Convenience: parse sysex and return patch names.
+  static std::vector<std::string> getDx7PatchNames(const uint8_t* data,
+                                                   size_t len);
 
   BuiltinFilm();
 

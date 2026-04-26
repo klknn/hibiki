@@ -103,4 +103,84 @@ TEST(AudioFileTest, SaveWavUnwritablePath) {
                                      ::testing::HasSubstr("Cannot open file")));
 }
 
+TEST(AudioFileTest, LoadAudioFileResample44100To48000) {
+  // Save a 1-second mono DC signal at 44100 Hz.
+  int src_rate = 44100;
+  int channels = 1;
+  int num_frames = src_rate;
+  std::vector<float> data(num_frames, 0.6f);
+
+  std::string tmp = "test_resample_44_48.wav";
+  ASSERT_THAT(SaveWav(tmp, data, channels, src_rate), IsOk());
+
+  // Load with target 48000 Hz — should resample.
+  std::vector<float> out;
+  int out_ch, out_rate;
+  double out_dur;
+  ASSERT_THAT(LoadAudioFile(tmp, 48000.0, out, out_ch, out_rate, out_dur),
+              IsOk());
+  EXPECT_EQ(out_ch, 1);
+  EXPECT_EQ(out_rate, 48000);
+
+  // Output should be ~48000 samples (1 second at 48kHz).
+  EXPECT_NEAR(static_cast<int>(out.size()), 48000, 50);
+
+  // DC value should be preserved in the middle (skip edges).
+  for (size_t i = 100; i < out.size() - 100; ++i) {
+    EXPECT_NEAR(out[i], 0.6f, 0.03f) << "at sample " << i;
+  }
+  std::remove(tmp.c_str());
+}
+
+TEST(AudioFileTest, LoadAudioFileResample48000To16000) {
+  // Save a 1-second stereo DC signal at 48000 Hz.
+  int src_rate = 48000;
+  int channels = 2;
+  int num_frames = src_rate;
+  std::vector<float> data(num_frames * channels);
+  for (int i = 0; i < num_frames; ++i) {
+    data[2 * i] = 0.3f;      // L
+    data[2 * i + 1] = 0.7f;  // R
+  }
+
+  std::string tmp = "test_resample_48_16.wav";
+  ASSERT_THAT(SaveWav(tmp, data, channels, src_rate), IsOk());
+
+  // Load with target 16000 Hz — 3:1 downsample.
+  std::vector<float> out;
+  int out_ch, out_rate;
+  double out_dur;
+  ASSERT_THAT(LoadAudioFile(tmp, 16000.0, out, out_ch, out_rate, out_dur),
+              IsOk());
+  EXPECT_EQ(out_ch, 2);
+  EXPECT_EQ(out_rate, 16000);
+
+  int out_frames = static_cast<int>(out.size()) / 2;
+  EXPECT_NEAR(out_frames, 16000, 50);
+
+  // DC values preserved per channel.
+  for (int i = 50; i < out_frames - 50; ++i) {
+    EXPECT_NEAR(out[2 * i], 0.3f, 0.03f) << "L at frame " << i;
+    EXPECT_NEAR(out[2 * i + 1], 0.7f, 0.03f) << "R at frame " << i;
+  }
+  std::remove(tmp.c_str());
+}
+
+TEST(AudioFileTest, LoadAudioFileNoResample) {
+  // Save at 44100 Hz, load with target_sample_rate <= 0 — no resampling.
+  int rate = 44100;
+  std::vector<float> data(rate, 0.5f);
+
+  std::string tmp = "test_no_resample.wav";
+  ASSERT_THAT(SaveWav(tmp, data, 1, rate), IsOk());
+
+  std::vector<float> out;
+  int out_ch, out_rate;
+  double out_dur;
+  ASSERT_THAT(LoadAudioFile(tmp, -1.0, out, out_ch, out_rate, out_dur), IsOk());
+  EXPECT_EQ(out_rate, rate);
+  EXPECT_EQ(out.size(), data.size());
+  std::remove(tmp.c_str());
+}
+
 }  // namespace hibiki

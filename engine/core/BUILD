@@ -28,19 +28,22 @@ cc_library(
 )
 
 cc_library(
+    name = "resample",
+    srcs = ["resample.cpp"],
+    hdrs = ["resample.hpp"],
+)
+
+cc_library(
     name = "audio_file",
     srcs = ["audio_file.cpp"],
     hdrs = ["audio_file.hpp"],
     includes = ["."],
     deps = [
+        ":resample",
         ":status",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:absl_log",
         "@abseil-cpp//absl/strings",
-        "@ffmpeg//:with_defaults/avcodec",
-        "@ffmpeg//:with_defaults/avformat",
-        "@ffmpeg//:with_defaults/avutil",
-        "@ffmpeg//:with_defaults/swresample",
     ],
 )
 
@@ -144,6 +147,16 @@ cc_test(
         ":audio_file",
         "//engine:test_utils",
         "@abseil-cpp//absl/status:status_matchers",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "resample_test",
+    srcs = ["resample_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":resample",
         "@googletest//:gtest_main",
     ],
 )

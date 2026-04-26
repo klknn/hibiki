@@ -12,6 +12,7 @@
 #include "engine/effects/builtin_phaser.hpp"
 #include "engine/effects/builtin_reverb.hpp"
 #include "engine/instruments/builtin_3xosc.hpp"
+#include "engine/instruments/builtin_film.hpp"
 #include "engine/instruments/builtin_sampler.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/commands.pb.h"
@@ -57,6 +58,9 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinPhaser::kPath) {
     plugin = std::make_unique<BuiltinPhaser>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinFilm::kPath) {
+    plugin = std::make_unique<BuiltinFilm>();
     plugin->load(path, 0, sample_rate);
   } else if (!remote_host.empty()) {
     // Per-load remote host — always use TCP proxy

@@ -37,9 +37,22 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_film",
+    srcs = ["builtin_film.cpp"],
+    hdrs = ["builtin_film.hpp"],
+    deps = [
+        ":adsr",
+        "//engine/core:biquad_filter",
+        "//engine/plugin:iplugin",
+        "@abseil-cpp//absl/base",
+    ],
+)
+
+cc_library(
     name = "instruments",
     deps = [
         ":builtin_3xosc",
+        ":builtin_film",
         ":builtin_sampler",
     ],
 )
@@ -62,6 +75,16 @@ cc_test(
     deps = [
         ":builtin_sampler",
         "//engine:test_utils",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_film_test",
+    srcs = ["builtin_film_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_film",
         "@googletest//:gtest_main",
     ],
 )

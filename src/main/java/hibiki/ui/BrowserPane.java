@@ -310,6 +310,9 @@ public class BrowserPane extends JPanel {
     FileItem phaserItem = new FileItem(new File("builtin"), "builtin", "Phaser", "Hibiki", 0);
     phaserItem.rawPath = "builtin://phaser";
     builtinNode.add(new DefaultMutableTreeNode(phaserItem));
+    FileItem filmItem = new FileItem(new File("builtin"), "builtin", "FilM", "Hibiki", 0);
+    filmItem.rawPath = "builtin://film";
+    builtinNode.add(new DefaultMutableTreeNode(filmItem));
     root.add(builtinNode);
 
     root.add(pluginsNode);

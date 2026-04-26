@@ -237,6 +237,52 @@ Edits are synced to the backend in real-time via IPC — no manual save step req
 
 ---
 
+## FilM — FM Synthesizer
+
+FilM is a built-in 6-operator FM synthesizer inspired by Sytrus/FM8. Load it from the Browser under **Builtin → FilM**.
+
+### Architecture
+- **6 Operators**: Each with selectable waveform (Sin/Saw/Sq/Tri/Noise), ADSR envelope, LFO, ratio/fine tuning, feedback, and pan
+- **3 Filters**: Independent filter modules (LP/HP/BP/LS/HS/Bell) with ADSR envelope, LFO, and dry/wet mix
+- **Modulation Matrix**: 6×12 grid controlling FM depth (op→op), filter routing (op→filter), pan, FX send, and output levels
+- **8-voice polyphony** with oldest-voice stealing
+
+### UI Layout
+
+The panel is split into two areas:
+
+| Area | Description |
+|------|-------------|
+| **Left: Tabs** | MAIN, OP1–OP6, F1–F3, FX — click to edit each module |
+| **Right: Matrix** | Always-visible 6×12 modulation matrix with rotary knobs |
+
+### Tabs
+
+| Tab | Content |
+|-----|---------|
+| **MAIN** | Master volume, algorithm selector, unison (voices/detune/spread), portamento, gain envelope |
+| **OP 1–6** | Waveform buttons, sub-tabs: **VOL** (level/pan/feedback/ADSR), **PITCH** (ratio/fine), **PHASE** (offset), **LFO** (rate/depth/waveform) |
+| **F1–F3** | Filter type buttons, sub-tabs: **CTRL** (cutoff/resonance/depth/mix), **ENV** (filter ADSR), **LFO** (cutoff modulation) |
+| **FX** | Reserved for future effects |
+
+### Modulation Matrix
+
+The matrix is a 6-row × 12-column grid of knobs:
+- **Columns 1–6**: FM modulation depth between operators (diagonal = self-feedback)
+- **Columns F1–F3**: Operator → filter send levels
+- **Columns P/FX/O**: Pan, effects send, and direct output
+
+Knobs default to center (neutral). Turn right to increase, left to invert.
+
+### Quick Start
+1. Load FilM from Browser → Builtin → FilM
+2. Play MIDI notes → hear a pure sine tone (Op1 only by default)
+3. Switch waveforms on OP1 tab for different timbres
+4. Enable Op2 (set level > 0) and turn matrix knob row 2→col 1 to hear FM modulation
+5. Route operators to filters via matrix columns F1–F3
+
+---
+
 ## Plugin Hosting Modes
 
 Hibiki supports three modes for running VST3 plugins, selectable in

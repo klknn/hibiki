@@ -29,7 +29,8 @@ public class PluginPane extends JPanel {
           Map.entry("Limiter", LimiterDevicePanel.class),
           Map.entry("Hott", HottDevicePanel.class),
           Map.entry("EnvShaper", EnvelopeShaperDevicePanel.class),
-          Map.entry("Phaser", PhaserDevicePanel.class));
+          Map.entry("Phaser", PhaserDevicePanel.class),
+          Map.entry("FilM", FilmDevicePanel.class));
 
   private static PluginPane instance;
   private final JPanel deviceChainContent;
@@ -212,6 +213,9 @@ public class PluginPane extends JPanel {
               return;
             } else if (bp instanceof PhaserDevicePanel) {
               ((PhaserDevicePanel) bp).updateParam(paramId, value);
+              return;
+            } else if (bp instanceof FilmDevicePanel) {
+              ((FilmDevicePanel) bp).handleParamChange(paramId, value);
               return;
             }
           }

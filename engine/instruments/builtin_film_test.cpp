@@ -6,6 +6,8 @@
 #include <fstream>
 #include <vector>
 
+#include "engine/test_utils.hpp"
+
 namespace hibiki {
 namespace {
 
@@ -208,7 +210,7 @@ TEST(BuiltinFilmTest, NameAndPath) {
 TEST(BuiltinFilmTest, LoadWithSyxPathProducesOutput) {
   // Simulate what BrowserPane sends: builtin://film?syx=PATH&voice=N
   // The engine should parse the syx/voice params and auto-load the DX7 voice.
-  std::string syx_path = "testdata/rom1a.syx";
+  std::string syx_path = hibiki::find_test_file("testdata/rom1a.syx");
   std::string load_path = "builtin://film?syx=" + syx_path + "&voice=0";
 
   BuiltinFilm film;
@@ -256,8 +258,9 @@ TEST(BuiltinFilmTest, LoadWithSyxPathProducesOutput) {
 
 TEST(BuiltinFilmTest, Dx7SysexImport) {
   // Read the DX7 ROM1A sysex testdata.
-  std::ifstream file("testdata/rom1a.syx", std::ios::binary);
-  ASSERT_TRUE(file.good()) << "Could not open testdata/rom1a.syx";
+  std::string syx_path = hibiki::find_test_file("testdata/rom1a.syx");
+  std::ifstream file(syx_path, std::ios::binary);
+  ASSERT_TRUE(file.good()) << "Could not open " << syx_path;
   std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)),
                             std::istreambuf_iterator<char>());
   ASSERT_EQ(data.size(), 4104u);

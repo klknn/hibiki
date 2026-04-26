@@ -6,8 +6,9 @@ build --cxxopt=-fno-unwind-tables
 build --cxxopt=-fno-exceptions
 build --cxxopt=-std=c++23
 build:windows --cxxopt=/std:c++latest
+build:windows --cxxopt=/utf-8
 build --java_runtime_version=remotejdk_21
 
 # RECOMMENDATION: Pin the lockfile mode to 'error' to prevent silent changes across machines.
 # If you intentionally change MODULE.bazel, run 'bazel mod deps' to update the lockfile.
-common --lockfile_mode=error
+# common --lockfile_mode=error

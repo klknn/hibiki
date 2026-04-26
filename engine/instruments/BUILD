@@ -86,6 +86,7 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_film",
+        "//engine:test_utils",
         "@googletest//:gtest_main",
     ],
 )

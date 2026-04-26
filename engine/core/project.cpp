@@ -76,6 +76,9 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
       tcs->set_start_time_sec(tc->start_time_sec);
       clip->set_duration_sec(tc->duration_sec);
       tcs->set_alias_source(tc->alias_source);
+      clip->set_is_loop(tc->clip->is_loop);
+      clip->set_trim_start_beats(tc->trim_start_beats);
+      clip->set_duration_beats(tc->loop_interval_beats);  // reuse field for loop interval
     }
 
     for (const auto& lane : track->automation_lanes) {
@@ -152,6 +155,11 @@ static void LoadTracksFromProto(ProjectState& state,
           tc->clip ? tc->clip->duration_sec : tc_data.clip().duration_sec();
       tc->duration_beats = tc->clip ? tc->clip->duration_beats : 0.0;
       tc->alias_source = tc_data.alias_source();
+      if (tc_data.clip().is_loop()) {
+        tc->clip->is_loop = true;
+        tc->trim_start_beats = tc_data.clip().trim_start_beats();
+        tc->loop_interval_beats = tc_data.clip().duration_beats();
+      }
       track->timeline_clips.push_back(std::move(tc));
     }
 
@@ -265,10 +273,13 @@ void SyncProjectToGui(const ProjectState& state) {
           (tc->duration_beats > 0)
               ? (float)(tc->duration_beats * 60.0 / state.bpm)
               : (float)tc->duration_sec;
+      float li_sec = (tc->loop_interval_beats > 0)
+          ? (float)(tc->loop_interval_beats * 60.0 / state.bpm) : 0.0f;
       hibiki::sendTimelineClipInfo(tidx, tc_idx, cname, tc->clip->path,
                                    tc->start_time_sec, duration_for_gui,
                                    tc->clip->waveform_summary,
-                                   tc->clip->is_loop, tc->alias_source);
+                                   tc->clip->is_loop, tc->alias_source,
+                                   li_sec);
     }
     // Sync Automation Lanes
     if (!track->automation_lanes.empty()) {

@@ -183,30 +183,45 @@ void playback_thread(ProjectState& state) {
               double clip_local_time =
                   state.playhead_pos_sec - tc->start_time_sec;
               double beats_per_sec = state.bpm / 60.0;
-              // Compute content duration for loop wrapping
+              // Compute loop length: use explicit interval if set,
+              // otherwise fall back to content minus head-trim
               double content_dur_beats = tc->clip->duration_beats;
+              double loop_length_beats =
+                  (tc->loop_interval_beats > 0)
+                      ? tc->loop_interval_beats
+                      : (content_dur_beats - tc->trim_start_beats);
               double window_start_beats =
                   clip_local_time * beats_per_sec + tc->trim_start_beats;
               double window_end_beats =
                   (clip_local_time + time_per_block) * beats_per_sec +
                   tc->trim_start_beats;
-              // Loop wrapping for MIDI
-              if (tc->clip->is_loop && content_dur_beats > 0) {
-                window_start_beats =
-                    std::fmod(window_start_beats, content_dur_beats);
+              // Loop wrapping for MIDI within trimmed range
+              if (tc->clip->is_loop && loop_length_beats > 0) {
+                window_start_beats = tc->trim_start_beats +
+                    std::fmod(window_start_beats - tc->trim_start_beats,
+                              loop_length_beats);
                 window_end_beats =
                     window_start_beats + time_per_block * beats_per_sec;
               }
               for (const auto& me : tc->clip->midi_events) {
                 double me_beats = me.beats;
-                // Handle wrap-around at content boundary
-                if (tc->clip->is_loop && content_dur_beats > 0 &&
-                    window_end_beats > content_dur_beats) {
-                  // Check both the normal range and the wrapped range
-                  bool in_range = (me_beats >= window_start_beats &&
-                                   me_beats < window_end_beats) ||
-                                  (me_beats < std::fmod(window_end_beats,
-                                                        content_dur_beats));
+                // Skip events outside the trimmed content range
+                if (me_beats < tc->trim_start_beats ||
+                    me_beats >= content_dur_beats)
+                  continue;
+                // Handle wrap-around at loop boundary
+                double loop_end_beats =
+                    tc->trim_start_beats + loop_length_beats;
+                if (tc->clip->is_loop && loop_length_beats > 0 &&
+                    window_end_beats > loop_end_beats) {
+                  bool in_range =
+                      (me_beats >= window_start_beats &&
+                       me_beats < window_end_beats) ||
+                      (me_beats >= tc->trim_start_beats &&
+                       me_beats < tc->trim_start_beats +
+                           std::fmod(
+                               window_end_beats - tc->trim_start_beats,
+                               loop_length_beats));
                   if (!in_range) continue;
                 } else {
                   if (me_beats < window_start_beats ||
@@ -216,16 +231,16 @@ void playback_thread(ProjectState& state) {
                 MidiNoteEvent e;
                 double event_local_sec =
                     me.beats / beats_per_sec - clip_local_time;
-                // For loop, adjust event timing
-                if (tc->clip->is_loop && content_dur_beats > 0) {
-                  double wrapped_beat = std::fmod(me.beats, content_dur_beats);
-                  // Find the correct repetition offset
-                  double content_dur_sec = content_dur_beats / beats_per_sec;
+                // For loop, adjust event timing relative to trimmed range
+                if (tc->clip->is_loop && loop_length_beats > 0) {
+                  double rel_beat = me.beats - tc->trim_start_beats;
+                  double loop_length_sec = loop_length_beats / beats_per_sec;
                   double local_in_content =
-                      std::fmod(clip_local_time, content_dur_sec);
+                      std::fmod(clip_local_time, loop_length_sec);
                   event_local_sec =
-                      wrapped_beat / beats_per_sec - local_in_content;
-                  if (event_local_sec < 0) event_local_sec += content_dur_sec;
+                      rel_beat / beats_per_sec - local_in_content;
+                  if (event_local_sec < 0)
+                    event_local_sec += loop_length_sec;
                 }
                 e.sampleOffset =
                     std::max(0, (int)(event_local_sec * sample_rate));
@@ -336,23 +351,40 @@ void playback_thread(ProjectState& state) {
                 // MIDI events already merged above in step 1b
                 // (no separate process() call needed)
               } else {
-                // Audio playback with loop support
+                // Audio playback with trim and loop support
                 int content_samples = (int)tc->clip->audio_data.size();
                 if (tc->clip->num_channels == 2) content_samples /= 2;
-                int start_sample = (int)(clip_local_time * sample_rate);
+                double bps = state.bpm / 60.0;
+                int trim_samples = (bps > 0)
+                    ? (int)(tc->trim_start_beats / bps * sample_rate)
+                    : 0;
+                int start_sample =
+                    trim_samples + (int)(clip_local_time * sample_rate);
+                // Use explicit loop interval if set, else content - trim
+                int loop_len;
+                if (tc->loop_interval_beats > 0 && bps > 0) {
+                  loop_len = (int)(tc->loop_interval_beats / bps * sample_rate);
+                } else {
+                  loop_len = content_samples - trim_samples;
+                }
                 for (int i = 0; i < block_size; ++i) {
                   int sample_pos = start_sample + i;
                   if (sample_pos < 0) continue;
-                  // Loop wrapping
-                  if (tc->clip->is_loop && content_samples > 0) {
-                    sample_pos = sample_pos % content_samples;
+                  // Loop wrapping within trimmed content
+                  if (tc->clip->is_loop && loop_len > 0) {
+                    sample_pos = trim_samples +
+                                 ((sample_pos - trim_samples) % loop_len);
                   }
                   if (tc->clip->num_channels == 2 &&
-                      sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
-                    bufferL[i] += tc->clip->audio_data[sample_pos * 2];
-                    bufferR[i] += tc->clip->audio_data[sample_pos * 2 + 1];
+                      sample_pos * 2 + 1 <
+                          (int)tc->clip->audio_data.size()) {
+                    bufferL[i] +=
+                        tc->clip->audio_data[sample_pos * 2];
+                    bufferR[i] +=
+                        tc->clip->audio_data[sample_pos * 2 + 1];
                   } else if (tc->clip->num_channels == 1 &&
-                             sample_pos < (int)tc->clip->audio_data.size()) {
+                             sample_pos <
+                                 (int)tc->clip->audio_data.size()) {
                     double s = tc->clip->audio_data[sample_pos];
                     bufferL[i] += s;
                     bufferR[i] += s;

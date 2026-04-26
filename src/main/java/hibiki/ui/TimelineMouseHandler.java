@@ -402,25 +402,29 @@ class TimelineMouseHandler {
     if (!e.isShiftDown()) {
       endTime = view.snapToGrid(endTime);
     }
-    // Minimum duration = content duration (can't shrink below content with loop extend)
-    // Use the current clip duration (before loop drag) as the loop interval
-    view.resizeClip.contentDuration = view.resizeOriginalDuration;
-    float minDuration =
-        view.resizeClip.contentDuration > 0 ? view.resizeClip.contentDuration : 60.0f / view.bpm;
-    float newDuration = Math.max(minDuration, endTime - view.resizeClip.startTime);
+    // Set loop interval from pre-drag duration, only if clip wasn't already looped
+    if (!view.resizeClip.isLooped) {
+      view.resizeClip.loopInterval = view.resizeOriginalDuration;
+    }
+    float minBeat = 60.0f / view.bpm;
+    float newDuration = Math.max(minBeat, endTime - view.resizeClip.startTime);
     view.resizeClip.duration = newDuration;
-    view.resizeClip.isLooped = true;
+    boolean shouldLoop =
+        view.resizeClip.loopInterval > 0 && newDuration > view.resizeClip.loopInterval;
+    view.resizeClip.isLooped = shouldLoop;
     float durationBeats = newDuration * (view.bpm / 60.0f);
     float trimStartBeats = view.resizeClip.trimStartSec * (view.bpm / 60.0f);
 
     TimelineView.TrackTimeline track = view.tracks.get(view.resizeTrackIdx);
     int clipIndex = track.clips.indexOf(view.resizeClip);
     if (clipIndex >= 0) {
-      // Send resize + loop flag
+      // Compute loop interval in beats from the pre-drag duration (in seconds)
+      float loopIntervalBeats = view.resizeClip.loopInterval * (view.bpm / 60.0f);
+      // Set loop FIRST so the resize notification has correct loop state
+      BackendManager.getInstance().setTimelineClipLoop(
+          view.resizeTrackIdx, clipIndex, shouldLoop, loopIntervalBeats);
       BackendManager.getInstance()
           .resizeTimelineClip(view.resizeTrackIdx, clipIndex, durationBeats, trimStartBeats);
-      // Set loop on the clip in the engine
-      BackendManager.getInstance().setTimelineClipLoop(view.resizeTrackIdx, clipIndex, true);
     }
     view.contentPanel.repaint();
   }
@@ -495,10 +499,12 @@ class TimelineMouseHandler {
       view.contentPanel.repaint();
     } else if (view.dragMode == TimelineView.DragMode.LOOP_EXTEND && view.resizeClip != null) {
       float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
-      float minDuration =
-          view.resizeClip.contentDuration > 0 ? view.resizeClip.contentDuration : 60.0f / view.bpm;
-      float newDuration = Math.max(minDuration, mouseTime - view.resizeClip.startTime);
+      float minBeat = 60.0f / view.bpm;
+      float newDuration = Math.max(minBeat, mouseTime - view.resizeClip.startTime);
       view.resizeClip.duration = newDuration;
+      // Show/hide loop state live during drag
+      view.resizeClip.isLooped =
+          view.resizeClip.loopInterval > 0 && newDuration > view.resizeClip.loopInterval;
       view.contentPanel.repaint();
     } else if (view.dragMode == TimelineView.DragMode.CREATE_CLIP
         && view.creatingClipRect != null) {

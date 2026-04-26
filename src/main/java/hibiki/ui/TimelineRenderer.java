@@ -734,30 +734,68 @@ class TimelineRenderer {
           drawAudioWaveform(g2, clip, x, contentY, w, contentH);
         }
 
-        // Draw loop region dividers and dimmed repeat regions
-        if (clip.isLooped && clip.contentDuration > 0 && clip.duration > clip.contentDuration) {
-          float contentW = clip.contentDuration * pps;
-          int numRepeats = (int) Math.ceil(clip.duration / clip.contentDuration);
+        // Draw loop region: tiled content in repeat regions
+        if (clip.isLooped && clip.loopInterval > 0 && clip.duration > clip.loopInterval) {
+          int tileW = (int) (clip.loopInterval * pps);
+          int numRepeats = (int) Math.ceil(clip.duration / clip.loopInterval);
 
-          // Draw dimmed overlay on repeat regions (after first content)
-          Composite oldComp = g2.getComposite();
-          g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.35f));
-          int repeatStartX = x + (int) contentW;
-          int repeatW = x + w - repeatStartX;
-          if (repeatW > 0) {
-            g2.setColor(new Color(0, 0, 0));
-            g2.fillRect(repeatStartX, contentY, repeatW, contentH);
+          // Create virtual clip for tile drawing with duration = loopInterval
+          // so draw methods use correct 1:1 scaling ratio
+          TimelineView.ClipRect tileClip = new TimelineView.ClipRect();
+          tileClip.waveform = clip.waveform;
+          tileClip.path = clip.path;
+          tileClip.contentDuration = clip.contentDuration;
+          tileClip.duration = clip.loopInterval;
+          tileClip.trimStartSec = clip.trimStartSec;
+
+          // Re-draw first tile with correct scaling (overwrite the full-width draw above)
+          Shape saveClip0 = g2.getClip();
+          g2.clipRect(x, contentY, Math.min(tileW, w), contentH);
+          g2.setColor(clip.isAlias ? new Color(80, 80, 80) : g2.getColor());
+          // Clear content area for first tile and redraw
+          g2.setColor(g2.getBackground());
+          // Just redraw over the existing content with correct scaling
+          if (isMidi) {
+            drawMidiPreview(g2, tileClip, x, contentY, tileW, contentH);
+          } else {
+            drawAudioWaveform(g2, tileClip, x, contentY, tileW, contentH);
           }
-          g2.setComposite(oldComp);
+          g2.setClip(saveClip0);
 
-          // Draw dashed vertical dividers at content boundaries
+          // Draw repeat tiles (dimmed)
+          Composite oldComp = g2.getComposite();
+          for (int r = 1; r < numRepeats; r++) {
+            int tileX = x + r * tileW;
+            int tileEndX = Math.min(tileX + tileW, x + w);
+            if (tileEndX <= tileX) break;
+
+            // Dim the area first
+            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.35f));
+            g2.setColor(new Color(0, 0, 0));
+            g2.fillRect(tileX, contentY, tileEndX - tileX, contentH);
+            g2.setComposite(oldComp);
+
+            // Draw tiled content at reduced opacity
+            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.55f));
+            Shape saveClip = g2.getClip();
+            g2.clipRect(tileX, contentY, tileEndX - tileX, contentH);
+            if (isMidi) {
+              drawMidiPreview(g2, tileClip, tileX, contentY, tileW, contentH);
+            } else {
+              drawAudioWaveform(g2, tileClip, tileX, contentY, tileW, contentH);
+            }
+            g2.setClip(saveClip);
+            g2.setComposite(oldComp);
+          }
+
+          // Draw dashed vertical dividers at tile boundaries
           Stroke oldStroke = g2.getStroke();
           g2.setStroke(
               new BasicStroke(
                   1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL, 0, new float[] {4, 4}, 0));
           g2.setColor(new Color(255, 255, 255, 80));
           for (int r = 1; r < numRepeats; r++) {
-            int divX = x + (int) (r * contentW);
+            int divX = x + r * tileW;
             if (divX >= x && divX <= x + w) {
               g2.drawLine(divX, y, divX, y + h);
             }

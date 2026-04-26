@@ -585,4 +585,116 @@ public class TimelineViewTest {
           px1);
     }
   }
+
+  // ─── Regression: Loop/Trim ClipRect behavior ────────────────────────
+
+  @Test
+  public void testClipRect_loopIntervalDefaultsToZero() {
+    TimelineView.ClipRect clip = new TimelineView.ClipRect();
+    assertEquals(0.0f, clip.loopInterval, 0.001f);
+    assertFalse(clip.isLooped);
+    assertFalse(clip.isAlias);
+    assertEquals(-1, clip.aliasSourceIndex);
+  }
+
+  @Test
+  public void testContentDuration_setOnceNotOverwritten() {
+    // Regression: contentDuration must be set on first notification and NOT
+    // overwritten when duration changes (which broke trim/pad scaling).
+    TimelineView view = new TimelineView();
+
+    // First notification: clip duration = 5.0
+    Notification n1 =
+        Notification.newBuilder()
+            .setTimelineClipInfo(
+                TimelineClipInfo.newBuilder()
+                    .setTrackIndex(0)
+                    .setClipIndex(0)
+                    .setName("Clip")
+                    .setPath("/test.wav")
+                    .setStartTime(0.0f)
+                    .setDuration(5.0f))
+            .build();
+    view.handleNotification(n1);
+    TimelineView.ClipRect clip = view.tracks.get(0).clips.get(0);
+    assertEquals("contentDuration should equal initial duration", 5.0f, clip.contentDuration, 0.001f);
+
+    // Second notification: resize to 3.0 (trim) — contentDuration must stay 5.0
+    Notification n2 =
+        Notification.newBuilder()
+            .setTimelineClipInfo(
+                TimelineClipInfo.newBuilder()
+                    .setTrackIndex(0)
+                    .setClipIndex(0)
+                    .setName("Clip")
+                    .setPath("/test.wav")
+                    .setStartTime(0.0f)
+                    .setDuration(3.0f))
+            .build();
+    view.handleNotification(n2);
+    assertEquals("duration should be updated to 3.0", 3.0f, clip.duration, 0.001f);
+    assertEquals("contentDuration must NOT change on resize", 5.0f, clip.contentDuration, 0.001f);
+  }
+
+  @Test
+  public void testIsLoopedAndAliasFromNotification() {
+    TimelineView view = new TimelineView();
+    Notification n =
+        Notification.newBuilder()
+            .setTimelineClipInfo(
+                TimelineClipInfo.newBuilder()
+                    .setTrackIndex(0)
+                    .setClipIndex(0)
+                    .setName("LoopClip")
+                    .setPath("/test.mid")
+                    .setStartTime(0.0f)
+                    .setDuration(8.0f)
+                    .setIsLooped(true)
+                    .setAliasSource(2))
+            .build();
+    view.handleNotification(n);
+    TimelineView.ClipRect clip = view.tracks.get(0).clips.get(0);
+    assertTrue("isLooped should be true", clip.isLooped);
+    assertTrue("isAlias should be true (aliasSource >= 0)", clip.isAlias);
+    assertEquals(2, clip.aliasSourceIndex);
+  }
+
+  @Test
+  public void testContentDuration_preservedForPadding() {
+    // When duration > contentDuration (padding), the draw methods use
+    // contentDuration/duration ratio to scale content correctly.
+    TimelineView view = new TimelineView();
+
+    Notification n1 =
+        Notification.newBuilder()
+            .setTimelineClipInfo(
+                TimelineClipInfo.newBuilder()
+                    .setTrackIndex(0)
+                    .setClipIndex(0)
+                    .setName("Short")
+                    .setPath("/test.wav")
+                    .setStartTime(0.0f)
+                    .setDuration(2.0f))
+            .build();
+    view.handleNotification(n1);
+    TimelineView.ClipRect clip = view.tracks.get(0).clips.get(0);
+    assertEquals(2.0f, clip.contentDuration, 0.001f);
+
+    // Extend to 6.0 (pad beyond content)
+    Notification n2 =
+        Notification.newBuilder()
+            .setTimelineClipInfo(
+                TimelineClipInfo.newBuilder()
+                    .setTrackIndex(0)
+                    .setClipIndex(0)
+                    .setName("Short")
+                    .setPath("/test.wav")
+                    .setStartTime(0.0f)
+                    .setDuration(6.0f))
+            .build();
+    view.handleNotification(n2);
+    assertEquals("duration should be padded to 6.0", 6.0f, clip.duration, 0.001f);
+    assertEquals("contentDuration must stay at original 2.0",
+        2.0f, clip.contentDuration, 0.001f);
+  }
 }

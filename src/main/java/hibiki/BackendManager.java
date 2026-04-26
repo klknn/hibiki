@@ -560,7 +560,8 @@ public class BackendManager {
             .build());
   }
 
-  public void setTimelineClipLoop(int trackIndex, int clipIndex, boolean isLoop) {
+  public void setTimelineClipLoop(int trackIndex, int clipIndex, boolean isLoop,
+      float loopIntervalBeats) {
     sendRequest(
         Request.newBuilder()
             .setTrack(
@@ -568,7 +569,8 @@ public class BackendManager {
                     .setAction(TrackCmd.Action.ACTION_SET_CLIP_LOOP)
                     .setTarget(
                         EntityRef.newBuilder().setTrackIndex(trackIndex).setTimelineClip(clipIndex))
-                    .setFlag(isLoop))
+                    .setFlag(isLoop)
+                    .setValue(loopIntervalBeats))
             .build());
   }
 

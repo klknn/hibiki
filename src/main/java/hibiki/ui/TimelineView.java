@@ -1403,6 +1403,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       cr.isLooped = info.getIsLooped();
       cr.isAlias = info.getAliasSource() >= 0;
       cr.aliasSourceIndex = info.getAliasSource();
+      // Update loopInterval from engine notification (loop_interval is in seconds)
+      if (info.getLoopInterval() > 0) {
+        cr.loopInterval = info.getLoopInterval();
+      }
       // Extract waveform data
       int wfLen = info.getWaveformCount();
       if (wfLen > 0) {
@@ -1429,6 +1433,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     float startTime;
     float duration; // Visible window in seconds (changes with trim)
     float contentDuration; // Original content duration in seconds (set once on first load)
+    float loopInterval; // Loop repeat duration in seconds (set during loop extend)
     float trimStartSec; // Head-trim offset in seconds
     float[] waveform;
     boolean isAutomation = false;

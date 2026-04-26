@@ -36,7 +36,7 @@ public class TimelineMouseHandlerTest {
   @Test
   public void testDragMode_values() {
     TimelineView.DragMode[] modes = TimelineView.DragMode.values();
-    assertEquals(8, modes.length);
+    assertEquals(9, modes.length);
     assertEquals(TimelineView.DragMode.NONE, TimelineView.DragMode.valueOf("NONE"));
     assertEquals(TimelineView.DragMode.MOVE_CLIP, TimelineView.DragMode.valueOf("MOVE_CLIP"));
     assertEquals(TimelineView.DragMode.CREATE_CLIP, TimelineView.DragMode.valueOf("CREATE_CLIP"));
@@ -121,7 +121,7 @@ public class TimelineMouseHandlerTest {
       ml.mousePressed(press);
     }
 
-    assertEquals(TimelineView.DragMode.RESIZE_CLIP, view.dragMode);
+    assertEquals(TimelineView.DragMode.LOOP_EXTEND, view.dragMode);
     assertNotNull(view.resizeClip);
     assertEquals("TestClip", view.resizeClip.name);
   }
@@ -353,7 +353,7 @@ public class TimelineMouseHandlerTest {
       ml.mouseMoved(move);
     }
 
-    assertEquals(java.awt.Cursor.E_RESIZE_CURSOR, view.contentPanel.getCursor().getType());
+    assertEquals(java.awt.Cursor.N_RESIZE_CURSOR, view.contentPanel.getCursor().getType());
   }
 
   @Test

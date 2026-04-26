@@ -141,11 +141,14 @@ public class EnvelopeEditorPanel extends JPanel {
 
   // --- Control point positions ---
 
-  /** Returns the 5 control points in pixel coordinates: [origin, attack, decay, sustain, release]. */
+  /**
+   * Returns the 5 control points in pixel coordinates: [origin, attack, decay, sustain, release].
+   */
   private Point[] getControlPoints() {
     int w = getWidth() - PAD_LEFT - PAD_RIGHT;
     int h = getHeight() - PAD_TOP - PAD_BOTTOM;
-    if (w <= 0 || h <= 0) return new Point[] {new Point(), new Point(), new Point(), new Point(), new Point()};
+    if (w <= 0 || h <= 0)
+      return new Point[] {new Point(), new Point(), new Point(), new Point(), new Point()};
 
     // Time allocation: attack gets 25%, decay 25%, sustain-hold 25%, release 25%
     // (each ADSR value scales within its allocation)
@@ -157,8 +160,10 @@ public class EnvelopeEditorPanel extends JPanel {
     Point[] pts = new Point[5];
     pts[0] = new Point(PAD_LEFT, PAD_TOP + h); // origin (0, 0)
     pts[1] = new Point(PAD_LEFT + (int) (aFrac * w), PAD_TOP); // attack peak (a, 1.0)
-    pts[2] = new Point(PAD_LEFT + (int) (dFrac * w), PAD_TOP + (int) ((1 - sustain) * h)); // decay end
-    pts[3] = new Point(PAD_LEFT + (int) (sFrac * w), PAD_TOP + (int) ((1 - sustain) * h)); // sustain end
+    pts[2] =
+        new Point(PAD_LEFT + (int) (dFrac * w), PAD_TOP + (int) ((1 - sustain) * h)); // decay end
+    pts[3] =
+        new Point(PAD_LEFT + (int) (sFrac * w), PAD_TOP + (int) ((1 - sustain) * h)); // sustain end
     pts[4] = new Point(PAD_LEFT + (int) (rFrac * w), PAD_TOP + h); // release end (0)
     return pts;
   }
@@ -259,7 +264,8 @@ public class EnvelopeEditorPanel extends JPanel {
 
   private void drawSectionMarkers(Graphics2D g2, Point[] pts, int drawH) {
     g2.setStroke(
-        new BasicStroke(1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10.0f, new float[] {4, 4}, 0));
+        new BasicStroke(
+            1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10.0f, new float[] {4, 4}, 0));
     g2.setColor(MARKER_COLOR);
 
     // D marker at attack peak (transition from attack to decay)
@@ -308,7 +314,8 @@ public class EnvelopeEditorPanel extends JPanel {
     fill.lineTo(pts[0].x, PAD_TOP + drawH);
     fill.closePath();
 
-    GradientPaint gp = new GradientPaint(0, PAD_TOP, CURVE_FILL_TOP, 0, PAD_TOP + drawH, CURVE_FILL_BOT);
+    GradientPaint gp =
+        new GradientPaint(0, PAD_TOP, CURVE_FILL_TOP, 0, PAD_TOP + drawH, CURVE_FILL_BOT);
     g2.setPaint(gp);
     g2.fill(fill);
   }
@@ -327,8 +334,8 @@ public class EnvelopeEditorPanel extends JPanel {
   // --- Tension curve math ---
 
   /**
-   * Apply tension to interpolate from fromY to toY at parameter t (0..1).
-   * tension=0 → linear, tension>0 → ease-out (quick start), tension<0 → ease-in (slow start).
+   * Apply tension to interpolate from fromY to toY at parameter t (0..1). tension=0 → linear,
+   * tension>0 → ease-out (quick start), tension<0 → ease-in (slow start).
    */
   static float applyTension(float t, float fromY, float toY, double tension) {
     double curved;
@@ -377,7 +384,7 @@ public class EnvelopeEditorPanel extends JPanel {
 
     if (dragIndex > 0) {
       float mx = (e.getX() - PAD_LEFT) / (float) drawW; // 0..1 in draw area
-      float my = (e.getY() - PAD_TOP) / (float) drawH;  // 0..1 in draw area (0=top=1.0)
+      float my = (e.getY() - PAD_TOP) / (float) drawH; // 0..1 in draw area (0=top=1.0)
 
       mx = Math.max(0, Math.min(1, mx));
       my = Math.max(0, Math.min(1, my));

@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
-#include <numeric>
 #include <numbers>
+#include <numeric>
 
 namespace hibiki {
 namespace {

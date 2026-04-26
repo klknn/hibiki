@@ -310,7 +310,7 @@ bool BuiltinFilm::getParameterInfo(int index, VstParamInfo& info) const {
     int col = mi % kMatrixCols;
     static const char* col_names[] = {"1",  "2",  "3",  "4",   "5",  "6",
                                       "F1", "F2", "F3", "Pan", "FX", "Out"};
-    info.name = "Mtx " + std::to_string(row + 1) + "→" + col_names[col];
+    info.name = "Mtx " + std::to_string(row + 1) + "->" + col_names[col];
   }
   return true;
 }

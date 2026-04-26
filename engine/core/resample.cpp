@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <numbers>
 
 namespace hibiki {
 namespace {
@@ -31,7 +32,7 @@ double KaiserWindow(double t, double beta) {
 // Normalized sinc: sin(pi*x) / (pi*x), with sinc(0) = 1.
 double Sinc(double x) {
   if (std::abs(x) < 1e-12) return 1.0;
-  double px = M_PI * x;
+  double px = std::numbers::pi_v<double> * x;
   return std::sin(px) / px;
 }
 

@@ -1,6 +1,7 @@
 #include "engine/core/resample.hpp"
 
 #include <cmath>
+#include <numbers>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -119,7 +120,7 @@ TEST(ResamplerTest, SineWaveEnergy) {
   constexpr int N = 44100;  // 1 second
   std::vector<float> input(N);
   for (int i = 0; i < N; ++i) {
-    input[i] = std::sin(2.0 * M_PI * 1000.0 * i / 44100.0);
+    input[i] = std::sin(2.0 * std::numbers::pi_v<double> * 1000.0 * i / 44100.0);
   }
 
   auto output = r.Process(input, N);

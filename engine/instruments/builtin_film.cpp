@@ -139,6 +139,18 @@ void BuiltinFilm::process(float** /*inputs*/, float** outputs, int num_samples,
             voice.base_freq * ratio * std::pow(2.0f, fine_cents / 1200.0f) +
             freq_offset;
 
+        // Pitch articulation envelope.
+        float pitch_env_val = voice.ops[o].pitch_env.process(sr);
+        float pitch_depth = (params_[base + OP_PITCH_DEPTH] - 0.5f) * 2.0f;
+        if (std::abs(pitch_depth) > 0.001f) {
+          freq *= std::pow(2.0f, pitch_depth * pitch_env_val * 2.0f);
+        }
+
+        // Mod articulation envelope (scales FM/RM modulation influence).
+        float mod_env_val = voice.ops[o].mod_env.process(sr);
+        float mod_depth_ctrl = (params_[base + OP_MOD_DEPTH] - 0.5f) * 2.0f;
+        float mod_scale = 1.0f + mod_depth_ctrl * mod_env_val;
+
         // Accumulate FM/RM modulation input from all operators via matrix.
         float mod_input = 0;
         float rm_factor = 1.0f;
@@ -157,10 +169,10 @@ void BuiltinFilm::process(float** /*inputs*/, float** outputs, int num_samples,
           }
           if (rm_mode) {
             // RM: amplitude multiplication
-            rm_factor *= (1.0f + src_out * depth);
+            rm_factor *= (1.0f + src_out * depth * mod_scale);
           } else {
             // FM: frequency modulation
-            mod_input += src_out * depth;
+            mod_input += src_out * depth * mod_scale;
           }
         }
 
@@ -223,6 +235,14 @@ void BuiltinFilm::process(float** /*inputs*/, float** outputs, int num_samples,
       for (int o = 0; o < kNumOps; ++o) {
         float sig = op_output[o] * voice.velocity;
         float op_pan = params_[opBase(o) + OP_PAN];
+
+        // Pan articulation envelope.
+        float pan_env_val = voice.ops[o].pan_env.process(sr);
+        float pan_depth = (params_[opBase(o) + OP_PAN_DEPTH] - 0.5f) * 2.0f;
+        if (std::abs(pan_depth) > 0.001f) {
+          op_pan = std::clamp(op_pan + pan_depth * pan_env_val, 0.0f, 1.0f);
+        }
+
         float panL = std::cos(op_pan * 1.5708f);
         float panR = std::sin(op_pan * 1.5708f);
 
@@ -304,7 +324,11 @@ bool BuiltinFilm::getParameterInfo(int index, VstParamInfo& info) const {
         "Env D",    "Env S",     "Env R",       "Feedback",  "Pan",
         "LFO Rate", "LFO Depth", "LFO Wave",    "Phase",     "Shape",
         "Tension",  "Skew",      "Sine Shaper", "Noise Mix", "Freq Ofs",
-        "Half",     "Even",      "Absolute"};
+        "Half",     "Even",      "Absolute",
+        "PitchEnv A", "PitchEnv D", "PitchEnv S", "PitchEnv R",
+        "PanEnv A",   "PanEnv D",   "PanEnv S",   "PanEnv R",
+        "ModEnv A",   "ModEnv D",   "ModEnv S",   "ModEnv R",
+        "Pitch Depth", "Pan Depth", "Mod Depth"};
     info.name = "Op" + std::to_string(op) + " " + op_names[p];
   } else if (index < kOpParams + kFilterParams) {
     int fi = (index - kOpParams) / kParamsPerFilter + 1;
@@ -344,6 +368,33 @@ void BuiltinFilm::setParameterValue(uint32_t id, double value) {
         v.ops[op].env.setNormalized(
             params_[base + OP_ENV_A], params_[base + OP_ENV_D],
             params_[base + OP_ENV_S], params_[base + OP_ENV_R]);
+      }
+    }
+    // Update pitch envelope.
+    if (p >= OP_PITCH_ENV_A && p <= OP_PITCH_ENV_R) {
+      int base = opBase(op);
+      for (auto& v : voices_) {
+        v.ops[op].pitch_env.setNormalized(
+            params_[base + OP_PITCH_ENV_A], params_[base + OP_PITCH_ENV_D],
+            params_[base + OP_PITCH_ENV_S], params_[base + OP_PITCH_ENV_R]);
+      }
+    }
+    // Update pan envelope.
+    if (p >= OP_PAN_ENV_A && p <= OP_PAN_ENV_R) {
+      int base = opBase(op);
+      for (auto& v : voices_) {
+        v.ops[op].pan_env.setNormalized(
+            params_[base + OP_PAN_ENV_A], params_[base + OP_PAN_ENV_D],
+            params_[base + OP_PAN_ENV_S], params_[base + OP_PAN_ENV_R]);
+      }
+    }
+    // Update mod envelope.
+    if (p >= OP_MOD_ENV_A && p <= OP_MOD_ENV_R) {
+      int base = opBase(op);
+      for (auto& v : voices_) {
+        v.ops[op].mod_env.setNormalized(
+            params_[base + OP_MOD_ENV_A], params_[base + OP_MOD_ENV_D],
+            params_[base + OP_MOD_ENV_S], params_[base + OP_MOD_ENV_R]);
       }
     }
   }
@@ -531,6 +582,19 @@ void BuiltinFilm::noteOn(int pitch, float velocity) {
         params_[base + OP_ENV_A], params_[base + OP_ENV_D],
         params_[base + OP_ENV_S], params_[base + OP_ENV_R]);
     v.ops[o].env.noteOn();
+    // Articulation envelopes.
+    v.ops[o].pitch_env.setNormalized(
+        params_[base + OP_PITCH_ENV_A], params_[base + OP_PITCH_ENV_D],
+        params_[base + OP_PITCH_ENV_S], params_[base + OP_PITCH_ENV_R]);
+    v.ops[o].pitch_env.noteOn();
+    v.ops[o].pan_env.setNormalized(
+        params_[base + OP_PAN_ENV_A], params_[base + OP_PAN_ENV_D],
+        params_[base + OP_PAN_ENV_S], params_[base + OP_PAN_ENV_R]);
+    v.ops[o].pan_env.noteOn();
+    v.ops[o].mod_env.setNormalized(
+        params_[base + OP_MOD_ENV_A], params_[base + OP_MOD_ENV_D],
+        params_[base + OP_MOD_ENV_S], params_[base + OP_MOD_ENV_R]);
+    v.ops[o].mod_env.noteOn();
   }
 
   for (int f = 0; f < kNumFilters; ++f) {
@@ -550,6 +614,9 @@ void BuiltinFilm::noteOff(int pitch) {
     if (voices_[i].active && voices_[i].note == pitch) {
       for (int o = 0; o < kNumOps; ++o) {
         voices_[i].ops[o].env.noteOff();
+        voices_[i].ops[o].pitch_env.noteOff();
+        voices_[i].ops[o].pan_env.noteOff();
+        voices_[i].ops[o].mod_env.noteOff();
       }
       for (int f = 0; f < kNumFilters; ++f) {
         voices_[i].filters[f].env.noteOff();
@@ -611,6 +678,27 @@ double BuiltinFilm::getDefaultValue(int id) const {
         return 0.0;  // off
       case OP_ABSOLUTE:
         return 0.0;  // off
+      // Articulation envelopes: default to fast attack, mid decay/sustain/release
+      case OP_PITCH_ENV_A:
+      case OP_PAN_ENV_A:
+      case OP_MOD_ENV_A:
+        return 0.0;
+      case OP_PITCH_ENV_D:
+      case OP_PAN_ENV_D:
+      case OP_MOD_ENV_D:
+        return 0.2;
+      case OP_PITCH_ENV_S:
+      case OP_PAN_ENV_S:
+      case OP_MOD_ENV_S:
+        return 0.5;
+      case OP_PITCH_ENV_R:
+      case OP_PAN_ENV_R:
+      case OP_MOD_ENV_R:
+        return 0.3;
+      case OP_PITCH_DEPTH:
+      case OP_PAN_DEPTH:
+      case OP_MOD_DEPTH:
+        return 0.5;  // neutral (no effect)
     }
   }
 

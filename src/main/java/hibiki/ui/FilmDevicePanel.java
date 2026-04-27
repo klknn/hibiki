@@ -14,7 +14,7 @@ import javax.swing.*;
 public class FilmDevicePanel extends JPanel {
   static final int NUM_OPS = 6;
   static final int NUM_FILTERS = 3;
-  static final int PARAMS_PER_OP = 23;
+  static final int PARAMS_PER_OP = 38;
   static final int PARAMS_PER_FILTER = 12;
   private static final int OP_PARAMS = NUM_OPS * PARAMS_PER_OP; // 138
   private static final int FILTER_PARAMS = NUM_FILTERS * PARAMS_PER_FILTER; // 36
@@ -53,6 +53,14 @@ public class FilmDevicePanel extends JPanel {
   private static final int OP_SHAPE = 14, OP_TENSION = 15, OP_SKEW = 16;
   private static final int OP_SINE_SHAPER = 17, OP_NOISE_MIX = 18, OP_FREQ_OFFSET = 19;
   private static final int OP_HALF = 20, OP_EVEN = 21, OP_ABSOLUTE = 22;
+  // Articulation envelope offsets
+  private static final int OP_PITCH_ENV_A = 23, OP_PITCH_ENV_D = 24;
+  private static final int OP_PITCH_ENV_S = 25, OP_PITCH_ENV_R = 26;
+  private static final int OP_PAN_ENV_A = 27, OP_PAN_ENV_D = 28;
+  private static final int OP_PAN_ENV_S = 29, OP_PAN_ENV_R = 30;
+  private static final int OP_MOD_ENV_A = 31, OP_MOD_ENV_D = 32;
+  private static final int OP_MOD_ENV_S = 33, OP_MOD_ENV_R = 34;
+  private static final int OP_PITCH_DEPTH = 35, OP_PAN_DEPTH = 36, OP_MOD_DEPTH = 37;
 
   // Per-filter param offsets (relative)
   private static final int FLT_TYPE = 0, FLT_CUTOFF = 1, FLT_RESONANCE = 2;
@@ -394,6 +402,43 @@ public class FilmDevicePanel extends JPanel {
       oscTab.add(modeBtn);
     }
     subTabs.addTab("OSC", oscTab);
+
+    // ── Articulation sub-tabs: Pitch Art / Pan Art / Mod Art ──
+    int[][] artEnvParams = {
+        {OP_PITCH_ENV_A, OP_PITCH_ENV_D, OP_PITCH_ENV_S, OP_PITCH_ENV_R},
+        {OP_PAN_ENV_A, OP_PAN_ENV_D, OP_PAN_ENV_S, OP_PAN_ENV_R},
+        {OP_MOD_ENV_A, OP_MOD_ENV_D, OP_MOD_ENV_S, OP_MOD_ENV_R}
+    };
+    int[] artDepthParams = {OP_PITCH_DEPTH, OP_PAN_DEPTH, OP_MOD_DEPTH};
+    String[] artTabNames = {"PITCH ART", "PAN ART", "MOD ART"};
+    String[] artDepthLabels = {"P.Depth", "Pan.D", "Mod.D"};
+    for (int artIdx = 0; artIdx < 3; artIdx++) {
+      JPanel artTab = new JPanel();
+      artTab.setLayout(new BoxLayout(artTab, BoxLayout.Y_AXIS));
+      artTab.setBackground(theme.BG_DARK);
+      JPanel artKnobs = new JPanel(new FlowLayout(FlowLayout.LEFT, theme.scale(6), theme.scale(2)));
+      artKnobs.setOpaque(false);
+      artKnobs.add(createKnob(artDepthLabels[artIdx], base + artDepthParams[artIdx], 0.5, theme));
+      artTab.add(artKnobs);
+      // Articulation envelope editor
+      EnvelopeEditorPanel artEnv = new EnvelopeEditorPanel();
+      artEnv.setValues(0.0f, 0.2f, 0.5f, 0.3f);
+      artEnv.setPreferredSize(new Dimension(theme.scale(350), theme.scale(100)));
+      final int[] envP = artEnvParams[artIdx];
+      artEnv.addListener(
+          (a, d, s, r) -> {
+            params[base + envP[0]] = a;
+            params[base + envP[1]] = d;
+            params[base + envP[2]] = s;
+            params[base + envP[3]] = r;
+            sendParam(base + envP[0], a);
+            sendParam(base + envP[1], d);
+            sendParam(base + envP[2], s);
+            sendParam(base + envP[3], r);
+          });
+      artTab.add(artEnv);
+      subTabs.addTab(artTabNames[artIdx], artTab);
+    }
 
     panel.add(subTabs);
     return panel;

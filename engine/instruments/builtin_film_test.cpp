@@ -204,7 +204,7 @@ TEST(BuiltinFilmTest, NameAndPath) {
   EXPECT_EQ(film.getPath(), "builtin://film");
   EXPECT_TRUE(film.isInstrument());
   EXPECT_EQ(film.getParameterCount(), BuiltinFilm::kTotalParams);
-  EXPECT_EQ(film.getParameterCount(), 254);
+  EXPECT_EQ(film.getParameterCount(), 344);
 }
 
 TEST(BuiltinFilmTest, LoadWithSyxPathProducesOutput) {
@@ -298,6 +298,46 @@ TEST(BuiltinFilmTest, RingModulationChangesSpectrum) {
   EXPECT_GT(rm_rms, 0.01f);
   EXPECT_NE(fm_rms, rm_rms)
       << "FM and RM modes should produce different spectral content";
+}
+
+TEST(BuiltinFilmTest, PitchEnvelopeChangesFrequency) {
+  constexpr int N = 2048;
+  auto ctx = MakeContext();
+
+  auto renderWithPitchDepth = [&](float depth) -> float {
+    BuiltinFilm film;
+    film.load("", 0, 44100.0);
+    // Set pitch envelope: fast attack, sustain at 1.0 (max pitch offset).
+    film.setParameterValue(BuiltinFilm::OP_PITCH_ENV_A, 0.0);
+    film.setParameterValue(BuiltinFilm::OP_PITCH_ENV_D, 0.0);
+    film.setParameterValue(BuiltinFilm::OP_PITCH_ENV_S, 1.0);
+    film.setParameterValue(BuiltinFilm::OP_PITCH_ENV_R, 0.0);
+    film.setParameterValue(BuiltinFilm::OP_PITCH_DEPTH, depth);
+
+    float outL[N], outR[N];
+    float* outs[2] = {outL, outR};
+
+    std::vector<MidiNoteEvent> events;
+    MidiNoteEvent ev{};
+    ev.pitch = 60;
+    ev.velocity = 1.0f;
+    ev.isNoteOn = true;
+    events.push_back(ev);
+
+    film.process(nullptr, outs, N, ctx, events);
+
+    float rms = 0;
+    for (int i = 0; i < N; ++i) rms += outL[i] * outL[i];
+    return std::sqrt(rms / N);
+  };
+
+  float no_pitch = renderWithPitchDepth(0.5f);    // neutral
+  float with_pitch = renderWithPitchDepth(0.8f);  // pitch up
+
+  EXPECT_GT(no_pitch, 0.01f);
+  EXPECT_GT(with_pitch, 0.01f);
+  EXPECT_NE(no_pitch, with_pitch)
+      << "Pitch envelope should change the spectral content";
 }
 
 TEST(BuiltinFilmTest, Dx7SysexImport) {

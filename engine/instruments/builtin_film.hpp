@@ -18,7 +18,7 @@ class BuiltinFilm : public IPlugin {
   static constexpr int kMaxVoices = 8;
   static constexpr int kNumOps = 6;
   static constexpr int kNumFilters = 3;
-  static constexpr int kParamsPerOp = 23;
+  static constexpr int kParamsPerOp = 38;
   static constexpr int kParamsPerFilter = 12;
   static constexpr int kOpParams = kNumOps * kParamsPerOp;              // 138
   static constexpr int kFilterParams = kNumFilters * kParamsPerFilter;  // 36
@@ -61,6 +61,25 @@ class BuiltinFilm : public IPlugin {
     OP_HALF = 20,      // Half: use only first half of phase
     OP_EVEN = 21,      // Even: silence odd phases
     OP_ABSOLUTE = 22,  // Absolute: rectify waveform
+    // Articulation envelopes: Pitch
+    OP_PITCH_ENV_A = 23,
+    OP_PITCH_ENV_D = 24,
+    OP_PITCH_ENV_S = 25,
+    OP_PITCH_ENV_R = 26,
+    // Articulation envelopes: Pan
+    OP_PAN_ENV_A = 27,
+    OP_PAN_ENV_D = 28,
+    OP_PAN_ENV_S = 29,
+    OP_PAN_ENV_R = 30,
+    // Articulation envelopes: Mod (FM/RM depth)
+    OP_MOD_ENV_A = 31,
+    OP_MOD_ENV_D = 32,
+    OP_MOD_ENV_S = 33,
+    OP_MOD_ENV_R = 34,
+    // Envelope depth controls
+    OP_PITCH_DEPTH = 35,  // 0..1, 0.5=neutral
+    OP_PAN_DEPTH = 36,    // 0..1, 0.5=neutral
+    OP_MOD_DEPTH = 37,    // 0..1, 0.5=neutral
   };
 
   // --- Per-filter param offsets (relative to filter base) ---
@@ -134,7 +153,10 @@ class BuiltinFilm : public IPlugin {
   struct OpState {
     double phase = 0;
     float prev_output = 0;  // for feedback
-    Adsr env;
+    Adsr env;               // volume envelope
+    Adsr pitch_env;         // pitch articulation
+    Adsr pan_env;           // pan articulation
+    Adsr mod_env;           // modulation depth articulation
     double lfo_phase = 0;
   };
 

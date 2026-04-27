@@ -46,10 +46,10 @@ void MultiPointEnvelope::setFromADSRTimes(float attack_s, float decay_s,
   // Create 4 points: origin, peak, sustain, release-end.
   // Sustain marker at index 2 (the sustain point).
   points_ = {
-      {0.0f, 0.0f, 0.0f},         // 0: origin
-      {attack_s, 1.0f, 0.0f},     // 1: attack peak
-      {decay_s, sustain, 0.0f},    // 2: sustain level (hold here)
-      {release_s, 0.0f, 0.0f},    // 3: release end
+      {0.0f, 0.0f, 0.0f},        // 0: origin
+      {attack_s, 1.0f, 0.0f},    // 1: attack peak
+      {decay_s, sustain, 0.0f},  // 2: sustain level (hold here)
+      {release_s, 0.0f, 0.0f},   // 3: release end
   };
   sustain_index_ = 2;
 }
@@ -147,8 +147,7 @@ float MultiPointEnvelope::process(float sample_rate) {
 
     // For the first release segment, start from current value_ (set at
     // noteOff) instead of p0.value, for a smooth transition.
-    float start_val =
-        (current_segment_ == sustain_index_) ? value_ : p0.value;
+    float start_val = (current_segment_ == sustain_index_) ? value_ : p0.value;
     // After the first segment, we recalculate start_val from p0.
     // But on the very first call, value_ is still the sustain value.
     if (segment_time_ <= dt * 2.0f && current_segment_ == sustain_index_) {

@@ -405,9 +405,9 @@ public class FilmDevicePanel extends JPanel {
 
     // ── Articulation sub-tabs: Pitch Art / Pan Art / Mod Art ──
     int[][] artEnvParams = {
-        {OP_PITCH_ENV_A, OP_PITCH_ENV_D, OP_PITCH_ENV_S, OP_PITCH_ENV_R},
-        {OP_PAN_ENV_A, OP_PAN_ENV_D, OP_PAN_ENV_S, OP_PAN_ENV_R},
-        {OP_MOD_ENV_A, OP_MOD_ENV_D, OP_MOD_ENV_S, OP_MOD_ENV_R}
+      {OP_PITCH_ENV_A, OP_PITCH_ENV_D, OP_PITCH_ENV_S, OP_PITCH_ENV_R},
+      {OP_PAN_ENV_A, OP_PAN_ENV_D, OP_PAN_ENV_S, OP_PAN_ENV_R},
+      {OP_MOD_ENV_A, OP_MOD_ENV_D, OP_MOD_ENV_S, OP_MOD_ENV_R}
     };
     int[] artDepthParams = {OP_PITCH_DEPTH, OP_PAN_DEPTH, OP_MOD_DEPTH};
     String[] artTabNames = {"PITCH ART", "PAN ART", "MOD ART"};

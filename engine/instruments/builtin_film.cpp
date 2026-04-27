@@ -320,15 +320,14 @@ bool BuiltinFilm::getParameterInfo(int index, VstParamInfo& info) const {
     int op = index / kParamsPerOp + 1;
     int p = index % kParamsPerOp;
     static const char* op_names[] = {
-        "Waveform", "Level",     "Ratio",       "Fine",      "Env A",
-        "Env D",    "Env S",     "Env R",       "Feedback",  "Pan",
-        "LFO Rate", "LFO Depth", "LFO Wave",    "Phase",     "Shape",
-        "Tension",  "Skew",      "Sine Shaper", "Noise Mix", "Freq Ofs",
-        "Half",     "Even",      "Absolute",
-        "PitchEnv A", "PitchEnv D", "PitchEnv S", "PitchEnv R",
-        "PanEnv A",   "PanEnv D",   "PanEnv S",   "PanEnv R",
-        "ModEnv A",   "ModEnv D",   "ModEnv S",   "ModEnv R",
-        "Pitch Depth", "Pan Depth", "Mod Depth"};
+        "Waveform",    "Level",      "Ratio",       "Fine",       "Env A",
+        "Env D",       "Env S",      "Env R",       "Feedback",   "Pan",
+        "LFO Rate",    "LFO Depth",  "LFO Wave",    "Phase",      "Shape",
+        "Tension",     "Skew",       "Sine Shaper", "Noise Mix",  "Freq Ofs",
+        "Half",        "Even",       "Absolute",    "PitchEnv A", "PitchEnv D",
+        "PitchEnv S",  "PitchEnv R", "PanEnv A",    "PanEnv D",   "PanEnv S",
+        "PanEnv R",    "ModEnv A",   "ModEnv D",    "ModEnv S",   "ModEnv R",
+        "Pitch Depth", "Pan Depth",  "Mod Depth"};
     info.name = "Op" + std::to_string(op) + " " + op_names[p];
   } else if (index < kOpParams + kFilterParams) {
     int fi = (index - kOpParams) / kParamsPerFilter + 1;
@@ -339,7 +338,7 @@ bool BuiltinFilm::getParameterInfo(int index, VstParamInfo& info) const {
     info.name = "Flt" + std::to_string(fi) + " " + flt_names[p];
   } else if (index < kOpParams + kFilterParams + kGlobalParams) {
     static const char* global_names[] = {
-        "Algorithm",     "Master Vol",    "Enable",    "Unison Voices",
+        "Algorithm",     "Master Vol",    "Enable",     "Unison Voices",
         "Unison Detune", "Unison Spread", "Portamento", "RM Mode"};
     info.name = global_names[index - kOpParams - kFilterParams];
   } else {
@@ -578,9 +577,9 @@ void BuiltinFilm::noteOn(int pitch, float velocity) {
     v.ops[o].prev_output = 0;
     v.ops[o].lfo_phase = 0;
     int base = opBase(o);
-    v.ops[o].env.setFromADSR(
-        params_[base + OP_ENV_A], params_[base + OP_ENV_D],
-        params_[base + OP_ENV_S], params_[base + OP_ENV_R]);
+    v.ops[o].env.setFromADSR(params_[base + OP_ENV_A], params_[base + OP_ENV_D],
+                             params_[base + OP_ENV_S],
+                             params_[base + OP_ENV_R]);
     v.ops[o].env.noteOn();
     // Articulation envelopes.
     v.ops[o].pitch_env.setNormalized(
@@ -678,7 +677,8 @@ double BuiltinFilm::getDefaultValue(int id) const {
         return 0.0;  // off
       case OP_ABSOLUTE:
         return 0.0;  // off
-      // Articulation envelopes: default to fast attack, mid decay/sustain/release
+      // Articulation envelopes: default to fast attack, mid
+      // decay/sustain/release
       case OP_PITCH_ENV_A:
       case OP_PAN_ENV_A:
       case OP_MOD_ENV_A:

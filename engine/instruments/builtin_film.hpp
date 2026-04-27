@@ -153,7 +153,7 @@ class BuiltinFilm : public IPlugin {
  private:
   struct OpState {
     double phase = 0;
-    float prev_output = 0;  // for feedback
+    float prev_output = 0;   // for feedback
     MultiPointEnvelope env;  // volume envelope (multi-point capable)
     Adsr pitch_env;          // pitch articulation
     Adsr pan_env;            // pan articulation

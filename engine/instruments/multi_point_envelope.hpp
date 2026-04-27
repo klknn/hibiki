@@ -55,8 +55,8 @@ class MultiPointEnvelope {
   int sustain_index_ = -1;
 
   Stage stage_ = Stage::IDLE;
-  int current_segment_ = 0;   // index of start point of current segment
-  float segment_time_ = 0.0f; // time elapsed in current segment
+  int current_segment_ = 0;    // index of start point of current segment
+  float segment_time_ = 0.0f;  // time elapsed in current segment
   float value_ = 0.0f;
 };
 

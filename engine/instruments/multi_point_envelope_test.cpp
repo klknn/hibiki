@@ -55,11 +55,11 @@ TEST(MultiPointEnvelopeTest, CustomMultiPoint) {
   MultiPointEnvelope env;
   // 5 points: origin → peak → dip → sustain hold → release end
   std::vector<MultiPointEnvelope::Point> pts = {
-      {0.0f, 0.0f, 0.0f},     // 0: origin
-      {0.001f, 1.0f, 0.0f},   // 1: fast attack to peak
-      {0.005f, 0.3f, 0.0f},   // 2: dip
-      {0.001f, 0.8f, 0.0f},   // 3: rise to sustain (hold here)
-      {0.01f, 0.0f, 0.0f},    // 4: release to zero
+      {0.0f, 0.0f, 0.0f},    // 0: origin
+      {0.001f, 1.0f, 0.0f},  // 1: fast attack to peak
+      {0.005f, 0.3f, 0.0f},  // 2: dip
+      {0.001f, 0.8f, 0.0f},  // 3: rise to sustain (hold here)
+      {0.01f, 0.0f, 0.0f},   // 4: release to zero
   };
   env.setPoints(pts, 3);  // sustain at point 3
   env.noteOn();
@@ -70,7 +70,8 @@ TEST(MultiPointEnvelopeTest, CustomMultiPoint) {
 
   // Keep running — should stay at sustain.
   float still_sustain = runFor(env, 500);
-  EXPECT_NEAR(still_sustain, 0.8f, 0.05f) << "Should not change during sustain hold";
+  EXPECT_NEAR(still_sustain, 0.8f, 0.05f)
+      << "Should not change during sustain hold";
 
   // Note off → release segment.
   env.noteOff();
@@ -83,7 +84,7 @@ TEST(MultiPointEnvelopeTest, TensionCurveEaseIn) {
   MultiPointEnvelope env;
   // Two points with positive tension (ease-in: slow start, fast end).
   std::vector<MultiPointEnvelope::Point> pts = {
-      {0.0f, 0.0f, 0.8f},   // tension = 0.8 → ease-in
+      {0.0f, 0.0f, 0.8f},  // tension = 0.8 → ease-in
       {0.01f, 1.0f, 0.0f},
   };
   env.setPoints(pts, -1);  // no sustain — play straight through

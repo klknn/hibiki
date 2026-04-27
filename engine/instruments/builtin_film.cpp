@@ -108,7 +108,7 @@ void BuiltinFilm::process(float** /*inputs*/, float** outputs, int num_samples,
     // Check if any envelope is still active.
     bool any_active = false;
     for (int o = 0; o < kNumOps; ++o) {
-      if (voice.ops[o].env.getStage() != Adsr::Stage::ENV_IDLE) {
+      if (!voice.ops[o].env.isIdle()) {
         any_active = true;
         break;
       }
@@ -365,7 +365,7 @@ void BuiltinFilm::setParameterValue(uint32_t id, double value) {
     if (p >= OP_ENV_A && p <= OP_ENV_R) {
       int base = opBase(op);
       for (auto& v : voices_) {
-        v.ops[op].env.setNormalized(
+        v.ops[op].env.setFromADSR(
             params_[base + OP_ENV_A], params_[base + OP_ENV_D],
             params_[base + OP_ENV_S], params_[base + OP_ENV_R]);
       }
@@ -406,7 +406,7 @@ void BuiltinFilm::setParameterValue(uint32_t id, double value) {
     if (p >= FLT_ENV_A && p <= FLT_ENV_R) {
       int fbase = filterBase(fi);
       for (auto& v : voices_) {
-        v.filters[fi].env.setNormalized(
+        v.filters[fi].env.setFromADSR(
             params_[fbase + FLT_ENV_A], params_[fbase + FLT_ENV_D],
             params_[fbase + FLT_ENV_S], params_[fbase + FLT_ENV_R]);
       }
@@ -578,7 +578,7 @@ void BuiltinFilm::noteOn(int pitch, float velocity) {
     v.ops[o].prev_output = 0;
     v.ops[o].lfo_phase = 0;
     int base = opBase(o);
-    v.ops[o].env.setNormalized(
+    v.ops[o].env.setFromADSR(
         params_[base + OP_ENV_A], params_[base + OP_ENV_D],
         params_[base + OP_ENV_S], params_[base + OP_ENV_R]);
     v.ops[o].env.noteOn();
@@ -602,7 +602,7 @@ void BuiltinFilm::noteOn(int pitch, float velocity) {
     v.filters[f].filterR.reset();
     v.filters[f].lfo_phase = 0;
     int fbase = filterBase(f);
-    v.filters[f].env.setNormalized(
+    v.filters[f].env.setFromADSR(
         params_[fbase + FLT_ENV_A], params_[fbase + FLT_ENV_D],
         params_[fbase + FLT_ENV_S], params_[fbase + FLT_ENV_R]);
     v.filters[f].env.noteOn();

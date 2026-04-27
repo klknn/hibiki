@@ -6,6 +6,7 @@
 
 #include "engine/core/biquad_filter.hpp"
 #include "engine/instruments/adsr.hpp"
+#include "engine/instruments/multi_point_envelope.hpp"
 #include "engine/plugin/iplugin.hpp"
 
 namespace hibiki {
@@ -153,16 +154,16 @@ class BuiltinFilm : public IPlugin {
   struct OpState {
     double phase = 0;
     float prev_output = 0;  // for feedback
-    Adsr env;               // volume envelope
-    Adsr pitch_env;         // pitch articulation
-    Adsr pan_env;           // pan articulation
-    Adsr mod_env;           // modulation depth articulation
+    MultiPointEnvelope env;  // volume envelope (multi-point capable)
+    Adsr pitch_env;          // pitch articulation
+    Adsr pan_env;            // pan articulation
+    Adsr mod_env;            // modulation depth articulation
     double lfo_phase = 0;
   };
 
   struct FilterState {
     BiquadFilter filterL, filterR;
-    Adsr env;
+    MultiPointEnvelope env;  // filter envelope (multi-point capable)
     double lfo_phase = 0;
   };
 

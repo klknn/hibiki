@@ -13,6 +13,12 @@ cc_library(
 )
 
 cc_library(
+    name = "multi_point_envelope",
+    srcs = ["multi_point_envelope.cpp"],
+    hdrs = ["multi_point_envelope.hpp"],
+)
+
+cc_library(
     name = "builtin_3xosc",
     srcs = ["builtin_3xosc.cpp"],
     hdrs = ["builtin_3xosc.hpp"],
@@ -42,6 +48,7 @@ cc_library(
     hdrs = ["builtin_film.hpp"],
     deps = [
         ":adsr",
+        ":multi_point_envelope",
         "//engine/core:biquad_filter",
         "//engine/plugin:iplugin",
         "@abseil-cpp//absl/base",
@@ -87,6 +94,16 @@ cc_test(
     deps = [
         ":builtin_film",
         "//engine:test_utils",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "multi_point_envelope_test",
+    srcs = ["multi_point_envelope_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":multi_point_envelope",
         "@googletest//:gtest_main",
     ],
 )

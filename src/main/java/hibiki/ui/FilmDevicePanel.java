@@ -18,7 +18,7 @@ public class FilmDevicePanel extends JPanel {
   static final int PARAMS_PER_FILTER = 12;
   private static final int OP_PARAMS = NUM_OPS * PARAMS_PER_OP; // 138
   private static final int FILTER_PARAMS = NUM_FILTERS * PARAMS_PER_FILTER; // 36
-  static final int NUM_GLOBAL = 7;
+  static final int NUM_GLOBAL = 8;
   private static final int MATRIX_COLS = 12;
   private static final int MATRIX_PARAMS = NUM_OPS * MATRIX_COLS; // 72
   private static final int TOTAL_PARAMS = OP_PARAMS + FILTER_PARAMS + NUM_GLOBAL + MATRIX_PARAMS;
@@ -43,6 +43,7 @@ public class FilmDevicePanel extends JPanel {
   private static final int G_UNISON_DETUNE = G_ALGORITHM + 4;
   private static final int G_UNISON_SPREAD = G_ALGORITHM + 5;
   private static final int G_PORTAMENTO = G_ALGORITHM + 6;
+  private static final int G_RM_MODE = G_ALGORITHM + 7;
 
   // Per-op param offsets (relative)
   static final int OP_WAVEFORM = 0, OP_LEVEL = 1, OP_RATIO = 2, OP_FINE = 3;
@@ -569,6 +570,26 @@ public class FilmDevicePanel extends JPanel {
     scroll.setBorder(null);
     scroll.getViewport().setBackground(MATRIX_BG);
     wrapper.add(scroll, BorderLayout.CENTER);
+
+    // FM/RM toggle at bottom of matrix
+    JPanel modePanel = new JPanel(new FlowLayout(FlowLayout.CENTER, theme.scale(4), 0));
+    modePanel.setBackground(MATRIX_BG);
+    JToggleButton rmToggle = new JToggleButton("FM");
+    rmToggle.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(9.0f)));
+    rmToggle.setForeground(ACCENT_YELLOW);
+    rmToggle.setBackground(new Color(0x2A2A30));
+    rmToggle.setFocusPainted(false);
+    rmToggle.setToolTipText("Toggle FM/RM modulation mode");
+    rmToggle.addActionListener(
+        e -> {
+          boolean rm = rmToggle.isSelected();
+          rmToggle.setText(rm ? "RM" : "FM");
+          rmToggle.setForeground(rm ? new Color(0xFF6644) : ACCENT_YELLOW);
+          params[G_RM_MODE] = rm ? 1.0 : 0.0;
+          sendParam(G_RM_MODE, params[G_RM_MODE]);
+        });
+    modePanel.add(rmToggle);
+    wrapper.add(modePanel, BorderLayout.SOUTH);
 
     return wrapper;
   }

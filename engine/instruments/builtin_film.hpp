@@ -22,7 +22,7 @@ class BuiltinFilm : public IPlugin {
   static constexpr int kParamsPerFilter = 12;
   static constexpr int kOpParams = kNumOps * kParamsPerOp;              // 138
   static constexpr int kFilterParams = kNumFilters * kParamsPerFilter;  // 36
-  static constexpr int kGlobalParams = 7;
+  static constexpr int kGlobalParams = 8;
   static constexpr int kMatrixCols = 12;  // 6 ops + 3 filters + pan + fx + out
   static constexpr int kMatrixParams = kNumOps * kMatrixCols;  // 72
   static constexpr int kTotalParams =
@@ -81,13 +81,14 @@ class BuiltinFilm : public IPlugin {
 
   // --- Global param offsets ---
   enum GlobalParam {
-    G_ALGORITHM = kOpParams + kFilterParams,       // 120
-    G_MASTER_VOL = kOpParams + kFilterParams + 1,  // 121
-    G_ENABLE = kOpParams + kFilterParams + 2,      // 122
+    G_ALGORITHM = kOpParams + kFilterParams,       // 174
+    G_MASTER_VOL = kOpParams + kFilterParams + 1,  // 175
+    G_ENABLE = kOpParams + kFilterParams + 2,      // 176
     G_UNISON_VOICES = kOpParams + kFilterParams + 3,
     G_UNISON_DETUNE = kOpParams + kFilterParams + 4,
     G_UNISON_SPREAD = kOpParams + kFilterParams + 5,
     G_PORTAMENTO = kOpParams + kFilterParams + 6,
+    G_RM_MODE = kOpParams + kFilterParams + 7,  // 0=FM, >=0.5=RM
   };
 
   // Mod matrix base offset.

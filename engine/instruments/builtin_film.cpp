@@ -139,18 +139,28 @@ void BuiltinFilm::process(float** /*inputs*/, float** outputs, int num_samples,
             voice.base_freq * ratio * std::pow(2.0f, fine_cents / 1200.0f) +
             freq_offset;
 
-        // Accumulate FM modulation input from all operators via matrix.
+        // Accumulate FM/RM modulation input from all operators via matrix.
         float mod_input = 0;
+        float rm_factor = 1.0f;
+        bool rm_mode = params_[G_RM_MODE] >= 0.5f;
         for (int src = 0; src < kNumOps; ++src) {
           float mod_depth = params_[matrixIdx(src, o)];
           float depth = (mod_depth - 0.5f) * 2.0f * kMaxModDepth;
           if (std::abs(depth) < 1e-6f) continue;
+          float src_out;
           if (src < o) {
             // Already computed this frame — use current output.
-            mod_input += op_mod_out[src] * depth;
+            src_out = op_mod_out[src];
           } else {
             // Not yet computed — use previous frame's output (1-sample delay).
-            mod_input += voice.ops[src].prev_output * depth;
+            src_out = voice.ops[src].prev_output;
+          }
+          if (rm_mode) {
+            // RM: amplitude multiplication
+            rm_factor *= (1.0f + src_out * depth);
+          } else {
+            // FM: frequency modulation
+            mod_input += src_out * depth;
           }
         }
 
@@ -192,6 +202,10 @@ void BuiltinFilm::process(float** /*inputs*/, float** outputs, int num_samples,
 
         // Modulation output (for FM): envelope-shaped, NO level.
         op_mod_out[o] = sample * env_val;
+        // Apply RM factor if in RM mode.
+        if (rm_mode) {
+          op_mod_out[o] *= rm_factor;
+        }
         voice.ops[o].prev_output = op_mod_out[o];
 
         // Mix output: includes level (for routing to filters/output).
@@ -302,7 +316,7 @@ bool BuiltinFilm::getParameterInfo(int index, VstParamInfo& info) const {
   } else if (index < kOpParams + kFilterParams + kGlobalParams) {
     static const char* global_names[] = {
         "Algorithm",     "Master Vol",    "Enable",    "Unison Voices",
-        "Unison Detune", "Unison Spread", "Portamento"};
+        "Unison Detune", "Unison Spread", "Portamento", "RM Mode"};
     info.name = global_names[index - kOpParams - kFilterParams];
   } else {
     int mi = index - kMatrixBase;
@@ -639,6 +653,7 @@ double BuiltinFilm::getDefaultValue(int id) const {
   if (id == G_UNISON_DETUNE) return 0.0;
   if (id == G_UNISON_SPREAD) return 0.5;
   if (id == G_PORTAMENTO) return 0.0;
+  if (id == G_RM_MODE) return 0.0;  // FM by default
 
   // Matrix defaults: 0.5 = neutral (no modulation/send).
   if (id >= kMatrixBase) {

@@ -204,7 +204,7 @@ TEST(BuiltinFilmTest, NameAndPath) {
   EXPECT_EQ(film.getPath(), "builtin://film");
   EXPECT_TRUE(film.isInstrument());
   EXPECT_EQ(film.getParameterCount(), BuiltinFilm::kTotalParams);
-  EXPECT_EQ(film.getParameterCount(), 253);
+  EXPECT_EQ(film.getParameterCount(), 254);
 }
 
 TEST(BuiltinFilmTest, LoadWithSyxPathProducesOutput) {
@@ -254,6 +254,50 @@ TEST(BuiltinFilmTest, LoadWithSyxPathProducesOutput) {
   EXPECT_TRUE(any_non_default_level)
       << "DX7 voice should set non-trivial operator levels readable via "
          "getParameterValue";
+}
+
+TEST(BuiltinFilmTest, RingModulationChangesSpectrum) {
+  constexpr int N = 2048;
+  auto ctx = MakeContext();
+
+  auto renderWithMode = [&](bool rm_mode, float mod_amount) -> float {
+    BuiltinFilm film;
+    film.load("", 0, 44100.0);
+    // Enable RM mode if requested.
+    film.setParameterValue(BuiltinFilm::G_RM_MODE, rm_mode ? 1.0 : 0.0);
+    // Enable op2 as modulator.
+    film.setParameterValue(
+        1 * BuiltinFilm::kParamsPerOp + BuiltinFilm::OP_LEVEL, 1.0);
+    // Set mod matrix: op2 → op1.
+    film.setParameterValue(
+        BuiltinFilm::kMatrixBase + 1 * BuiltinFilm::kMatrixCols + 0,
+        mod_amount);
+
+    float outL[N], outR[N];
+    float* outs[2] = {outL, outR};
+
+    std::vector<MidiNoteEvent> events;
+    MidiNoteEvent ev{};
+    ev.pitch = 60;
+    ev.velocity = 1.0f;
+    ev.isNoteOn = true;
+    events.push_back(ev);
+
+    film.process(nullptr, outs, N, ctx, events);
+
+    float rms = 0;
+    for (int i = 0; i < N; ++i) rms += outL[i] * outL[i];
+    return std::sqrt(rms / N);
+  };
+
+  float fm_rms = renderWithMode(false, 0.9f);
+  float rm_rms = renderWithMode(true, 0.9f);
+
+  // FM and RM should produce audible but different output.
+  EXPECT_GT(fm_rms, 0.01f);
+  EXPECT_GT(rm_rms, 0.01f);
+  EXPECT_NE(fm_rms, rm_rms)
+      << "FM and RM modes should produce different spectral content";
 }
 
 TEST(BuiltinFilmTest, Dx7SysexImport) {

@@ -21,8 +21,16 @@ public class FilmDevicePanel extends JPanel {
   static final int NUM_GLOBAL = 8;
   private static final int MATRIX_COLS = 12;
   private static final int MATRIX_PARAMS = NUM_OPS * MATRIX_COLS; // 72
-  private static final int TOTAL_PARAMS = OP_PARAMS + FILTER_PARAMS + NUM_GLOBAL + MATRIX_PARAMS;
+  // Multi-point envelope fixed-slot params.
+  static final int MAX_ENV_POINTS = 16;
+  private static final int MP_SLOT_PARAMS = 3; // time, value, tension
+  private static final int MP_META_PARAMS = 2; // count, sustain_idx
+  static final int MP_PARAMS_PER_ENV = MP_META_PARAMS + MAX_ENV_POINTS * MP_SLOT_PARAMS; // 50
+  private static final int NUM_MP_ENVS = NUM_OPS + NUM_FILTERS; // 9
+  private static final int MP_TOTAL = NUM_MP_ENVS * MP_PARAMS_PER_ENV; // 450
   private static final int MATRIX_BASE = OP_PARAMS + FILTER_PARAMS + NUM_GLOBAL;
+  private static final int MULTI_POINT_BASE = MATRIX_BASE + MATRIX_PARAMS; // 344
+  private static final int TOTAL_PARAMS = MULTI_POINT_BASE + MP_TOTAL; // 794
 
   // Waveform names and normalized values
   private static final String[] WAVE_NAMES = {"Sin", "Saw", "Sq", "Tri", "Nse"};
@@ -333,6 +341,37 @@ public class FilmDevicePanel extends JPanel {
             mainEnvelope.setValues(a, d, s, r);
           }
         });
+    // Enable multi-point mode with default 4-point ADSR shape.
+    java.util.List<EnvelopeEditorPanel.EnvPoint> defaultPts = new java.util.ArrayList<>();
+    defaultPts.add(new EnvelopeEditorPanel.EnvPoint(0.0f, 0.0f, 0.0f));
+    defaultPts.add(new EnvelopeEditorPanel.EnvPoint(0.01f, 1.0f, 0.0f));
+    defaultPts.add(new EnvelopeEditorPanel.EnvPoint(0.2f, 0.7f, 0.0f));
+    defaultPts.add(new EnvelopeEditorPanel.EnvPoint(0.5f, 0.0f, 0.0f));
+    envEditor.enableMultiPointMode(defaultPts, 2);
+    final int mpBase = MULTI_POINT_BASE + opIdx * MP_PARAMS_PER_ENV;
+    envEditor.addMultiPointListener((count, susIdx, pts) -> {
+      // count param: count/16
+      params[mpBase] = count / (float) MAX_ENV_POINTS;
+      sendParam(mpBase, params[mpBase]);
+      // sustain index: encode as normalized value, 0 = no sustain
+      params[mpBase + 1] = (susIdx < 0) ? 0.0f : susIdx / (float)(MAX_ENV_POINTS - 1);
+      sendParam(mpBase + 1, params[mpBase + 1]);
+      // Point slots: time, value, tension
+      for (int i = 0; i < count && i < MAX_ENV_POINTS; i++) {
+        int slotBase = mpBase + 2 + i * 3;
+        // Time: convert to log-normalized (inverse of engine's pow(10000, norm))
+        float timeNorm = (float)(Math.log(Math.max(0.001f, pts[i*3]) / 0.001f) / Math.log(10000.0));
+        timeNorm = Math.max(0, Math.min(1, timeNorm));
+        params[slotBase] = timeNorm;
+        sendParam(slotBase, timeNorm);
+        // Value: direct
+        params[slotBase + 1] = pts[i*3 + 1];
+        sendParam(slotBase + 1, pts[i*3 + 1]);
+        // Tension: -1..+1 → 0..1
+        params[slotBase + 2] = (pts[i*3 + 2] + 1.0f) / 2.0f;
+        sendParam(slotBase + 2, params[slotBase + 2]);
+      }
+    });
     volTab.add(envEditor);
     subTabs.addTab("VOL", volTab);
 

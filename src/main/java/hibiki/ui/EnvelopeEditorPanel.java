@@ -8,19 +8,39 @@ import java.util.List;
 import javax.swing.*;
 
 /**
- * Visual ADSR envelope editor inspired by Sytrus. Displays a draggable envelope curve with 5
- * control points (origin, attack peak, decay end, sustain hold, release end) and tension handles
- * between each segment.
+ * Visual envelope editor inspired by Sytrus. Supports two modes:
+ * 1. ADSR mode (default): Fixed 5 control points (origin, attack, decay, sustain, release).
+ * 2. Multi-point mode: Variable-length point list with right-click add/remove and sustain marker.
  *
- * <p>All ADSR values are normalized 0..1. Tension values range from -1 (ease-in) to +1 (ease-out),
+ * <p>All values are normalized 0..1. Tension values range from -1 (ease-in) to +1 (ease-out),
  * with 0 being linear.
  */
 public class EnvelopeEditorPanel extends JPanel {
 
-  /** Callback interface for envelope parameter changes. */
+  /** Callback interface for ADSR envelope parameter changes. */
   public interface Listener {
     void onEnvelopeChanged(float attack, float decay, float sustain, float release);
   }
+
+  /** Callback interface for multi-point envelope changes. */
+  public interface MultiPointListener {
+    /** Called when points are modified. points array: [time0,val0,ten0, time1,val1,ten1, ...]. */
+    void onMultiPointChanged(int pointCount, int sustainIndex, float[] points);
+  }
+
+  /** A single point in a multi-point envelope. */
+  public static class EnvPoint {
+    public float time;    // 0..1 normalized
+    public float value;   // 0..1
+    public float tension; // -1..+1
+    public EnvPoint(float t, float v, float tn) { time = t; value = v; tension = tn; }
+  }
+
+  // --- Mode flag ---
+  private boolean multiPointMode = false;
+  private final List<EnvPoint> mpPoints = new ArrayList<>();
+  private int mpSustainIndex = -1;  // -1 = no sustain
+  private final List<MultiPointListener> mpListeners = new ArrayList<>();
 
   // ADSR values, all 0..1 normalized
   private float attack = 0.0f;
@@ -73,6 +93,10 @@ public class EnvelopeEditorPanel extends JPanel {
         new MouseAdapter() {
           @Override
           public void mousePressed(MouseEvent e) {
+            if (multiPointMode && SwingUtilities.isRightMouseButton(e)) {
+              showMultiPointContextMenu(e);
+              return;
+            }
             handleMousePressed(e);
           }
 
@@ -87,12 +111,20 @@ public class EnvelopeEditorPanel extends JPanel {
         new MouseMotionAdapter() {
           @Override
           public void mouseDragged(MouseEvent e) {
-            handleMouseDragged(e);
+            if (multiPointMode) {
+              handleMultiPointDragged(e);
+            } else {
+              handleMouseDragged(e);
+            }
           }
 
           @Override
           public void mouseMoved(MouseEvent e) {
-            updateHover(e);
+            if (multiPointMode) {
+              updateMultiPointHover(e);
+            } else {
+              updateHover(e);
+            }
           }
         });
   }
@@ -138,6 +170,35 @@ public class EnvelopeEditorPanel extends JPanel {
       repaint();
     }
   }
+
+  // --- Multi-point API ---
+
+  /** Enable multi-point editing mode with initial points. */
+  public void enableMultiPointMode(List<EnvPoint> points, int sustainIndex) {
+    multiPointMode = true;
+    mpPoints.clear();
+    if (points == null || points.isEmpty()) {
+      // Default: 2-point (0→1→0)
+      mpPoints.add(new EnvPoint(0.0f, 0.0f, 0.0f));
+      mpPoints.add(new EnvPoint(0.5f, 1.0f, 0.0f));
+    } else {
+      mpPoints.addAll(points);
+    }
+    mpSustainIndex = sustainIndex;
+    repaint();
+  }
+
+  public void addMultiPointListener(MultiPointListener l) {
+    mpListeners.add(l);
+  }
+
+  public boolean isMultiPointMode() { return multiPointMode; }
+
+  public List<EnvPoint> getMultiPoints() {
+    return new ArrayList<>(mpPoints);
+  }
+
+  public int getMultiPointSustainIndex() { return mpSustainIndex; }
 
   // --- Control point positions ---
 
@@ -208,40 +269,44 @@ public class EnvelopeEditorPanel extends JPanel {
     // Grid lines
     drawGrid(g2, drawW, drawH);
 
-    Point[] pts = getControlPoints();
-    Point[] tensionPts = getTensionHandles(pts);
+    if (multiPointMode) {
+      paintMultiPoint(g2, drawW, drawH);
+    } else {
+      Point[] pts = getControlPoints();
+      Point[] tensionPts = getTensionHandles(pts);
 
-    // Section markers (D and S)
-    drawSectionMarkers(g2, pts, drawH);
+      // Section markers (D and S)
+      drawSectionMarkers(g2, pts, drawH);
 
-    // Filled area under curve
-    drawFilledCurve(g2, pts, drawH);
+      // Filled area under curve
+      drawFilledCurve(g2, pts, drawH);
 
-    // Curve
-    drawCurve(g2, pts);
+      // Curve
+      drawCurve(g2, pts);
 
-    // Tension handles
-    for (int i = 0; i < 4; i++) {
-      boolean hover = (i == hoverTensionIndex && dragIndex == -1);
-      g2.setColor(hover ? POINT_FILL : TENSION_COLOR);
-      g2.setStroke(new BasicStroke(1.5f));
-      int r = hover ? TENSION_RADIUS + 1 : TENSION_RADIUS;
-      g2.drawOval(tensionPts[i].x - r, tensionPts[i].y - r, r * 2, r * 2);
+      // Tension handles
+      for (int i = 0; i < 4; i++) {
+        boolean hover = (i == hoverTensionIndex && dragIndex == -1);
+        g2.setColor(hover ? POINT_FILL : TENSION_COLOR);
+        g2.setStroke(new BasicStroke(1.5f));
+        int r = hover ? TENSION_RADIUS + 1 : TENSION_RADIUS;
+        g2.drawOval(tensionPts[i].x - r, tensionPts[i].y - r, r * 2, r * 2);
+      }
+
+      // Control points
+      for (int i = 0; i < 5; i++) {
+        boolean hover = (i == hoverIndex && dragTensionIndex == -1);
+        int r = (hover || i == dragIndex) ? POINT_RADIUS + 2 : POINT_RADIUS;
+        g2.setColor(POINT_FILL);
+        g2.fillOval(pts[i].x - r, pts[i].y - r, r * 2, r * 2);
+        g2.setColor(POINT_BORDER);
+        g2.setStroke(new BasicStroke(1.5f));
+        g2.drawOval(pts[i].x - r, pts[i].y - r, r * 2, r * 2);
+      }
+
+      // ADSR labels at bottom
+      drawLabels(g2, pts, h);
     }
-
-    // Control points
-    for (int i = 0; i < 5; i++) {
-      boolean hover = (i == hoverIndex && dragTensionIndex == -1);
-      int r = (hover || i == dragIndex) ? POINT_RADIUS + 2 : POINT_RADIUS;
-      g2.setColor(POINT_FILL);
-      g2.fillOval(pts[i].x - r, pts[i].y - r, r * 2, r * 2);
-      g2.setColor(POINT_BORDER);
-      g2.setStroke(new BasicStroke(1.5f));
-      g2.drawOval(pts[i].x - r, pts[i].y - r, r * 2, r * 2);
-    }
-
-    // ADSR labels at bottom
-    drawLabels(g2, pts, h);
 
     g2.dispose();
   }
@@ -463,5 +528,210 @@ public class EnvelopeEditorPanel extends JPanel {
     double dx = a.x - b.x;
     double dy = a.y - b.y;
     return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // ============================
+  // Multi-point mode rendering
+  // ============================
+
+  /** Get pixel coordinates for multi-point envelope points. */
+  private Point[] getMultiPointPixels() {
+    int w = getWidth() - PAD_LEFT - PAD_RIGHT;
+    int h = getHeight() - PAD_TOP - PAD_BOTTOM;
+    Point[] pts = new Point[mpPoints.size()];
+    // Find max time for normalization
+    float maxTime = 0;
+    for (EnvPoint p : mpPoints) maxTime = Math.max(maxTime, p.time);
+    if (maxTime < 0.001f) maxTime = 1.0f;
+    for (int i = 0; i < mpPoints.size(); i++) {
+      EnvPoint p = mpPoints.get(i);
+      int x = PAD_LEFT + (int)((p.time / maxTime) * w);
+      int y = PAD_TOP + (int)((1.0f - p.value) * h);
+      pts[i] = new Point(x, y);
+    }
+    return pts;
+  }
+
+  private void paintMultiPoint(Graphics2D g2, int drawW, int drawH) {
+    if (mpPoints.size() < 2) return;
+    Point[] pts = getMultiPointPixels();
+
+    // Sustain marker
+    if (mpSustainIndex >= 0 && mpSustainIndex < pts.length) {
+      g2.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
+          10.0f, new float[]{4, 4}, 0));
+      g2.setColor(MARKER_COLOR);
+      g2.drawLine(pts[mpSustainIndex].x, PAD_TOP, pts[mpSustainIndex].x, PAD_TOP + drawH);
+      g2.setFont(getFont().deriveFont(Font.PLAIN, 9.0f));
+      g2.setColor(MARKER_TEXT);
+      g2.drawString("S", pts[mpSustainIndex].x + 2, PAD_TOP + drawH - 2);
+    }
+
+    // Filled area under curve
+    GeneralPath fill = new GeneralPath();
+    fill.moveTo(pts[0].x, pts[0].y);
+    for (int seg = 0; seg < pts.length - 1; seg++) {
+      float ten = mpPoints.get(seg).tension;
+      for (int step = 1; step <= CURVE_STEPS; step++) {
+        float t = step / (float) CURVE_STEPS;
+        float x = pts[seg].x + t * (pts[seg + 1].x - pts[seg].x);
+        float y = applyTension(t, pts[seg].y, pts[seg + 1].y, ten);
+        fill.lineTo(x, y);
+      }
+    }
+    fill.lineTo(pts[pts.length - 1].x, PAD_TOP + drawH);
+    fill.lineTo(pts[0].x, PAD_TOP + drawH);
+    fill.closePath();
+    GradientPaint gp = new GradientPaint(0, PAD_TOP, CURVE_FILL_TOP, 0, PAD_TOP + drawH, CURVE_FILL_BOT);
+    g2.setPaint(gp);
+    g2.fill(fill);
+
+    // Curve
+    g2.setColor(CURVE_COLOR);
+    g2.setStroke(new BasicStroke(2.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+    GeneralPath path = new GeneralPath();
+    path.moveTo(pts[0].x, pts[0].y);
+    for (int seg = 0; seg < pts.length - 1; seg++) {
+      float ten = mpPoints.get(seg).tension;
+      for (int step = 1; step <= CURVE_STEPS; step++) {
+        float t = step / (float) CURVE_STEPS;
+        float x = pts[seg].x + t * (pts[seg + 1].x - pts[seg].x);
+        float y = applyTension(t, pts[seg].y, pts[seg + 1].y, ten);
+        path.lineTo(x, y);
+      }
+    }
+    g2.draw(path);
+
+    // Control points
+    for (int i = 0; i < pts.length; i++) {
+      boolean hover = (i == hoverIndex && dragTensionIndex == -1);
+      int r = (hover || i == dragIndex) ? POINT_RADIUS + 2 : POINT_RADIUS;
+      g2.setColor(POINT_FILL);
+      g2.fillOval(pts[i].x - r, pts[i].y - r, r * 2, r * 2);
+      g2.setColor(i == mpSustainIndex ? MARKER_TEXT : POINT_BORDER);
+      g2.setStroke(new BasicStroke(1.5f));
+      g2.drawOval(pts[i].x - r, pts[i].y - r, r * 2, r * 2);
+    }
+
+    // Point index labels
+    g2.setFont(getFont().deriveFont(Font.PLAIN, 8.0f));
+    g2.setColor(LABEL_COLOR);
+    for (int i = 0; i < pts.length; i++) {
+      g2.drawString(String.valueOf(i), pts[i].x - 3, pts[i].y - POINT_RADIUS - 3);
+    }
+  }
+
+  // --- Multi-point mouse interaction ---
+
+  private void showMultiPointContextMenu(MouseEvent e) {
+    JPopupMenu menu = new JPopupMenu();
+    Point[] pts = getMultiPointPixels();
+
+    // Check if right-clicking on an existing point
+    int hitPt = -1;
+    for (int i = 0; i < pts.length; i++) {
+      if (dist(e.getPoint(), pts[i]) <= HIT_RADIUS) {
+        hitPt = i;
+        break;
+      }
+    }
+
+    if (hitPt >= 0 && mpPoints.size() > 2) {
+      final int idx = hitPt;
+      JMenuItem del = new JMenuItem("Delete Point " + idx);
+      del.addActionListener(ev -> {
+        mpPoints.remove(idx);
+        if (mpSustainIndex >= idx) mpSustainIndex = Math.max(-1, mpSustainIndex - 1);
+        fireMultiPointChanged();
+        repaint();
+      });
+      menu.add(del);
+
+      JMenuItem sus = new JMenuItem(idx == mpSustainIndex ? "Clear Sustain" : "Set as Sustain");
+      sus.addActionListener(ev -> {
+        mpSustainIndex = (idx == mpSustainIndex) ? -1 : idx;
+        fireMultiPointChanged();
+        repaint();
+      });
+      menu.add(sus);
+    } else {
+      // Add point at click position
+      JMenuItem add = new JMenuItem("Add Point");
+      add.addActionListener(ev -> {
+        int drawW = getWidth() - PAD_LEFT - PAD_RIGHT;
+        int drawH = getHeight() - PAD_TOP - PAD_BOTTOM;
+        if (drawW <= 0 || drawH <= 0) return;
+
+        float maxTime = 0;
+        for (EnvPoint p : mpPoints) maxTime = Math.max(maxTime, p.time);
+        if (maxTime < 0.001f) maxTime = 1.0f;
+
+        float clickTime = ((e.getX() - PAD_LEFT) / (float) drawW) * maxTime;
+        float clickVal = 1.0f - (e.getY() - PAD_TOP) / (float) drawH;
+        clickTime = Math.max(0, Math.min(maxTime, clickTime));
+        clickVal = Math.max(0, Math.min(1, clickVal));
+
+        // Insert in time-sorted order
+        int insertIdx = mpPoints.size();
+        for (int i = 0; i < mpPoints.size(); i++) {
+          if (mpPoints.get(i).time > clickTime) {
+            insertIdx = i;
+            break;
+          }
+        }
+        mpPoints.add(insertIdx, new EnvPoint(clickTime, clickVal, 0.0f));
+        if (mpSustainIndex >= insertIdx) mpSustainIndex++;
+        fireMultiPointChanged();
+        repaint();
+      });
+      menu.add(add);
+    }
+    menu.show(this, e.getX(), e.getY());
+  }
+
+  private void handleMultiPointDragged(MouseEvent e) {
+    if (dragIndex < 0 || dragIndex >= mpPoints.size()) return;
+    int drawW = getWidth() - PAD_LEFT - PAD_RIGHT;
+    int drawH = getHeight() - PAD_TOP - PAD_BOTTOM;
+    if (drawW <= 0 || drawH <= 0) return;
+
+    float maxTime = 0;
+    for (EnvPoint p : mpPoints) maxTime = Math.max(maxTime, p.time);
+    if (maxTime < 0.001f) maxTime = 1.0f;
+
+    float newTime = ((e.getX() - PAD_LEFT) / (float) drawW) * maxTime;
+    float newVal = 1.0f - (e.getY() - PAD_TOP) / (float) drawH;
+    newTime = Math.max(0, Math.min(maxTime * 1.2f, newTime)); // allow slight extension
+    newVal = Math.max(0, Math.min(1, newVal));
+
+    mpPoints.get(dragIndex).time = newTime;
+    mpPoints.get(dragIndex).value = newVal;
+    fireMultiPointChanged();
+    repaint();
+  }
+
+  private void updateMultiPointHover(MouseEvent e) {
+    Point[] pts = getMultiPointPixels();
+    int oldHover = hoverIndex;
+    hoverIndex = -1;
+    for (int i = 0; i < pts.length; i++) {
+      if (dist(e.getPoint(), pts[i]) <= HIT_RADIUS) {
+        hoverIndex = i;
+        break;
+      }
+    }
+    if (hoverIndex != oldHover) repaint();
+  }
+
+  private void fireMultiPointChanged() {
+    float[] data = new float[mpPoints.size() * 3];
+    for (int i = 0; i < mpPoints.size(); i++) {
+      data[i * 3] = mpPoints.get(i).time;
+      data[i * 3 + 1] = mpPoints.get(i).value;
+      data[i * 3 + 2] = mpPoints.get(i).tension;
+    }
+    for (MultiPointListener l : mpListeners) {
+      l.onMultiPointChanged(mpPoints.size(), mpSustainIndex, data);
+    }
   }
 }

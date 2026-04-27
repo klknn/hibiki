@@ -26,8 +26,24 @@ class BuiltinFilm : public IPlugin {
   static constexpr int kGlobalParams = 8;
   static constexpr int kMatrixCols = 12;  // 6 ops + 3 filters + pan + fx + out
   static constexpr int kMatrixParams = kNumOps * kMatrixCols;  // 72
+
+  // Multi-point envelope fixed-slot params.
+  // 16 max points per envelope, each with (time, value, tension).
+  // env 0..5 = OP1..6 volume, env 6..8 = F1..3.
+  static constexpr int kMaxEnvPoints = 16;
+  static constexpr int kParamsPerEnvSlot = 3;  // time, value, tension
+  static constexpr int kMultiPointMetaParams = 2;  // count, sustain_index
+  static constexpr int kMultiPointParamsPerEnv =
+      kMultiPointMetaParams + kMaxEnvPoints * kParamsPerEnvSlot;  // 50
+  static constexpr int kNumMultiPointEnvs = kNumOps + kNumFilters;  // 9
+  static constexpr int kMultiPointParams =
+      kNumMultiPointEnvs * kMultiPointParamsPerEnv;  // 450
+  static constexpr int kMatrixBase =
+      kOpParams + kFilterParams + kGlobalParams;  // 272
+  static constexpr int kMultiPointBase =
+      kMatrixBase + kMatrixParams;  // 344
   static constexpr int kTotalParams =
-      kOpParams + kFilterParams + kGlobalParams + kMatrixParams;  // 253
+      kMultiPointBase + kMultiPointParams;  // 794
 
   static constexpr const char* kPath = "builtin://film";
   static constexpr const char* kName = "FilM";
@@ -112,8 +128,7 @@ class BuiltinFilm : public IPlugin {
   };
 
   // Mod matrix base offset.
-  static constexpr int kMatrixBase =
-      kOpParams + kFilterParams + kGlobalParams;  // 181
+  // (moved to constexpr above)
 
   // DX7 SysEx support.
   struct Dx7Voice {
@@ -195,6 +210,14 @@ class BuiltinFilm : public IPlugin {
   int matrixIdx(int row, int col) const {
     return kMatrixBase + row * kMatrixCols + col;
   }
+  int multiPointEnvBase(int env_idx) const {
+    return kMultiPointBase + env_idx * kMultiPointParamsPerEnv;
+  }
+
+  // Rebuild a MultiPointEnvelope from its fixed-slot params.
+  // env_idx: 0..5 = op vol, 6..8 = filter.
+  // If count == 0, falls back to ADSR params.
+  void rebuildMultiPointEnv(int env_idx);
 
   double sample_rate_ = 44100.0;
   bool enabled_ = true;

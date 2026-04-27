@@ -204,7 +204,7 @@ TEST(BuiltinFilmTest, NameAndPath) {
   EXPECT_EQ(film.getPath(), "builtin://film");
   EXPECT_TRUE(film.isInstrument());
   EXPECT_EQ(film.getParameterCount(), BuiltinFilm::kTotalParams);
-  EXPECT_EQ(film.getParameterCount(), 344);
+  EXPECT_EQ(film.getParameterCount(), 794);
 }
 
 TEST(BuiltinFilmTest, LoadWithSyxPathProducesOutput) {
@@ -338,6 +338,90 @@ TEST(BuiltinFilmTest, PitchEnvelopeChangesFrequency) {
   EXPECT_GT(with_pitch, 0.01f);
   EXPECT_NE(no_pitch, with_pitch)
       << "Pitch envelope should change the spectral content";
+}
+
+TEST(BuiltinFilmTest, MultiPointSlotOverridesADSR) {
+  // When MP count > 0, the multi-point data should be used instead of ADSR.
+  constexpr int N = 2048;
+  auto ctx = MakeContext();
+
+  // Render with ADSR only (count=0, default).
+  BuiltinFilm adsr_film;
+  adsr_film.load("", 0, 44100.0);
+  float adsr_outL[N], adsr_outR[N];
+  float* adsr_outs[2] = {adsr_outL, adsr_outR};
+  std::vector<MidiNoteEvent> events;
+  MidiNoteEvent ev{};
+  ev.pitch = 60;
+  ev.velocity = 1.0f;
+  ev.isNoteOn = true;
+  events.push_back(ev);
+  adsr_film.process(nullptr, adsr_outs, N, ctx, events);
+
+  // Render with a 3-point multi-point envelope (fast spike then silence).
+  BuiltinFilm mp_film;
+  mp_film.load("", 0, 44100.0);
+  int mp_base = BuiltinFilm::kMultiPointBase;  // OP1 volume envelope (env_idx=0)
+  // count = 3 (3/16 = 0.1875)
+  mp_film.setParameterValue(mp_base, 3.0 / 16.0);
+  // sustain index = -1 (no sustain, play through) → < 0.01
+  mp_film.setParameterValue(mp_base + 1, 0.0);
+  // Point 0: time=0, value=0, tension=0.5(neutral)
+  mp_film.setParameterValue(mp_base + 2, 0.0);  // time
+  mp_film.setParameterValue(mp_base + 3, 0.0);  // value
+  mp_film.setParameterValue(mp_base + 4, 0.5);  // tension
+  // Point 1: time=fast, value=1.0 (full)
+  mp_film.setParameterValue(mp_base + 5, 0.0);  // fast time
+  mp_film.setParameterValue(mp_base + 6, 1.0);
+  mp_film.setParameterValue(mp_base + 7, 0.5);
+  // Point 2: time=fast, value=0.0 (silence)
+  mp_film.setParameterValue(mp_base + 8, 0.1);
+  mp_film.setParameterValue(mp_base + 9, 0.0);
+  mp_film.setParameterValue(mp_base + 10, 0.5);
+
+  float mp_outL[N], mp_outR[N];
+  float* mp_outs[2] = {mp_outL, mp_outR};
+  mp_film.process(nullptr, mp_outs, N, ctx, events);
+
+  // Both should produce output, but the shapes should differ.
+  float adsr_rms = 0, mp_rms = 0;
+  for (int i = 0; i < N; ++i) {
+    adsr_rms += adsr_outL[i] * adsr_outL[i];
+    mp_rms += mp_outL[i] * mp_outL[i];
+  }
+  adsr_rms = std::sqrt(adsr_rms / N);
+  mp_rms = std::sqrt(mp_rms / N);
+
+  EXPECT_GT(adsr_rms, 0.01f);
+  EXPECT_GT(mp_rms, 0.001f);
+  EXPECT_NE(adsr_rms, mp_rms)
+      << "Multi-point envelope should produce different output than ADSR";
+}
+
+TEST(BuiltinFilmTest, MultiPointFallbackToADSR) {
+  // With count=0, behavior should be identical to normal ADSR.
+  BuiltinFilm film;
+  film.load("", 0, 44100.0);
+  int mp_base = BuiltinFilm::kMultiPointBase;  // OP1 (env_idx=0)
+  // Ensure count is 0 (ADSR fallback).
+  EXPECT_FLOAT_EQ(film.getParameterValue(mp_base), 0.0);
+
+  constexpr int N = 512;
+  auto ctx = MakeContext();
+  float outL[N], outR[N];
+  float* outs[2] = {outL, outR};
+  std::vector<MidiNoteEvent> events;
+  MidiNoteEvent ev{};
+  ev.pitch = 60;
+  ev.velocity = 1.0f;
+  ev.isNoteOn = true;
+  events.push_back(ev);
+  film.process(nullptr, outs, N, ctx, events);
+
+  float rms = 0;
+  for (int i = 0; i < N; ++i) rms += outL[i] * outL[i];
+  EXPECT_GT(std::sqrt(rms / N), 0.01f)
+      << "ADSR fallback should still produce normal output";
 }
 
 TEST(BuiltinFilmTest, Dx7SysexImport) {

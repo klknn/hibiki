@@ -341,13 +341,31 @@ bool BuiltinFilm::getParameterInfo(int index, VstParamInfo& info) const {
         "Algorithm",     "Master Vol",    "Enable",     "Unison Voices",
         "Unison Detune", "Unison Spread", "Portamento", "RM Mode"};
     info.name = global_names[index - kOpParams - kFilterParams];
-  } else {
+  } else if (index < kMultiPointBase) {
     int mi = index - kMatrixBase;
     int row = mi / kMatrixCols;
     int col = mi % kMatrixCols;
     static const char* col_names[] = {"1",  "2",  "3",  "4",   "5",  "6",
                                       "F1", "F2", "F3", "Pan", "FX", "Out"};
     info.name = "Mtx " + std::to_string(row + 1) + "→" + col_names[col];
+  } else {
+    // Multi-point envelope slot params.
+    int mp = index - kMultiPointBase;
+    int env_idx = mp / kMultiPointParamsPerEnv;
+    int slot = mp % kMultiPointParamsPerEnv;
+    std::string prefix = env_idx < kNumOps
+                             ? "Op" + std::to_string(env_idx + 1) + " MP "
+                             : "F" + std::to_string(env_idx - kNumOps + 1) + " MP ";
+    if (slot == 0) {
+      info.name = prefix + "Count";
+    } else if (slot == 1) {
+      info.name = prefix + "SusIdx";
+    } else {
+      int pt = (slot - 2) / 3;
+      int field = (slot - 2) % 3;
+      static const char* field_names[] = {"T", "V", "Tn"};
+      info.name = prefix + "P" + std::to_string(pt) + " " + field_names[field];
+    }
   }
   return true;
 }
@@ -410,6 +428,13 @@ void BuiltinFilm::setParameterValue(uint32_t id, double value) {
             params_[fbase + FLT_ENV_S], params_[fbase + FLT_ENV_R]);
       }
     }
+  }
+
+  // Trigger multi-point envelope rebuild when MP slot params change.
+  if (id >= (uint32_t)kMultiPointBase) {
+    int mp = id - kMultiPointBase;
+    int env_idx = mp / kMultiPointParamsPerEnv;
+    rebuildMultiPointEnv(env_idx);
   }
 }
 
@@ -580,6 +605,8 @@ void BuiltinFilm::noteOn(int pitch, float velocity) {
     v.ops[o].env.setFromADSR(params_[base + OP_ENV_A], params_[base + OP_ENV_D],
                              params_[base + OP_ENV_S],
                              params_[base + OP_ENV_R]);
+    // Override with multi-point data if available.
+    rebuildMultiPointEnv(o);
     v.ops[o].env.noteOn();
     // Articulation envelopes.
     v.ops[o].pitch_env.setNormalized(
@@ -604,6 +631,8 @@ void BuiltinFilm::noteOn(int pitch, float velocity) {
     v.filters[f].env.setFromADSR(
         params_[fbase + FLT_ENV_A], params_[fbase + FLT_ENV_D],
         params_[fbase + FLT_ENV_S], params_[fbase + FLT_ENV_R]);
+    // Override with multi-point data if available.
+    rebuildMultiPointEnv(kNumOps + f);
     v.filters[f].env.noteOn();
   }
 }
@@ -744,13 +773,16 @@ double BuiltinFilm::getDefaultValue(int id) const {
   if (id == G_RM_MODE) return 0.0;  // FM by default
 
   // Matrix defaults: 0.5 = neutral (no modulation/send).
-  if (id >= kMatrixBase) {
+  if (id >= kMatrixBase && id < kMultiPointBase) {
     int mi = id - kMatrixBase;
     int col = mi % kMatrixCols;
     // Direct output col for op1 defaults to 0.75 so op1 is audible.
     if (col == 11 && mi / kMatrixCols == 0) return 0.75;
     return 0.5;
   }
+
+  // Multi-point envelope slots: all default to 0 (disabled).
+  if (id >= kMultiPointBase) return 0.0;
 
   return 0;
 }
@@ -963,6 +995,41 @@ void BuiltinFilm::loadDx7Voice(const Dx7Voice& voice) {
   // Master volume.
   params_[G_MASTER_VOL] = 0.8f;
   enabled_ = true;
+}
+
+void BuiltinFilm::rebuildMultiPointEnv(int env_idx) {
+  if (env_idx < 0 || env_idx >= kNumMultiPointEnvs) return;
+
+  int base = multiPointEnvBase(env_idx);
+  int count = static_cast<int>(params_[base] * kMaxEnvPoints + 0.5f);
+  if (count < 2) return;  // need at least 2 points; 0 = ADSR fallback
+  count = std::min(count, kMaxEnvPoints);
+
+  float sus_norm = params_[base + 1];
+  int sustain_index = (sus_norm < 0.01f) ? -1
+                      : static_cast<int>(sus_norm * (kMaxEnvPoints - 1) + 0.5f);
+
+  std::vector<MultiPointEnvelope::Point> pts;
+  pts.reserve(count);
+  for (int i = 0; i < count; ++i) {
+    int slot = base + kMultiPointMetaParams + i * kParamsPerEnvSlot;
+    float time_norm = params_[slot];      // 0..1 → 0..10s (log-scale)
+    float value = params_[slot + 1];      // 0..1
+    float tension_norm = params_[slot + 2]; // 0..1 → -1..+1
+    // Convert time: 0 → instant (0.001s), 1 → 10s.
+    float time = 0.001f * std::pow(10000.0f, time_norm);
+    float tension = tension_norm * 2.0f - 1.0f;
+    pts.push_back({time, value, tension});
+  }
+
+  // Apply to all voices for this envelope.
+  for (auto& v : voices_) {
+    if (env_idx < kNumOps) {
+      v.ops[env_idx].env.setPoints(pts, sustain_index);
+    } else {
+      v.filters[env_idx - kNumOps].env.setPoints(pts, sustain_index);
+    }
+  }
 }
 
 }  // namespace hibiki

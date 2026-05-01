@@ -2,6 +2,7 @@
 
 #include <fstream>
 
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "engine/core/audio_file.hpp"
 #include "engine/ipc/ipc.hpp"
@@ -9,6 +10,12 @@
 #include "pb/notifications.pb.h"
 
 namespace hibiki {
+
+double beatsToSec(double beats, double bpm) {
+  CHECK_GT(bpm, 0);
+  return beats * 60.0 / bpm;
+}
+
 
 Track* GetOrCreateTrack(ProjectState& state, int track_index) {
   if (state.tracks.find(track_index) == state.tracks.end()) {

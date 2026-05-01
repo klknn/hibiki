@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "engine/core/clip.hpp"
-#include "engine/core/commands.hpp"
+#include "engine/commands/commands.hpp"
 #include "engine/core/midi.hpp"
 #include "engine/core/track.hpp"
 #include "engine/ipc/ipc.hpp"

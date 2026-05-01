@@ -17,33 +17,17 @@ import java.util.logging.Logger;
 public class BackendManager {
   private static final Logger LOG = Logger.getLogger(BackendManager.class.getName());
   private static final BackendManager instance = new BackendManager();
-  private Process backendProcess;
-  private DataOutputStream out;
-  private final ExecutorService executor = Executors.newCachedThreadPool();
-  private final List<Consumer<Notification>> listeners = new ArrayList<>();
+  private final EngineProcess engineProcess = new EngineProcess();
+  private final IpcClient ipcClient = new IpcClient();
   private boolean isPlaying = false; // Track playback state for toggle
   private boolean isRecording = false; // Track recording state
   private volatile HibikiConfig currentConfig = null;
   private String defaultInputDeviceId = ""; // Default input device from Settings
-  private List<String> engineFlags = new ArrayList<>(); // CLI flags forwarded to hbk-play
 
   private BackendManager() {}
 
-  /** Set engine flags forwarded to hbk-play (e.g. --stderrthreshold=0, --v=1). */
   public void setEngineFlags(List<String> flags) {
-    this.engineFlags = new ArrayList<>(flags);
-  }
-
-  private List<String> buildEngineCommand(String binaryPath) {
-    List<String> cmd = new ArrayList<>();
-    cmd.add(binaryPath);
-    cmd.addAll(engineFlags);
-    // Default stderr threshold to INFO (0) if not explicitly set
-    boolean hasThreshold = engineFlags.stream().anyMatch(f -> f.startsWith("--stderrthreshold"));
-    if (!hasThreshold) {
-      cmd.add("--stderrthreshold=0");
-    }
-    return cmd;
+    engineProcess.setEngineFlags(flags);
   }
 
   public static BackendManager getInstance() {
@@ -52,70 +36,43 @@ public class BackendManager {
 
   public void start() {
     try {
-      // Path to hbk-play binary
-      String os = System.getProperty("os.name").toLowerCase();
-      boolean isWindows = os.contains("win");
-      String binaryName = isWindows ? "hbk-play.exe" : "hbk-play";
-
-      String hbkPlayPath = findBinary(binaryName);
-      if (hbkPlayPath == null) {
-        LOG.warning(binaryName + " not found, defaulting to ./" + binaryName);
-        hbkPlayPath = "./" + binaryName;
-      } else {
-        LOG.info("Found " + binaryName + " at " + hbkPlayPath);
-      }
-
-      ProcessBuilder pb = new ProcessBuilder(buildEngineCommand(hbkPlayPath));
-      backendProcess = pb.start();
-      out = new DataOutputStream(backendProcess.getOutputStream());
-
-      // Ensure backend shuts down when GUI exits
+      engineProcess.start();
+      ipcClient.start(
+          engineProcess.getInputStream(),
+          engineProcess.getErrorStream(),
+          engineProcess.getOutputStream());
+          
+      ipcClient.addNotificationListener(notification -> {
+        if (notification.getResponseCase() == Notification.ResponseCase.CONFIG) {
+          currentConfig = notification.getConfig();
+        }
+      });
+      
       Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
-
-      // Start thread to read stdout (binary notifications)
-      executor.submit(this::readStdout);
-      // Start thread to read stderr (text logs)
-      executor.submit(this::readStderr);
-
     } catch (IOException e) {
       LOG.log(Level.SEVERE, "Failed to start backend", e);
     }
   }
 
   public synchronized void terminateProcess() {
-    if (backendProcess != null && backendProcess.isAlive()) {
-      LOG.info("Terminating backend process...");
-      backendProcess.destroy();
-      try {
-        if (!backendProcess.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
-          backendProcess.destroyForcibly();
-        }
-      } catch (InterruptedException e) {
-        backendProcess.destroyForcibly();
-      }
-    }
-    backendProcess = null;
-    out = null;
+    engineProcess.terminateProcess();
+    ipcClient.stop();
     currentConfig = null;
   }
 
   public void stop() {
     terminateProcess();
-    executor.shutdownNow();
   }
 
   public void restart() {
     LOG.info("Restarting backend...");
     terminateProcess();
-    // Give it a tiny moment to release resources/ports
     try {
       Thread.sleep(200);
-    } catch (InterruptedException ignored) {
-    }
+    } catch (InterruptedException ignored) {}
     start();
   }
 
-  /** Send a command to the engine to restart all out-of-process plugin workers. */
   public void restartPluginWorkers() {
     LOG.info("Requesting plugin worker restart...");
     sendRequest(
@@ -125,98 +82,11 @@ public class BackendManager {
   }
 
   public void addNotificationListener(Consumer<Notification> listener) {
-    synchronized (listeners) {
-      listeners.add(listener);
-    }
+    ipcClient.addNotificationListener(listener);
   }
 
   public void removeNotificationListener(Consumer<Notification> listener) {
-    synchronized (listeners) {
-      listeners.remove(listener);
-    }
-  }
-
-  private static final int IPC_MAGIC = 0x48424B49; // "HBKI" - must match C++ side
-
-  private void readStdout() {
-    try (DataInputStream in = new DataInputStream(backendProcess.getInputStream())) {
-      int msgCount = 0;
-      while (true) {
-        // Read and verify magic header
-        int magic = Integer.reverseBytes(in.readInt());
-        if (magic != IPC_MAGIC) {
-          LOG.warning(
-              "Invalid magic: 0x"
-                  + Integer.toHexString(magic)
-                  + " at msg#"
-                  + msgCount
-                  + ", resyncing...");
-          // Resync: search for magic header byte by byte
-          int resyncCount = 0;
-          int buf = Integer.reverseBytes(magic);
-          while (resyncCount < 10000) {
-            int b = in.readByte() & 0xFF;
-            buf = (buf << 8) | b;
-            if (buf == 0x494B4248) {
-              LOG.info("Resynced after " + resyncCount + " bytes");
-              break;
-            }
-            resyncCount++;
-          }
-          if (resyncCount >= 10000) {
-            LOG.severe("Could not resync after 10000 bytes, skipping...");
-            continue;
-          }
-        }
-
-        int size = Integer.reverseBytes(in.readInt()); // Little endian
-        msgCount++;
-
-        // Sanity check: messages should never be larger than 10MB
-        if (size < 0 || size > 10 * 1024 * 1024) {
-          LOG.severe("Invalid size: " + size + " at msg#" + msgCount + ", skipping...");
-          continue;
-        }
-
-        byte[] data = new byte[size];
-        in.readFully(data);
-
-        Notification notification = Notification.parseFrom(data);
-        handleNotification(notification);
-      }
-    } catch (IOException e) {
-      LOG.info("Backend stdout closed: " + e.getMessage());
-    }
-  }
-
-  private void readStderr() {
-    try (BufferedReader reader =
-        new BufferedReader(new InputStreamReader(backendProcess.getErrorStream()))) {
-      String line;
-      while ((line = reader.readLine()) != null) {
-        // Bypass C++ error messages without logging format duplicate.
-        System.err.println(line);
-      }
-    } catch (IOException e) {
-      LOG.log(Level.WARNING, "Backend stderr reader failed", e);
-    }
-  }
-
-  private void handleNotification(Notification notification) {
-    // Store config if received
-    if (notification.getResponseCase() == Notification.ResponseCase.CONFIG) {
-      currentConfig = notification.getConfig();
-    }
-    synchronized (listeners) {
-      for (Consumer<Notification> listener : listeners) {
-        try {
-          listener.accept(notification);
-        } catch (Exception e) {
-          // Log listener errors but don't crash
-          LOG.log(Level.WARNING, "Notification listener error", e);
-        }
-      }
-    }
+    ipcClient.removeNotificationListener(listener);
   }
 
   public HibikiConfig getCurrentConfig() {
@@ -224,20 +94,7 @@ public class BackendManager {
   }
 
   public synchronized void sendRequest(Request request) {
-    if (out == null) {
-      LOG.warning("Backend not ready, request dropped.");
-      return;
-    }
-    try {
-      byte[] data = request.toByteArray();
-      int size = data.length;
-      // Send size as little-endian 4-byte int
-      out.writeInt(Integer.reverseBytes(size));
-      out.write(data);
-      out.flush();
-    } catch (IOException e) {
-      LOG.log(Level.SEVERE, "Failed to send request", e);
-    }
+    ipcClient.sendRequest(request);
   }
 
   public void startPlayback() {
@@ -710,45 +567,4 @@ public class BackendManager {
             .build());
   }
 
-  private String findBinary(String binaryName) {
-    // Try simple relative (prefer engine/ first since it's the canonical location)
-    if (new File("./engine/" + binaryName).exists()) return "./engine/" + binaryName;
-    if (new File("./" + binaryName).exists()) return "./" + binaryName;
-
-    // Search up for bazel-bin or root
-    File dir = new File(".").getAbsoluteFile();
-    for (int i = 0; i < 10; i++) {
-      if (dir == null) break;
-
-      // Try in bazel-bin (prefer engine/ subdirectory first — canonical build
-      // location)
-      File binEngine = new File(dir, "bazel-bin/engine/" + binaryName);
-      if (binEngine.exists()) return binEngine.getAbsolutePath();
-      File bin = new File(dir, "bazel-bin/" + binaryName);
-      if (bin.exists()) return bin.getAbsolutePath();
-
-      // Try in bazel-out
-      File outWin = new File(dir, "bazel-out/x64_windows-opt/bin/engine/" + binaryName);
-      if (outWin.exists()) return outWin.getAbsolutePath();
-      File outLinux = new File(dir, "bazel-out/k8-opt/bin/engine/" + binaryName);
-      if (outLinux.exists()) return outLinux.getAbsolutePath();
-
-      // Try in runfiles sibling to jar (if executed via java_binary)
-      File rf = new File(dir, binaryName + ".runfiles/_main/" + binaryName);
-      if (rf.exists()) return rf.getAbsolutePath();
-
-      dir = dir.getParentFile();
-    }
-
-    // Try environment
-    String runfilesDir = System.getenv("RUNFILES_DIR");
-    if (runfilesDir != null) {
-      File f1 = new File(runfilesDir, "_main/engine/" + binaryName);
-      if (f1.exists()) return f1.getAbsolutePath();
-      File f2 = new File(runfilesDir, "hibiki/engine/" + binaryName);
-      if (f2.exists()) return f2.getAbsolutePath();
-    }
-
-    return null;
-  }
 }

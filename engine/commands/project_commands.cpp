@@ -1,5 +1,3 @@
-#include "engine/commands/commands.hpp"
-
 #include <google/protobuf/text_format.h>
 
 #include <filesystem>
@@ -9,6 +7,7 @@
 #include <thread>
 
 #include "absl/log/log.h"
+#include "engine/commands/commands.hpp"
 #include "engine/core/track.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/commands.pb.h"

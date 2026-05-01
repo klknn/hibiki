@@ -1,11 +1,10 @@
-#include "engine/commands/commands.hpp"
-
 #include <algorithm>
 #include <map>
 #include <mutex>
 #include <string>
 
 #include "absl/log/check.h"
+#include "engine/commands/commands.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/core/midi.hpp"
 #include "engine/core/track.hpp"
@@ -137,9 +136,10 @@ void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
                     ? (float)tc->duration_sec
                     : (float)beatsToSec(clip->duration_beats, state.bpm);
             std::string clipname = pathBasename(clip->path);
-            float li_sec_u = (tc->loop_interval_beats > 0)
-                                 ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
-                                 : 0.0f;
+            float li_sec_u =
+                (tc->loop_interval_beats > 0)
+                    ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
+                    : 0.0f;
             sendTimelineClipInfo(tidx, cidx, clipname, clip->path,
                                  (float)tc->start_time_sec, duration_for_gui,
                                  clip->waveform_summary, clip->is_loop,
@@ -155,7 +155,8 @@ void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
                 float alias_dur =
                     (atc->duration_sec > 0)
                         ? (float)atc->duration_sec
-                        : (float)beatsToSec(atc->clip->duration_beats, state.bpm);
+                        : (float)beatsToSec(atc->clip->duration_beats,
+                                            state.bpm);
                 std::string aname = pathBasename(clip->path);
                 float ali_sec =
                     (atc->loop_interval_beats > 0)

@@ -1,5 +1,3 @@
-#include "engine/commands/commands.hpp"
-
 #include <algorithm>
 #include <filesystem>
 #include <mutex>
@@ -7,6 +5,7 @@
 
 #include "absl/log/log.h"
 #include "engine/audio/midi_input.hpp"
+#include "engine/commands/commands.hpp"
 #include "engine/core/audio_file.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/core/midi.hpp"

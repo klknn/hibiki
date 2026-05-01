@@ -16,7 +16,6 @@ double beatsToSec(double beats, double bpm) {
   return beats * 60.0 / bpm;
 }
 
-
 Track* GetOrCreateTrack(ProjectState& state, int track_index) {
   if (state.tracks.find(track_index) == state.tracks.end()) {
     state.tracks[track_index] = std::make_unique<Track>(track_index);

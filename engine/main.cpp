@@ -23,9 +23,9 @@
 #endif
 
 #include "engine/audio/sound.hpp"
+#include "engine/commands/commands.hpp"
 #include "engine/core/audio_file.hpp"
 #include "engine/core/clip.hpp"
-#include "engine/commands/commands.hpp"
 #include "engine/core/history.hpp"
 #include "engine/core/midi.hpp"
 #include "engine/core/project.hpp"

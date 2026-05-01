@@ -1,5 +1,3 @@
-#include "engine/commands/commands.hpp"
-
 #include <algorithm>
 #include <filesystem>
 #include <mutex>
@@ -7,6 +5,7 @@
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "engine/commands/commands.hpp"
 #include "engine/core/audio_file.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/core/midi.hpp"
@@ -98,9 +97,10 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
                 (tc->duration_beats > 0)
                     ? (float)beatsToSec(tc->duration_beats, state.bpm)
                     : (float)tc->duration_sec;
-            float li_sec = (tc->loop_interval_beats > 0)
-                               ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
-                               : 0.0f;
+            float li_sec =
+                (tc->loop_interval_beats > 0)
+                    ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
+                    : 0.0f;
             sendTimelineClipInfo(tidx, tcidx, clipname, tc->clip->path,
                                  (float)tc->start_time_sec, duration_for_gui,
                                  tc->clip->waveform_summary, tc->clip->is_loop,
@@ -150,13 +150,15 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
           }
           tc->trim_start_beats = trim_start;
           CHECK_GT(state.bpm, 0);
-          float duration_for_gui = (float)beatsToSec(tc->duration_beats, state.bpm);
+          float duration_for_gui =
+              (float)beatsToSec(tc->duration_beats, state.bpm);
           std::string clipname = tc->clip ? tc->clip->path : "";
           if (clipname.empty()) clipname = "New Clip";
           clipname = pathBasename(clipname);
-          float li_sec_r = (tc->loop_interval_beats > 0)
-                               ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
-                               : 0.0f;
+          float li_sec_r =
+              (tc->loop_interval_beats > 0)
+                  ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
+                  : 0.0f;
           sendTimelineClipInfo(
               tidx, cidx, clipname, tc->clip ? tc->clip->path : "",
               (float)tc->start_time_sec, duration_for_gui,
@@ -243,9 +245,10 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
               (added->duration_beats > 0)
                   ? (float)beatsToSec(added->duration_beats, state.bpm)
                   : (float)added->duration_sec;
-          float li_sec_c = (added->loop_interval_beats > 0)
-                               ? (float)beatsToSec(added->loop_interval_beats, state.bpm)
-                               : 0.0f;
+          float li_sec_c =
+              (added->loop_interval_beats > 0)
+                  ? (float)beatsToSec(added->loop_interval_beats, state.bpm)
+                  : 0.0f;
           sendTimelineClipInfo(target_tidx, new_cidx, clipname,
                                added->clip->path, (float)added->start_time_sec,
                                duration_for_gui, added->clip->waveform_summary,

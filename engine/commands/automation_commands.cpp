@@ -1,9 +1,8 @@
-#include "engine/commands/commands.hpp"
-
 #include <algorithm>
 #include <mutex>
 #include <string>
 
+#include "engine/commands/commands.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/core/track.hpp"
 #include "engine/ipc/ipc.hpp"

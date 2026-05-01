@@ -1,11 +1,10 @@
-#include "engine/commands/commands.hpp"
-
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "absl/log/log.h"
+#include "engine/commands/commands.hpp"
 #include "engine/core/track.hpp"
 #include "engine/instruments/builtin_sampler.hpp"
 #include "engine/ipc/ipc.hpp"
@@ -35,7 +34,7 @@ std::vector<VstParamInfo> collectParams(const IPlugin& plugin) {
   }
   return params;
 }
-}
+}  // namespace
 
 void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
                      HistoryManager& history) {

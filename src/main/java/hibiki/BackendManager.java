@@ -6,10 +6,7 @@ import hibiki.pb.core.*;
 import hibiki.pb.notifications.*;
 import hibiki.pb.notifications.Notification;
 import java.io.*;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -41,13 +38,14 @@ public class BackendManager {
           engineProcess.getInputStream(),
           engineProcess.getErrorStream(),
           engineProcess.getOutputStream());
-          
-      ipcClient.addNotificationListener(notification -> {
-        if (notification.getResponseCase() == Notification.ResponseCase.CONFIG) {
-          currentConfig = notification.getConfig();
-        }
-      });
-      
+
+      ipcClient.addNotificationListener(
+          notification -> {
+            if (notification.getResponseCase() == Notification.ResponseCase.CONFIG) {
+              currentConfig = notification.getConfig();
+            }
+          });
+
       Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
     } catch (IOException e) {
       LOG.log(Level.SEVERE, "Failed to start backend", e);
@@ -69,7 +67,8 @@ public class BackendManager {
     terminateProcess();
     try {
       Thread.sleep(200);
-    } catch (InterruptedException ignored) {}
+    } catch (InterruptedException ignored) {
+    }
     start();
   }
 
@@ -566,5 +565,4 @@ public class BackendManager {
             .setMidi(MidiCmd.newBuilder().setAction(MidiCmd.Action.ACTION_PANIC))
             .build());
   }
-
 }

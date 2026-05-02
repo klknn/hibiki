@@ -9,6 +9,7 @@
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "engine/core/audio_file.hpp"
+#include "engine/core/history.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "engine/test_utils.hpp"
 
@@ -302,6 +303,152 @@ TEST_F(ProjectTest, LoadProjectCorruptedFile) {
   EXPECT_THAT(status, ::testing::Not(IsOk()))
       << "LoadProject should fail on corrupted file";
   std::remove(tmp.c_str());
+}
+
+// ── Undo/Redo round-trip tests ──────────────────────────────────────
+
+TEST_F(ProjectTest, CaptureAndApplyState) {
+  hibiki::ProjectState state;
+  state.bpm = 130.0;
+  state.sample_rate = 44100.0;
+
+  auto track = hibiki::GetOrCreateTrack(state, 0);
+  track->name = "Lead";
+  track->volume = 0.75f;
+  track->pan = -0.5f;
+  track->muted = true;
+  track->soloed = false;
+  track->record_armed = true;
+  track->LoadClip(0, hibiki::find_test_file("testdata/loop140.wav"));
+
+  // Capture
+  auto snapshot = hibiki::CaptureProjectState(state);
+  EXPECT_GT(snapshot.size(), 0u);
+
+  // Apply to empty state
+  hibiki::ProjectState restored;
+  restored.sample_rate = 44100.0;
+  ASSERT_THAT(hibiki::ApplyProjectState(restored, snapshot), IsOk());
+
+  EXPECT_DOUBLE_EQ(restored.bpm, 130.0);
+  EXPECT_EQ(restored.tracks.size(), 1u);
+  auto* rt = restored.tracks.at(0).get();
+  EXPECT_EQ(rt->name, "Lead");
+  EXPECT_EQ(rt->clips.count(0), 1u);
+}
+
+TEST_F(ProjectTest, UndoRedoRoundTrip) {
+  hibiki::HistoryManager history;
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+
+  auto track = hibiki::GetOrCreateTrack(state, 0);
+  track->LoadClip(0, hibiki::find_test_file("testdata/loop140.wav"));
+
+  // Push initial state
+  history.pushState(hibiki::CaptureProjectState(state));
+
+  // Modify: change BPM and add a clip
+  state.bpm = 180.0;
+
+  // Undo: should restore BPM=120
+  auto current = hibiki::CaptureProjectState(state);
+  std::vector<uint8_t> prev;
+  ASSERT_TRUE(history.undo(current, prev));
+  ASSERT_THAT(hibiki::ApplyProjectState(state, prev), IsOk());
+  EXPECT_DOUBLE_EQ(state.bpm, 120.0);
+
+  // Redo: should restore BPM=180
+  current = hibiki::CaptureProjectState(state);
+  std::vector<uint8_t> next;
+  ASSERT_TRUE(history.redo(current, next));
+  ASSERT_THAT(hibiki::ApplyProjectState(state, next), IsOk());
+  EXPECT_DOUBLE_EQ(state.bpm, 180.0);
+}
+
+TEST_F(ProjectTest, UndoEmptyHistory) {
+  hibiki::HistoryManager history;
+  std::vector<uint8_t> current = {1, 2, 3};
+  std::vector<uint8_t> out;
+  EXPECT_FALSE(history.undo(current, out));
+}
+
+TEST_F(ProjectTest, RedoEmptyHistory) {
+  hibiki::HistoryManager history;
+  std::vector<uint8_t> current = {1, 2, 3};
+  std::vector<uint8_t> out;
+  EXPECT_FALSE(history.redo(current, out));
+}
+
+TEST_F(ProjectTest, RedoClearedOnNewPush) {
+  hibiki::HistoryManager history;
+  hibiki::ProjectState state;
+  state.bpm = 100.0;
+  state.sample_rate = 44100.0;
+
+  // State 1
+  history.pushState(hibiki::CaptureProjectState(state));
+
+  // State 2
+  state.bpm = 200.0;
+  auto current = hibiki::CaptureProjectState(state);
+
+  // Undo to state 1
+  std::vector<uint8_t> prev;
+  ASSERT_TRUE(history.undo(current, prev));
+
+  // Push new state 3 (should clear redo)
+  state.bpm = 300.0;
+  history.pushState(hibiki::CaptureProjectState(state));
+
+  // Redo should fail
+  current = hibiki::CaptureProjectState(state);
+  std::vector<uint8_t> next;
+  EXPECT_FALSE(history.redo(current, next));
+}
+
+TEST_F(ProjectTest, MultipleUndoSteps) {
+  hibiki::HistoryManager history;
+  hibiki::ProjectState state;
+  state.bpm = 100.0;
+  state.sample_rate = 44100.0;
+
+  // Push 3 states
+  history.pushState(hibiki::CaptureProjectState(state));  // BPM=100
+  state.bpm = 110.0;
+  history.pushState(hibiki::CaptureProjectState(state));  // BPM=110
+  state.bpm = 120.0;
+  history.pushState(hibiki::CaptureProjectState(state));  // BPM=120
+  state.bpm = 130.0;                                      // Current
+
+  // Undo 3 times
+  std::vector<uint8_t> out;
+  auto current = hibiki::CaptureProjectState(state);
+
+  ASSERT_TRUE(history.undo(current, out));
+  ASSERT_THAT(hibiki::ApplyProjectState(state, out), IsOk());
+  EXPECT_DOUBLE_EQ(state.bpm, 120.0);
+
+  current = hibiki::CaptureProjectState(state);
+  ASSERT_TRUE(history.undo(current, out));
+  ASSERT_THAT(hibiki::ApplyProjectState(state, out), IsOk());
+  EXPECT_DOUBLE_EQ(state.bpm, 110.0);
+
+  current = hibiki::CaptureProjectState(state);
+  ASSERT_TRUE(history.undo(current, out));
+  ASSERT_THAT(hibiki::ApplyProjectState(state, out), IsOk());
+  EXPECT_DOUBLE_EQ(state.bpm, 100.0);
+
+  // 4th undo should fail
+  current = hibiki::CaptureProjectState(state);
+  EXPECT_FALSE(history.undo(current, out));
+}
+
+TEST_F(ProjectTest, ApplyProjectState_EmptyData) {
+  hibiki::ProjectState state;
+  auto status = hibiki::ApplyProjectState(state, {});
+  EXPECT_THAT(status, ::testing::Not(IsOk()));
 }
 
 }  // namespace hibiki

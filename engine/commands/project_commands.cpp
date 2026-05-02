@@ -132,7 +132,7 @@ void loadConfig(ProjectState& state) {
     state.remote_hosts.push_back(host);
   }
   if (config.buffer_latency_ms() > 0) {
-    state.buffer_latency_ms = config.buffer_latency_ms();
+    state.buffer_latency_ms = std::max(10, config.buffer_latency_ms());
   }
   state.use_double_precision = config.use_double_precision();
   LOG(INFO) << "Loaded config from " << kConfigFile;

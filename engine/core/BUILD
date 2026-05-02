@@ -175,6 +175,7 @@ cc_test(
     linkstatic = True,
     deps = [
         ":audio_file",
+        ":history",
         ":project",
         "//engine:test_utils",
         "//engine/vst3:vst3_host_stub",

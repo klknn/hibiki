@@ -47,6 +47,9 @@ struct ProjectState {
   double loop_end_sec = 0.0;
 };
 
+// Convert a duration in beats to seconds at the given BPM.
+double beatsToSec(double beats, double bpm);
+
 // Returns a pointer to the track, creating it if it doesn't exist
 Track* GetOrCreateTrack(ProjectState& state, int track_index);
 

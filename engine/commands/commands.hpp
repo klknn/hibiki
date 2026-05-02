@@ -6,6 +6,12 @@
 
 namespace hibiki {
 
+// Extract the filename portion from a path (everything after the last / or \).
+inline std::string pathBasename(const std::string& path) {
+  size_t pos = path.find_last_of("/\\");
+  return pos != std::string::npos ? path.substr(pos + 1) : path;
+}
+
 void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
                       HistoryManager& history);
 void handleTransportCmd(const pb::commands::TransportCmd& cmd,

@@ -112,32 +112,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "commands",
-    srcs = ["commands.cpp"],
-    hdrs = ["commands.hpp"],
-    deps = [
-        ":audio_file",
-        ":clip",
-        ":history",
-        ":project",
-        ":status",
-        ":track",
-        "//engine/audio:sound",
-        "//engine/core:midi",
-        "//engine/ipc",
-        "//engine/ipc:tcp",
-        "//engine/plugin:plugin_scanner",
-        "//pb:commands_cc_proto",
-        "//pb:core_cc_proto",
-        "//pb:notifications_cc_proto",
-        "//pb:plugin_worker_cc_proto",
-        "@abseil-cpp//absl/log",
-        "@abseil-cpp//absl/log:absl_log",
-        "@protobuf",
-    ],
-)
-
 cc_test(
     name = "audio_file_test",
     srcs = ["audio_file_test.cpp"],
@@ -169,20 +143,6 @@ cc_test(
     deps = [
         ":clip",
         "//engine:test_utils",
-        "@googletest//:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "commands_test",
-    size = "small",
-    srcs = ["commands_test.cc"],
-    linkstatic = True,
-    deps = [
-        ":commands",
-        ":track",
-        "//engine/ipc",
-        "//engine/vst3:vst3_host_stub",
         "@googletest//:gtest_main",
     ],
 )
@@ -243,7 +203,7 @@ cc_test(
     srcs = ["timeline_playback_test.cc"],
     linkstatic = True,
     deps = [
-        ":commands",
+        "//engine/commands:commands",
         ":track",
         "//engine/ipc",
         "//engine/vst3:vst3_host_stub",
@@ -259,7 +219,7 @@ cc_test(
     linkstatic = True,
     deps = [
         ":clip",
-        ":commands",
+        "//engine/commands:commands",
         ":midi",
         ":track",
         "//engine:test_utils",

@@ -7,7 +7,7 @@
 #include <set>
 #include <vector>
 
-#include "engine/core/commands.hpp"
+#include "engine/commands/commands.hpp"
 #include "engine/core/track.hpp"
 #include "engine/ipc/ipc.hpp"
 

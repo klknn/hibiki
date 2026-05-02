@@ -17,7 +17,7 @@ cc_binary(
     deps = [
         "//engine/audio:sound",
         "//engine/core:clip",
-        "//engine/core:commands",
+        "//engine/commands:commands",
         "//engine/core:history",
         "//engine/core:midi",
         "//engine/core:project",

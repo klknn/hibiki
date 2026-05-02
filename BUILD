@@ -304,6 +304,7 @@ java_test(
     test_class = "hibiki.ui.SettingsDialogTest",
     deps = [
         ":hibiki-gui-lib",
+        "//pb:commands_java_proto",
         "@maven//:junit_junit",
     ],
 )

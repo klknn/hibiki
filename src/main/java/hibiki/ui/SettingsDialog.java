@@ -8,6 +8,94 @@ import javax.swing.Timer;
 
 public class SettingsDialog extends JDialog {
   private static final String[] HOST_MODES = {"In-Process", "Out-of-Process (Sandbox)"};
+  static final int DEFAULT_BUFFER_MS = 200;
+
+  /**
+   * Build the audio device label based on the OS. The previous hardcoded value was Linux-specific
+   * ("ALSA"). Returns a human-readable string for the Audio Engine field.
+   */
+  static String getAudioDeviceLabel() {
+    String os = System.getProperty("os.name", "").toLowerCase();
+    if (os.contains("win")) {
+      return "Audio Engine: WASAPI";
+    } else if (os.contains("mac")) {
+      return "Audio Engine: CoreAudio";
+    } else {
+      return "Audio Engine: ALSA";
+    }
+  }
+
+  /**
+   * Resolve the buffer size from config, returning DEFAULT_BUFFER_MS only when the config is
+   * missing entirely. A config with buffer_latency_ms == 0 means "not stored" in proto3 (default),
+   * so we treat it as DEFAULT_BUFFER_MS too.
+   */
+  static int getBufferMs(hibiki.pb.commands.HibikiConfig cfg) {
+    if (cfg != null && cfg.getBufferLatencyMs() > 0) {
+      return cfg.getBufferLatencyMs();
+    }
+    return DEFAULT_BUFFER_MS;
+  }
+
+  /**
+   * Resolve the mixer precision from config. Returns true for 64-bit double, false for 32-bit
+   * float. Defaults to 32-bit if config is null.
+   */
+  static boolean getUseDoublePrecision(hibiki.pb.commands.HibikiConfig cfg) {
+    return cfg != null && cfg.getUseDoublePrecision();
+  }
+
+  /**
+   * Resolve the plugin host mode index for the combo box. 0 = In-Process, 1 = Sandbox. Defaults to
+   * 0 (In-Process) if config is null.
+   */
+  static int getHostModeIndex(hibiki.pb.commands.HibikiConfig cfg) {
+    if (cfg != null
+        && cfg.getPluginHostMode() == hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX) {
+      return 1;
+    }
+    return 0;
+  }
+
+  /**
+   * Resolve the remote hosts list from config. Returns the list from config, or a singleton
+   * ["localhost:9100"] if config is null or has no hosts.
+   */
+  static java.util.List<String> getRemoteHosts(hibiki.pb.commands.HibikiConfig cfg) {
+    if (cfg != null && cfg.getRemoteHostsCount() > 0) {
+      return cfg.getRemoteHostsList();
+    }
+    return java.util.Collections.singletonList("localhost:9100");
+  }
+
+  /** Parse a scaling percentage string like "125%" into a float. Returns 1.0f on parse failure. */
+  static float parseScaling(String scaleStr) {
+    if (scaleStr == null || scaleStr.isEmpty()) return 1.0f;
+    try {
+      return Integer.parseInt(scaleStr.replace("%", "")) / 100.0f;
+    } catch (NumberFormatException e) {
+      return 1.0f;
+    }
+  }
+
+  /**
+   * Resolve a LAF display name to its class name for UIManager.setLookAndFeel(). Returns the fully
+   * qualified class name, or null if not found.
+   */
+  static String resolveLafClassName(String selectedLaf, UIManager.LookAndFeelInfo[] installedLafs) {
+    if ("SimpleLaf".equals(selectedLaf)) {
+      return "hibiki.SimpleLaf";
+    } else if ("FlatDarkLaf".equals(selectedLaf)) {
+      return "com.formdev.flatlaf.FlatDarkLaf";
+    } else if (installedLafs != null) {
+      for (UIManager.LookAndFeelInfo info : installedLafs) {
+        if (info.getName().equals(selectedLaf)) {
+          return info.getClassName();
+        }
+      }
+    }
+    return null;
+  }
 
   public SettingsDialog(Frame owner) {
     super(owner, "Settings", true);
@@ -45,17 +133,14 @@ public class SettingsDialog extends JDialog {
     gbc.gridx = 0;
     gbc.gridy = row;
     gbc.gridwidth = 2;
-    JLabel deviceLabel = new JLabel("Audio Engine: ALSA (alsa_playback.hbk-play)");
+    JLabel deviceLabel = new JLabel(getAudioDeviceLabel());
     deviceLabel.setFont(Theme.getInstance().FONT_UI);
     p.add(deviceLabel, gbc);
     gbc.gridwidth = 1;
 
     // Buffer Size — read from backend config if available
-    int bufferMs = 200;
     hibiki.pb.commands.HibikiConfig cfg = hibiki.BackendManager.getInstance().getCurrentConfig();
-    if (cfg != null && cfg.getBufferLatencyMs() > 0) {
-      bufferMs = cfg.getBufferLatencyMs();
-    }
+    int bufferMs = getBufferMs(cfg);
     row++;
     gbc.gridx = 0;
     gbc.gridy = row;
@@ -116,7 +201,7 @@ public class SettingsDialog extends JDialog {
     gbc.gridx = 1;
     String[] precisionOptions = {"32-bit float", "64-bit double"};
     JComboBox<String> precCombo = new JComboBox<>(precisionOptions);
-    if (cfg != null && cfg.getUseDoublePrecision()) {
+    if (getUseDoublePrecision(cfg)) {
       precCombo.setSelectedIndex(1);
     }
     p.add(precCombo, gbc);
@@ -387,11 +472,7 @@ public class SettingsDialog extends JDialog {
     gbc.gridwidth = 2;
     JComboBox<String> modeCombo = new JComboBox<>(HOST_MODES);
     // Pre-select from backend config
-    if (pcfg != null
-        && pcfg.getPluginHostMode()
-            == hibiki.pb.commands.PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX) {
-      modeCombo.setSelectedIndex(1);
-    }
+    modeCombo.setSelectedIndex(getHostModeIndex(pcfg));
     p.add(modeCombo, gbc);
     gbc.gridwidth = 1;
 
@@ -405,12 +486,8 @@ public class SettingsDialog extends JDialog {
 
     DefaultListModel<String> hostListModel = new DefaultListModel<>();
     // Pre-populate from backend config
-    if (pcfg != null && pcfg.getRemoteHostsCount() > 0) {
-      for (String host : pcfg.getRemoteHostsList()) {
-        hostListModel.addElement(host);
-      }
-    } else {
-      hostListModel.addElement("localhost:9100");
+    for (String host : getRemoteHosts(pcfg)) {
+      hostListModel.addElement(host);
     }
     JList<String> hostList = new JList<>(hostListModel);
     hostList.setVisibleRowCount(4);
@@ -608,8 +685,7 @@ public class SettingsDialog extends JDialog {
         e -> {
           // Apply theme
           Theme.Preset preset = (Theme.Preset) themeCombo.getSelectedItem();
-          String scaleStr = (String) scaleCombo.getSelectedItem();
-          float scaling = Integer.parseInt(scaleStr.replace("%", "")) / 100.0f;
+          float scaling = parseScaling((String) scaleCombo.getSelectedItem());
           int fontSize = (Integer) fontSpinner.getValue();
           String fontFamily = (String) fontCombo.getSelectedItem();
 
@@ -617,25 +693,17 @@ public class SettingsDialog extends JDialog {
 
           // Apply LookAndFeel
           String selectedLaf = (String) lafCombo.getSelectedItem();
-          try {
-            if ("SimpleLaf".equals(selectedLaf)) {
-              UIManager.setLookAndFeel(new hibiki.SimpleLaf());
-            } else if ("FlatDarkLaf".equals(selectedLaf)) {
-              UIManager.setLookAndFeel(new com.formdev.flatlaf.FlatDarkLaf());
-            } else {
-              for (UIManager.LookAndFeelInfo info : lafs) {
-                if (info.getName().equals(selectedLaf)) {
-                  UIManager.setLookAndFeel(info.getClassName());
-                  break;
-                }
+          String lafClass = resolveLafClassName(selectedLaf, lafs);
+          if (lafClass != null) {
+            try {
+              UIManager.setLookAndFeel(lafClass);
+              for (Window w : Window.getWindows()) {
+                SwingUtilities.updateComponentTreeUI(w);
               }
+            } catch (Exception ex) {
+              JOptionPane.showMessageDialog(
+                  this, "Failed to apply Look & Feel: " + ex.getMessage());
             }
-            // Update all windows
-            for (Window w : Window.getWindows()) {
-              SwingUtilities.updateComponentTreeUI(w);
-            }
-          } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Failed to apply Look & Feel: " + ex.getMessage());
           }
         });
     p.add(applyBtn, gbc);

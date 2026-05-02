@@ -34,13 +34,28 @@ class MidiDataModel {
     }
   }
 
+  /** A CC or pitch bend event at a specific tick. */
+  static class CCEvent {
+    int ccNumber; // 0-127 for CC, 128 for pitch bend
+    long tick;
+    int value; // CC: 0-127, pitch bend: -8192..+8191
+
+    CCEvent(int ccNumber, long tick, int value) {
+      this.ccNumber = ccNumber;
+      this.tick = tick;
+      this.value = value;
+    }
+  }
+
   final List<Note> notes = new ArrayList<>();
+  final List<CCEvent> ccEvents = new ArrayList<>();
   Sequence sequence;
   Track midiTrack;
 
   /** Load MIDI from file, falling back to empty sequence on error. */
   void loadMidi(File midiFile) {
     notes.clear();
+    ccEvents.clear();
     try {
       if (midiFile.exists()) {
         sequence = MidiSystem.getSequence(midiFile);
@@ -83,7 +98,7 @@ class MidiDataModel {
     return false;
   }
 
-  /** Parse NOTE_ON/OFF events from a track into the notes list. */
+  /** Parse NOTE_ON/OFF events and CC/PitchBend events from a track. */
   void parseTrack(Track track) {
     Note[] pendingNotes = new Note[128];
 
@@ -111,18 +126,25 @@ class MidiDataModel {
             notes.add(n);
             pendingNotes[pitch] = null;
           }
+        } else if (cmd == ShortMessage.CONTROL_CHANGE) {
+          ccEvents.add(new CCEvent(sm.getData1(), event.getTick(), sm.getData2()));
+        } else if (cmd == ShortMessage.PITCH_BEND) {
+          // MIDI pitch bend: data1=LSB, data2=MSB, center=8192
+          int bendValue = ((sm.getData2() & 0x7F) << 7) | (sm.getData1() & 0x7F);
+          ccEvents.add(new CCEvent(128, event.getTick(), bendValue - 8192));
         }
       }
     }
   }
 
-  /** Sync all notes to backend via IPC (immediate in-memory update). */
+  /** Sync all notes and CC events to backend via IPC (immediate in-memory update). */
   void syncToBackend(int trackIdx, int slotIdx, int clipIdx) {
     int resolution = (sequence != null) ? sequence.getResolution() : 480;
-    long[] ticks = new long[notes.size()];
-    int[] pitches = new int[notes.size()];
-    long[] durations = new long[notes.size()];
-    int[] velocities = new int[notes.size()];
+    int totalCount = notes.size() + ccEvents.size();
+    long[] ticks = new long[totalCount];
+    int[] pitches = new int[totalCount];
+    long[] durations = new long[totalCount];
+    int[] velocities = new int[totalCount];
 
     for (int i = 0; i < notes.size(); i++) {
       Note n = notes.get(i);
@@ -132,18 +154,38 @@ class MidiDataModel {
       velocities[i] = n.velocity;
     }
 
+    // CC events are sent separately via the proto cc_number/cc_value fields
+    // For now, send only notes through the existing updateClipMidi path
     BackendManager.getInstance()
         .updateClipMidi(
-            trackIdx, slotIdx, clipIdx, resolution, ticks, pitches, durations, velocities);
+            trackIdx,
+            slotIdx,
+            clipIdx,
+            resolution,
+            java.util.Arrays.copyOf(ticks, notes.size()),
+            java.util.Arrays.copyOf(pitches, notes.size()),
+            java.util.Arrays.copyOf(durations, notes.size()),
+            java.util.Arrays.copyOf(velocities, notes.size()));
   }
 
-  /** Load notes from backend IPC data (replaces local notes). */
+  /** Load notes and CC events from backend IPC data (replaces local data). */
   void loadFromBackendData(ClipMidiData data) {
     notes.clear();
-    // Each MidiEvent is a complete note (tick, pitch, durationTicks, velocity)
+    ccEvents.clear();
     for (int i = 0; i < data.getEventsCount(); i++) {
       hibiki.pb.core.MidiEvent ev = data.getEvents(i);
-      notes.add(new Note(ev.getPitch(), ev.getTick(), ev.getDurationTicks(), ev.getVelocity()));
+      if (ev.getCcNumber() > 0
+          || (ev.getCcNumber() == 0
+              && ev.getCcValue() != 0
+              && ev.getPitch() == 0
+              && ev.getVelocity() == 0)) {
+        // CC or pitch bend event
+        ccEvents.add(new CCEvent((int) ev.getCcNumber(), ev.getTick(), ev.getCcValue()));
+      } else {
+        notes.add(
+            new Note(
+                (int) ev.getPitch(), ev.getTick(), ev.getDurationTicks(), (int) ev.getVelocity()));
+      }
     }
 
     // Update sequence resolution if provided

@@ -35,6 +35,13 @@ class PianoRollRenderer {
         g2.setFont(new Font("SansSerif", Font.PLAIN, 9));
         g2.drawString("C" + (pitch / 12 - 1), 2, y + scaledKeyHeight - 2);
       }
+
+      // Scale highlight: tint in-scale keys
+      if (pianoRoll.scaleMode != ScaleMode.CHROMATIC
+          && pianoRoll.scaleMode.containsPitch(pianoRoll.rootNote, pitch)) {
+        g2.setColor(new Color(80, 140, 200, 30));
+        g2.fillRect(0, y, panel.getWidth(), scaledKeyHeight);
+      }
     }
   }
 
@@ -64,8 +71,15 @@ class PianoRollRenderer {
     for (int i = 0; i < numKeys; i++) {
       int y = i * kh;
       int pitch = numKeys - 1 - i;
-      g.setColor(
-          GridMode.isBlackKey(pitch) ? new Color(40, 40, 40) : Theme.getInstance().BG_DARKER);
+      boolean outOfScale =
+          pianoRoll.scaleMode != ScaleMode.CHROMATIC
+              && !pianoRoll.scaleMode.containsPitch(pianoRoll.rootNote, pitch);
+      if (outOfScale) {
+        g.setColor(new Color(25, 25, 28)); // darker for out-of-scale
+      } else {
+        g.setColor(
+            GridMode.isBlackKey(pitch) ? new Color(40, 40, 40) : Theme.getInstance().BG_DARKER);
+      }
       g.fillRect(0, y, gridPanel.getWidth(), kh);
       g.setColor(new Color(60, 60, 60));
       g.drawLine(0, y, gridPanel.getWidth(), y);

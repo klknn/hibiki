@@ -37,6 +37,8 @@ message MidiEvent {
   uint32 pitch = 2;          // MIDI note number [0, 127]
   int64 duration_ticks = 3;  // Note length in ticks
   uint32 velocity = 4;       // Note-on velocity [0, 127]
+  uint32 cc_number = 5;      // CC number (0-127), or 128 = pitch bend
+  int32 cc_value = 6;        // CC: [0, 127], Pitch bend: [-8192, +8191]
 }
 
 // An automation lane binding a plugin parameter to a curve.

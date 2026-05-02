@@ -20,7 +20,7 @@ public class PianoRoll extends JDialog {
   private float baseTickWidth = 1.0f; // Calculated to fit entire clip at scale=1.0
 
   private final File midiFile;
-  private final int trackIdx;
+  final int trackIdx;
   private final int slotIdx; // Session clip slot (-1 for timeline clips)
   private final int clipIdx; // Timeline clip index (-1 for session clips)
   Sequence sequence;
@@ -55,6 +55,10 @@ public class PianoRoll extends JDialog {
 
   private GridMode gridMode = GridMode.AUTO;
 
+  // Scale highlighting and snap
+  ScaleMode scaleMode = ScaleMode.CHROMATIC;
+  int rootNote = 0; // 0=C, 1=C#, ..., 11=B
+
   // Playhead and Auto-scroll state
   volatile float playheadPos = 0.0f; // in seconds
   volatile float bpm = 120.0f;
@@ -67,7 +71,7 @@ public class PianoRoll extends JDialog {
   // Renderer delegate
   private final PianoRollRenderer renderer = new PianoRollRenderer(this);
   private final PianoRollMouseHandler mouseHandler = new PianoRollMouseHandler(this);
-  private final MidiDataModel midiModel = new MidiDataModel();
+  final MidiDataModel midiModel = new MidiDataModel();
 
   /** Alias for MidiDataModel.Note */
   static class Note extends MidiDataModel.Note {
@@ -277,6 +281,33 @@ public class PianoRoll extends JDialog {
     autoSyncLabel.setForeground(Theme.getInstance().TEXT_DIM);
     toolbar.add(autoSyncLabel);
 
+    toolbar.add(javax.swing.Box.createHorizontalStrut(16));
+
+    // Scale selector
+    JLabel scaleLabel = new JLabel("Scale:");
+    scaleLabel.setForeground(Theme.getInstance().TEXT_NORMAL);
+    toolbar.add(scaleLabel);
+
+    JComboBox<String> rootSelector = new JComboBox<>(ScaleMode.NOTE_NAMES);
+    rootSelector.setSelectedIndex(rootNote);
+    rootSelector.addActionListener(
+        ev -> {
+          rootNote = rootSelector.getSelectedIndex();
+          gridPanel.repaint();
+          keysPanel.repaint();
+        });
+    toolbar.add(rootSelector);
+
+    JComboBox<ScaleMode> scaleSelector = new JComboBox<>(ScaleMode.values());
+    scaleSelector.setSelectedItem(scaleMode);
+    scaleSelector.addActionListener(
+        ev -> {
+          scaleMode = (ScaleMode) scaleSelector.getSelectedItem();
+          gridPanel.repaint();
+          keysPanel.repaint();
+        });
+    toolbar.add(scaleSelector);
+
     add(toolbar, BorderLayout.NORTH);
 
     // Piano Keys (Left)
@@ -295,7 +326,44 @@ public class PianoRoll extends JDialog {
           }
         };
 
-    // Grid (Right)
+    // Keys panel audition: click/drag on piano keys to preview notes
+    MouseAdapter keysMouse =
+        new MouseAdapter() {
+          @Override
+          public void mousePressed(MouseEvent e) {
+            int kh = mouseHandler.getScaledKeyHeight();
+            int pitch = NUM_KEYS - 1 - (e.getY() / kh);
+            if (pitch >= 0 && pitch < NUM_KEYS) {
+              mouseHandler.stopAudition();
+              BackendManager.getInstance().sendVirtualMidi(trackIdx, pitch, 100, true);
+              keysPanel.putClientProperty("auditionPitch", pitch);
+            }
+          }
+
+          @Override
+          public void mouseReleased(MouseEvent e) {
+            Object p = keysPanel.getClientProperty("auditionPitch");
+            if (p instanceof Integer) {
+              BackendManager.getInstance().sendVirtualMidi(trackIdx, (int) p, 0, false);
+              keysPanel.putClientProperty("auditionPitch", null);
+            }
+          }
+
+          @Override
+          public void mouseDragged(MouseEvent e) {
+            int kh = mouseHandler.getScaledKeyHeight();
+            int pitch = NUM_KEYS - 1 - (e.getY() / kh);
+            pitch = Math.max(0, Math.min(NUM_KEYS - 1, pitch));
+            Object p = keysPanel.getClientProperty("auditionPitch");
+            if (p instanceof Integer && (int) p != pitch) {
+              BackendManager.getInstance().sendVirtualMidi(trackIdx, (int) p, 0, false);
+              BackendManager.getInstance().sendVirtualMidi(trackIdx, pitch, 100, true);
+              keysPanel.putClientProperty("auditionPitch", pitch);
+            }
+          }
+        };
+    keysPanel.addMouseListener(keysMouse);
+    keysPanel.addMouseMotionListener(keysMouse);
     gridPanel =
         new JPanel() {
           @Override
@@ -473,36 +541,72 @@ public class PianoRoll extends JDialog {
     velocityScroll.setPreferredSize(new Dimension(100, VELOCITY_HEIGHT));
     velocityScroll.setBorder(null);
 
-    // Sync velocity panel scroll with grid scroll
+    // Spacer panel for bottom row (aligns with keys column)
+    JPanel bottomLabelPanel = new JPanel();
+    bottomLabelPanel.setPreferredSize(
+        new Dimension(Theme.getInstance().scale(60), VELOCITY_HEIGHT));
+    bottomLabelPanel.setBackground(Theme.getInstance().PANEL_BG);
+    bottomLabelPanel.setBorder(
+        BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.getInstance().BORDER));
+
+    // Pitch Bend panel
+    PianoRollCCPanel pitchBendPanel = new PianoRollCCPanel(this, 128);
+    pitchBendPanel.setPreferredSize(
+        new Dimension(gridPanel.getPreferredSize().width, VELOCITY_HEIGHT));
+    JScrollPane pitchBendScroll =
+        new JScrollPane(
+            pitchBendPanel,
+            JScrollPane.VERTICAL_SCROLLBAR_NEVER,
+            JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+    pitchBendScroll.setPreferredSize(new Dimension(100, VELOCITY_HEIGHT));
+    pitchBendScroll.setBorder(null);
+
+    // Modulation panel (CC#1)
+    PianoRollCCPanel modulationPanel = new PianoRollCCPanel(this, 1);
+    modulationPanel.setPreferredSize(
+        new Dimension(gridPanel.getPreferredSize().width, VELOCITY_HEIGHT));
+    JScrollPane modulationScroll =
+        new JScrollPane(
+            modulationPanel,
+            JScrollPane.VERTICAL_SCROLLBAR_NEVER,
+            JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+    modulationScroll.setPreferredSize(new Dimension(100, VELOCITY_HEIGHT));
+    modulationScroll.setBorder(null);
+
+    // Tabbed pane for bottom lanes
+    JTabbedPane lanesTabs = new JTabbedPane(JTabbedPane.TOP);
+    lanesTabs.setFont(new Font("SansSerif", Font.PLAIN, 10));
+    lanesTabs.addTab("Velocity", velocityScroll);
+    lanesTabs.addTab("Pitch Bend", pitchBendScroll);
+    lanesTabs.addTab("Modulation", modulationScroll);
+    lanesTabs.setPreferredSize(new Dimension(100, VELOCITY_HEIGHT + Theme.getInstance().scale(24)));
+
+    // Sync all scrolls with grid
     gridScroll
         .getHorizontalScrollBar()
         .addAdjustmentListener(
             e -> {
               velocityScroll.getHorizontalScrollBar().setValue(e.getValue());
+              pitchBendScroll.getHorizontalScrollBar().setValue(e.getValue());
+              modulationScroll.getHorizontalScrollBar().setValue(e.getValue());
               velocityPanel.repaint();
+              pitchBendPanel.repaint();
+              modulationPanel.repaint();
             });
 
-    // Spacer panel for velocity row (aligns with keys column)
-    JPanel velocityLabelPanel = new JPanel();
-    velocityLabelPanel.setPreferredSize(
-        new Dimension(Theme.getInstance().scale(60), VELOCITY_HEIGHT));
-    velocityLabelPanel.setBackground(Theme.getInstance().PANEL_BG);
-    velocityLabelPanel.setBorder(
-        BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.getInstance().BORDER));
-
-    // Row for velocity area
-    JPanel velocityRow = new JPanel(new BorderLayout());
-    velocityRow.add(velocityLabelPanel, BorderLayout.WEST);
-    velocityRow.add(velocityScroll, BorderLayout.CENTER);
+    // Row for bottom lanes area
+    JPanel bottomRow = new JPanel(new BorderLayout());
+    bottomRow.add(bottomLabelPanel, BorderLayout.WEST);
+    bottomRow.add(lanesTabs, BorderLayout.CENTER);
 
     // Upper panel with piano roll
     JPanel upperPanel = new JPanel(new BorderLayout());
     upperPanel.add(split, BorderLayout.CENTER);
 
-    // Combine piano roll and velocity panel
+    // Combine piano roll and bottom lanes
     JPanel pianoAndVelocity = new JPanel(new BorderLayout());
     pianoAndVelocity.add(upperPanel, BorderLayout.CENTER);
-    pianoAndVelocity.add(velocityRow, BorderLayout.SOUTH);
+    pianoAndVelocity.add(bottomRow, BorderLayout.SOUTH);
 
     // Main content panel with zoom sliders at bottom right
     JPanel mainContent = new JPanel(new BorderLayout());

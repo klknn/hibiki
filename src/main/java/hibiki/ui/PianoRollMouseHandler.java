@@ -11,6 +11,7 @@ import javax.swing.*;
  */
 class PianoRollMouseHandler {
   private final PianoRoll pr;
+  private int auditioningPitch = -1; // Currently sounding note for preview
 
   PianoRollMouseHandler(PianoRoll pr) {
     this.pr = pr;
@@ -56,6 +57,7 @@ class PianoRollMouseHandler {
     if (pitch < 0 || pitch >= PianoRoll.NUM_KEYS) return;
 
     PianoRoll.Note clickedNote = getNoteAt(e.getX(), e.getY());
+    int auditionVelocity = (clickedNote != null) ? clickedNote.velocity : 100;
 
     if (SwingUtilities.isRightMouseButton(e)) {
       if (clickedNote != null) {
@@ -82,16 +84,22 @@ class PianoRollMouseHandler {
         int snapInterval = pr.getSnapTickInterval();
         long snapTick = (tick / snapInterval) * snapInterval;
         int minDuration = Math.max(snapInterval, pr.sequence.getResolution() / 8);
-        PianoRoll.Note n = new PianoRoll.Note(pitch, snapTick, minDuration, 100);
+        PianoRoll.Note n =
+            new PianoRoll.Note(
+                pr.scaleMode.snapPitch(pr.rootNote, pitch), snapTick, minDuration, 100);
         pr.notes.add(n);
+        auditionVelocity = 100;
         pr.resizingNote = n;
         pr.gridPanel.repaint();
         pr.gridPanel.revalidate();
       }
+      // Audition: play the note
+      startAudition(pitch, auditionVelocity);
     }
   }
 
   private void handleMouseReleased(MouseEvent e) {
+    stopAudition();
     boolean changed = false;
     if (pr.draggingNote != null && pr.isDraggingNote && e.isAltDown()) {
       // Alt+release: Copy note to new location
@@ -126,6 +134,9 @@ class PianoRollMouseHandler {
       int kh = getScaledKeyHeight();
       int pitch = PianoRoll.NUM_KEYS - 1 - (e.getY() / kh);
       pitch = Math.max(0, Math.min(PianoRoll.NUM_KEYS - 1, pitch));
+      if (!e.isShiftDown()) {
+        pitch = pr.scaleMode.snapPitch(pr.rootNote, pitch);
+      }
 
       long tick = (long) ((e.getX() - pr.dragOffsetX) / tw);
       long snapTick;
@@ -141,6 +152,11 @@ class PianoRollMouseHandler {
             || Math.abs(snapTick - pr.dragOriginalTick) > 0) {
           pr.isDraggingNote = true;
         }
+      }
+
+      // Audition pitch change on drag
+      if (pitch != pr.draggingNote.pitch) {
+        startAudition(pitch, pr.draggingNote.velocity);
       }
 
       pr.draggingNote.pitch = pitch;
@@ -217,5 +233,21 @@ class PianoRollMouseHandler {
     float absoluteSeconds =
         tickToAbsoluteSeconds(tick, pr.sequence.getResolution(), pr.bpm, pr.clipStartTime);
     BackendManager.getInstance().seek(absoluteSeconds);
+  }
+
+  /** Start audition of a note (sends note-off for any currently auditioned pitch first). */
+  private void startAudition(int pitch, int velocity) {
+    if (auditioningPitch == pitch) return; // already sounding
+    stopAudition();
+    auditioningPitch = pitch;
+    BackendManager.getInstance().sendVirtualMidi(pr.trackIdx, pitch, velocity, true);
+  }
+
+  /** Stop any currently auditioned note. */
+  void stopAudition() {
+    if (auditioningPitch >= 0) {
+      BackendManager.getInstance().sendVirtualMidi(pr.trackIdx, auditioningPitch, 0, false);
+      auditioningPitch = -1;
+    }
   }
 }

@@ -271,7 +271,7 @@ class PianoRollRenderer {
    * Get effective beatsPerBar at a given MIDI tick, considering timeline markers. Converts tick to
    * absolute seconds using clipStartTime + BPM, then finds the active marker.
    */
-  private int getEffectiveBpbAtTick(
+  static int getEffectiveBpbAtTick(
       long tick,
       int resolution,
       float clipStartTime,

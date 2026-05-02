@@ -233,6 +233,8 @@ java_test(
     test_class = "hibiki.ui.PianoRollTest",
     deps = [
         ":hibiki-gui-lib",
+        "//pb:core_java_proto",
+        "//pb:notifications_java_proto",
         "@maven//:junit_junit",
     ],
 )

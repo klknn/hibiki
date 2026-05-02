@@ -204,13 +204,18 @@ class PianoRollMouseHandler {
     return null;
   }
 
-  /** Seek playhead to given tick, converting to absolute seconds accounting for clip start time. */
-  void seekToTick(long tick) {
-    int seqRes = pr.sequence.getResolution();
-    float beatsPerSecond = pr.bpm / 60.0f;
+  /** Convert a MIDI tick to absolute seconds, accounting for clip start offset. */
+  static float tickToAbsoluteSeconds(long tick, int seqRes, float bpm, float clipStartTime) {
+    float beatsPerSecond = bpm / 60.0f;
     float ticksPerSecond = beatsPerSecond * seqRes;
     float relativeSeconds = tick / ticksPerSecond;
-    float absoluteSeconds = pr.clipStartTime + relativeSeconds;
+    return clipStartTime + relativeSeconds;
+  }
+
+  /** Seek playhead to given tick, converting to absolute seconds accounting for clip start time. */
+  void seekToTick(long tick) {
+    float absoluteSeconds =
+        tickToAbsoluteSeconds(tick, pr.sequence.getResolution(), pr.bpm, pr.clipStartTime);
     BackendManager.getInstance().seek(absoluteSeconds);
   }
 }

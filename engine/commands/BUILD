@@ -15,6 +15,7 @@ cc_library(
     hdrs = ["commands.hpp"],
     visibility = ["//visibility:public"],
     deps = [
+        "//engine/audio:sound",
         "//engine/core:audio_file",
         "//engine/core:clip",
         "//engine/core:history",
@@ -22,7 +23,6 @@ cc_library(
         "//engine/core:project",
         "//engine/core:status",
         "//engine/core:track",
-        "//engine/audio:sound",
         "//engine/ipc",
         "//engine/ipc:tcp",
         "//engine/plugin:plugin_scanner",

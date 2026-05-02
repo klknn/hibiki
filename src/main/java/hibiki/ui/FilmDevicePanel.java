@@ -349,29 +349,31 @@ public class FilmDevicePanel extends JPanel {
     defaultPts.add(new EnvelopeEditorPanel.EnvPoint(0.5f, 0.0f, 0.0f));
     envEditor.enableMultiPointMode(defaultPts, 2);
     final int mpBase = MULTI_POINT_BASE + opIdx * MP_PARAMS_PER_ENV;
-    envEditor.addMultiPointListener((count, susIdx, pts) -> {
-      // count param: count/16
-      params[mpBase] = count / (float) MAX_ENV_POINTS;
-      sendParam(mpBase, params[mpBase]);
-      // sustain index: encode as normalized value, 0 = no sustain
-      params[mpBase + 1] = (susIdx < 0) ? 0.0f : susIdx / (float)(MAX_ENV_POINTS - 1);
-      sendParam(mpBase + 1, params[mpBase + 1]);
-      // Point slots: time, value, tension
-      for (int i = 0; i < count && i < MAX_ENV_POINTS; i++) {
-        int slotBase = mpBase + 2 + i * 3;
-        // Time: convert to log-normalized (inverse of engine's pow(10000, norm))
-        float timeNorm = (float)(Math.log(Math.max(0.001f, pts[i*3]) / 0.001f) / Math.log(10000.0));
-        timeNorm = Math.max(0, Math.min(1, timeNorm));
-        params[slotBase] = timeNorm;
-        sendParam(slotBase, timeNorm);
-        // Value: direct
-        params[slotBase + 1] = pts[i*3 + 1];
-        sendParam(slotBase + 1, pts[i*3 + 1]);
-        // Tension: -1..+1 → 0..1
-        params[slotBase + 2] = (pts[i*3 + 2] + 1.0f) / 2.0f;
-        sendParam(slotBase + 2, params[slotBase + 2]);
-      }
-    });
+    envEditor.addMultiPointListener(
+        (count, susIdx, pts) -> {
+          // count param: count/16
+          params[mpBase] = count / (float) MAX_ENV_POINTS;
+          sendParam(mpBase, params[mpBase]);
+          // sustain index: encode as normalized value, 0 = no sustain
+          params[mpBase + 1] = (susIdx < 0) ? 0.0f : susIdx / (float) (MAX_ENV_POINTS - 1);
+          sendParam(mpBase + 1, params[mpBase + 1]);
+          // Point slots: time, value, tension
+          for (int i = 0; i < count && i < MAX_ENV_POINTS; i++) {
+            int slotBase = mpBase + 2 + i * 3;
+            // Time: convert to log-normalized (inverse of engine's pow(10000, norm))
+            float timeNorm =
+                (float) (Math.log(Math.max(0.001f, pts[i * 3]) / 0.001f) / Math.log(10000.0));
+            timeNorm = Math.max(0, Math.min(1, timeNorm));
+            params[slotBase] = timeNorm;
+            sendParam(slotBase, timeNorm);
+            // Value: direct
+            params[slotBase + 1] = pts[i * 3 + 1];
+            sendParam(slotBase + 1, pts[i * 3 + 1]);
+            // Tension: -1..+1 → 0..1
+            params[slotBase + 2] = (pts[i * 3 + 2] + 1.0f) / 2.0f;
+            sendParam(slotBase + 2, params[slotBase + 2]);
+          }
+        });
     volTab.add(envEditor);
     subTabs.addTab("VOL", volTab);
 

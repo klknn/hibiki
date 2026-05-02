@@ -361,7 +361,8 @@ TEST(BuiltinFilmTest, MultiPointSlotOverridesADSR) {
   // Render with a 3-point multi-point envelope (fast spike then silence).
   BuiltinFilm mp_film;
   mp_film.load("", 0, 44100.0);
-  int mp_base = BuiltinFilm::kMultiPointBase;  // OP1 volume envelope (env_idx=0)
+  int mp_base =
+      BuiltinFilm::kMultiPointBase;  // OP1 volume envelope (env_idx=0)
   // count = 3 (3/16 = 0.1875)
   mp_film.setParameterValue(mp_base, 3.0 / 16.0);
   // sustain index = -1 (no sustain, play through) → < 0.01

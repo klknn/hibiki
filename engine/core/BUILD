@@ -203,8 +203,8 @@ cc_test(
     srcs = ["timeline_playback_test.cc"],
     linkstatic = True,
     deps = [
-        "//engine/commands:commands",
         ":track",
+        "//engine/commands",
         "//engine/ipc",
         "//engine/vst3:vst3_host_stub",
         "@googletest//:gtest_main",
@@ -219,10 +219,10 @@ cc_test(
     linkstatic = True,
     deps = [
         ":clip",
-        "//engine/commands:commands",
         ":midi",
         ":track",
         "//engine:test_utils",
+        "//engine/commands",
         "//engine/ipc",
         "//engine/vst3:vst3_host",
         "//engine/vst3:vst3_host_stub",

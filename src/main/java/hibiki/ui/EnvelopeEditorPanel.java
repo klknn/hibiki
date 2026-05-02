@@ -8,12 +8,12 @@ import java.util.List;
 import javax.swing.*;
 
 /**
- * Visual envelope editor inspired by Sytrus. Supports two modes:
- * 1. ADSR mode (default): Fixed 5 control points (origin, attack, decay, sustain, release).
- * 2. Multi-point mode: Variable-length point list with right-click add/remove and sustain marker.
+ * Visual envelope editor inspired by Sytrus. Supports two modes: 1. ADSR mode (default): Fixed 5
+ * control points (origin, attack, decay, sustain, release). 2. Multi-point mode: Variable-length
+ * point list with right-click add/remove and sustain marker.
  *
- * <p>All values are normalized 0..1. Tension values range from -1 (ease-in) to +1 (ease-out),
- * with 0 being linear.
+ * <p>All values are normalized 0..1. Tension values range from -1 (ease-in) to +1 (ease-out), with
+ * 0 being linear.
  */
 public class EnvelopeEditorPanel extends JPanel {
 
@@ -30,16 +30,21 @@ public class EnvelopeEditorPanel extends JPanel {
 
   /** A single point in a multi-point envelope. */
   public static class EnvPoint {
-    public float time;    // 0..1 normalized
-    public float value;   // 0..1
+    public float time; // 0..1 normalized
+    public float value; // 0..1
     public float tension; // -1..+1
-    public EnvPoint(float t, float v, float tn) { time = t; value = v; tension = tn; }
+
+    public EnvPoint(float t, float v, float tn) {
+      time = t;
+      value = v;
+      tension = tn;
+    }
   }
 
   // --- Mode flag ---
   private boolean multiPointMode = false;
   private final List<EnvPoint> mpPoints = new ArrayList<>();
-  private int mpSustainIndex = -1;  // -1 = no sustain
+  private int mpSustainIndex = -1; // -1 = no sustain
   private final List<MultiPointListener> mpListeners = new ArrayList<>();
 
   // ADSR values, all 0..1 normalized
@@ -192,13 +197,17 @@ public class EnvelopeEditorPanel extends JPanel {
     mpListeners.add(l);
   }
 
-  public boolean isMultiPointMode() { return multiPointMode; }
+  public boolean isMultiPointMode() {
+    return multiPointMode;
+  }
 
   public List<EnvPoint> getMultiPoints() {
     return new ArrayList<>(mpPoints);
   }
 
-  public int getMultiPointSustainIndex() { return mpSustainIndex; }
+  public int getMultiPointSustainIndex() {
+    return mpSustainIndex;
+  }
 
   // --- Control point positions ---
 
@@ -545,8 +554,8 @@ public class EnvelopeEditorPanel extends JPanel {
     if (maxTime < 0.001f) maxTime = 1.0f;
     for (int i = 0; i < mpPoints.size(); i++) {
       EnvPoint p = mpPoints.get(i);
-      int x = PAD_LEFT + (int)((p.time / maxTime) * w);
-      int y = PAD_TOP + (int)((1.0f - p.value) * h);
+      int x = PAD_LEFT + (int) ((p.time / maxTime) * w);
+      int y = PAD_TOP + (int) ((1.0f - p.value) * h);
       pts[i] = new Point(x, y);
     }
     return pts;
@@ -558,8 +567,9 @@ public class EnvelopeEditorPanel extends JPanel {
 
     // Sustain marker
     if (mpSustainIndex >= 0 && mpSustainIndex < pts.length) {
-      g2.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
-          10.0f, new float[]{4, 4}, 0));
+      g2.setStroke(
+          new BasicStroke(
+              1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10.0f, new float[] {4, 4}, 0));
       g2.setColor(MARKER_COLOR);
       g2.drawLine(pts[mpSustainIndex].x, PAD_TOP, pts[mpSustainIndex].x, PAD_TOP + drawH);
       g2.setFont(getFont().deriveFont(Font.PLAIN, 9.0f));
@@ -582,7 +592,8 @@ public class EnvelopeEditorPanel extends JPanel {
     fill.lineTo(pts[pts.length - 1].x, PAD_TOP + drawH);
     fill.lineTo(pts[0].x, PAD_TOP + drawH);
     fill.closePath();
-    GradientPaint gp = new GradientPaint(0, PAD_TOP, CURVE_FILL_TOP, 0, PAD_TOP + drawH, CURVE_FILL_BOT);
+    GradientPaint gp =
+        new GradientPaint(0, PAD_TOP, CURVE_FILL_TOP, 0, PAD_TOP + drawH, CURVE_FILL_BOT);
     g2.setPaint(gp);
     g2.fill(fill);
 
@@ -639,51 +650,54 @@ public class EnvelopeEditorPanel extends JPanel {
     if (hitPt >= 0 && mpPoints.size() > 2) {
       final int idx = hitPt;
       JMenuItem del = new JMenuItem("Delete Point " + idx);
-      del.addActionListener(ev -> {
-        mpPoints.remove(idx);
-        if (mpSustainIndex >= idx) mpSustainIndex = Math.max(-1, mpSustainIndex - 1);
-        fireMultiPointChanged();
-        repaint();
-      });
+      del.addActionListener(
+          ev -> {
+            mpPoints.remove(idx);
+            if (mpSustainIndex >= idx) mpSustainIndex = Math.max(-1, mpSustainIndex - 1);
+            fireMultiPointChanged();
+            repaint();
+          });
       menu.add(del);
 
       JMenuItem sus = new JMenuItem(idx == mpSustainIndex ? "Clear Sustain" : "Set as Sustain");
-      sus.addActionListener(ev -> {
-        mpSustainIndex = (idx == mpSustainIndex) ? -1 : idx;
-        fireMultiPointChanged();
-        repaint();
-      });
+      sus.addActionListener(
+          ev -> {
+            mpSustainIndex = (idx == mpSustainIndex) ? -1 : idx;
+            fireMultiPointChanged();
+            repaint();
+          });
       menu.add(sus);
     } else {
       // Add point at click position
       JMenuItem add = new JMenuItem("Add Point");
-      add.addActionListener(ev -> {
-        int drawW = getWidth() - PAD_LEFT - PAD_RIGHT;
-        int drawH = getHeight() - PAD_TOP - PAD_BOTTOM;
-        if (drawW <= 0 || drawH <= 0) return;
+      add.addActionListener(
+          ev -> {
+            int drawW = getWidth() - PAD_LEFT - PAD_RIGHT;
+            int drawH = getHeight() - PAD_TOP - PAD_BOTTOM;
+            if (drawW <= 0 || drawH <= 0) return;
 
-        float maxTime = 0;
-        for (EnvPoint p : mpPoints) maxTime = Math.max(maxTime, p.time);
-        if (maxTime < 0.001f) maxTime = 1.0f;
+            float maxTime = 0;
+            for (EnvPoint p : mpPoints) maxTime = Math.max(maxTime, p.time);
+            if (maxTime < 0.001f) maxTime = 1.0f;
 
-        float clickTime = ((e.getX() - PAD_LEFT) / (float) drawW) * maxTime;
-        float clickVal = 1.0f - (e.getY() - PAD_TOP) / (float) drawH;
-        clickTime = Math.max(0, Math.min(maxTime, clickTime));
-        clickVal = Math.max(0, Math.min(1, clickVal));
+            float clickTime = ((e.getX() - PAD_LEFT) / (float) drawW) * maxTime;
+            float clickVal = 1.0f - (e.getY() - PAD_TOP) / (float) drawH;
+            clickTime = Math.max(0, Math.min(maxTime, clickTime));
+            clickVal = Math.max(0, Math.min(1, clickVal));
 
-        // Insert in time-sorted order
-        int insertIdx = mpPoints.size();
-        for (int i = 0; i < mpPoints.size(); i++) {
-          if (mpPoints.get(i).time > clickTime) {
-            insertIdx = i;
-            break;
-          }
-        }
-        mpPoints.add(insertIdx, new EnvPoint(clickTime, clickVal, 0.0f));
-        if (mpSustainIndex >= insertIdx) mpSustainIndex++;
-        fireMultiPointChanged();
-        repaint();
-      });
+            // Insert in time-sorted order
+            int insertIdx = mpPoints.size();
+            for (int i = 0; i < mpPoints.size(); i++) {
+              if (mpPoints.get(i).time > clickTime) {
+                insertIdx = i;
+                break;
+              }
+            }
+            mpPoints.add(insertIdx, new EnvPoint(clickTime, clickVal, 0.0f));
+            if (mpSustainIndex >= insertIdx) mpSustainIndex++;
+            fireMultiPointChanged();
+            repaint();
+          });
       menu.add(add);
     }
     menu.show(this, e.getX(), e.getY());

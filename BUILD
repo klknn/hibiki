@@ -248,6 +248,20 @@ java_test(
 )
 
 java_test(
+    name = "timeline_notification_handler_test",
+    srcs = ["src/test/java/hibiki/ui/TimelineNotificationHandlerTest.java"],
+    test_class = "hibiki.ui.TimelineNotificationHandlerTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "//pb:commands_java_proto",
+        "//pb:core_java_proto",
+        "//pb:notifications_java_proto",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
     name = "midi_data_model_test",
     srcs = ["src/test/java/hibiki/ui/MidiDataModelTest.java"],
     data = ["//testdata"],
@@ -273,9 +287,31 @@ java_test(
 )
 
 java_test(
+    name = "plugin_pane_extended_test",
+    srcs = ["src/test/java/hibiki/ui/PluginPaneExtendedTest.java"],
+    test_class = "hibiki.ui.PluginPaneExtendedTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "//pb:notifications_java_proto",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
     name = "settings_dialog_test",
     srcs = ["src/test/java/hibiki/ui/SettingsDialogTest.java"],
     test_class = "hibiki.ui.SettingsDialogTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "topbar_test",
+    srcs = ["src/test/java/hibiki/ui/TopBarTest.java"],
+    test_class = "hibiki.ui.TopBarTest",
     deps = [
         ":hibiki-gui-lib",
         "@maven//:junit_junit",
@@ -292,6 +328,86 @@ java_test(
         "//pb:core_java_proto",
         "//pb:notifications_java_proto",
         "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "absl_formatter_test",
+    srcs = ["src/test/java/hibiki/AbslFormatterTest.java"],
+    test_class = "hibiki.AbslFormatterTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "timeline_constants_test",
+    srcs = ["src/test/java/hibiki/ui/TimelineConstantsTest.java"],
+    test_class = "hibiki.ui.TimelineConstantsTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "marker_dialog_test",
+    srcs = ["src/test/java/hibiki/ui/MarkerDialogTest.java"],
+    test_class = "hibiki.ui.MarkerDialogTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "menu_bar_factory_test",
+    srcs = ["src/test/java/hibiki/ui/MenuBarFactoryTest.java"],
+    test_class = "hibiki.ui.MenuBarFactoryTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "automation_renderer_test",
+    srcs = ["src/test/java/hibiki/ui/AutomationRendererTest.java"],
+    test_class = "hibiki.ui.AutomationRendererTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "automation_editor_dialog_test",
+    srcs = ["src/test/java/hibiki/ui/AutomationEditorDialogTest.java"],
+    test_class = "hibiki.ui.AutomationEditorDialogTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "automation_editor_test",
+    srcs = ["src/test/java/hibiki/ui/AutomationEditorTest.java"],
+    test_class = "hibiki.ui.AutomationEditorTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "simple_laf_test",
+    srcs = ["src/test/java/hibiki/SimpleLafTest.java"],
+    test_class = "hibiki.SimpleLafTest",
+    deps = [
+        ":hibiki-gui-lib",
         "@maven//:junit_junit",
     ],
 )

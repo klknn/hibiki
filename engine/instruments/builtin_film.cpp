@@ -353,9 +353,10 @@ bool BuiltinFilm::getParameterInfo(int index, VstParamInfo& info) const {
     int mp = index - kMultiPointBase;
     int env_idx = mp / kMultiPointParamsPerEnv;
     int slot = mp % kMultiPointParamsPerEnv;
-    std::string prefix = env_idx < kNumOps
-                             ? "Op" + std::to_string(env_idx + 1) + " MP "
-                             : "F" + std::to_string(env_idx - kNumOps + 1) + " MP ";
+    std::string prefix =
+        env_idx < kNumOps
+            ? "Op" + std::to_string(env_idx + 1) + " MP "
+            : "F" + std::to_string(env_idx - kNumOps + 1) + " MP ";
     if (slot == 0) {
       info.name = prefix + "Count";
     } else if (slot == 1) {
@@ -1006,16 +1007,18 @@ void BuiltinFilm::rebuildMultiPointEnv(int env_idx) {
   count = std::min(count, kMaxEnvPoints);
 
   float sus_norm = params_[base + 1];
-  int sustain_index = (sus_norm < 0.01f) ? -1
-                      : static_cast<int>(sus_norm * (kMaxEnvPoints - 1) + 0.5f);
+  int sustain_index =
+      (sus_norm < 0.01f)
+          ? -1
+          : static_cast<int>(sus_norm * (kMaxEnvPoints - 1) + 0.5f);
 
   std::vector<MultiPointEnvelope::Point> pts;
   pts.reserve(count);
   for (int i = 0; i < count; ++i) {
     int slot = base + kMultiPointMetaParams + i * kParamsPerEnvSlot;
-    float time_norm = params_[slot];      // 0..1 → 0..10s (log-scale)
-    float value = params_[slot + 1];      // 0..1
-    float tension_norm = params_[slot + 2]; // 0..1 → -1..+1
+    float time_norm = params_[slot];         // 0..1 → 0..10s (log-scale)
+    float value = params_[slot + 1];         // 0..1
+    float tension_norm = params_[slot + 2];  // 0..1 → -1..+1
     // Convert time: 0 → instant (0.001s), 1 → 10s.
     float time = 0.001f * std::pow(10000.0f, time_norm);
     float tension = tension_norm * 2.0f - 1.0f;

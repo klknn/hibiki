@@ -31,17 +31,16 @@ class BuiltinFilm : public IPlugin {
   // 16 max points per envelope, each with (time, value, tension).
   // env 0..5 = OP1..6 volume, env 6..8 = F1..3.
   static constexpr int kMaxEnvPoints = 16;
-  static constexpr int kParamsPerEnvSlot = 3;  // time, value, tension
+  static constexpr int kParamsPerEnvSlot = 3;      // time, value, tension
   static constexpr int kMultiPointMetaParams = 2;  // count, sustain_index
   static constexpr int kMultiPointParamsPerEnv =
-      kMultiPointMetaParams + kMaxEnvPoints * kParamsPerEnvSlot;  // 50
+      kMultiPointMetaParams + kMaxEnvPoints * kParamsPerEnvSlot;    // 50
   static constexpr int kNumMultiPointEnvs = kNumOps + kNumFilters;  // 9
   static constexpr int kMultiPointParams =
       kNumMultiPointEnvs * kMultiPointParamsPerEnv;  // 450
   static constexpr int kMatrixBase =
-      kOpParams + kFilterParams + kGlobalParams;  // 272
-  static constexpr int kMultiPointBase =
-      kMatrixBase + kMatrixParams;  // 344
+      kOpParams + kFilterParams + kGlobalParams;                       // 272
+  static constexpr int kMultiPointBase = kMatrixBase + kMatrixParams;  // 344
   static constexpr int kTotalParams =
       kMultiPointBase + kMultiPointParams;  // 794
 

@@ -16,8 +16,8 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//engine/audio:sound",
+        "//engine/commands",
         "//engine/core:clip",
-        "//engine/commands:commands",
         "//engine/core:history",
         "//engine/core:midi",
         "//engine/core:project",

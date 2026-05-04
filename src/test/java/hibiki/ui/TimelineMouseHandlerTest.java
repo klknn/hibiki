@@ -36,7 +36,7 @@ public class TimelineMouseHandlerTest {
   @Test
   public void testDragMode_values() {
     TimelineView.DragMode[] modes = TimelineView.DragMode.values();
-    assertEquals(9, modes.length);
+    assertEquals(11, modes.length);
     assertEquals(TimelineView.DragMode.NONE, TimelineView.DragMode.valueOf("NONE"));
     assertEquals(TimelineView.DragMode.MOVE_CLIP, TimelineView.DragMode.valueOf("MOVE_CLIP"));
     assertEquals(TimelineView.DragMode.CREATE_CLIP, TimelineView.DragMode.valueOf("CREATE_CLIP"));

@@ -1512,4 +1512,91 @@ TEST_F(ProjectTest, BounceTrackClipWithMidiClip) {
   std::remove(tmp_wav.c_str());
 }
 
+TEST_F(ProjectTest, BounceTrackClipWithFades) {
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+
+  auto* track = hibiki::GetOrCreateTrack(state, 0);
+
+  // Create a 2-second mono audio clip filled with constant amplitude 1.0
+  auto tc = std::make_unique<hibiki::TimelineClip>();
+  tc->clip = std::make_unique<hibiki::Clip>();
+  tc->clip->type = hibiki::Clip::Type::AUDIO;
+  tc->clip->num_channels = 1;
+  int total_samples = (int)(2.0 * state.sample_rate);
+  tc->clip->audio_data.resize(total_samples, 1.0f);
+  tc->clip->duration_sec = 2.0;
+  tc->start_time_sec = 0.0;
+  tc->duration_sec = 2.0;
+  tc->fade_in_sec = 0.5;   // 0.5s fade-in
+  tc->fade_out_sec = 0.5;  // 0.5s fade-out
+  track->timeline_clips.push_back(std::move(tc));
+
+  // Deep-copy timeline clips
+  std::vector<std::unique_ptr<hibiki::TimelineClip>> clips_copy;
+  for (const auto& src : track->timeline_clips) {
+    if (!src || !src->clip) continue;
+    auto copy = std::make_unique<hibiki::TimelineClip>();
+    copy->start_time_sec = src->start_time_sec;
+    copy->duration_sec = src->duration_sec;
+    copy->duration_beats = src->duration_beats;
+    copy->trim_start_beats = src->trim_start_beats;
+    copy->alias_source = src->alias_source;
+    copy->loop_interval_beats = src->loop_interval_beats;
+    copy->fade_in_sec = src->fade_in_sec;
+    copy->fade_out_sec = src->fade_out_sec;
+    copy->muted = src->muted;
+    copy->clip = std::make_unique<hibiki::Clip>();
+    *copy->clip = *src->clip;
+    clips_copy.push_back(std::move(copy));
+  }
+
+  auto snapshot = hibiki::CaptureProjectState(state);
+  std::string tmp_wav = "test_bounce_fades.wav";
+  bool ok = hibiki::BounceTrackClip(snapshot, state.sample_rate, state.bpm, 0,
+                                    clips_copy, 0.0, 2.0, tmp_wav);
+  ASSERT_TRUE(ok) << "BounceTrackClip should succeed";
+
+  std::vector<float> audio_data;
+  int channels = 0;
+  double duration = 0.0;
+  auto loaded = hibiki::LoadWav(tmp_wav, audio_data, channels, duration);
+  EXPECT_THAT(loaded, IsOk());
+  EXPECT_EQ(channels, 2);
+
+  // Check fade-in: first 100 samples (L channel at index 0,2,4,...) should be
+  // significantly attenuated compared to mid-clip. At t=0, fade gain ~= -30dB
+  // ≈ 0.032, so very early samples should be well below 0.5.
+  float early_max = 0.0f;
+  for (int i = 0; i < 100 && i * 2 < (int)audio_data.size(); ++i) {
+    early_max = std::max(early_max, std::abs(audio_data[i * 2]));
+  }
+
+  // Check middle: around 1.0 second mark, fade gain should be 1.0
+  int mid_start = (int)(1.0 * state.sample_rate);
+  float mid_max = 0.0f;
+  for (int i = mid_start; i < mid_start + 100 && i * 2 < (int)audio_data.size();
+       ++i) {
+    mid_max = std::max(mid_max, std::abs(audio_data[i * 2]));
+  }
+
+  // Check fade-out: last 100 samples should be attenuated
+  int end_start = (int)audio_data.size() / 2 - 100;
+  float late_max = 0.0f;
+  for (int i = std::max(0, end_start); i * 2 + 1 < (int)audio_data.size();
+       ++i) {
+    late_max = std::max(late_max, std::abs(audio_data[i * 2]));
+  }
+
+  EXPECT_GT(mid_max, 0.5f) << "Mid-clip should be near full amplitude";
+  EXPECT_LT(early_max, mid_max * 0.5f)
+      << "Fade-in: early samples should be significantly quieter than middle";
+  EXPECT_LT(late_max, mid_max * 0.5f)
+      << "Fade-out: late samples should be significantly quieter than middle";
+
+  state.tracks.clear();
+  std::remove(tmp_wav.c_str());
+}
+
 }  // namespace hibiki

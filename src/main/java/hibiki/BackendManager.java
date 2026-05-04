@@ -430,6 +430,20 @@ public class BackendManager {
             .build());
   }
 
+  /** Set clip fade-in and fade-out durations in seconds */
+  public void setClipFade(int trackIndex, int clipIndex, float fadeInSec, float fadeOutSec) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_CLIP_FADE)
+                    .setTarget(
+                        EntityRef.newBuilder().setTrackIndex(trackIndex).setTimelineClip(clipIndex))
+                    .setValue(fadeInSec)
+                    .setFadeOutSec(fadeOutSec))
+            .build());
+  }
+
   /** Copy (or alias) a timeline clip from source track/clip to target track at given time. */
   public void copyTimelineClip(
       int sourceTrackIndex,

@@ -57,6 +57,7 @@ message TrackCmd {
     ACTION_SET_SOLO = 16;
     ACTION_MOVE_TIMELINE_CLIP = 17;
     ACTION_COPY_TIMELINE_CLIP = 18;  // Deep-copy or alias a timeline clip
+    ACTION_SET_CLIP_FADE = 19;       // Set fade-in/fade-out durations
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -69,6 +70,7 @@ message TrackCmd {
   string midi_input_device_id = 9;  // MIDI input device ID
   int32 record_mode = 10;           // 0 = audio, 1 = MIDI
   int32 target_track_index = 11;    // For cross-track clip moves
+  float fade_out_sec = 12;          // Fade-out duration (fade-in uses value)
 }
 
 message PluginCmd {

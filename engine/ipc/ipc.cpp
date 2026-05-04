@@ -143,8 +143,8 @@ void sendPluginList(const std::string& path,
 void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
                           const std::string& path, float start_time,
                           float duration, const std::vector<float>& waveform,
-                          bool is_looped, int alias_source,
-                          float loop_interval) {
+                          bool is_looped, int alias_source, float loop_interval,
+                          float fade_in_sec, float fade_out_sec) {
   hibiki::pb::notifications::Notification notification;
   auto* tci = notification.mutable_timeline_clip_info();
   tci->set_track_index(track_idx);
@@ -159,6 +159,8 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
   tci->set_is_looped(is_looped);
   tci->set_alias_source(alias_source);
   tci->set_loop_interval(loop_interval);
+  tci->set_fade_in_sec(fade_in_sec);
+  tci->set_fade_out_sec(fade_out_sec);
   sendProto(notification);
 }
 

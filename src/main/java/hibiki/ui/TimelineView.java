@@ -183,7 +183,9 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     TRIM_LEFT,
     DRAG_LOOP_REGION,
     DRAG_LOOP_MARKER,
-    DRAG_MARKER
+    DRAG_MARKER,
+    FADE_IN_DRAG,
+    FADE_OUT_DRAG
   }
 
   DragMode dragMode = DragMode.NONE;
@@ -210,6 +212,10 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   // Loop region drag state
   float loopDragStartSec = 0;
   boolean draggingLoopEnd = false; // true = dragging end marker, false = start
+
+  // Fade marker drag state
+  ClipRect fadeDragClip = null;
+  int fadeDragTrackIdx = -1;
 
   // Mouse handler delegate
   private final TimelineMouseHandler mouseHandler = new TimelineMouseHandler(this);
@@ -1408,6 +1414,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       cr.isLooped = info.getIsLooped();
       cr.isAlias = info.getAliasSource() >= 0;
       cr.aliasSourceIndex = info.getAliasSource();
+      cr.fadeInSec = info.getFadeInSec();
+      cr.fadeOutSec = info.getFadeOutSec();
       // Update loopInterval from engine notification (loop_interval is in seconds)
       if (info.getLoopInterval() > 0) {
         cr.loopInterval = info.getLoopInterval();
@@ -1445,6 +1453,8 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     boolean isLooped = false; // Clip content repeats (loop-extended)
     boolean isAlias = false; // Clip is an alias (shallow copy)
     int aliasSourceIndex = -1; // Source clip index for aliases
+    float fadeInSec = 0; // Linear fade-in duration in seconds
+    float fadeOutSec = 0; // Linear fade-out duration in seconds
     List<AutomationEditor.AutoPoint> automationPoints = new ArrayList<>();
   }
 

@@ -120,6 +120,8 @@ message TimelineClipInfo {
   int32 alias_source = 9;  // Source clip index for aliases (-1 = not alias)
   float loop_interval =
       10;  // Loop repeat interval in seconds (0 = use content duration)
+  float fade_in_sec = 11;   // Linear fade-in duration in seconds
+  float fade_out_sec = 12;  // Linear fade-out duration in seconds
 }
 
 // Track name metadata.

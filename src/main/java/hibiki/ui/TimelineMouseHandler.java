@@ -129,26 +129,81 @@ class TimelineMouseHandler {
       int clipY = scaleTotalRuler + Theme.getInstance().scale(view.getTrackY(trackIdx)) + 5;
       int clipH = Theme.getInstance().scale(view.getBaseTrackHeight(trackIdx)) - 10;
       if (clip != null && view.isNearLeftEdge(clip, e.getX())) {
-        view.dragMode = TimelineView.DragMode.TRIM_LEFT;
-        view.resizeClip = clip;
-        view.resizeTrackIdx = trackIdx;
-        view.resizeOriginalDuration = clip.duration;
-      } else if (clip != null && view.isNearRightEdge(clip, e.getX())) {
-        // Right edge hit — determine top half (loop extend) vs bottom half (resize)
-        boolean topHalf = (e.getY() - clipY) <= clipH / 2;
-        if (topHalf) {
-          view.dragMode = TimelineView.DragMode.LOOP_EXTEND;
-          // Set loopInterval at drag start so renderer shows tiled preview
-          if (!clip.isLooped && clip.loopInterval <= 0) {
-            clip.loopInterval = clip.duration;
-          }
+        // Check if near fade-in handle (below header, near top-left corner area)
+        boolean belowHeader = (e.getY() - clipY) > TimelineConstants.CLIP_HEADER_HEIGHT;
+        int fadeInPx = (int) (clip.fadeInSec * view.getPixelsPerSecond());
+        int fadeMarkerX = (int) (clip.startTime * view.getPixelsPerSecond()) + fadeInPx;
+        boolean nearFadeHandle =
+            belowHeader
+                && Math.abs(e.getX() - fadeMarkerX) < 8
+                && (e.getY() - clipY) < TimelineConstants.CLIP_HEADER_HEIGHT + 12;
+        if (nearFadeHandle) {
+          view.dragMode = TimelineView.DragMode.FADE_IN_DRAG;
+          view.fadeDragClip = clip;
+          view.fadeDragTrackIdx = trackIdx;
         } else {
-          view.dragMode = TimelineView.DragMode.RESIZE_CLIP;
+          view.dragMode = TimelineView.DragMode.TRIM_LEFT;
+          view.resizeClip = clip;
+          view.resizeTrackIdx = trackIdx;
+          view.resizeOriginalDuration = clip.duration;
         }
-        view.resizeClip = clip;
-        view.resizeTrackIdx = trackIdx;
-        view.resizeOriginalDuration = clip.duration;
+      } else if (clip != null && view.isNearRightEdge(clip, e.getX())) {
+        // Check if near fade-out handle (below header, near top-right corner area)
+        boolean belowHeader = (e.getY() - clipY) > TimelineConstants.CLIP_HEADER_HEIGHT;
+        int fadeOutPx = (int) (clip.fadeOutSec * view.getPixelsPerSecond());
+        int clipEndX = (int) ((clip.startTime + clip.duration) * view.getPixelsPerSecond());
+        int fadeMarkerX = clipEndX - fadeOutPx;
+        boolean nearFadeHandle =
+            belowHeader
+                && Math.abs(e.getX() - fadeMarkerX) < 8
+                && (e.getY() - clipY) < TimelineConstants.CLIP_HEADER_HEIGHT + 12;
+        if (nearFadeHandle) {
+          view.dragMode = TimelineView.DragMode.FADE_OUT_DRAG;
+          view.fadeDragClip = clip;
+          view.fadeDragTrackIdx = trackIdx;
+        } else {
+          // Right edge hit — determine top half (loop extend) vs bottom half (resize)
+          boolean topHalf = (e.getY() - clipY) <= clipH / 2;
+          if (topHalf) {
+            view.dragMode = TimelineView.DragMode.LOOP_EXTEND;
+            // Set loopInterval at drag start so renderer shows tiled preview
+            if (!clip.isLooped && clip.loopInterval <= 0) {
+              clip.loopInterval = clip.duration;
+            }
+          } else {
+            view.dragMode = TimelineView.DragMode.RESIZE_CLIP;
+          }
+          view.resizeClip = clip;
+          view.resizeTrackIdx = trackIdx;
+          view.resizeOriginalDuration = clip.duration;
+        }
       } else if (clip != null) {
+        // Check if clicking on a fade marker in the middle of the clip
+        float pps = view.getPixelsPerSecond();
+        int clipX = (int) (clip.startTime * pps);
+        int clipW = (int) (clip.duration * pps);
+        boolean belowHeader = (e.getY() - clipY) > TimelineConstants.CLIP_HEADER_HEIGHT;
+        boolean nearTop = (e.getY() - clipY) < TimelineConstants.CLIP_HEADER_HEIGHT + 12;
+        if (belowHeader && nearTop && clip.fadeInSec > 0) {
+          int fadeInPx = (int) (clip.fadeInSec * pps);
+          int fadeMarkerX = clipX + fadeInPx;
+          if (Math.abs(e.getX() - fadeMarkerX) < 8) {
+            view.dragMode = TimelineView.DragMode.FADE_IN_DRAG;
+            view.fadeDragClip = clip;
+            view.fadeDragTrackIdx = trackIdx;
+            return;
+          }
+        }
+        if (belowHeader && nearTop && clip.fadeOutSec > 0) {
+          int fadeOutPx = (int) (clip.fadeOutSec * pps);
+          int fadeMarkerX = clipX + clipW - fadeOutPx;
+          if (Math.abs(e.getX() - fadeMarkerX) < 8) {
+            view.dragMode = TimelineView.DragMode.FADE_OUT_DRAG;
+            view.fadeDragClip = clip;
+            view.fadeDragTrackIdx = trackIdx;
+            return;
+          }
+        }
         view.draggingClip = clip;
         view.dragSourceTrack = trackIdx;
         view.dragStartX = e.getX();
@@ -215,6 +270,13 @@ class TimelineMouseHandler {
       completeTrimLeft(e);
     }
 
+    // Handle fade drag completion
+    if ((view.dragMode == TimelineView.DragMode.FADE_IN_DRAG
+            || view.dragMode == TimelineView.DragMode.FADE_OUT_DRAG)
+        && view.fadeDragClip != null) {
+      completeFadeDrag(e);
+    }
+
     // Handle clip creation completion
     if (view.dragMode == TimelineView.DragMode.CREATE_CLIP && view.creatingClipRect != null) {
       if (view.creatingAutoLaneIdx >= 0) {
@@ -279,6 +341,8 @@ class TimelineMouseHandler {
     view.dragSourceTrack = -1;
     view.resizeClip = null;
     view.resizeTrackIdx = -1;
+    view.fadeDragClip = null;
+    view.fadeDragTrackIdx = -1;
     view.creatingTrackIdx = -1;
     view.creatingAutoLaneIdx = -1;
     view.creatingClipRect = null;
@@ -386,6 +450,20 @@ class TimelineMouseHandler {
     view.contentPanel.repaint();
   }
 
+  private void completeFadeDrag(MouseEvent e) {
+    TimelineView.TrackTimeline track = view.tracks.get(view.fadeDragTrackIdx);
+    int clipIndex = track.clips.indexOf(view.fadeDragClip);
+    if (clipIndex >= 0) {
+      BackendManager.getInstance()
+          .setClipFade(
+              view.fadeDragTrackIdx,
+              clipIndex,
+              Math.max(0, view.fadeDragClip.fadeInSec),
+              Math.max(0, view.fadeDragClip.fadeOutSec));
+    }
+    view.contentPanel.repaint();
+  }
+
   private void completeCreation(MouseEvent e) {
     float endTime = Math.max(0, e.getX() / view.getPixelsPerSecond());
     if (!e.isShiftDown()) {
@@ -480,8 +558,25 @@ class TimelineMouseHandler {
         && view.dragMode != TimelineView.DragMode.CREATE_CLIP
         && view.dragMode != TimelineView.DragMode.RESIZE_CLIP
         && view.dragMode != TimelineView.DragMode.LOOP_EXTEND
-        && view.dragMode != TimelineView.DragMode.TRIM_LEFT) {
+        && view.dragMode != TimelineView.DragMode.TRIM_LEFT
+        && view.dragMode != TimelineView.DragMode.FADE_IN_DRAG
+        && view.dragMode != TimelineView.DragMode.FADE_OUT_DRAG) {
       view.updatePlayhead(e.getX());
+    } else if ((view.dragMode == TimelineView.DragMode.FADE_IN_DRAG
+            || view.dragMode == TimelineView.DragMode.FADE_OUT_DRAG)
+        && view.fadeDragClip != null) {
+      // Update fade duration based on mouse position
+      float pps = view.getPixelsPerSecond();
+      int clipX = (int) (view.fadeDragClip.startTime * pps);
+      int clipW = (int) (view.fadeDragClip.duration * pps);
+      if (view.dragMode == TimelineView.DragMode.FADE_IN_DRAG) {
+        float fadeInPx = Math.max(0, Math.min(e.getX() - clipX, clipW));
+        view.fadeDragClip.fadeInSec = fadeInPx / pps;
+      } else {
+        float fadeOutPx = Math.max(0, Math.min((clipX + clipW) - e.getX(), clipW));
+        view.fadeDragClip.fadeOutSec = fadeOutPx / pps;
+      }
+      view.contentPanel.repaint();
     } else if (view.dragMode == TimelineView.DragMode.TRIM_LEFT && view.resizeClip != null) {
       // Head-trim: move left edge, shrink duration, increase trim offset
       float mouseTime = Math.max(0, e.getX() / view.getPixelsPerSecond());

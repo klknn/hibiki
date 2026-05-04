@@ -86,6 +86,8 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
       clip->set_trim_start_beats(tc->trim_start_beats);
       clip->set_duration_beats(
           tc->loop_interval_beats);  // reuse field for loop interval
+      tcs->set_fade_in_sec(tc->fade_in_sec);
+      tcs->set_fade_out_sec(tc->fade_out_sec);
     }
 
     for (const auto& lane : track->automation_lanes) {
@@ -167,6 +169,8 @@ static void LoadTracksFromProto(ProjectState& state,
         tc->clip->is_loop = true;
         tc->loop_interval_beats = tc_data.clip().duration_beats();
       }
+      tc->fade_in_sec = tc_data.fade_in_sec();
+      tc->fade_out_sec = tc_data.fade_out_sec();
       track->timeline_clips.push_back(std::move(tc));
     }
 
@@ -283,10 +287,11 @@ void SyncProjectToGui(const ProjectState& state) {
       float li_sec = (tc->loop_interval_beats > 0)
                          ? (float)(tc->loop_interval_beats * 60.0 / state.bpm)
                          : 0.0f;
-      hibiki::sendTimelineClipInfo(tidx, tc_idx, cname, tc->clip->path,
-                                   tc->start_time_sec, duration_for_gui,
-                                   tc->clip->waveform_summary,
-                                   tc->clip->is_loop, tc->alias_source, li_sec);
+      hibiki::sendTimelineClipInfo(
+          tidx, tc_idx, cname, tc->clip->path, tc->start_time_sec,
+          duration_for_gui, tc->clip->waveform_summary, tc->clip->is_loop,
+          tc->alias_source, li_sec, (float)tc->fade_in_sec,
+          (float)tc->fade_out_sec);
     }
     // Sync Automation Lanes
     if (!track->automation_lanes.empty()) {
@@ -418,13 +423,32 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
               if (tc->clip->is_loop && content_samples > 0) {
                 sample_pos = sample_pos % content_samples;
               }
+              // Compute per-sample fade gain (linear in dB domain)
+              double fade_gain = 1.0;
+              constexpr double kFadeMinDb = -60.0;
+              double sample_time_in_clip =
+                  clip_local_time + (double)i / sample_rate;
+              if (tc->fade_in_sec > 0 &&
+                  sample_time_in_clip < tc->fade_in_sec) {
+                double t = sample_time_in_clip / tc->fade_in_sec;
+                double db = kFadeMinDb * (1.0 - t);
+                fade_gain *= std::pow(10.0, db / 20.0);
+              }
+              if (tc->fade_out_sec > 0 &&
+                  sample_time_in_clip > clip_duration - tc->fade_out_sec) {
+                double t = std::max(0.0, (clip_duration - sample_time_in_clip) /
+                                             tc->fade_out_sec);
+                double db = kFadeMinDb * (1.0 - t);
+                fade_gain *= std::pow(10.0, db / 20.0);
+              }
               if (tc->clip->num_channels == 2 &&
                   sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
-                bufferL[i] += tc->clip->audio_data[sample_pos * 2];
-                bufferR[i] += tc->clip->audio_data[sample_pos * 2 + 1];
+                bufferL[i] += tc->clip->audio_data[sample_pos * 2] * fade_gain;
+                bufferR[i] +=
+                    tc->clip->audio_data[sample_pos * 2 + 1] * fade_gain;
               } else if (tc->clip->num_channels == 1 &&
                          sample_pos < (int)tc->clip->audio_data.size()) {
-                float s = tc->clip->audio_data[sample_pos];
+                float s = tc->clip->audio_data[sample_pos] * fade_gain;
                 bufferL[i] += s;
                 bufferR[i] += s;
               }

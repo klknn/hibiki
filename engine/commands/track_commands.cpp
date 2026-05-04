@@ -259,6 +259,42 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       sendAck("COPY_TIMELINE_CLIP", true);
       break;
     }
+    case pb::commands::TrackCmd::ACTION_SET_CLIP_FADE: {
+      int cidx = cmd.target().timeline_clip();
+      float fade_in = cmd.value();
+      float fade_out = cmd.fade_out_sec();
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
+      if (state.tracks.count(tidx)) {
+        auto& track = state.tracks[tidx];
+        if (cidx >= 0 && cidx < (int)track->timeline_clips.size() &&
+            track->timeline_clips[cidx]) {
+          auto& tc = track->timeline_clips[cidx];
+          tc->fade_in_sec = std::max(0.0, (double)fade_in);
+          tc->fade_out_sec = std::max(0.0, (double)fade_out);
+          CHECK_GT(state.bpm, 0);
+          float duration_for_gui =
+              (tc->duration_beats > 0)
+                  ? (float)beatsToSec(tc->duration_beats, state.bpm)
+                  : (float)tc->duration_sec;
+          std::string clipname = tc->clip ? tc->clip->path : "";
+          if (clipname.empty()) clipname = "Clip";
+          clipname = pathBasename(clipname);
+          float li_sec =
+              (tc->loop_interval_beats > 0)
+                  ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
+                  : 0.0f;
+          sendTimelineClipInfo(
+              tidx, cidx, clipname, tc->clip ? tc->clip->path : "",
+              (float)tc->start_time_sec, duration_for_gui,
+              tc->clip ? tc->clip->waveform_summary : std::vector<float>{},
+              tc->clip ? tc->clip->is_loop : false, tc->alias_source, li_sec,
+              (float)tc->fade_in_sec, (float)tc->fade_out_sec);
+        }
+      }
+      sendAck("SET_CLIP_FADE", true);
+      break;
+    }
     case pb::commands::TrackCmd::ACTION_ARM_RECORD: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       auto track = GetOrCreateTrack(state, tidx);

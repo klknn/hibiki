@@ -810,6 +810,85 @@ class TimelineRenderer {
           g2.setStroke(oldStroke);
         }
 
+        // Draw fade handles and envelopes (FL Studio style)
+        {
+          int contentY2 = y + CLIP_HEADER_H;
+          int contentH2 = h - CLIP_HEADER_H;
+          Shape oldClip2 = g2.getClip();
+          g2.clipRect(x, y, w, h);
+
+          int fadeInPx = (int) (clip.fadeInSec * pps);
+          int fadeOutPx = (int) (clip.fadeOutSec * pps);
+
+          // Draw dimmed regions for active fades
+          if (fadeInPx > 0 || fadeOutPx > 0) {
+            Composite oldComp2 = g2.getComposite();
+            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.35f));
+            g2.setColor(new Color(0, 0, 0));
+            if (fadeInPx > 0) {
+              int[] fiX = {x, x + fadeInPx, x};
+              int[] fiY = {contentY2, contentY2, contentY2 + contentH2};
+              g2.fillPolygon(fiX, fiY, 3);
+            }
+            if (fadeOutPx > 0) {
+              int[] foX = {x + w - fadeOutPx, x + w, x + w};
+              int[] foY = {contentY2, contentY2, contentY2 + contentH2};
+              g2.fillPolygon(foX, foY, 3);
+            }
+            g2.setComposite(oldComp2);
+          }
+
+          // Draw fade envelope curves
+          Stroke curveStroke = g2.getStroke();
+          g2.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+          g2.setColor(new Color(255, 255, 255, 200));
+          if (fadeInPx > 0) {
+            // Fade-in: diagonal line from bottom-left to top at fade point
+            g2.drawLine(x, contentY2 + contentH2, x + fadeInPx, contentY2);
+          }
+          if (fadeOutPx > 0) {
+            // Fade-out: diagonal line from top at fade point to bottom-right
+            g2.drawLine(x + w - fadeOutPx, contentY2, x + w, contentY2 + contentH2);
+          }
+          g2.setStroke(curveStroke);
+
+          // Always draw fade handle circles at corners (visible even at fade=0)
+          int handleRadius = 4;
+          // Fade-in handle: at the fade-in endpoint (or top-left corner if 0)
+          int fiHandleX = x + fadeInPx;
+          int fiHandleY = contentY2;
+          g2.setColor(new Color(255, 255, 255, 220));
+          g2.fillOval(
+              fiHandleX - handleRadius,
+              fiHandleY - handleRadius,
+              handleRadius * 2,
+              handleRadius * 2);
+          g2.setColor(clipColor);
+          g2.drawOval(
+              fiHandleX - handleRadius,
+              fiHandleY - handleRadius,
+              handleRadius * 2,
+              handleRadius * 2);
+
+          // Fade-out handle: at the fade-out start point (or top-right corner if 0)
+          int foHandleX = x + w - fadeOutPx;
+          int foHandleY = contentY2;
+          g2.setColor(new Color(255, 255, 255, 220));
+          g2.fillOval(
+              foHandleX - handleRadius,
+              foHandleY - handleRadius,
+              handleRadius * 2,
+              handleRadius * 2);
+          g2.setColor(clipColor);
+          g2.drawOval(
+              foHandleX - handleRadius,
+              foHandleY - handleRadius,
+              handleRadius * 2,
+              handleRadius * 2);
+
+          g2.setClip(oldClip2);
+        }
+
         // Border
         g2.setColor(clipColor);
         g2.drawRoundRect(x, y, w, h, 8, 8);

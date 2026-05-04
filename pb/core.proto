@@ -102,6 +102,8 @@ message TimelineClip {
   Clip clip = 2;             // Full clip data
   float start_time_sec = 3;  // Position on timeline in seconds
   int32 alias_source = 4;    // Source clip index for aliases (-1 = not alias)
+  float fade_in_sec = 5;     // Linear fade-in duration in seconds
+  float fade_out_sec = 6;    // Linear fade-out duration in seconds
 }
 
 // A session slot — one cell in the clip launcher grid.

@@ -34,7 +34,9 @@ struct TimelineClip {
   double trim_start_beats = 0.0;  // Head-trim offset into clip content
   int alias_source = -1;  // Source clip index for aliases (-1 = not alias)
   double loop_interval_beats =
-      0.0;  // Loop repeat period in beats (0 = full content)
+      0.0;                    // Loop repeat period in beats (0 = full content)
+  double fade_in_sec = 0.0;   // Linear fade-in duration in seconds
+  double fade_out_sec = 0.0;  // Linear fade-out duration in seconds
 };
 
 // Automation lane targeting a single plugin parameter

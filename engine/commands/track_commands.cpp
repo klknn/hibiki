@@ -9,6 +9,7 @@
 #include "engine/core/audio_file.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/core/midi.hpp"
+#include "engine/core/project.hpp"
 #include "engine/core/track.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/commands.pb.h"
@@ -293,6 +294,167 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
         }
       }
       sendAck("SET_CLIP_FADE", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_BOUNCE_IN_PLACE: {
+      int cidx = cmd.target().timeline_clip();
+      float tail_sec = cmd.bounce_tail_sec();
+
+      // Phase 1: Under mutex, capture snapshot and clip time info
+      std::vector<uint8_t> snapshot;
+      double clip_start = 0, bounce_end = 0;
+      double bpm = 0;
+      float sr = 0;
+      std::string bounce_path;
+      std::vector<std::unique_ptr<TimelineClip>> clips_copy;
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        if (!state.tracks.count(tidx)) {
+          sendAck("BOUNCE_IN_PLACE", false);
+          break;
+        }
+        auto& track = state.tracks[tidx];
+        if (cidx < 0 || cidx >= (int)track->timeline_clips.size() ||
+            !track->timeline_clips[cidx]) {
+          sendAck("BOUNCE_IN_PLACE", false);
+          break;
+        }
+        auto& tc = track->timeline_clips[cidx];
+        clip_start = tc->start_time_sec;
+        double clip_duration = (tc->duration_beats > 0)
+                                   ? tc->duration_beats * 60.0 / state.bpm
+                                   : tc->duration_sec;
+        bounce_end = clip_start + clip_duration + tail_sec;
+        bpm = state.bpm;
+        sr = state.sample_rate;
+        bounce_path = "/tmp/hibiki_bounce_" + std::to_string(tidx) + "_" +
+                      std::to_string(cidx) + ".wav";
+        snapshot = CaptureProjectState(state);
+
+        // Deep-copy timeline clips to preserve MIDI events and audio data
+        for (const auto& src : track->timeline_clips) {
+          if (!src || !src->clip) continue;
+          auto copy = std::make_unique<TimelineClip>();
+          copy->start_time_sec = src->start_time_sec;
+          copy->duration_sec = src->duration_sec;
+          copy->duration_beats = src->duration_beats;
+          copy->trim_start_beats = src->trim_start_beats;
+          copy->alias_source = src->alias_source;
+          copy->loop_interval_beats = src->loop_interval_beats;
+          copy->fade_in_sec = src->fade_in_sec;
+          copy->fade_out_sec = src->fade_out_sec;
+          copy->muted = src->muted;
+          copy->clip = std::make_unique<Clip>();
+          *copy->clip = *src->clip;  // Deep copy clip data
+          clips_copy.push_back(std::move(copy));
+        }
+      }
+
+      // Phase 2: Without mutex, render single track offline
+      bool ok = BounceTrackClip(snapshot, sr, bpm, tidx, clips_copy, clip_start,
+                                bounce_end, bounce_path);
+      if (!ok) {
+        LOG(ERROR) << "BounceTrackClip failed for track " << tidx;
+        sendAck("BOUNCE_IN_PLACE", false);
+        break;
+      }
+
+      // Phase 3: Re-acquire mutex, mute original, load bounced clip
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        history.pushState(CaptureProjectState(state));
+
+        // Mute the original clip
+        auto& tc = state.tracks[tidx]->timeline_clips[cidx];
+        tc->muted = true;
+
+        // Notify GUI about muted source clip
+        std::string clipname = tc->clip ? tc->clip->path : "";
+        if (clipname.empty()) clipname = "Clip";
+        clipname = pathBasename(clipname);
+        float dur_gui = (tc->duration_beats > 0)
+                            ? (float)beatsToSec(tc->duration_beats, state.bpm)
+                            : (float)tc->duration_sec;
+        float li_sec =
+            (tc->loop_interval_beats > 0)
+                ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
+                : 0.0f;
+        sendTimelineClipInfo(
+            tidx, cidx, clipname, tc->clip ? tc->clip->path : "",
+            (float)tc->start_time_sec, dur_gui,
+            tc->clip ? tc->clip->waveform_summary : std::vector<float>{},
+            tc->clip ? tc->clip->is_loop : false, tc->alias_source, li_sec,
+            (float)tc->fade_in_sec, (float)tc->fade_out_sec, tc->muted);
+
+        // Find next available track index
+        int new_tidx = 0;
+        for (auto& [idx, t] : state.tracks) {
+          new_tidx = std::max(new_tidx, idx + 1);
+        }
+        auto* new_track = GetOrCreateTrack(state, new_tidx);
+        new_track->name = "Bounced";
+
+        // Load bounced WAV
+        auto new_tc = std::make_unique<TimelineClip>();
+        auto clip_result = LoadClip(bounce_path, false, state.sample_rate);
+        if (clip_result.ok()) {
+          new_tc->clip = std::make_unique<Clip>(std::move(*clip_result));
+          new_tc->start_time_sec = clip_start;
+          new_tc->duration_sec = new_tc->clip->duration_sec;
+        } else {
+          LOG(ERROR) << "Failed to load bounced audio: "
+                     << clip_result.status();
+          sendAck("BOUNCE_IN_PLACE", false);
+          break;
+        }
+        int new_cidx = (int)new_track->timeline_clips.size();
+        new_track->timeline_clips.push_back(std::move(new_tc));
+
+        // Notify GUI about new track and clip
+        sendTrackInfo(new_tidx, "Bounced");
+        auto& added = new_track->timeline_clips[new_cidx];
+        if (added && added->clip) {
+          sendTimelineClipInfo(new_tidx, new_cidx,
+                               pathBasename(added->clip->path),
+                               added->clip->path, (float)added->start_time_sec,
+                               (float)added->duration_sec,
+                               added->clip->waveform_summary, false, -1, 0.0f);
+        }
+      }
+
+      sendAck("BOUNCE_IN_PLACE", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_CLIP_MUTED: {
+      int cidx = cmd.target().timeline_clip();
+      bool muted = cmd.flag();
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      if (state.tracks.count(tidx)) {
+        auto& track = state.tracks[tidx];
+        if (cidx >= 0 && cidx < (int)track->timeline_clips.size() &&
+            track->timeline_clips[cidx]) {
+          history.pushState(CaptureProjectState(state));
+          auto& tc = track->timeline_clips[cidx];
+          tc->muted = muted;
+          std::string clipname = tc->clip ? tc->clip->path : "";
+          if (clipname.empty()) clipname = "Clip";
+          clipname = pathBasename(clipname);
+          float dur_gui = (tc->duration_beats > 0)
+                              ? (float)beatsToSec(tc->duration_beats, state.bpm)
+                              : (float)tc->duration_sec;
+          float li_sec =
+              (tc->loop_interval_beats > 0)
+                  ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
+                  : 0.0f;
+          sendTimelineClipInfo(
+              tidx, cidx, clipname, tc->clip ? tc->clip->path : "",
+              (float)tc->start_time_sec, dur_gui,
+              tc->clip ? tc->clip->waveform_summary : std::vector<float>{},
+              tc->clip ? tc->clip->is_loop : false, tc->alias_source, li_sec,
+              (float)tc->fade_in_sec, (float)tc->fade_out_sec, tc->muted);
+        }
+      }
+      sendAck("SET_CLIP_MUTED", true);
       break;
     }
     case pb::commands::TrackCmd::ACTION_ARM_RECORD: {

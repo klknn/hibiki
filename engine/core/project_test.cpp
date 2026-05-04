@@ -1429,4 +1429,87 @@ TEST_F(ProjectTest, PluginRemoveSaveLoadRoundTrip) {
   std::remove(tmp.c_str());
 }
 
+TEST_F(ProjectTest, BounceTrackClipWithMidiClip) {
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+
+  auto* track = hibiki::GetOrCreateTrack(state, 0);
+  std::string dexed_path = GetDexedPath();
+  int pidx = track->LoadPlugin(dexed_path, 0, state.sample_rate).index;
+  ASSERT_GE(pidx, 0) << "Failed to load Dexed plugin";
+
+  // Create an in-memory MIDI clip (no file path, like piano roll editing)
+  auto tc = std::make_unique<hibiki::TimelineClip>();
+  tc->clip = std::make_unique<hibiki::Clip>();
+  tc->clip->type = hibiki::Clip::Type::MIDI;
+  tc->start_time_sec = 0.0;
+  tc->duration_beats = 4.0;  // 4 beats = 2 sec at 120bpm
+  tc->duration_sec = 2.0;
+  // Add some MIDI notes
+  hibiki::MidiEvent noteOn;
+  noteOn.beats = 0.0;
+  noteOn.note = 60;
+  noteOn.velocity = 100;
+  noteOn.type = 0x90;  // note on
+  noteOn.channel = 0;
+  tc->clip->midi_events.push_back(noteOn);
+  hibiki::MidiEvent noteOff;
+  noteOff.beats = 1.0;
+  noteOff.note = 60;
+  noteOff.velocity = 0;
+  noteOff.type = 0x80;  // note off
+  noteOff.channel = 0;
+  tc->clip->midi_events.push_back(noteOff);
+  track->timeline_clips.push_back(std::move(tc));
+
+  // Deep-copy timeline clips (same procedure as handler)
+  std::vector<std::unique_ptr<hibiki::TimelineClip>> clips_copy;
+  for (const auto& src : track->timeline_clips) {
+    if (!src || !src->clip) continue;
+    auto copy = std::make_unique<hibiki::TimelineClip>();
+    copy->start_time_sec = src->start_time_sec;
+    copy->duration_sec = src->duration_sec;
+    copy->duration_beats = src->duration_beats;
+    copy->trim_start_beats = src->trim_start_beats;
+    copy->alias_source = src->alias_source;
+    copy->loop_interval_beats = src->loop_interval_beats;
+    copy->fade_in_sec = src->fade_in_sec;
+    copy->fade_out_sec = src->fade_out_sec;
+    copy->muted = src->muted;
+    copy->clip = std::make_unique<hibiki::Clip>();
+    *copy->clip = *src->clip;
+    clips_copy.push_back(std::move(copy));
+  }
+  ASSERT_EQ(clips_copy.size(), 1u);
+  ASSERT_EQ(clips_copy[0]->clip->midi_events.size(), 2u)
+      << "Deep copy should preserve MIDI events";
+
+  // Capture snapshot (for plugin chain only)
+  auto snapshot = hibiki::CaptureProjectState(state);
+
+  std::string tmp_wav = "test_bounce_track_clip.wav";
+  bool ok = hibiki::BounceTrackClip(snapshot, state.sample_rate, state.bpm, 0,
+                                    clips_copy, 0.0, 2.5, tmp_wav);
+  ASSERT_TRUE(ok) << "BounceTrackClip should succeed";
+
+  // Verify output is non-silent
+  std::vector<float> audio_data;
+  int channels = 0;
+  double duration = 0.0;
+  auto loaded = hibiki::LoadWav(tmp_wav, audio_data, channels, duration);
+  EXPECT_THAT(loaded, IsOk());
+  EXPECT_GT(audio_data.size(), 0u) << "Should have written audio";
+
+  float max_amp = 0.0f;
+  for (float f : audio_data) {
+    if (std::abs(f) > max_amp) max_amp = std::abs(f);
+  }
+  EXPECT_GT(max_amp, 0.0f) << "BounceTrackClip should produce non-silent "
+                              "output from MIDI+instrument";
+
+  state.tracks.clear();
+  std::remove(tmp_wav.c_str());
+}
+
 }  // namespace hibiki

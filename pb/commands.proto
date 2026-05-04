@@ -58,6 +58,8 @@ message TrackCmd {
     ACTION_MOVE_TIMELINE_CLIP = 17;
     ACTION_COPY_TIMELINE_CLIP = 18;  // Deep-copy or alias a timeline clip
     ACTION_SET_CLIP_FADE = 19;       // Set fade-in/fade-out durations
+    ACTION_BOUNCE_IN_PLACE = 20;     // Bounce clip through track effects
+    ACTION_SET_CLIP_MUTED = 21;      // Set timeline clip muted state
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -71,6 +73,7 @@ message TrackCmd {
   int32 record_mode = 10;           // 0 = audio, 1 = MIDI
   int32 target_track_index = 11;    // For cross-track clip moves
   float fade_out_sec = 12;          // Fade-out duration (fade-in uses value)
+  float bounce_tail_sec = 13;       // Decay tail for bounce-in-place
 }
 
 message PluginCmd {

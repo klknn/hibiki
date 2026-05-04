@@ -37,6 +37,7 @@ struct TimelineClip {
       0.0;                    // Loop repeat period in beats (0 = full content)
   double fade_in_sec = 0.0;   // Linear fade-in duration in seconds
   double fade_out_sec = 0.0;  // Linear fade-out duration in seconds
+  bool muted = false;         // Clip is muted (bounced-in-place)
 };
 
 // Automation lane targeting a single plugin parameter

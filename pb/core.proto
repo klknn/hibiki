@@ -104,6 +104,7 @@ message TimelineClip {
   int32 alias_source = 4;    // Source clip index for aliases (-1 = not alias)
   float fade_in_sec = 5;     // Linear fade-in duration in seconds
   float fade_out_sec = 6;    // Linear fade-out duration in seconds
+  bool muted = 7;            // Clip is muted (bounced-in-place)
 }
 
 // A session slot — one cell in the clip launcher grid.

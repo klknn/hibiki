@@ -444,6 +444,34 @@ public class BackendManager {
             .build());
   }
 
+  /**
+   * Bounce a clip in place: render through effects, mute original, add bounced clip on new track
+   */
+  public void bounceClipInPlace(int trackIndex, int clipIndex, float tailSec) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_BOUNCE_IN_PLACE)
+                    .setTarget(
+                        EntityRef.newBuilder().setTrackIndex(trackIndex).setTimelineClip(clipIndex))
+                    .setBounceTailSec(tailSec))
+            .build());
+  }
+
+  /** Set the muted state of a timeline clip */
+  public void setClipMuted(int trackIndex, int clipIndex, boolean muted) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_CLIP_MUTED)
+                    .setTarget(
+                        EntityRef.newBuilder().setTrackIndex(trackIndex).setTimelineClip(clipIndex))
+                    .setFlag(muted))
+            .build());
+  }
+
   /** Copy (or alias) a timeline clip from source track/clip to target track at given time. */
   public void copyTimelineClip(
       int sourceTrackIndex,

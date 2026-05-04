@@ -692,6 +692,10 @@ class TimelineRenderer {
 
         // Pick color based on alias status
         Color clipColor = clip.isAlias ? aliasColor : accentBlue;
+        if (clip.muted) {
+          clipColor =
+              new Color(clipColor.getRed() / 2, clipColor.getGreen() / 2, clipColor.getBlue() / 2);
+        }
 
         // Transparent content background
         g2.setColor(new Color(clipColor.getRed(), clipColor.getGreen(), clipColor.getBlue(), 30));

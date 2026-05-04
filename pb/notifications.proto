@@ -122,6 +122,7 @@ message TimelineClipInfo {
       10;  // Loop repeat interval in seconds (0 = use content duration)
   float fade_in_sec = 11;   // Linear fade-in duration in seconds
   float fade_out_sec = 12;  // Linear fade-out duration in seconds
+  bool muted = 13;          // Clip is muted (bounced-in-place)
 }
 
 // Track name metadata.

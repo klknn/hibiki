@@ -88,6 +88,7 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
           tc->loop_interval_beats);  // reuse field for loop interval
       tcs->set_fade_in_sec(tc->fade_in_sec);
       tcs->set_fade_out_sec(tc->fade_out_sec);
+      tcs->set_muted(tc->muted);
     }
 
     for (const auto& lane : track->automation_lanes) {
@@ -171,6 +172,7 @@ static void LoadTracksFromProto(ProjectState& state,
       }
       tc->fade_in_sec = tc_data.fade_in_sec();
       tc->fade_out_sec = tc_data.fade_out_sec();
+      tc->muted = tc_data.muted();
       track->timeline_clips.push_back(std::move(tc));
     }
 
@@ -291,7 +293,7 @@ void SyncProjectToGui(const ProjectState& state) {
           tidx, tc_idx, cname, tc->clip->path, tc->start_time_sec,
           duration_for_gui, tc->clip->waveform_summary, tc->clip->is_loop,
           tc->alias_source, li_sec, (float)tc->fade_in_sec,
-          (float)tc->fade_out_sec);
+          (float)tc->fade_out_sec, tc->muted);
     }
     // Sync Automation Lanes
     if (!track->automation_lanes.empty()) {
@@ -496,6 +498,144 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
     LOG(ERROR) << "Bounce save failed: " << status.message();
   }
   hibiki::sendBounceFinished(path, status.ok());
+}
+
+bool BounceTrackClip(
+    const std::vector<uint8_t>& snapshot, float sample_rate, double bpm,
+    int track_idx,
+    const std::vector<std::unique_ptr<TimelineClip>>& timeline_clips,
+    double start_sec, double end_sec, const std::string& path) {
+  // Load plugins from snapshot (we only need the plugin chain)
+  ProjectState state;
+  state.sample_rate = sample_rate;
+  auto s = ApplyProjectState(state, snapshot);
+  if (!s.ok()) return false;
+  state.bpm = bpm;
+
+  // Get the plugin chain for the target track
+  Track* track = nullptr;
+  if (state.tracks.find(track_idx) != state.tracks.end()) {
+    track = state.tracks[track_idx].get();
+  }
+
+  state.is_timeline_playing = true;
+  state.playhead_pos_sec = start_sec;
+
+  int block_size = 512;
+  std::vector<float> output_buffer;
+
+  HostProcessContext context;
+  context.sampleRate = sample_rate;
+  context.tempo = bpm;
+  context.timeSigNumerator = 4;
+  context.timeSigDenominator = 4;
+
+  alignas(32) float bufferL[512];
+  alignas(32) float bufferR[512];
+  float* outChannels[] = {bufferL, bufferR};
+
+  double time_per_block = block_size / (double)sample_rate;
+
+  while (state.playhead_pos_sec < end_sec) {
+    std::fill(bufferL, bufferL + block_size, 0.0f);
+    std::fill(bufferR, bufferR + block_size, 0.0f);
+
+    // Use the passed-in timeline_clips (deep-copied from live state)
+    for (const auto& tc : timeline_clips) {
+      if (!tc || !tc->clip) continue;
+      double clip_duration = (tc->duration_beats > 0)
+                                 ? tc->duration_beats * 60.0 / bpm
+                                 : tc->duration_sec;
+      if (state.playhead_pos_sec + time_per_block > tc->start_time_sec &&
+          state.playhead_pos_sec < tc->start_time_sec + clip_duration) {
+        double clip_local_time = state.playhead_pos_sec - tc->start_time_sec;
+
+        if (tc->clip->type == Clip::Type::MIDI) {
+          std::vector<MidiNoteEvent> blockEvents;
+          double beats_per_sec = bpm / 60.0;
+          double window_start_beats = clip_local_time * beats_per_sec;
+          double window_end_beats =
+              (clip_local_time + time_per_block) * beats_per_sec;
+          for (const auto& me : tc->clip->midi_events) {
+            if (me.beats >= window_start_beats && me.beats < window_end_beats) {
+              MidiNoteEvent e;
+              double event_local_sec =
+                  me.beats / beats_per_sec - clip_local_time;
+              e.sampleOffset =
+                  std::max(0, (int)(event_local_sec * sample_rate));
+              if (e.sampleOffset >= block_size) e.sampleOffset = block_size - 1;
+              e.channel = me.channel;
+              e.pitch = me.note;
+              e.isNoteOn = hibiki::isNoteOn(me);
+              e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+              blockEvents.push_back(e);
+            }
+          }
+          // Use the plugin chain from the snapshot-restored track
+          if (track && !track->plugins.empty() &&
+              track->plugins[0]->isInstrument() &&
+              !track->plugin_bypass.count(0)) {
+            track->plugins[0]->process(nullptr, outChannels, block_size,
+                                       context, blockEvents);
+          }
+        } else {
+          // Audio playback
+          int content_samples = (int)tc->clip->audio_data.size();
+          if (tc->clip->num_channels == 2) content_samples /= 2;
+          int start_sample = (int)(clip_local_time * sample_rate);
+          for (int i = 0; i < block_size; ++i) {
+            int sample_pos = start_sample + i;
+            if (sample_pos < 0) continue;
+            if (tc->clip->is_loop && content_samples > 0) {
+              sample_pos = sample_pos % content_samples;
+            }
+            if (tc->clip->num_channels == 2 &&
+                sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
+              bufferL[i] += tc->clip->audio_data[sample_pos * 2];
+              bufferR[i] += tc->clip->audio_data[sample_pos * 2 + 1];
+            } else if (tc->clip->num_channels == 1 &&
+                       sample_pos < (int)tc->clip->audio_data.size()) {
+              bufferL[i] += tc->clip->audio_data[sample_pos];
+              bufferR[i] += tc->clip->audio_data[sample_pos];
+            }
+          }
+        }
+      }
+    }
+
+    // Process effects chain from the snapshot-restored track
+    if (track) {
+      // Apply automation
+      double current_beats = state.playhead_pos_sec * (bpm / 60.0);
+      for (const auto& lane : track->automation_lanes) {
+        if (!lane.clips.empty() && lane.plugin_idx >= 0 &&
+            lane.plugin_idx < (int)track->plugins.size()) {
+          float val = GetAutomationValue(lane, current_beats, bpm);
+          track->plugins[lane.plugin_idx]->setParameterValue(lane.param_id,
+                                                             val);
+        }
+      }
+
+      for (size_t i = 0; i < track->plugins.size(); ++i) {
+        if (i == 0 && track->plugins[i]->isInstrument()) continue;
+        if (track->plugin_bypass.count((int)i)) continue;
+        track->plugins[i]->process(outChannels, outChannels, block_size,
+                                   context, {});
+      }
+    }
+
+    for (int i = 0; i < block_size; ++i) {
+      output_buffer.push_back(bufferL[i]);
+      output_buffer.push_back(bufferR[i]);
+    }
+
+    state.playhead_pos_sec += time_per_block;
+    context.continuousTimeSamples = state.playhead_pos_sec * sample_rate;
+    context.projectTimeMusic = state.playhead_pos_sec * (bpm / 60.0);
+  }
+
+  auto status = SaveWav(path, output_buffer, 2, (int)sample_rate);
+  return status.ok();
 }
 
 void sendAutomationLanesData(

@@ -337,6 +337,7 @@ void playback_thread(ProjectState& state) {
         if (state.is_timeline_playing) {
           for (const auto& tc : track->timeline_clips) {
             if (!tc->clip) continue;
+            if (tc->muted) continue;
             // Get clip duration - use duration_beats for MIDI clips,
             // duration_sec for audio
             double clip_duration = (tc->duration_beats > 0)

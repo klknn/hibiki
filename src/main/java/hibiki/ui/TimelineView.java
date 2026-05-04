@@ -935,6 +935,42 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
         });
     menu.add(deleteItem);
 
+    // Mute/Unmute toggle
+    TrackTimeline muteTrack = tracks.get(trackIdx);
+    int muteClipIdx = muteTrack.clips.indexOf(clip);
+    boolean currentlyMuted = clip.muted;
+    JMenuItem muteItem = new JMenuItem(currentlyMuted ? "Unmute" : "Mute");
+    muteItem.addActionListener(
+        e -> {
+          if (muteClipIdx >= 0) {
+            hibiki.BackendManager.getInstance()
+                .setClipMuted(trackIdx, muteClipIdx, !currentlyMuted);
+          }
+        });
+    menu.add(muteItem);
+
+    // Bounce In Place
+    menu.addSeparator();
+    JMenuItem bounceItem = new JMenuItem("Bounce In Place...");
+    bounceItem.addActionListener(
+        e -> {
+          String tailStr =
+              javax.swing.JOptionPane.showInputDialog(this, "Tail duration (seconds):", "0");
+          if (tailStr != null) {
+            try {
+              float tailSec = Float.parseFloat(tailStr);
+              TrackTimeline track = tracks.get(trackIdx);
+              int clipIdx = track.clips.indexOf(clip);
+              if (clipIdx >= 0) {
+                hibiki.BackendManager.getInstance().bounceClipInPlace(trackIdx, clipIdx, tailSec);
+              }
+            } catch (NumberFormatException ex) {
+              // ignore invalid input
+            }
+          }
+        });
+    menu.add(bounceItem);
+
     menu.show(contentPanel, x, y);
   }
 
@@ -1416,6 +1452,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       cr.aliasSourceIndex = info.getAliasSource();
       cr.fadeInSec = info.getFadeInSec();
       cr.fadeOutSec = info.getFadeOutSec();
+      cr.muted = info.getMuted();
       // Update loopInterval from engine notification (loop_interval is in seconds)
       if (info.getLoopInterval() > 0) {
         cr.loopInterval = info.getLoopInterval();
@@ -1455,6 +1492,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     int aliasSourceIndex = -1; // Source clip index for aliases
     float fadeInSec = 0; // Linear fade-in duration in seconds
     float fadeOutSec = 0; // Linear fade-out duration in seconds
+    boolean muted = false; // Clip is muted (bounced-in-place)
     List<AutomationEditor.AutoPoint> automationPoints = new ArrayList<>();
   }
 

@@ -28,7 +28,7 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
                           float duration, const std::vector<float>& waveform,
                           bool is_looped = false, int alias_source = -1,
                           float loop_interval = 0.0f, float fade_in_sec = 0.0f,
-                          float fade_out_sec = 0.0f);
+                          float fade_out_sec = 0.0f, bool muted = false);
 void sendPlayheadInfo(float position_sec, float bpm, bool is_playing,
                       bool loop_enabled = false, float loop_start = 0,
                       float loop_end = 0);

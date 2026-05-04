@@ -428,6 +428,19 @@ java_test(
     ],
 )
 
+java_test(
+    name = "audio_editor_panel_test",
+    srcs = ["src/test/java/hibiki/ui/AudioEditorPanelTest.java"],
+    test_class = "hibiki.ui.AudioEditorPanelTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "//pb:commands_java_proto",
+        "//pb:notifications_java_proto",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:junit_junit",
+    ],
+)
+
 # Clojure test resources
 java_library(
     name = "hibiki-clj-test-sources",

@@ -67,9 +67,22 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_convolver",
+    srcs = ["builtin_convolver.cpp"],
+    hdrs = ["builtin_convolver.hpp"],
+    copts = ["-fexceptions"],
+    deps = [
+        "//engine/core:audio_file",
+        "//engine/plugin:iplugin",
+        "@pocketfft",
+    ],
+)
+
+cc_library(
     name = "effects",
     deps = [
         ":builtin_compressor",
+        ":builtin_convolver",
         ":builtin_delay",
         ":builtin_envelope_shaper",
         ":builtin_eq",
@@ -157,6 +170,17 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_phaser",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_convolver_test",
+    srcs = ["builtin_convolver_test.cpp"],
+    copts = ["-fexceptions"],
+    linkstatic = True,
+    deps = [
+        ":builtin_convolver",
         "@googletest//:gtest_main",
     ],
 )

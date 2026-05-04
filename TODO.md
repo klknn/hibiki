@@ -27,3 +27,8 @@ Java/Clojure frontend
 - [x] setup Java formatter in local and CI
 - [ ] setup Clojure linter in local and CI
 - [ ] setup Clojure formatter in local and CI
+
+
+For fade in/out, I want to have top-left (fade-in) and top-right (fade-out) corner triangle markers which can be horizontally seeked to apply the length of linear fading
+
+I also want you to bounce-in-place feature. It renders the midi or audio clip with inst and effects as bounced audio replacing the original clip (muted). I need two features. muting the 

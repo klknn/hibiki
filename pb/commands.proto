@@ -229,6 +229,45 @@ message SetProcessingPrecision {
   bool use_double = 1;  // true = 64-bit double, false = 32-bit float
 }
 
+// ─── Audio Editor ───────────────────────────────────────────────────
+
+// Commands for the standalone audio clip editor (Edison-style).
+message AudioEditorCmd {
+  enum Action {
+    AE_ACTION_UNSPECIFIED = 0;
+    AE_ACTION_LOAD = 1;       // Load audio file, return waveform + spectrogram
+    AE_ACTION_NORMALIZE = 2;  // Normalize audio to peak
+    AE_ACTION_REVERSE = 3;    // Reverse selection or full clip
+    AE_ACTION_FADE_IN = 4;    // Apply fade-in to selection
+    AE_ACTION_FADE_OUT = 5;   // Apply fade-out to selection
+    AE_ACTION_TRIM = 6;       // Trim to selection
+    AE_ACTION_SAVE = 7;       // Save edited audio to WAV
+    AE_ACTION_GAIN = 8;       // Apply gain adjustment (dB)
+    AE_ACTION_CONVOLVE = 9;   // Apply convolution reverb
+    AE_ACTION_PREVIEW_PLAY = 10;  // Start playback preview
+    AE_ACTION_PREVIEW_STOP = 11;  // Stop playback preview
+    AE_ACTION_BLUR = 12;          // Apply blur tool (noise-convolution)
+    AE_ACTION_APPLY_TO_CLIP =
+        13;  // Write processed audio back to clip in-place
+  }
+  Action action = 1;
+  string path = 2;            // File path (load/save)
+  float selection_start = 3;  // Selection start (0.0–1.0 normalized)
+  float selection_end = 4;    // Selection end (0.0–1.0 normalized)
+  float value = 5;            // Gain amount (dB) for ACTION_GAIN
+  // Convolution reverb parameters (for ACTION_CONVOLVE)
+  string impulse_path = 6;  // Impulse response file path
+  float conv_dry = 7;       // Dry signal level (0.0–1.0)
+  float conv_wet = 8;       // Wet signal level (0.0–1.0)
+  bool conv_add_tail = 9;   // Extend audio beyond original length
+  // Apply-to-clip parameters (for AE_ACTION_APPLY_TO_CLIP)
+  int32 track_index = 10;  // Target track index
+  int32 clip_index = 11;   // Target clip/slot index
+  // Blur tool parameters (for AE_ACTION_BLUR)
+  float blur_amount = 12;    // Blur width/duration (0.001–1.0)
+  int32 blur_envelope = 13;  // 0=Flat, 1=Triangle, 2=Parabolic
+}
+
 // ─── Request Envelope ───────────────────────────────────────────────
 
 // Contains the new domain-grouped commands.
@@ -249,5 +288,6 @@ message Request {
     ModulationCmd modulation = 52;
     RestartWorkers restart_workers = 53;
     SetProcessingPrecision set_processing_precision = 54;
+    AudioEditorCmd audio_editor = 55;
   }
 }

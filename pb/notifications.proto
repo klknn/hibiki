@@ -306,6 +306,9 @@ message Notification {
 
     // Scope data (XY visualization)
     PluginScopeData plugin_scope_data = 28;
+
+    // Audio editor data (Edison-style editor)
+    AudioEditorData audio_editor_data = 29;
   }
 }
 
@@ -335,4 +338,16 @@ message ModulationInfo {
   int32 track_index = 1;
   int32 plugin_index = 2;
   repeated ModulationSlotInfo slots = 3;
+}
+
+// Audio editor waveform + spectrogram data.
+message AudioEditorData {
+  repeated float waveform = 1;     // Downsampled waveform peaks (2048 pts)
+  repeated float spectrogram = 2;  // Flattened spectrogram (width × height)
+  int32 spectrogram_width = 3;     // Number of time bins
+  int32 spectrogram_height = 4;    // Number of frequency bins
+  float duration_sec = 5;          // Total audio duration in seconds
+  int32 sample_rate = 6;           // Source sample rate
+  int32 num_channels = 7;          // Channel count
+  string file_name = 8;            // Display name of loaded file
 }

@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "engine/effects/builtin_compressor.hpp"
+#include "engine/effects/builtin_convolver.hpp"
 #include "engine/effects/builtin_delay.hpp"
 #include "engine/effects/builtin_envelope_shaper.hpp"
 #include "engine/effects/builtin_eq.hpp"
@@ -58,6 +59,9 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinPhaser::kPath) {
     plugin = std::make_unique<BuiltinPhaser>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path.rfind(BuiltinConvolver::kPath, 0) == 0) {
+    plugin = std::make_unique<BuiltinConvolver>();
     plugin->load(path, 0, sample_rate);
   } else if (path.rfind(BuiltinFilm::kPath, 0) == 0) {
     plugin = std::make_unique<BuiltinFilm>();

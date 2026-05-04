@@ -3,6 +3,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 cc_library(
     name = "commands",
     srcs = [
+        "audio_editor_commands.cpp",
         "automation_commands.cpp",
         "commands.cpp",
         "midi_commands.cpp",
@@ -16,6 +17,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//engine/audio:sound",
+        "//engine/core:audio_editor",
         "//engine/core:audio_file",
         "//engine/core:clip",
         "//engine/core:history",

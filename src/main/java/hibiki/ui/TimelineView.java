@@ -868,7 +868,7 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   void showClipContextMenu(int trackIdx, ClipRect clip, int x, int y) {
     JPopupMenu menu = new JPopupMenu();
 
-    // Edit Clip (MIDI only)
+    // Edit Clip (MIDI → Piano Roll, Audio → Audio Editor)
     JMenuItem editItem = new JMenuItem("Edit Clip...");
     editItem.addActionListener(
         e -> {
@@ -896,8 +896,13 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             PianoRoll pr = new PianoRoll(ownerFrame, file, trackIdx, -1, clipIndex, clip.startTime);
             pr.setVisible(true);
           } else {
-            JOptionPane.showMessageDialog(
-                this, "Can only edit MIDI (.mid) clips.", "Error", JOptionPane.ERROR_MESSAGE);
+            // Audio clip — open in Audio Editor with clip context for in-place editing
+            JFrame ownerFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
+            TrackTimeline trackTimeline = tracks.get(trackIdx);
+            int clipIndex = trackTimeline.clips.indexOf(clip);
+            AudioEditorDialog dlg =
+                new AudioEditorDialog(ownerFrame, clip.path, trackIdx, clipIndex);
+            dlg.setVisible(true);
           }
         });
     menu.add(editItem);

@@ -24,6 +24,7 @@
 
 #include "engine/audio/sound.hpp"
 #include "engine/commands/commands.hpp"
+#include "engine/core/audio_editor.hpp"
 #include "engine/core/audio_file.hpp"
 #include "engine/core/clip.hpp"
 #include "engine/core/history.hpp"
@@ -772,6 +773,9 @@ void run_ipc_loop(ProjectState& state) {
       }
       case hibiki::pb::commands::Request::kSetProcessingPrecision:
         handleSetProcessingPrecision(request.set_processing_precision(), state);
+        break;
+      case hibiki::pb::commands::Request::kAudioEditor:
+        handleAudioEditorCmd(request.audio_editor(), state);
         break;
     }
     if (state.quit) break;

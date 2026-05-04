@@ -242,3 +242,31 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "audio_editor",
+    srcs = ["audio_editor.cpp"],
+    hdrs = ["audio_editor.hpp"],
+    copts = ["-fexceptions"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":audio_file",
+        "//engine/audio:sound",
+        "@abseil-cpp//absl/status",
+        "@pocketfft",
+    ],
+)
+
+cc_test(
+    name = "audio_editor_test",
+    srcs = ["audio_editor_test.cpp"],
+    copts = ["-fexceptions"],
+    data = ["//testdata"],
+    linkstatic = True,
+    deps = [
+        ":audio_editor",
+        "//engine:test_utils",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@googletest//:gtest_main",
+    ],
+)

@@ -195,6 +195,20 @@ public class MainView extends JPanel implements Theme.ThemeListener {
           }
         });
 
+    // Ctrl+E = Open Audio Editor (Edison-style)
+    inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_E, KeyEvent.CTRL_DOWN_MASK), "openAudioEditor");
+    inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_E, KeyEvent.META_DOWN_MASK), "openAudioEditor");
+    actionMap.put(
+        "openAudioEditor",
+        new AbstractAction() {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            Frame frame = (Frame) SwingUtilities.getWindowAncestor(MainView.this);
+            AudioEditorDialog dialog = new AudioEditorDialog(frame);
+            dialog.setVisible(true);
+          }
+        });
+
     // Status bar or footer
     JPanel footer = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 2));
     footer.setBackground(Theme.getInstance().BG_DARKER);

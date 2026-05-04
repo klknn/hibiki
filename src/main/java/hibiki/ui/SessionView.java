@@ -729,9 +729,14 @@ public class SessionView extends JPanel {
             JFrame ownerFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
             PianoRoll pr = new PianoRoll(ownerFrame, file, trackIdx, slotIdx);
             pr.setVisible(true);
+          } else if (path != null) {
+            // Audio clip — open in Audio Editor with clip context
+            JFrame ownerFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
+            AudioEditorDialog dlg = new AudioEditorDialog(ownerFrame, path, trackIdx, slotIdx);
+            dlg.setVisible(true);
           } else {
             JOptionPane.showMessageDialog(
-                this, "Can only edit MIDI (.mid) clips.", "Error", JOptionPane.ERROR_MESSAGE);
+                this, "No clip loaded in this slot.", "Info", JOptionPane.INFORMATION_MESSAGE);
           }
         });
     menu.add(editItem);

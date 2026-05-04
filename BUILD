@@ -265,7 +265,10 @@ java_test(
 
 java_test(
     name = "midi_data_model_test",
-    srcs = ["src/test/java/hibiki/ui/MidiDataModelTest.java"],
+    srcs = [
+        "src/test/java/hibiki/ui/MidiDataModelTest.java",
+        "src/test/java/hibiki/ui/TestStateHelper.java",
+    ],
     data = ["//testdata"],
     test_class = "hibiki.ui.MidiDataModelTest",
     deps = [
@@ -274,6 +277,16 @@ java_test(
         "//pb:core_java_proto",
         "//pb:notifications_java_proto",
         "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "scale_mode_test",
+    srcs = ["src/test/java/hibiki/ui/ScaleModeTest.java"],
+    test_class = "hibiki.ui.ScaleModeTest",
+    deps = [
+        ":hibiki-gui-lib",
         "@maven//:junit_junit",
     ],
 )

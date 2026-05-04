@@ -109,12 +109,12 @@ public class AutomationEditor extends JPanel {
     repaint();
   }
 
-  // --- Coordinate conversion ---
-  private float beatToX(float beat) {
+  // --- Coordinate conversion --- (package-private for testing)
+  float beatToX(float beat) {
     return headerWidth + (beat - scrollOffsetBeats) * pixelsPerBeat;
   }
 
-  private float xToBeat(float x) {
+  float xToBeat(float x) {
     return (x - headerWidth) / pixelsPerBeat + scrollOffsetBeats;
   }
 
@@ -130,8 +130,8 @@ public class AutomationEditor extends JPanel {
     return Math.max(0, Math.min(1, 1.0f - (y - pad) / (h - 2 * pad)));
   }
 
-  // --- Find nearest point ---
-  private int findPointAt(int mx, int my, int threshold) {
+  // --- Find nearest point --- (package-private for testing)
+  int findPointAt(int mx, int my, int threshold) {
     for (int i = 0; i < points.size(); i++) {
       AutoPoint p = points.get(i);
       float px = beatToX(p.timeBeats);
@@ -251,8 +251,8 @@ public class AutomationEditor extends JPanel {
         .sendRequest(Request.newBuilder().setAutomation(cmdBuilder).build());
   }
 
-  // --- Tension interpolation (must match C++) ---
-  private static float interpolate(float v0, float v1, float t, float tension) {
+  // --- Tension interpolation (must match C++) --- (package-private for testing)
+  static float interpolate(float v0, float v1, float t, float tension) {
     if (t <= 0) return v0;
     if (t >= 1) return v1;
     float exponent = (float) Math.pow(2.0, tension);

@@ -261,6 +261,120 @@ public class MidiDataModelTest {
     assertTrue(model.notes.isEmpty());
   }
 
+  // ── Round-trip tests (proto → model → verify) ─────────────────────
+
+  @Test
+  public void testNoteEditRoundTrip() {
+    // Create model with notes, build proto, load back → should match
+    MidiDataModel original = TestStateHelper.createModelWithNotes(60, 64, 67);
+    ClipMidiData data =
+        TestStateHelper.buildClipMidiData(
+            480, original.notes.get(0), original.notes.get(1), original.notes.get(2));
+
+    MidiDataModel restored = new MidiDataModel();
+    restored.loadFromBackendData(data);
+
+    TestStateHelper.assertNotesEqual(original.notes, restored.notes);
+  }
+
+  @Test
+  public void testCCEventRoundTrip() {
+    // CC#1 (modulation) events
+    MidiDataModel original = TestStateHelper.createModelWithCCEvents(1, 0, 64, 127);
+    ClipMidiData data =
+        TestStateHelper.buildClipMidiDataWithCC(
+            480, java.util.Collections.emptyList(), original.ccEvents);
+
+    MidiDataModel restored = new MidiDataModel();
+    restored.loadFromBackendData(data);
+
+    assertTrue(restored.notes.isEmpty());
+    TestStateHelper.assertCCEventsEqual(original.ccEvents, restored.ccEvents);
+  }
+
+  @Test
+  public void testPitchBendRoundTrip() {
+    // ccNumber=128 for pitch bend, value range [-8192..+8191]
+    MidiDataModel original = TestStateHelper.createModelWithCCEvents(128, -8192, 0, 8191);
+    ClipMidiData data =
+        TestStateHelper.buildClipMidiDataWithCC(
+            480, java.util.Collections.emptyList(), original.ccEvents);
+
+    MidiDataModel restored = new MidiDataModel();
+    restored.loadFromBackendData(data);
+
+    TestStateHelper.assertCCEventsEqual(original.ccEvents, restored.ccEvents);
+  }
+
+  @Test
+  public void testMixedNotesAndCCRoundTrip() {
+    // Build model with both notes and CC events
+    MidiDataModel original = TestStateHelper.createModelWithNotes(60, 67);
+    original.ccEvents.add(new MidiDataModel.CCEvent(1, 0, 64));
+    original.ccEvents.add(new MidiDataModel.CCEvent(128, 480, -4096));
+
+    ClipMidiData data =
+        TestStateHelper.buildClipMidiDataWithCC(480, original.notes, original.ccEvents);
+
+    MidiDataModel restored = new MidiDataModel();
+    restored.loadFromBackendData(data);
+
+    TestStateHelper.assertNotesEqual(original.notes, restored.notes);
+    TestStateHelper.assertCCEventsEqual(original.ccEvents, restored.ccEvents);
+  }
+
+  @Test
+  public void testEmptyModelRoundTrip() {
+    ClipMidiData data = ClipMidiData.newBuilder().setResolution(480).build();
+
+    MidiDataModel restored = new MidiDataModel();
+    restored.loadFromBackendData(data);
+
+    assertTrue(restored.notes.isEmpty());
+    assertTrue(restored.ccEvents.isEmpty());
+  }
+
+  @Test
+  public void testParseTrack_ccEvents() throws Exception {
+    Sequence seq = new Sequence(Sequence.PPQ, 96);
+    Track track = seq.createTrack();
+    // Add CC#7 at tick 0
+    ShortMessage cc = new ShortMessage();
+    cc.setMessage(ShortMessage.CONTROL_CHANGE, 0, 7, 100);
+    track.add(new MidiEvent(cc, 0));
+    // Add CC#1 at tick 96
+    ShortMessage mod = new ShortMessage();
+    mod.setMessage(ShortMessage.CONTROL_CHANGE, 0, 1, 64);
+    track.add(new MidiEvent(mod, 96));
+
+    MidiDataModel model = new MidiDataModel();
+    model.parseTrack(track);
+
+    assertTrue(model.notes.isEmpty());
+    assertEquals(2, model.ccEvents.size());
+    assertEquals(7, model.ccEvents.get(0).ccNumber);
+    assertEquals(100, model.ccEvents.get(0).value);
+    assertEquals(1, model.ccEvents.get(1).ccNumber);
+    assertEquals(64, model.ccEvents.get(1).value);
+  }
+
+  @Test
+  public void testParseTrack_pitchBend() throws Exception {
+    Sequence seq = new Sequence(Sequence.PPQ, 96);
+    Track track = seq.createTrack();
+    // Pitch bend center (MSB=64, LSB=0 → raw=8192 → value=0)
+    ShortMessage pb = new ShortMessage();
+    pb.setMessage(ShortMessage.PITCH_BEND, 0, 0, 64);
+    track.add(new MidiEvent(pb, 0));
+
+    MidiDataModel model = new MidiDataModel();
+    model.parseTrack(track);
+
+    assertEquals(1, model.ccEvents.size());
+    assertEquals(128, model.ccEvents.get(0).ccNumber);
+    assertEquals(0, model.ccEvents.get(0).value); // center = 0
+  }
+
   private void addNote(Track track, int pitch, int velocity, long startTick, long endTick)
       throws Exception {
     ShortMessage noteOn = new ShortMessage();

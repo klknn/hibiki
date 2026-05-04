@@ -627,4 +627,172 @@ public class TimelineNotificationHandlerTest {
     assertEquals(1, view.tracks.get(0).clips.size());
     assertEquals("Drums", view.tracks.get(0).customName);
   }
+
+  // ── Timeline Clip Operations ───────────────────────────────────
+
+  @Test
+  public void testHandleTimelineClip_multiClipOrdering() {
+    TimelineView view = createView();
+    // Add 3 clips with non-sequential indices
+    for (int i : new int[] {2, 0, 1}) {
+      Notification n =
+          Notification.newBuilder()
+              .setTimelineClipInfo(
+                  TimelineClipInfo.newBuilder()
+                      .setTrackIndex(0)
+                      .setClipIndex(i)
+                      .setName("clip" + i)
+                      .setStartTime(i * 2.0f)
+                      .setDuration(2.0f))
+              .build();
+      view.handleNotification(n);
+    }
+    // All 3 should be in the clips list
+    assertEquals(3, view.tracks.get(0).clips.size());
+    // clipMap should contain all 3 indices
+    assertNotNull(view.tracks.get(0).clipMap.get(0));
+    assertNotNull(view.tracks.get(0).clipMap.get(1));
+    assertNotNull(view.tracks.get(0).clipMap.get(2));
+  }
+
+  @Test
+  public void testHandleTimelineClip_moveUpdatesStartTime() {
+    TimelineView view = createView();
+    // Add clip at position 1.0
+    Notification n1 =
+        Notification.newBuilder()
+            .setTimelineClipInfo(
+                TimelineClipInfo.newBuilder()
+                    .setTrackIndex(0)
+                    .setClipIndex(0)
+                    .setName("movable")
+                    .setStartTime(1.0f)
+                    .setDuration(4.0f))
+            .build();
+    view.handleNotification(n1);
+    assertEquals(1.0f, view.tracks.get(0).clipMap.get(0).startTime, 0.001f);
+
+    // "Move" clip by sending update with new startTime
+    Notification n2 =
+        Notification.newBuilder()
+            .setTimelineClipInfo(
+                TimelineClipInfo.newBuilder()
+                    .setTrackIndex(0)
+                    .setClipIndex(0)
+                    .setName("movable")
+                    .setStartTime(5.0f)
+                    .setDuration(4.0f))
+            .build();
+    view.handleNotification(n2);
+
+    // Should still be 1 clip, at new position
+    assertEquals(1, view.tracks.get(0).clips.size());
+    assertEquals(5.0f, view.tracks.get(0).clipMap.get(0).startTime, 0.001f);
+  }
+
+  @Test
+  public void testClipRect_contentDurationPreservedOnResize() {
+    TimelineView view = createView();
+    // Add clip with initial duration (sets contentDuration)
+    Notification n1 =
+        Notification.newBuilder()
+            .setTimelineClipInfo(
+                TimelineClipInfo.newBuilder()
+                    .setTrackIndex(0)
+                    .setClipIndex(0)
+                    .setName("resizable")
+                    .setStartTime(0.0f)
+                    .setDuration(4.0f))
+            .build();
+    view.handleNotification(n1);
+    TimelineView.ClipRect cr = view.tracks.get(0).clipMap.get(0);
+    assertEquals(4.0f, cr.contentDuration, 0.001f);
+
+    // "Resize" clip (trim it shorter)
+    Notification n2 =
+        Notification.newBuilder()
+            .setTimelineClipInfo(
+                TimelineClipInfo.newBuilder()
+                    .setTrackIndex(0)
+                    .setClipIndex(0)
+                    .setName("resizable")
+                    .setStartTime(0.0f)
+                    .setDuration(2.0f))
+            .build();
+    view.handleNotification(n2);
+
+    // duration should update, but contentDuration stays at original
+    assertEquals(2.0f, cr.duration, 0.001f);
+    assertEquals(4.0f, cr.contentDuration, 0.001f);
+  }
+
+  @Test
+  public void testClipRect_paddingDurationExceedsContent() {
+    TimelineView view = createView();
+    // Add clip
+    Notification n1 =
+        Notification.newBuilder()
+            .setTimelineClipInfo(
+                TimelineClipInfo.newBuilder()
+                    .setTrackIndex(0)
+                    .setClipIndex(0)
+                    .setName("padded")
+                    .setStartTime(0.0f)
+                    .setDuration(4.0f))
+            .build();
+    view.handleNotification(n1);
+
+    // "Pad" clip beyond content duration
+    Notification n2 =
+        Notification.newBuilder()
+            .setTimelineClipInfo(
+                TimelineClipInfo.newBuilder()
+                    .setTrackIndex(0)
+                    .setClipIndex(0)
+                    .setName("padded")
+                    .setStartTime(0.0f)
+                    .setDuration(8.0f))
+            .build();
+    view.handleNotification(n2);
+
+    TimelineView.ClipRect cr = view.tracks.get(0).clipMap.get(0);
+    // duration exceeds contentDuration
+    assertEquals(8.0f, cr.duration, 0.001f);
+    assertEquals(4.0f, cr.contentDuration, 0.001f);
+    assertTrue(cr.duration > cr.contentDuration);
+  }
+
+  @Test
+  public void testClearProject_removesMultiClipState() {
+    TimelineView view = createView();
+    // Add 3 clips across 2 tracks
+    for (int t = 0; t < 2; t++) {
+      for (int c = 0; c < 2; c++) {
+        Notification n =
+            Notification.newBuilder()
+                .setTimelineClipInfo(
+                    TimelineClipInfo.newBuilder()
+                        .setTrackIndex(t)
+                        .setClipIndex(c)
+                        .setName("clip_t" + t + "_c" + c)
+                        .setStartTime(c * 2.0f)
+                        .setDuration(2.0f))
+                .build();
+        view.handleNotification(n);
+      }
+    }
+    assertEquals(2, view.tracks.get(0).clips.size());
+    assertEquals(2, view.tracks.get(1).clips.size());
+
+    // Clear project
+    Notification clear =
+        Notification.newBuilder().setClearProject(ClearProject.newBuilder()).build();
+    view.handleNotification(clear);
+
+    // All clips should be gone on all tracks
+    for (int t = 0; t < 2; t++) {
+      assertTrue(view.tracks.get(t).clips.isEmpty());
+      assertTrue(view.tracks.get(t).clipMap.isEmpty());
+    }
+  }
 }

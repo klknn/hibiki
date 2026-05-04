@@ -162,9 +162,9 @@ static void LoadTracksFromProto(ProjectState& state,
           tc->clip ? tc->clip->duration_sec : tc_data.clip().duration_sec();
       tc->duration_beats = tc->clip ? tc->clip->duration_beats : 0.0;
       tc->alias_source = tc_data.alias_source();
+      tc->trim_start_beats = tc_data.clip().trim_start_beats();
       if (tc_data.clip().is_loop()) {
         tc->clip->is_loop = true;
-        tc->trim_start_beats = tc_data.clip().trim_start_beats();
         tc->loop_interval_beats = tc_data.clip().duration_beats();
       }
       track->timeline_clips.push_back(std::move(tc));

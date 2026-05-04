@@ -8,6 +8,23 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+cc_library(
+    name = "test_utils_state",
+    testonly = True,
+    hdrs = ["test_utils_state.hpp"],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//engine/core:clip",
+        "//engine/core:history",
+        "//engine/core:midi",
+        "//engine/core:project",
+        "//engine/core:track",
+        "//pb:core_cc_proto",
+        "@googletest//:gtest",
+    ],
+)
+
 cc_binary(
     name = "hbk-play",
     srcs = ["main.cpp"],

@@ -178,6 +178,7 @@ cc_test(
         ":history",
         ":project",
         "//engine:test_utils",
+        "//engine:test_utils_state",
         "//engine/vst3:vst3_host_stub",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/status:status_matchers",

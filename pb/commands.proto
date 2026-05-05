@@ -60,6 +60,11 @@ message TrackCmd {
     ACTION_SET_CLIP_FADE = 19;       // Set fade-in/fade-out durations
     ACTION_BOUNCE_IN_PLACE = 20;     // Bounce clip through track effects
     ACTION_SET_CLIP_MUTED = 21;      // Set timeline clip muted state
+    ACTION_SET_TRACK_TYPE = 22;      // Set track type (Normal/Group/Aux)
+    ACTION_SET_OUTPUT_ROUTING = 23;  // Set output routing to group or master
+    ACTION_SET_AUX_SEND = 24;        // Set aux send level
+    ACTION_REORDER_TRACK = 25;       // Move track to new position
+    ACTION_SET_GROUP_PARENT = 26;    // Set/clear group parent
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -71,9 +76,13 @@ message TrackCmd {
   bool input_stereo = 8;            // mono or stereo
   string midi_input_device_id = 9;  // MIDI input device ID
   int32 record_mode = 10;           // 0 = audio, 1 = MIDI
-  int32 target_track_index = 11;    // For cross-track clip moves
-  float fade_out_sec = 12;          // Fade-out duration (fade-in uses value)
-  float bounce_tail_sec = 13;       // Decay tail for bounce-in-place
+  int32 target_track_index = 11;  // For cross-track clip moves / output routing
+  float fade_out_sec = 12;        // Fade-out duration (fade-in uses value)
+  float bounce_tail_sec = 13;     // Decay tail for bounce-in-place
+  int32 aux_track_index = 14;     // Target aux track for send
+  float send_level = 15;          // Aux send level [0.0, 1.0]
+  bool pre_fader = 16;            // Pre-fader send flag
+  int32 new_track_index = 17;     // Destination for ACTION_REORDER_TRACK
 }
 
 message PluginCmd {

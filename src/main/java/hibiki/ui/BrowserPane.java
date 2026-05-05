@@ -343,6 +343,9 @@ public class BrowserPane extends JPanel {
     FileItem filmItem = new FileItem(new File("builtin"), "builtin", "FilM", "Hibiki", 0);
     filmItem.rawPath = "builtin://film";
     builtinNode.add(new DefaultMutableTreeNode(filmItem));
+    FileItem auxItem = new FileItem(new File("builtin"), "builtin", "Aux", "Hibiki", 0);
+    auxItem.rawPath = "builtin://aux";
+    builtinNode.add(new DefaultMutableTreeNode(auxItem));
 
     // DX7 SysEx presets: scan testdata/ for .syx files and list patches.
     DefaultMutableTreeNode dx7Node = new DefaultMutableTreeNode("DX7 Presets");

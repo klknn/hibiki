@@ -521,6 +521,128 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       sendAck("SET_SOLO", true);
       break;
     }
+    case pb::commands::TrackCmd::ACTION_SET_TRACK_TYPE: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      int type_val = cmd.record_mode();  // Reuse record_mode field for type int
+      track->track_type = static_cast<Track::TrackType>(type_val);
+      // Build aux sends tuple vector for IPC
+      std::vector<std::tuple<int, float, bool>> sends;
+      for (const auto& s : track->aux_sends)
+        sends.emplace_back(s.aux_track_index, s.level, s.pre_fader);
+      sendTrackInfoFull(tidx, track->name, static_cast<int>(track->track_type),
+                        track->output_track_index, sends,
+                        track->group_parent_index);
+      sendAck("SET_TRACK_TYPE", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->output_track_index = cmd.target_track_index();
+      std::vector<std::tuple<int, float, bool>> sends;
+      for (const auto& s : track->aux_sends)
+        sends.emplace_back(s.aux_track_index, s.level, s.pre_fader);
+      sendTrackInfoFull(tidx, track->name, static_cast<int>(track->track_type),
+                        track->output_track_index, sends,
+                        track->group_parent_index);
+      sendAck("SET_OUTPUT_ROUTING", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_AUX_SEND: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      int aux_idx = cmd.aux_track_index();
+      float level = cmd.send_level();
+      bool pre = cmd.pre_fader();
+      // Find existing send to this aux, or add new one
+      bool found = false;
+      for (auto& send : track->aux_sends) {
+        if (send.aux_track_index == aux_idx) {
+          send.level = level;
+          send.pre_fader = pre;
+          found = true;
+          break;
+        }
+      }
+      if (!found && level > 0.0f) {
+        track->aux_sends.push_back({aux_idx, level, pre});
+      }
+      // Remove sends with zero level
+      track->aux_sends.erase(
+          std::remove_if(
+              track->aux_sends.begin(), track->aux_sends.end(),
+              [](const Track::AuxSend& s) { return s.level <= 0.0f; }),
+          track->aux_sends.end());
+      std::vector<std::tuple<int, float, bool>> sends;
+      for (const auto& s : track->aux_sends)
+        sends.emplace_back(s.aux_track_index, s.level, s.pre_fader);
+      sendTrackInfoFull(tidx, track->name, static_cast<int>(track->track_type),
+                        track->output_track_index, sends,
+                        track->group_parent_index);
+      sendAck("SET_AUX_SEND", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_REORDER_TRACK: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      int from_idx = tidx;
+      int to_idx = cmd.new_track_index();
+      if (state.tracks.count(from_idx) == 0) {
+        sendAck("REORDER_TRACK", false);
+        break;
+      }
+      // Extract the track being moved
+      auto moving = std::move(state.tracks[from_idx]);
+      state.tracks.erase(from_idx);
+      // Shift other tracks to make room
+      std::map<int, std::unique_ptr<Track>> new_tracks;
+      // Rebuild with new ordering
+      int pos = 0;
+      bool inserted = false;
+      for (auto& [idx, trk] : state.tracks) {
+        if (pos == to_idx && !inserted) {
+          moving->index = pos;
+          new_tracks[pos] = std::move(moving);
+          inserted = true;
+          pos++;
+        }
+        trk->index = pos;
+        // Update group_parent_index references
+        if (trk->group_parent_index == from_idx) {
+          trk->group_parent_index = to_idx;
+        }
+        new_tracks[pos] = std::move(trk);
+        pos++;
+      }
+      if (!inserted) {
+        moving->index = pos;
+        new_tracks[pos] = std::move(moving);
+      }
+      state.tracks = std::move(new_tracks);
+      // Send full track info refresh
+      for (auto& [idx, trk] : state.tracks) {
+        std::vector<std::tuple<int, float, bool>> s;
+        for (const auto& as : trk->aux_sends)
+          s.emplace_back(as.aux_track_index, as.level, as.pre_fader);
+        sendTrackInfoFull(idx, trk->name, static_cast<int>(trk->track_type),
+                          trk->output_track_index, s, trk->group_parent_index);
+      }
+      sendAck("REORDER_TRACK", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_GROUP_PARENT: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->group_parent_index = cmd.target_track_index();
+      std::vector<std::tuple<int, float, bool>> sends;
+      for (const auto& s : track->aux_sends)
+        sends.emplace_back(s.aux_track_index, s.level, s.pre_fader);
+      sendTrackInfoFull(tidx, track->name, static_cast<int>(track->track_type),
+                        track->output_track_index, sends,
+                        track->group_parent_index);
+      sendAck("SET_GROUP_PARENT", true);
+      break;
+    }
     default:
       break;
   }

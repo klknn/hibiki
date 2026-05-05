@@ -37,6 +37,16 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
     ts->set_input_device_id(track->input_device_id);
     ts->set_input_channel_start(track->input_channel_start);
     ts->set_input_stereo(track->input_stereo);
+    ts->set_track_type(
+        static_cast<pb::core::TrackType>(static_cast<int>(track->track_type)));
+    ts->set_output_track_index(track->output_track_index);
+    for (const auto& send : track->aux_sends) {
+      auto* as = ts->add_aux_sends();
+      as->set_aux_track_index(send.aux_track_index);
+      as->set_level(send.level);
+      as->set_pre_fader(send.pre_fader);
+    }
+    ts->set_group_parent_index(track->group_parent_index);
 
     for (const auto& plugin : track->plugins) {
       auto* ps = ts->add_plugins();
@@ -129,6 +139,18 @@ static void LoadTracksFromProto(ProjectState& state,
     track->input_device_id = track_data.input_device_id();
     track->input_channel_start = track_data.input_channel_start();
     track->input_stereo = track_data.input_stereo();
+    track->track_type = static_cast<Track::TrackType>(
+        static_cast<int>(track_data.track_type()));
+    track->output_track_index = track_data.output_track_index();
+    track->aux_sends.clear();
+    for (const auto& send_data : track_data.aux_sends()) {
+      Track::AuxSend send;
+      send.aux_track_index = send_data.aux_track_index();
+      send.level = send_data.level();
+      send.pre_fader = send_data.pre_fader();
+      track->aux_sends.push_back(send);
+    }
+    track->group_parent_index = track_data.group_parent_index();
 
     for (const auto& plugin_data : track_data.plugins()) {
       if (plugin_data.path().empty()) continue;

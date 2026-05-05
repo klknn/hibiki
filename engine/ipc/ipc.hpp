@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "engine/plugin/iplugin.hpp"
@@ -34,6 +35,11 @@ void sendPlayheadInfo(float position_sec, float bpm, bool is_playing,
                       float loop_end = 0);
 void sendBounceFinished(const std::string& path, bool success);
 void sendTrackInfo(int track_idx, const std::string& name);
+void sendTrackInfoFull(
+    int track_idx, const std::string& name, int track_type,
+    int output_track_index,
+    const std::vector<std::tuple<int, float, bool>>& aux_sends,
+    int group_parent_index = -1);
 
 // Send clip MIDI data to GUI. Use slot_idx >= 0 for session clips, clip_idx >=
 // 0 for timeline clips

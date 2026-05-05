@@ -113,6 +113,20 @@ message SessionSlot {
   Clip clip = 2;  // Absent if the slot is empty
 }
 
+// Track type discriminator.
+enum TrackType {
+  TRACK_NORMAL = 0;  // Regular audio/instrument track
+  TRACK_GROUP = 1;   // Group bus (receives from child tracks)
+  TRACK_AUX = 2;     // Aux/return bus (receives via sends)
+}
+
+// An aux send from a track to an aux bus.
+message AuxSend {
+  int32 aux_track_index = 1;  // Target aux track index
+  float level = 2;            // Send level [0.0, 1.0]
+  bool pre_fader = 3;         // true = pre-fader send
+}
+
 // A mixer/instrument track containing everything.
 message Track {
   uint32 track_index = 1;
@@ -129,6 +143,11 @@ message Track {
   bool input_stereo = 12;           // true = stereo (ch, ch+1), false = mono
   string midi_input_device_id =
       13;  // Selected MIDI input device ID ("__global__" = all)
+  TrackType track_type = 14;  // Normal, Group, or Aux
+  int32 output_track_index =
+      15;  // Output routing: -1 = master, else group track index
+  repeated AuxSend aux_sends = 16;  // Aux sends from this track
+  int32 group_parent_index = 17;    // Group parent track index (-1 = none)
 }
 
 // Transport state enum. Prefer enum over bool `is_playing`

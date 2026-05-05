@@ -196,6 +196,28 @@ void sendTrackInfo(int track_idx, const std::string& name) {
   sendProto(notification);
 }
 
+// Extended version with routing info
+void sendTrackInfoFull(
+    int track_idx, const std::string& name, int track_type,
+    int output_track_index,
+    const std::vector<std::tuple<int, float, bool>>& aux_sends,
+    int group_parent_index) {
+  hibiki::pb::notifications::Notification notification;
+  auto* ti = notification.mutable_track_info();
+  ti->set_track_index(track_idx);
+  ti->set_name(name);
+  ti->set_track_type(static_cast<hibiki::pb::core::TrackType>(track_type));
+  ti->set_output_track_index(output_track_index);
+  ti->set_group_parent_index(group_parent_index);
+  for (const auto& [aux_idx, level, pre] : aux_sends) {
+    auto* as = ti->add_aux_sends();
+    as->set_aux_track_index(aux_idx);
+    as->set_level(level);
+    as->set_pre_fader(pre);
+  }
+  sendProto(notification);
+}
+
 void sendClipMidiData(int track_idx, int slot_idx, int clip_idx, int resolution,
                       const std::vector<hibiki::pb::core::MidiEvent>& notes) {
   hibiki::pb::notifications::Notification notification;

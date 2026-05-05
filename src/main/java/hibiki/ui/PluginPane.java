@@ -31,7 +31,8 @@ public class PluginPane extends JPanel {
           Map.entry("EnvShaper", EnvelopeShaperDevicePanel.class),
           Map.entry("Phaser", PhaserDevicePanel.class),
           Map.entry("Convolver", ConvolverDevicePanel.class),
-          Map.entry("FilM", FilmDevicePanel.class));
+          Map.entry("FilM", FilmDevicePanel.class),
+          Map.entry("Aux", AuxDevicePanel.class));
 
   private static PluginPane instance;
   private final JPanel deviceChainContent;
@@ -220,6 +221,9 @@ public class PluginPane extends JPanel {
               return;
             } else if (bp instanceof ConvolverDevicePanel) {
               ((ConvolverDevicePanel) bp).updateParam(paramId, value);
+              return;
+            } else if (bp instanceof AuxDevicePanel) {
+              ((AuxDevicePanel) bp).updateParam(paramId, value);
               return;
             }
           }
@@ -660,6 +664,8 @@ public class PluginPane extends JPanel {
       ((PhaserDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     } else if (device instanceof ConvolverDevicePanel) {
       ((ConvolverDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof AuxDevicePanel) {
+      ((AuxDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     }
 
     return wrapper;

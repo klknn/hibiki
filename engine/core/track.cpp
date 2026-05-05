@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iostream>
 
+#include "engine/effects/builtin_aux.hpp"
 #include "engine/effects/builtin_compressor.hpp"
 #include "engine/effects/builtin_convolver.hpp"
 #include "engine/effects/builtin_delay.hpp"
@@ -30,7 +31,10 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
   std::unique_ptr<IPlugin> plugin;
 
   // Built-in devices: create native IPlugin implementations
-  if (path == BuiltinEq::kPath) {
+  if (path == BuiltinAux::kPath) {
+    plugin = std::make_unique<BuiltinAux>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinEq::kPath) {
     plugin = std::make_unique<BuiltinEq>();
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinCompressor::kPath) {

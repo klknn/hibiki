@@ -104,350 +104,355 @@ void playback_thread(ProjectState& state) {
         }
       }
 
-      for (auto& pair : state.tracks) {
-        Track* track = pair.second.get();
+      // Intermediate input buffers for group/aux tracks
+      // Key = track index, value = {L, R} accumulation buffers
+      std::map<int, std::pair<std::vector<double>, std::vector<double>>>
+          bus_input_buffers;
+      for (const auto& p : state.tracks) {
+        if (p.second->track_type == Track::TrackType::GROUP ||
+            p.second->track_type == Track::TrackType::AUX) {
+          bus_input_buffers[p.first] = {std::vector<double>(block_size, 0.0),
+                                        std::vector<double>(block_size, 0.0)};
+        }
+      }
+
+      // Helper lambda: render a track's content into bufferL/bufferR,
+      // apply effects chain, capture sidechain buffers, apply volume/pan,
+      // and route the output to the appropriate destination.
+      auto renderTrack = [&](Track* track, int track_idx, bool render_content) {
         std::fill(bufferL, bufferL + block_size, 0.0);
         std::fill(bufferR, bufferR + block_size, 0.0);
 
-        // 1. Session clip playback
-        std::vector<MidiNoteEvent> clipMidiEvents;
-        if (track->playing_slot >= 0 &&
-            track->clips.count(track->playing_slot) &&
-            track->clips[track->playing_slot]) {
-          auto& clip = track->clips[track->playing_slot];
-          if (clip->type == Clip::Type::AUDIO) {
-            int start_sample = (int)(track->current_time_sec * sample_rate);
-            for (int i = 0; i < block_size; ++i) {
-              int sample_pos = start_sample + i;
-              if (clip->is_loop) {
-                int total_samples =
-                    clip->audio_data.size() / clip->num_channels;
-                if (total_samples > 0) sample_pos = sample_pos % total_samples;
-              }
-              if (clip->num_channels == 2 &&
-                  sample_pos * 2 + 1 < (int)clip->audio_data.size()) {
-                bufferL[i] += clip->audio_data[sample_pos * 2];
-                bufferR[i] += clip->audio_data[sample_pos * 2 + 1];
-              } else if (clip->num_channels == 1 &&
-                         sample_pos < (int)clip->audio_data.size()) {
-                double s = clip->audio_data[sample_pos];
-                bufferL[i] += s;
-                bufferR[i] += s;
-              }
-            }
-          } else if (clip->type == Clip::Type::MIDI) {
-            // MIDI playback for session clips (looping)
-            // Collect clip events — merged with live events below.
-            double beats_per_sec = state.bpm / 60.0;
-            double current_beats = track->current_time_sec * beats_per_sec;
-            double block_end_beats =
-                (track->current_time_sec + time_per_block) * beats_per_sec;
-            // Handle looping
-            double loop_beats =
-                clip->duration_beats > 0 ? clip->duration_beats : 4.0;
-            if (clip->is_loop && loop_beats > 0) {
-              current_beats = std::fmod(current_beats, loop_beats);
-              block_end_beats = current_beats + time_per_block * beats_per_sec;
-            }
-            for (const auto& me : clip->midi_events) {
-              if (me.beats >= current_beats && me.beats < block_end_beats) {
-                MidiNoteEvent e;
-                double event_sec =
-                    me.beats / beats_per_sec - track->current_time_sec;
-                if (clip->is_loop && loop_beats > 0) {
-                  event_sec = (me.beats - current_beats) / beats_per_sec;
+        if (render_content) {
+          // 1. Session clip playback
+          std::vector<MidiNoteEvent> clipMidiEvents;
+          if (track->playing_slot >= 0 &&
+              track->clips.count(track->playing_slot) &&
+              track->clips[track->playing_slot]) {
+            auto& clip = track->clips[track->playing_slot];
+            if (clip->type == Clip::Type::AUDIO) {
+              int start_sample = (int)(track->current_time_sec * sample_rate);
+              for (int i = 0; i < block_size; ++i) {
+                int sample_pos = start_sample + i;
+                if (clip->is_loop) {
+                  int total_samples =
+                      clip->audio_data.size() / clip->num_channels;
+                  if (total_samples > 0)
+                    sample_pos = sample_pos % total_samples;
                 }
-                e.sampleOffset = std::max(0, (int)(event_sec * sample_rate));
-                if (e.sampleOffset >= block_size)
-                  e.sampleOffset = block_size - 1;
-                e.channel = me.channel;
-                e.pitch = me.note;
-                e.isNoteOn = isNoteOn(me);
-                e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
-                clipMidiEvents.push_back(e);
+                if (clip->num_channels == 2 &&
+                    sample_pos * 2 + 1 < (int)clip->audio_data.size()) {
+                  bufferL[i] += clip->audio_data[sample_pos * 2];
+                  bufferR[i] += clip->audio_data[sample_pos * 2 + 1];
+                } else if (clip->num_channels == 1 &&
+                           sample_pos < (int)clip->audio_data.size()) {
+                  double s = clip->audio_data[sample_pos];
+                  bufferL[i] += s;
+                  bufferR[i] += s;
+                }
               }
-            }
-          }
-          track->current_time_sec += time_per_block;
-        }
-
-        // 1b. Collect timeline MIDI events (merged with allEvents below)
-        std::vector<MidiNoteEvent> timelineMidiEvents;
-        if (state.is_timeline_playing) {
-          for (const auto& tc : track->timeline_clips) {
-            if (!tc->clip || tc->clip->type != Clip::Type::MIDI) continue;
-            double clip_duration = (tc->duration_beats > 0)
-                                       ? tc->duration_beats * 60.0 / state.bpm
-                                       : tc->duration_sec;
-            if (state.playhead_pos_sec + time_per_block > tc->start_time_sec &&
-                state.playhead_pos_sec < tc->start_time_sec + clip_duration) {
-              double clip_local_time =
-                  state.playhead_pos_sec - tc->start_time_sec;
+            } else if (clip->type == Clip::Type::MIDI) {
               double beats_per_sec = state.bpm / 60.0;
-              // Compute loop length: use explicit interval if set,
-              // otherwise fall back to content minus head-trim
-              double content_dur_beats = tc->clip->duration_beats;
-              double loop_length_beats =
-                  (tc->loop_interval_beats > 0)
-                      ? tc->loop_interval_beats
-                      : (content_dur_beats - tc->trim_start_beats);
-              double window_start_beats =
-                  clip_local_time * beats_per_sec + tc->trim_start_beats;
-              double window_end_beats =
-                  (clip_local_time + time_per_block) * beats_per_sec +
-                  tc->trim_start_beats;
-              // Loop wrapping for MIDI within trimmed range
-              if (tc->clip->is_loop && loop_length_beats > 0) {
-                window_start_beats =
-                    tc->trim_start_beats +
-                    std::fmod(window_start_beats - tc->trim_start_beats,
-                              loop_length_beats);
-                window_end_beats =
-                    window_start_beats + time_per_block * beats_per_sec;
+              double current_beats = track->current_time_sec * beats_per_sec;
+              double block_end_beats =
+                  (track->current_time_sec + time_per_block) * beats_per_sec;
+              double loop_beats =
+                  clip->duration_beats > 0 ? clip->duration_beats : 4.0;
+              if (clip->is_loop && loop_beats > 0) {
+                current_beats = std::fmod(current_beats, loop_beats);
+                block_end_beats =
+                    current_beats + time_per_block * beats_per_sec;
               }
-              for (const auto& me : tc->clip->midi_events) {
-                double me_beats = me.beats;
-                // Skip events outside the trimmed content range
-                if (me_beats < tc->trim_start_beats ||
-                    me_beats >= content_dur_beats)
-                  continue;
-                // Handle wrap-around at loop boundary
-                double loop_end_beats =
-                    tc->trim_start_beats + loop_length_beats;
-                if (tc->clip->is_loop && loop_length_beats > 0 &&
-                    window_end_beats > loop_end_beats) {
-                  bool in_range =
-                      (me_beats >= window_start_beats &&
-                       me_beats < window_end_beats) ||
-                      (me_beats >= tc->trim_start_beats &&
-                       me_beats < tc->trim_start_beats +
-                                      std::fmod(window_end_beats -
-                                                    tc->trim_start_beats,
-                                                loop_length_beats));
-                  if (!in_range) continue;
-                } else {
-                  if (me_beats < window_start_beats ||
-                      me_beats >= window_end_beats)
-                    continue;
+              for (const auto& me : clip->midi_events) {
+                if (me.beats >= current_beats && me.beats < block_end_beats) {
+                  MidiNoteEvent e;
+                  double event_sec =
+                      me.beats / beats_per_sec - track->current_time_sec;
+                  if (clip->is_loop && loop_beats > 0) {
+                    event_sec = (me.beats - current_beats) / beats_per_sec;
+                  }
+                  e.sampleOffset = std::max(0, (int)(event_sec * sample_rate));
+                  if (e.sampleOffset >= block_size)
+                    e.sampleOffset = block_size - 1;
+                  e.channel = me.channel;
+                  e.pitch = me.note;
+                  e.isNoteOn = isNoteOn(me);
+                  e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+                  clipMidiEvents.push_back(e);
                 }
-                MidiNoteEvent e;
-                double event_local_sec =
-                    me.beats / beats_per_sec - clip_local_time;
-                // For loop, adjust event timing relative to trimmed range
+              }
+            }
+            track->current_time_sec += time_per_block;
+          }
+
+          // 1b. Collect timeline MIDI events
+          std::vector<MidiNoteEvent> timelineMidiEvents;
+          if (state.is_timeline_playing) {
+            for (const auto& tc : track->timeline_clips) {
+              if (!tc->clip || tc->clip->type != Clip::Type::MIDI) continue;
+              double clip_duration = (tc->duration_beats > 0)
+                                         ? tc->duration_beats * 60.0 / state.bpm
+                                         : tc->duration_sec;
+              if (state.playhead_pos_sec + time_per_block >
+                      tc->start_time_sec &&
+                  state.playhead_pos_sec < tc->start_time_sec + clip_duration) {
+                double clip_local_time =
+                    state.playhead_pos_sec - tc->start_time_sec;
+                double beats_per_sec = state.bpm / 60.0;
+                double content_dur_beats = tc->clip->duration_beats;
+                double loop_length_beats =
+                    (tc->loop_interval_beats > 0)
+                        ? tc->loop_interval_beats
+                        : (content_dur_beats - tc->trim_start_beats);
+                double window_start_beats =
+                    clip_local_time * beats_per_sec + tc->trim_start_beats;
+                double window_end_beats =
+                    (clip_local_time + time_per_block) * beats_per_sec +
+                    tc->trim_start_beats;
                 if (tc->clip->is_loop && loop_length_beats > 0) {
-                  double rel_beat = me.beats - tc->trim_start_beats;
-                  double loop_length_sec = loop_length_beats / beats_per_sec;
-                  double local_in_content =
-                      std::fmod(clip_local_time, loop_length_sec);
-                  event_local_sec = rel_beat / beats_per_sec - local_in_content;
-                  if (event_local_sec < 0) event_local_sec += loop_length_sec;
+                  window_start_beats =
+                      tc->trim_start_beats +
+                      std::fmod(window_start_beats - tc->trim_start_beats,
+                                loop_length_beats);
+                  window_end_beats =
+                      window_start_beats + time_per_block * beats_per_sec;
                 }
-                e.sampleOffset =
-                    std::max(0, (int)(event_local_sec * sample_rate));
-                if (e.sampleOffset >= block_size)
-                  e.sampleOffset = block_size - 1;
-                e.channel = me.channel;
-                e.pitch = me.note;
-                e.isNoteOn = hibiki::isNoteOn(me);
-                e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
-                timelineMidiEvents.push_back(e);
+                for (const auto& me : tc->clip->midi_events) {
+                  double me_beats = me.beats;
+                  if (me_beats < tc->trim_start_beats ||
+                      me_beats >= content_dur_beats)
+                    continue;
+                  double loop_end_beats =
+                      tc->trim_start_beats + loop_length_beats;
+                  if (tc->clip->is_loop && loop_length_beats > 0 &&
+                      window_end_beats > loop_end_beats) {
+                    bool in_range =
+                        (me_beats >= window_start_beats &&
+                         me_beats < window_end_beats) ||
+                        (me_beats >= tc->trim_start_beats &&
+                         me_beats < tc->trim_start_beats +
+                                        std::fmod(window_end_beats -
+                                                      tc->trim_start_beats,
+                                                  loop_length_beats));
+                    if (!in_range) continue;
+                  } else {
+                    if (me_beats < window_start_beats ||
+                        me_beats >= window_end_beats)
+                      continue;
+                  }
+                  MidiNoteEvent e;
+                  double event_local_sec =
+                      me.beats / beats_per_sec - clip_local_time;
+                  if (tc->clip->is_loop && loop_length_beats > 0) {
+                    double rel_beat = me.beats - tc->trim_start_beats;
+                    double loop_length_sec = loop_length_beats / beats_per_sec;
+                    double local_in_content =
+                        std::fmod(clip_local_time, loop_length_sec);
+                    event_local_sec =
+                        rel_beat / beats_per_sec - local_in_content;
+                    if (event_local_sec < 0) event_local_sec += loop_length_sec;
+                  }
+                  e.sampleOffset =
+                      std::max(0, (int)(event_local_sec * sample_rate));
+                  if (e.sampleOffset >= block_size)
+                    e.sampleOffset = block_size - 1;
+                  e.channel = me.channel;
+                  e.pitch = me.note;
+                  e.isNoteOn = hibiki::isNoteOn(me);
+                  e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+                  timelineMidiEvents.push_back(e);
+                }
               }
             }
           }
-        }
 
-        // 1c. Merge live MIDI + virtual MIDI + timeline MIDI, process
-        // instrument once
-        if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
-          std::vector<MidiNoteEvent> allEvents(std::move(clipMidiEvents));
-          // Add timeline MIDI events
-          allEvents.insert(allEvents.end(), timelineMidiEvents.begin(),
-                           timelineMidiEvents.end());
-
-          // Lazily create MIDI input device (only if one is configured)
-          if (!track->midi_input_device &&
-              !track->midi_input_device_id.empty()) {
-            track->midi_input_device = MidiInput::create();
-            if (!track->midi_input_device->open(track->midi_input_device_id)) {
-              track->midi_input_device.reset();
+          // 1c. Merge live MIDI + virtual MIDI + timeline MIDI
+          if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
+            std::vector<MidiNoteEvent> allEvents(std::move(clipMidiEvents));
+            allEvents.insert(allEvents.end(), timelineMidiEvents.begin(),
+                             timelineMidiEvents.end());
+            if (!track->midi_input_device &&
+                !track->midi_input_device_id.empty()) {
+              track->midi_input_device = MidiInput::create();
+              if (!track->midi_input_device->open(
+                      track->midi_input_device_id)) {
+                track->midi_input_device.reset();
+              }
+            }
+            if (track->midi_input_device) {
+              auto hwEvents = track->midi_input_device->read();
+              allEvents.insert(allEvents.end(), hwEvents.begin(),
+                               hwEvents.end());
+            }
+            {
+              std::lock_guard<std::mutex> mlock(track->virtual_midi_mutex);
+              allEvents.insert(allEvents.end(),
+                               track->virtual_midi_queue.begin(),
+                               track->virtual_midi_queue.end());
+              track->virtual_midi_queue.clear();
+            }
+            if (track->panic_requested_.exchange(false)) {
+              for (int note = 0; note < 128; ++note) {
+                MidiNoteEvent e;
+                e.sampleOffset = 0;
+                e.channel = 0;
+                e.pitch = note;
+                e.isNoteOn = false;
+                e.velocity = 0.0f;
+                allEvents.push_back(e);
+              }
+            }
+            if (state.is_recording && track->record_armed &&
+                track->record_mode == Track::RecordMode::RECORD_MIDI) {
+              if (!allEvents.empty()) {
+                LOG_EVERY_N_SEC(INFO, 1)
+                    << "[MIDI_CAP] track=" << track_idx
+                    << " events=" << allEvents.size()
+                    << " buf_size=" << track->midi_record_buffer.size()
+                    << " playhead=" << state.playhead_pos_sec;
+              }
+              for (const auto& ev : allEvents) {
+                Track::TimestampedMidiEvent tev;
+                tev.time_sec = state.playhead_pos_sec +
+                               ev.sampleOffset / state.sample_rate;
+                tev.event = ev;
+                track->midi_record_buffer.push_back(tev);
+              }
+            }
+            if (!track->plugin_bypass.count(0)) {
+              track->plugins[0]->process(nullptr, outChannels, block_size,
+                                         context, allEvents);
+              for (int i = 0; i < block_size; ++i) {
+                bufferL[i] += plugBufL[i];
+                bufferR[i] += plugBufR[i];
+              }
+              std::fill(plugBufL, plugBufL + block_size, 0.0f);
+              std::fill(plugBufR, plugBufR + block_size, 0.0f);
             }
           }
-          if (track->midi_input_device) {
-            auto hwEvents = track->midi_input_device->read();
-            allEvents.insert(allEvents.end(), hwEvents.begin(), hwEvents.end());
-          }
 
-          // Drain virtual MIDI queue (from PC keyboard)
-          {
-            std::lock_guard<std::mutex> mlock(track->virtual_midi_mutex);
-            allEvents.insert(allEvents.end(), track->virtual_midi_queue.begin(),
-                             track->virtual_midi_queue.end());
-            track->virtual_midi_queue.clear();
-          }
-
-          // --- MIDI Panic handling ---
-          if (track->panic_requested_.exchange(false)) {
-            for (int note = 0; note < 128; ++note) {
-              MidiNoteEvent e;
-              e.sampleOffset = 0;
-              e.channel = 0;
-              e.pitch = note;
-              e.isNoteOn = false;
-              e.velocity = 0.0f;
-              allEvents.push_back(e);
-            }
-          }
-
-          // Capture MIDI events for recording (MIDI mode)
-          if (state.is_recording && track->record_armed &&
-              track->record_mode == Track::RecordMode::RECORD_MIDI) {
-            if (!allEvents.empty()) {
-              LOG_EVERY_N_SEC(INFO, 1)
-                  << "[MIDI_CAP] track=" << pair.first
-                  << " events=" << allEvents.size()
-                  << " buf_size=" << track->midi_record_buffer.size()
-                  << " playhead=" << state.playhead_pos_sec;
-            }
-            for (const auto& ev : allEvents) {
-              Track::TimestampedMidiEvent tev;
-              tev.time_sec =
-                  state.playhead_pos_sec + ev.sampleOffset / state.sample_rate;
-              tev.event = ev;
-              track->midi_record_buffer.push_back(tev);
-            }
-          }
-
-          // Always call process() — instruments must render every block
-          // (sustained notes, envelopes, effects tails) even without new
-          // events.
-          if (!track->plugin_bypass.count(0)) {
-            track->plugins[0]->process(nullptr, outChannels, block_size,
-                                       context, allEvents);
-            // Copy plugin float output to double mix buffer
-            for (int i = 0; i < block_size; ++i) {
-              bufferL[i] += plugBufL[i];
-              bufferR[i] += plugBufR[i];
-            }
-            std::fill(plugBufL, plugBufL + block_size, 0.0f);
-            std::fill(plugBufR, plugBufR + block_size, 0.0f);
-          }
-        }
-
-        // 2. Timeline clip playback
-        if (state.is_timeline_playing) {
-          for (const auto& tc : track->timeline_clips) {
-            if (!tc->clip) continue;
-            if (tc->muted) continue;
-            // Get clip duration - use duration_beats for MIDI clips,
-            // duration_sec for audio
-            double clip_duration = (tc->duration_beats > 0)
-                                       ? tc->duration_beats * 60.0 / state.bpm
-                                       : tc->duration_sec;
-            if (state.playhead_pos_sec + time_per_block > tc->start_time_sec &&
-                state.playhead_pos_sec < tc->start_time_sec + clip_duration) {
-              double clip_local_time =
-                  state.playhead_pos_sec - tc->start_time_sec;
-
-              if (tc->clip->type == Clip::Type::MIDI) {
-                // MIDI events already merged above in step 1b
-                // (no separate process() call needed)
-              } else {
-                // Audio playback with trim and loop support
-                int content_samples = (int)tc->clip->audio_data.size();
-                if (tc->clip->num_channels == 2) content_samples /= 2;
-                double bps = state.bpm / 60.0;
-                int trim_samples =
-                    (bps > 0) ? (int)(tc->trim_start_beats / bps * sample_rate)
-                              : 0;
-                int start_sample =
-                    trim_samples + (int)(clip_local_time * sample_rate);
-                // Use explicit loop interval if set, else content - trim
-                int loop_len;
-                if (tc->loop_interval_beats > 0 && bps > 0) {
-                  loop_len = (int)(tc->loop_interval_beats / bps * sample_rate);
+          // 2. Timeline clip playback
+          if (state.is_timeline_playing) {
+            for (const auto& tc : track->timeline_clips) {
+              if (!tc->clip) continue;
+              if (tc->muted) continue;
+              double clip_duration = (tc->duration_beats > 0)
+                                         ? tc->duration_beats * 60.0 / state.bpm
+                                         : tc->duration_sec;
+              if (state.playhead_pos_sec + time_per_block >
+                      tc->start_time_sec &&
+                  state.playhead_pos_sec < tc->start_time_sec + clip_duration) {
+                double clip_local_time =
+                    state.playhead_pos_sec - tc->start_time_sec;
+                if (tc->clip->type == Clip::Type::MIDI) {
                 } else {
-                  loop_len = content_samples - trim_samples;
-                }
-                for (int i = 0; i < block_size; ++i) {
-                  int sample_pos = start_sample + i;
-                  if (sample_pos < 0) continue;
-                  // Loop wrapping within trimmed content
-                  if (tc->clip->is_loop && loop_len > 0) {
-                    sample_pos =
-                        trim_samples + ((sample_pos - trim_samples) % loop_len);
+                  int content_samples = (int)tc->clip->audio_data.size();
+                  if (tc->clip->num_channels == 2) content_samples /= 2;
+                  double bps = state.bpm / 60.0;
+                  int trim_samples =
+                      (bps > 0)
+                          ? (int)(tc->trim_start_beats / bps * sample_rate)
+                          : 0;
+                  int start_sample =
+                      trim_samples + (int)(clip_local_time * sample_rate);
+                  int loop_len;
+                  if (tc->loop_interval_beats > 0 && bps > 0) {
+                    loop_len =
+                        (int)(tc->loop_interval_beats / bps * sample_rate);
+                  } else {
+                    loop_len = content_samples - trim_samples;
                   }
-                  // Compute per-sample fade gain (linear in dB domain)
-                  double fade_gain = 1.0;
-                  constexpr double kFadeMinDb = -30.0;
-                  double sample_time_in_clip =
-                      clip_local_time + (double)i / sample_rate;
-                  if (tc->fade_in_sec > 0 &&
-                      sample_time_in_clip < tc->fade_in_sec) {
-                    double t = sample_time_in_clip / tc->fade_in_sec;
-                    double db = kFadeMinDb * (1.0 - t);
-                    fade_gain *= std::pow(10.0, db / 20.0);
-                  }
-                  if (tc->fade_out_sec > 0 &&
-                      sample_time_in_clip > clip_duration - tc->fade_out_sec) {
-                    double t =
-                        std::max(0.0, (clip_duration - sample_time_in_clip) /
-                                          tc->fade_out_sec);
-                    double db = kFadeMinDb * (1.0 - t);
-                    fade_gain *= std::pow(10.0, db / 20.0);
-                  }
-                  if (tc->clip->num_channels == 2 &&
-                      sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
-                    bufferL[i] +=
-                        tc->clip->audio_data[sample_pos * 2] * fade_gain;
-                    bufferR[i] +=
-                        tc->clip->audio_data[sample_pos * 2 + 1] * fade_gain;
-                  } else if (tc->clip->num_channels == 1 &&
-                             sample_pos < (int)tc->clip->audio_data.size()) {
-                    double s = tc->clip->audio_data[sample_pos] * fade_gain;
-                    bufferL[i] += s;
-                    bufferR[i] += s;
+                  for (int i = 0; i < block_size; ++i) {
+                    int sample_pos = start_sample + i;
+                    if (sample_pos < 0) continue;
+                    if (tc->clip->is_loop && loop_len > 0) {
+                      sample_pos = trim_samples +
+                                   ((sample_pos - trim_samples) % loop_len);
+                    }
+                    double fade_gain = 1.0;
+                    constexpr double kFadeMinDb = -30.0;
+                    double sample_time_in_clip =
+                        clip_local_time + (double)i / sample_rate;
+                    if (tc->fade_in_sec > 0 &&
+                        sample_time_in_clip < tc->fade_in_sec) {
+                      double t = sample_time_in_clip / tc->fade_in_sec;
+                      double db = kFadeMinDb * (1.0 - t);
+                      fade_gain *= std::pow(10.0, db / 20.0);
+                    }
+                    if (tc->fade_out_sec > 0 &&
+                        sample_time_in_clip >
+                            clip_duration - tc->fade_out_sec) {
+                      double t =
+                          std::max(0.0, (clip_duration - sample_time_in_clip) /
+                                            tc->fade_out_sec);
+                      double db = kFadeMinDb * (1.0 - t);
+                      fade_gain *= std::pow(10.0, db / 20.0);
+                    }
+                    if (tc->clip->num_channels == 2 &&
+                        sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
+                      bufferL[i] +=
+                          tc->clip->audio_data[sample_pos * 2] * fade_gain;
+                      bufferR[i] +=
+                          tc->clip->audio_data[sample_pos * 2 + 1] * fade_gain;
+                    } else if (tc->clip->num_channels == 1 &&
+                               sample_pos < (int)tc->clip->audio_data.size()) {
+                      double s = tc->clip->audio_data[sample_pos] * fade_gain;
+                      bufferL[i] += s;
+                      bufferR[i] += s;
+                    }
                   }
                 }
               }
             }
           }
-        }
 
-        // 2a. Recording input capture
-        if (state.is_recording && track->record_armed && track->input_device &&
-            track->input_device->is_ready()) {
-          std::vector<float> input_block;
-          int input_ch = track->input_device->get_channels();
-          if (track->input_device->read(input_block, block_size)) {
-            // Extract selected channels from device input
-            int ch_start = track->input_channel_start;
-            bool stereo = track->input_stereo;
+          // 2a. Recording input capture
+          if (state.is_recording && track->record_armed &&
+              track->input_device && track->input_device->is_ready()) {
+            std::vector<float> input_block;
+            int input_ch = track->input_device->get_channels();
+            if (track->input_device->read(input_block, block_size)) {
+              int ch_start = track->input_channel_start;
+              bool stereo = track->input_stereo;
+              for (int i = 0; i < block_size; ++i) {
+                if (stereo) {
+                  int idx_l = i * input_ch + ch_start;
+                  int idx_r = i * input_ch + ch_start + 1;
+                  float l = (idx_l < (int)input_block.size())
+                                ? input_block[idx_l]
+                                : 0.0f;
+                  float r = (idx_r < (int)input_block.size())
+                                ? input_block[idx_r]
+                                : 0.0f;
+                  track->record_buffer.push_back(l);
+                  track->record_buffer.push_back(r);
+                  bufferL[i] += l;
+                  bufferR[i] += r;
+                } else {
+                  int idx = i * input_ch + ch_start;
+                  float s =
+                      (idx < (int)input_block.size()) ? input_block[idx] : 0.0f;
+                  track->record_buffer.push_back(s);
+                  bufferL[i] += s;
+                  bufferR[i] += s;
+                }
+              }
+            }
+          }
+        }  // end if (render_content)
+
+        // For group/aux tracks: load their accumulated input from bus buffers
+        if (!render_content) {
+          auto it = bus_input_buffers.find(track_idx);
+          if (it != bus_input_buffers.end()) {
             for (int i = 0; i < block_size; ++i) {
-              if (stereo) {
-                int idx_l = i * input_ch + ch_start;
-                int idx_r = i * input_ch + ch_start + 1;
-                float l = (idx_l < (int)input_block.size()) ? input_block[idx_l]
-                                                            : 0.0f;
-                float r = (idx_r < (int)input_block.size()) ? input_block[idx_r]
-                                                            : 0.0f;
-                track->record_buffer.push_back(l);
-                track->record_buffer.push_back(r);
-                // Live monitoring: mix input into track output
-                bufferL[i] += l;
-                bufferR[i] += r;
-              } else {
-                int idx = i * input_ch + ch_start;
-                float s =
-                    (idx < (int)input_block.size()) ? input_block[idx] : 0.0f;
-                track->record_buffer.push_back(s);
-                bufferL[i] += s;
-                bufferR[i] += s;
-              }
+              bufferL[i] = it->second.first[i];
+              bufferR[i] = it->second.second[i];
             }
           }
         }
 
-        // 3. Apply Automation — set parameter values from curves
+        // 3. Apply Automation
         if (state.is_timeline_playing) {
           double current_beats = state.playhead_pos_sec * (state.bpm / 60.0);
           for (const auto& lane : track->automation_lanes) {
@@ -460,7 +465,7 @@ void playback_thread(ProjectState& state) {
           }
         }
 
-        // 3b. Apply Modulation — additive LFO offsets to parameters
+        // 3b. Apply Modulation
         for (auto& [pidx, pmod] : track->modulations) {
           if (pidx < 0 || pidx >= (int)track->plugins.size()) continue;
           auto* plugin = track->plugins[pidx].get();
@@ -474,11 +479,10 @@ void playback_thread(ProjectState& state) {
           }
         }
 
-        // 4. Process effects (skip instrument at slot 0 — already used above)
+        // 4. Process effects (skip instrument at slot 0)
         for (size_t i = 0; i < track->plugins.size(); ++i) {
           if (i == 0 && track->plugins[i]->isInstrument()) continue;
-          if (track->plugin_bypass.count((int)i)) continue;  // bypassed
-          // Check for sidechain source
+          if (track->plugin_bypass.count((int)i)) continue;
           float** sc_ptr = nullptr;
           float* sc_ch[2] = {nullptr, nullptr};
           auto sc_it = track->plugin_sidechain.find((int)i);
@@ -491,50 +495,88 @@ void playback_thread(ProjectState& state) {
               sc_ptr = sc_ch;
             }
           }
-          // Convert double mix buffer to float for plugin processing
           for (int j = 0; j < block_size; ++j) {
             plugBufL[j] = (float)bufferL[j];
             plugBufR[j] = (float)bufferR[j];
           }
           track->plugins[i]->process(outChannels, outChannels, block_size,
                                      context, {}, sc_ptr);
-          // Copy float result back to double mix buffer
           for (int j = 0; j < block_size; ++j) {
             bufferL[j] = plugBufL[j];
             bufferR[j] = plugBufR[j];
           }
         }
 
-        // 4b. Capture post-effects output for sidechain use by later tracks
+        // 4b. Capture post-effects output for sidechain
         {
-          auto& buf = sc_buffers[pair.first];
+          auto& buf = sc_buffers[track_idx];
           for (int i = 0; i < block_size; ++i) {
             buf.first[i] = (float)bufferL[i];
             buf.second[i] = (float)bufferR[i];
           }
         }
 
-        // 5. Apply volume and pan, mix to master, compute peak levels
+        // 4c. Send to aux buses (pre-fader sends use pre-volume signal)
+        for (const auto& send : track->aux_sends) {
+          auto it = bus_input_buffers.find(send.aux_track_index);
+          if (it == bus_input_buffers.end()) continue;
+          for (int i = 0; i < block_size; ++i) {
+            it->second.first[i] += bufferL[i] * send.level;
+            it->second.second[i] += bufferR[i] * send.level;
+          }
+        }
+
+        // 5. Apply volume and pan, route to destination
         bool is_silenced = track->muted || (any_soloed && !track->soloed);
         double vol = is_silenced ? 0.0 : (double)track->volume;
-        // Constant-power pan: pan_angle maps [-1,1] to [0, pi/2]
-        double pan_angle =
-            (track->pan + 1.0) * 0.25 *
-            3.14159265358979;  // 0 = full left, pi/2 = full right
+        double pan_angle = (track->pan + 1.0) * 0.25 * 3.14159265358979;
         double panL = std::cos(pan_angle);
         double panR = std::sin(pan_angle);
         float peakL = 0.0f, peakR = 0.0f;
+
+        // Determine output destination
+        int out_idx = track->output_track_index;
+        auto* dest_l = &mixBufferL;
+        auto* dest_r = &mixBufferR;
+        if (out_idx >= 0) {
+          auto git = bus_input_buffers.find(out_idx);
+          if (git != bus_input_buffers.end()) {
+            dest_l = &git->second.first;
+            dest_r = &git->second.second;
+          }
+        }
+
         for (int i = 0; i < block_size; ++i) {
           double l = bufferL[i] * vol * panL;
           double r = bufferR[i] * vol * panR;
-          mixBufferL[i] += l;
-          mixBufferR[i] += r;
+          (*dest_l)[i] += l;
+          (*dest_r)[i] += r;
           peakL = std::max(peakL, (float)std::abs(l));
           peakR = std::max(peakR, (float)std::abs(r));
         }
         {
           std::lock_guard<std::mutex> llock(state.levels_mutex);
-          state.track_levels[pair.first] = {peakL, peakR};
+          state.track_levels[track_idx] = {peakL, peakR};
+        }
+      };  // end renderTrack lambda
+
+      // ---- Pass 1: Render normal tracks ----
+      for (auto& pair : state.tracks) {
+        if (pair.second->track_type == Track::TrackType::NORMAL) {
+          renderTrack(pair.second.get(), pair.first, /*render_content=*/true);
+        }
+      }
+
+      // ---- Pass 2: Render group and aux tracks ----
+      // Group tracks first (they may route to other groups), then aux
+      for (auto& pair : state.tracks) {
+        if (pair.second->track_type == Track::TrackType::GROUP) {
+          renderTrack(pair.second.get(), pair.first, /*render_content=*/false);
+        }
+      }
+      for (auto& pair : state.tracks) {
+        if (pair.second->track_type == Track::TrackType::AUX) {
+          renderTrack(pair.second.get(), pair.first, /*render_content=*/false);
         }
       }
     }

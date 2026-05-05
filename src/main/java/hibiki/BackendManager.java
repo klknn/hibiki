@@ -615,4 +615,78 @@ public class BackendManager {
             .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_COLLECT_FILES))
             .build());
   }
+
+  /** Set track type (0=Normal, 1=Group, 2=Aux). */
+  public void setTrackType(int trackIndex, int trackType) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_TRACK_TYPE)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setRecordMode(trackType))
+            .build());
+  }
+
+  /** Set output routing (-1=master, or group track index). */
+  public void setOutputRouting(int trackIndex, int outputTrackIndex) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_OUTPUT_ROUTING)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setTargetTrackIndex(outputTrackIndex))
+            .build());
+  }
+
+  /** Set aux send level from a track to an aux bus. */
+  public void setAuxSend(int trackIndex, int auxTrackIndex, float level, boolean preFader) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_AUX_SEND)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setAuxTrackIndex(auxTrackIndex)
+                    .setSendLevel(level)
+                    .setPreFader(preFader))
+            .build());
+  }
+
+  /** Load a plugin (builtin or external) on a track. */
+  public void loadPlugin(int trackIndex, String pluginPath) {
+    sendRequest(
+        Request.newBuilder()
+            .setPlugin(
+                PluginCmd.newBuilder()
+                    .setAction(PluginCmd.Action.ACTION_LOAD)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setPath(pluginPath))
+            .build());
+  }
+
+  /** Reorder a track from one index to another. */
+  public void reorderTrack(int fromIndex, int toIndex) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_REORDER_TRACK)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(fromIndex))
+                    .setNewTrackIndex(toIndex))
+            .build());
+  }
+
+  /** Set or clear the group parent of a track. */
+  public void setGroupParent(int trackIndex, int groupParentIndex) {
+    sendRequest(
+        Request.newBuilder()
+            .setTrack(
+                TrackCmd.newBuilder()
+                    .setAction(TrackCmd.Action.ACTION_SET_GROUP_PARENT)
+                    .setTarget(EntityRef.newBuilder().setTrackIndex(trackIndex))
+                    .setTargetTrackIndex(groupParentIndex))
+            .build());
+  }
 }

@@ -132,6 +132,16 @@ inline float GetAutomationValue(const AutomationLane& lane, double time_beats,
 
 class Track {
  public:
+  // Track type: Normal, Group (bus), or Aux (return)
+  enum class TrackType { NORMAL = 0, GROUP = 1, AUX = 2 };
+
+  // Aux send from this track to an aux bus
+  struct AuxSend {
+    int aux_track_index = -1;  // Target aux track index
+    float level = 0.0f;        // Send level [0.0, 1.0]
+    bool pre_fader = false;    // true = pre-fader send
+  };
+
   DummyMutex mutex;
   int index;
   std::string name;  // User-defined track name
@@ -147,6 +157,12 @@ class Track {
   };
   std::map<int, SidechainRoute> plugin_sidechain;  // key = plugin_index
   std::map<int, bool> plugin_bypass;  // key = plugin_index, true = bypassed
+
+  // Track routing
+  TrackType track_type = TrackType::NORMAL;
+  int output_track_index = -1;  // -1 = master, else group track index
+  std::vector<AuxSend> aux_sends;
+  int group_parent_index = -1;  // -1 = no group parent
 
   int playing_slot = -1;
   double current_time_sec = 0.0;

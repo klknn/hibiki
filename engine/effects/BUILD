@@ -3,6 +3,13 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "builtin_aux",
+    srcs = ["builtin_aux.cpp"],
+    hdrs = ["builtin_aux.hpp"],
+    deps = ["//engine/plugin:iplugin"],
+)
+
+cc_library(
     name = "builtin_compressor",
     srcs = ["builtin_compressor.cpp"],
     hdrs = ["builtin_compressor.hpp"],
@@ -81,6 +88,7 @@ cc_library(
 cc_library(
     name = "effects",
     deps = [
+        ":builtin_aux",
         ":builtin_compressor",
         ":builtin_convolver",
         ":builtin_delay",

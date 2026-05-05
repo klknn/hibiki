@@ -1158,6 +1158,37 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     deleteTrackItem.addActionListener(ev -> removeTrack(trackIdx));
     menu.add(deleteTrackItem);
 
+    menu.addSeparator();
+
+    // Add Aux Track (creates track in both views via SessionView.addTrack)
+    JMenuItem addAuxItem = new JMenuItem("Add Aux Track");
+    addAuxItem.addActionListener(
+        ev -> {
+          int auxIdx = tracks.size();
+          if (SessionView.getInstance() != null) {
+            SessionView.getInstance().addTrack(); // syncs both views
+          } else {
+            addTrack();
+          }
+          BackendManager.getInstance().setTrackType(auxIdx, 2); // AUX = 2
+          BackendManager.getInstance().loadPlugin(auxIdx, "builtin://aux");
+        });
+    menu.add(addAuxItem);
+
+    // Add Group Track
+    JMenuItem addGroupItem = new JMenuItem("Add Group Track");
+    addGroupItem.addActionListener(
+        ev -> {
+          int groupIdx = tracks.size();
+          if (SessionView.getInstance() != null) {
+            SessionView.getInstance().addTrack();
+          } else {
+            addTrack();
+          }
+          BackendManager.getInstance().setTrackType(groupIdx, 1); // GROUP = 1
+        });
+    menu.add(addGroupItem);
+
     menu.show(rowHeader, e.getX(), e.getY());
   }
 

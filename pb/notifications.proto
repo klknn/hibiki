@@ -129,6 +129,10 @@ message TimelineClipInfo {
 message TrackInfo {
   int32 track_index = 1;
   string name = 2;
+  hibiki.pb.core.TrackType track_type = 3;
+  int32 output_track_index = 4;  // -1 = master
+  repeated hibiki.pb.core.AuxSend aux_sends = 5;
+  int32 group_parent_index = 6;  // -1 = no group parent
 }
 
 // MIDI event data for a clip (Piano Roll).

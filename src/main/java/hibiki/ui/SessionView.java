@@ -355,8 +355,12 @@ public class SessionView extends JPanel {
     trackHeaders.set(trackIdx, header);
 
     int finalTrackIdx = trackIdx;
-    header.addMouseListener(
-        new MouseAdapter() {
+    // DnD-capable mouse handler for track header (reorder on drag)
+    javax.swing.event.MouseInputAdapter headerAdapter =
+        new javax.swing.event.MouseInputAdapter() {
+          int dragStartX = -1;
+          boolean dragging = false;
+
           @Override
           public void mousePressed(MouseEvent e) {
             if (SwingUtilities.isRightMouseButton(e)) {
@@ -364,6 +368,34 @@ public class SessionView extends JPanel {
               return;
             }
             selectTrack(finalTrackIdx);
+            dragStartX = e.getXOnScreen();
+            dragging = false;
+          }
+
+          @Override
+          public void mouseDragged(MouseEvent e) {
+            if (dragStartX < 0) return;
+            int dx = Math.abs(e.getXOnScreen() - dragStartX);
+            if (dx > 5 && !dragging) {
+              dragging = true;
+              header.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+            }
+          }
+
+          @Override
+          public void mouseReleased(MouseEvent e) {
+            if (dragging) {
+              header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+              // Compute target track from X position
+              Point p = SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), trackPanel);
+              int stripW = Theme.getInstance().scale(110);
+              int targetIdx = Math.max(0, Math.min(trackStrips.size() - 1, p.x / stripW));
+              if (targetIdx != finalTrackIdx) {
+                BackendManager.getInstance().reorderTrack(finalTrackIdx, targetIdx);
+              }
+            }
+            dragStartX = -1;
+            dragging = false;
           }
 
           @Override
@@ -372,7 +404,9 @@ public class SessionView extends JPanel {
               renameTrack(finalTrackIdx);
             }
           }
-        });
+        };
+    header.addMouseListener(headerAdapter);
+    header.addMouseMotionListener(headerAdapter);
     strip.add(header);
 
     // Clips
@@ -623,6 +657,30 @@ public class SessionView extends JPanel {
     deleteItem.setEnabled(trackStrips.size() > 1);
     deleteItem.addActionListener(ev -> removeTrack(trackIdx));
     menu.add(deleteItem);
+
+    menu.addSeparator();
+
+    // Add Aux Track
+    JMenuItem addAuxItem = new JMenuItem("Add Aux Track");
+    addAuxItem.addActionListener(
+        ev -> {
+          int auxIdx = trackStrips.size();
+          addTrack(); // Creates new track + syncs with TimelineView
+          // Set it as AUX type and load the aux device
+          BackendManager.getInstance().setTrackType(auxIdx, 2); // AUX = 2
+          BackendManager.getInstance().loadPlugin(auxIdx, "builtin://aux");
+        });
+    menu.add(addAuxItem);
+
+    // Add Group Track
+    JMenuItem addGroupItem = new JMenuItem("Add Group Track");
+    addGroupItem.addActionListener(
+        ev -> {
+          int groupIdx = trackStrips.size();
+          addTrack();
+          BackendManager.getInstance().setTrackType(groupIdx, 1); // GROUP = 1
+        });
+    menu.add(addGroupItem);
 
     menu.show(e.getComponent(), e.getX(), e.getY());
   }

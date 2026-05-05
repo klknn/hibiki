@@ -160,6 +160,7 @@ message ProjectCmd {
     ACTION_REDO = 5;
     ACTION_QUIT = 6;
     ACTION_SET_BPM = 7;
+    ACTION_COLLECT_FILES = 8;  // Gather external files into project dir
   }
   Action action = 1;
   string path = 2;

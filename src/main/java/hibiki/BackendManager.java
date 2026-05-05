@@ -607,4 +607,12 @@ public class BackendManager {
             .setMidi(MidiCmd.newBuilder().setAction(MidiCmd.Action.ACTION_PANIC))
             .build());
   }
+
+  /** Collect all externally-referenced files into the project directory. */
+  public void collectFiles() {
+    sendRequest(
+        Request.newBuilder()
+            .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_COLLECT_FILES))
+            .build());
+  }
 }

@@ -28,6 +28,7 @@ public class BrowserPane extends JPanel {
   private DefaultMutableTreeNode midiNode;
   private DefaultMutableTreeNode audioNode;
   private DefaultMutableTreeNode userNode;
+  private DefaultMutableTreeNode projectNode;
 
   private Map<String, List<PluginMetadata>> bundlesDiscovered = new ConcurrentHashMap<>();
   // Remote plugins: key = "host:port", value = list of plugins from that daemon
@@ -183,7 +184,33 @@ public class BrowserPane extends JPanel {
             refreshDebounceTimer.setRepeats(false);
             refreshDebounceTimer.start();
           });
+    } else if (n.getResponseCase() == Notification.ResponseCase.PROJECT_INFO) {
+      String dir = n.getProjectInfo().getProjectDir();
+      SwingUtilities.invokeLater(() -> setProjectDir(dir));
     }
+  }
+
+  /** Refresh the "Project" tree node to show files in the given directory. */
+  public void setProjectDir(String dir) {
+    if (dir == null || dir.isEmpty()) return;
+    if (projectNode != null) {
+      root.remove(projectNode);
+    }
+    projectNode = new DefaultMutableTreeNode("Project");
+    File projDir = new File(dir);
+    if (projDir.exists() && projDir.isDirectory()) {
+      DefaultMutableTreeNode dirTree = buildDirectoryTree(projDir);
+      if (dirTree != null) {
+        // Add children of the root dir node directly under "Project"
+        for (int i = 0; i < dirTree.getChildCount(); ) {
+          DefaultMutableTreeNode child = (DefaultMutableTreeNode) dirTree.getChildAt(i);
+          dirTree.remove(child);
+          projectNode.add(child);
+        }
+      }
+    }
+    root.insert(projectNode, 0); // Project always at top
+    treeModel.reload();
   }
 
   private synchronized void refreshPluginsTree() {

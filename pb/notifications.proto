@@ -312,6 +312,9 @@ message Notification {
 
     // Audio editor data (Edison-style editor)
     AudioEditorData audio_editor_data = 29;
+
+    // Project info (directory path after save/load/collect)
+    ProjectInfo project_info = 30;
   }
 }
 
@@ -353,4 +356,9 @@ message AudioEditorData {
   int32 sample_rate = 6;           // Source sample rate
   int32 num_channels = 7;          // Channel count
   string file_name = 8;            // Display name of loaded file
+}
+
+// Project info pushed after save/load/collect-files.
+message ProjectInfo {
+  string project_dir = 1;  // Absolute path to project directory
 }

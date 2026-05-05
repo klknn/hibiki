@@ -1,5 +1,6 @@
 #include <google/protobuf/text_format.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -11,6 +12,7 @@
 #include "engine/core/track.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/commands.pb.h"
+#include "pb/notifications.pb.h"
 
 namespace hibiki {
 
@@ -51,6 +53,16 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
         LOG(ERROR) << "Save failed: " << save_status.message();
       }
       sendAck("SAVE_PROJECT", save_status.ok());
+      // Notify GUI of project directory
+      {
+        pb::notifications::Notification n;
+        auto* pi = n.mutable_project_info();
+        pi->set_project_dir(state.project_dir);
+        std::string data;
+        n.SerializeToString(&data);
+        sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
+                         data.size());
+      }
       break;
     }
     case pb::commands::ProjectCmd::ACTION_LOAD: {
@@ -62,6 +74,16 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
       }
       SyncProjectToGui(state);
       sendAck("LOAD_PROJECT", load_status.ok());
+      // Notify GUI of project directory
+      if (!state.project_dir.empty()) {
+        pb::notifications::Notification n;
+        auto* pi = n.mutable_project_info();
+        pi->set_project_dir(state.project_dir);
+        std::string data;
+        n.SerializeToString(&data);
+        sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
+                         data.size());
+      }
       break;
     }
     case pb::commands::ProjectCmd::ACTION_BOUNCE: {
@@ -102,6 +124,91 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
     case pb::commands::ProjectCmd::ACTION_SET_BPM: {
       state.bpm = cmd.bpm();
       sendAck("SET_BPM", true);
+      break;
+    }
+    case pb::commands::ProjectCmd::ACTION_COLLECT_FILES: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      if (state.project_dir.empty()) {
+        sendAck("COLLECT_FILES", false);
+        break;
+      }
+      namespace fs = std::filesystem;
+      fs::path proj_dir(state.project_dir);
+      fs::path audio_dir = proj_dir / "audio";
+      fs::path midi_dir = proj_dir / "midi";
+      fs::create_directories(audio_dir);
+      fs::create_directories(midi_dir);
+
+      int collected = 0;
+      auto collectClipPath = [&](std::string& cpath) {
+        if (cpath.empty()) return;
+        fs::path src(cpath);
+        // Skip if already inside project directory
+        std::error_code ec;
+        auto rel = fs::relative(src, proj_dir, ec);
+        if (!ec && !rel.empty() &&
+            rel.string().find("..") == std::string::npos) {
+          return;  // Already under project dir
+        }
+        if (!fs::exists(src)) return;
+
+        // Determine target subdir based on extension
+        std::string ext = src.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        fs::path target_dir;
+        if (ext == ".wav" || ext == ".flac" || ext == ".aiff" ||
+            ext == ".ogg" || ext == ".mp3") {
+          target_dir = audio_dir;
+        } else if (ext == ".mid" || ext == ".midi") {
+          target_dir = midi_dir;
+        } else {
+          target_dir = audio_dir;  // Default to audio
+        }
+
+        // Avoid name collision with numeric suffix
+        fs::path dst = target_dir / src.filename();
+        int suffix = 1;
+        while (fs::exists(dst)) {
+          std::string stem = src.stem().string();
+          std::string new_name = stem + "_" + std::to_string(suffix) + ext;
+          dst = target_dir / new_name;
+          suffix++;
+        }
+
+        std::error_code copy_ec;
+        fs::copy_file(src, dst, fs::copy_options::overwrite_existing, copy_ec);
+        if (!copy_ec) {
+          cpath = dst.string();
+          collected++;
+        }
+      };
+
+      for (auto& [tidx, track] : state.tracks) {
+        // Timeline clips
+        for (auto& tc : track->timeline_clips) {
+          if (!tc || !tc->clip) continue;
+          collectClipPath(tc->clip->path);
+        }
+        // Session clips
+        for (auto& [cidx, clip] : track->clips) {
+          if (!clip) continue;
+          collectClipPath(clip->path);
+        }
+      }
+
+      LOG(INFO) << "Collected " << collected << " files into "
+                << proj_dir.string();
+      sendAck("COLLECT_FILES", true);
+      // Send project info to refresh browser
+      {
+        pb::notifications::Notification n;
+        auto* pi = n.mutable_project_info();
+        pi->set_project_dir(state.project_dir);
+        std::string data;
+        n.SerializeToString(&data);
+        sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
+                         data.size());
+      }
       break;
     }
     default:

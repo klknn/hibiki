@@ -111,6 +111,11 @@ public class MenuBarFactory {
                         .build()));
     menu.add(bounceItem);
 
+    // Collect All Files
+    JMenuItem collectItem = new JMenuItem("Collect All Files");
+    collectItem.addActionListener(e -> BackendManager.getInstance().collectFiles());
+    menu.add(collectItem);
+
     menu.addSeparator();
 
     // Settings

@@ -81,38 +81,40 @@ class TimelineNotificationHandler {
 
   private void handleTimelineClip(Notification n) {
     var info = n.getTimelineClipInfo();
-    int tidx = info.getTrackIndex();
+    int engineIdx = info.getTrackIndex();
 
-    while (view.tracks.size() <= tidx) {
+    while (view.tracks.size() <= engineIdx) {
       view.tracks.add(new TimelineView.TrackTimeline(view.tracks.size()));
     }
-    view.tracks.get(tidx).addOrUpdateClip(info);
+    int pos = view.findDisplayPosition(engineIdx);
+    view.tracks.get(pos).addOrUpdateClip(info);
     view.updateContentSize();
   }
 
   private void handleParamList(Notification n) {
     var paramList = n.getParamList();
-    int tidx = paramList.getTrackIndex();
-    while (view.tracks.size() <= tidx) {
+    int engineIdx = paramList.getTrackIndex();
+    while (view.tracks.size() <= engineIdx) {
       view.tracks.add(new TimelineView.TrackTimeline(view.tracks.size()));
     }
+    int pos = view.findDisplayPosition(engineIdx);
     if (!paramList.getPluginName().isEmpty()) {
-      view.tracks.get(tidx).pluginName = paramList.getPluginName();
-      view.tracks.get(tidx).isInstrument = paramList.getIsInstrument();
+      view.tracks.get(pos).pluginName = paramList.getPluginName();
+      view.tracks.get(pos).isInstrument = paramList.getIsInstrument();
     } else {
       // Plugin removed — if it was the instrument at this index, clear the track name
       int pidx = paramList.getPluginIndex();
       if (pidx == 0) {
-        view.tracks.get(tidx).pluginName = null;
-        view.tracks.get(tidx).isInstrument = false;
+        view.tracks.get(pos).pluginName = null;
+        view.tracks.get(pos).isInstrument = false;
       }
       // Update session view header
       if (SessionView.getInstance() != null
-          && SessionView.getInstance().trackHeaders.size() > tidx) {
-        javax.swing.JLabel header = SessionView.getInstance().trackHeaders.get(tidx);
+          && SessionView.getInstance().trackHeaders.size() > pos) {
+        javax.swing.JLabel header = SessionView.getInstance().trackHeaders.get(pos);
         if (header != null) {
-          String displayName = view.tracks.get(tidx).getDisplayName();
-          header.setText(tidx + " " + displayName);
+          String displayName = view.tracks.get(pos).getDisplayName();
+          header.setText(pos + " " + displayName);
         }
       }
     }
@@ -131,25 +133,29 @@ class TimelineNotificationHandler {
 
   private void handleTrackInfo(Notification n) {
     var info = n.getTrackInfo();
-    int tidx = info.getTrackIndex();
-    while (view.tracks.size() <= tidx) {
+    int engineIdx = info.getTrackIndex();
+    while (view.tracks.size() <= engineIdx) {
       view.tracks.add(new TimelineView.TrackTimeline(view.tracks.size()));
     }
+    int pos = view.findDisplayPosition(engineIdx);
     String name = info.getName();
-    view.tracks.get(tidx).customName = name.isEmpty() ? null : name;
-    view.tracks.get(tidx).groupParentIndex = info.getGroupParentIndex();
-    view.tracks.get(tidx).trackType = info.getTrackType().getNumber();
+    view.tracks.get(pos).customName = name.isEmpty() ? null : name;
+    // Translate engine groupParentIndex to display position
+    int engineParent = info.getGroupParentIndex();
+    view.tracks.get(pos).groupParentIndex =
+        engineParent >= 0 ? view.findDisplayPosition(engineParent) : -1;
+    view.tracks.get(pos).trackType = info.getTrackType().getNumber();
     view.repaint();
     // Sync with SessionView
-    if (SessionView.getInstance() != null && SessionView.getInstance().trackHeaders.size() > tidx) {
-      javax.swing.JLabel header = SessionView.getInstance().trackHeaders.get(tidx);
+    if (SessionView.getInstance() != null && SessionView.getInstance().trackHeaders.size() > pos) {
+      javax.swing.JLabel header = SessionView.getInstance().trackHeaders.get(pos);
       if (header != null) {
-        String displayName = view.tracks.get(tidx).getDisplayName();
-        header.setText(tidx + " " + displayName);
+        String displayName = view.tracks.get(pos).getDisplayName();
+        header.setText(pos + " " + displayName);
         // Update header color for group tracks
-        if (view.tracks.get(tidx).isGroupTrack()) {
+        if (view.tracks.get(pos).isGroupTrack()) {
           header.setBackground(new java.awt.Color(0xCC9933));
-        } else if (view.tracks.get(tidx).groupParentIndex >= 0) {
+        } else if (view.tracks.get(pos).groupParentIndex >= 0) {
           header.setBackground(new java.awt.Color(0x554422));
         } else {
           header.setBackground(Theme.getInstance().TRACK_HEADER);
@@ -160,11 +166,12 @@ class TimelineNotificationHandler {
 
   private void handleAutomationLanes(Notification n) {
     var data = n.getAutomationLanesData();
-    int tidx = data.getTrackIndex();
-    while (view.tracks.size() <= tidx) {
+    int engineIdx = data.getTrackIndex();
+    while (view.tracks.size() <= engineIdx) {
       view.tracks.add(new TimelineView.TrackTimeline(view.tracks.size()));
     }
-    TimelineView.TrackTimeline track = view.tracks.get(tidx);
+    int pos = view.findDisplayPosition(engineIdx);
+    TimelineView.TrackTimeline track = view.tracks.get(pos);
     track.automationLanes.clear();
     for (int i = 0; i < data.getLanesCount(); i++) {
       var laneInfo = data.getLanes(i);
@@ -195,8 +202,8 @@ class TimelineNotificationHandler {
 
   private void handleRecordingFinished(Notification n) {
     var info = n.getRecordingFinished();
-    int tidx = info.getTrackIndex();
-    while (view.tracks.size() <= tidx) {
+    int engineIdx = info.getTrackIndex();
+    while (view.tracks.size() <= engineIdx) {
       view.tracks.add(new TimelineView.TrackTimeline(view.tracks.size()));
     }
     // The clip is already added via TimelineClipInfo notification from the engine,
@@ -235,10 +242,10 @@ class TimelineNotificationHandler {
     var tl = n.getTrackLevels();
     for (int i = 0; i < tl.getLevelsCount(); i++) {
       var l = tl.getLevels(i);
-      int tidx = l.getTrackIndex();
-      if (tidx >= 0 && tidx < view.tracks.size()) {
-        view.tracks.get(tidx).peakL = l.getPeakL();
-        view.tracks.get(tidx).peakR = l.getPeakR();
+      int pos = view.findDisplayPosition(l.getTrackIndex());
+      if (pos >= 0 && pos < view.tracks.size()) {
+        view.tracks.get(pos).peakL = l.getPeakL();
+        view.tracks.get(pos).peakR = l.getPeakR();
       }
     }
     long now = System.currentTimeMillis();

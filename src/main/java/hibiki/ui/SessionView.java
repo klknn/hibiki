@@ -405,15 +405,20 @@ public class SessionView extends JPanel {
                 if (tv != null
                     && targetIdx < tv.tracks.size()
                     && tv.tracks.get(targetIdx).isGroupTrack()) {
-                  // Drop onto group: set parent locally, then move right after group
-                  tv.tracks.get(finalTrackIdx).groupParentIndex = targetIdx;
+                  // Save references and engine indices BEFORE reorder
+                  int srcEngineIdx = tv.tracks.get(finalTrackIdx).index;
+                  int grpEngineIdx = tv.tracks.get(targetIdx).index;
+                  TimelineView.TrackTimeline groupRef = tv.tracks.get(targetIdx);
+                  TimelineView.TrackTimeline childRef = tv.tracks.get(finalTrackIdx);
                   int destIdx = finalTrackIdx < targetIdx ? targetIdx : targetIdx + 1;
                   if (destIdx != finalTrackIdx) {
                     tv.reorderTrackLocally(finalTrackIdx, destIdx);
-                  } else {
-                    tv.updateContentSize();
-                    tv.repaint();
                   }
+                  // Set groupParentIndex AFTER reorder
+                  childRef.groupParentIndex = tv.tracks.indexOf(groupRef);
+                  BackendManager.getInstance().setGroupParent(srcEngineIdx, grpEngineIdx);
+                  tv.updateContentSize();
+                  tv.repaint();
                 } else if (tv != null) {
                   // Normal reorder (UI-only)
                   tv.reorderTrackLocally(finalTrackIdx, targetIdx);

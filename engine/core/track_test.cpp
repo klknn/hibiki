@@ -71,3 +71,44 @@ TEST(TrackTest, TimelineMidiPlaybackCrash) {
 }
 
 }  // namespace hibiki
+
+namespace hibiki {
+
+// Verify that group_parent_index is correctly set and that
+// engine track indices remain stable (reordering is UI-only).
+TEST(TrackTest, GroupParentIndex_StaysStable) {
+  g_ipc_enabled = false;
+
+  // Create 3 tracks: 0(group), 1(child), 2(normal)
+  Track group_track(0);
+  group_track.track_type = Track::TrackType::GROUP;
+  group_track.name = "Group";
+
+  Track child_track(1);
+  child_track.group_parent_index = 0;  // child of track 0
+  child_track.name = "Child";
+
+  Track normal_track(2);
+  normal_track.name = "Normal";
+
+  // Verify initial state
+  EXPECT_EQ(group_track.track_type, Track::TrackType::GROUP);
+  EXPECT_EQ(child_track.group_parent_index, 0);
+  EXPECT_EQ(normal_track.group_parent_index, -1);
+
+  // Engine indices are stable slot IDs — they never change.
+  // UI-only reorder just changes display order.
+  EXPECT_EQ(group_track.index, 0);
+  EXPECT_EQ(child_track.index, 1);
+  EXPECT_EQ(normal_track.index, 2);
+
+  // Setting group parent on a track
+  normal_track.group_parent_index = 0;
+  EXPECT_EQ(normal_track.group_parent_index, 0);
+
+  // Clearing group parent
+  child_track.group_parent_index = -1;
+  EXPECT_EQ(child_track.group_parent_index, -1);
+}
+
+}  // namespace hibiki

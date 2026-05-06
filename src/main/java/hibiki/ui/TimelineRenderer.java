@@ -398,6 +398,7 @@ class TimelineRenderer {
     // Draw tracks background
     for (int i = 0; i < tracks.size(); i++) {
       if (tracks.get(i).hidden) continue;
+      if (view.getTotalTrackHeight(i) == 0) continue; // collapsed child
       int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight(i));
       int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
       // Main clip area
@@ -459,9 +460,13 @@ class TimelineRenderer {
     // Draw clips
     drawClips(g2, tracks, scaleTimeRuler, scaleLabelWidth, pps, isDragging, draggingClip);
 
+    // Draw minimap overview for collapsed group tracks
+    drawCollapsedGroupMinimap(g2, tracks, scaleTimeRuler, scaleLabelWidth, pps);
+
     // Draw automation curves (when expanded)
     for (int i = 0; i < tracks.size(); i++) {
       if (tracks.get(i).hidden) continue;
+      if (view.getTotalTrackHeight(i) == 0) continue; // collapsed child
       TimelineView.TrackTimeline track = tracks.get(i);
       if (!track.automationExpanded || track.automationLanes.isEmpty()) continue;
       int trackY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
@@ -717,6 +722,72 @@ class TimelineRenderer {
 
   private static final int CLIP_HEADER_H = TimelineConstants.CLIP_HEADER_HEIGHT;
 
+  /**
+   * Draws a condensed minimap of all children's clips inside a collapsed group track. Each child
+   * gets a proportional row; clips are drawn as simple colored rectangles (no waveform/notes).
+   */
+  private void drawCollapsedGroupMinimap(
+      Graphics2D g2,
+      List<TimelineView.TrackTimeline> tracks,
+      int scaleTimeRuler,
+      int scaleLabelWidth,
+      float pps) {
+    for (int gi = 0; gi < tracks.size(); gi++) {
+      TimelineView.TrackTimeline group = tracks.get(gi);
+      if (!group.isGroupTrack() || !group.collapsed || group.hidden) continue;
+
+      // Collect children
+      java.util.List<TimelineView.TrackTimeline> children = new java.util.ArrayList<>();
+      for (int ci = 0; ci < tracks.size(); ci++) {
+        if (tracks.get(ci).groupParentIndex == gi) children.add(tracks.get(ci));
+      }
+      if (children.isEmpty()) continue;
+
+      int groupY = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(gi));
+      int groupH = Theme.getInstance().scale(view.getBaseTrackHeight(gi));
+      int contentY = groupY + CLIP_HEADER_H;
+      int contentH = groupH - CLIP_HEADER_H - 4;
+      if (contentH < 4) continue;
+
+      // Divide vertically: each child gets a proportional row
+      int rowH = Math.max(3, contentH / children.size());
+      Color[] childColors = {
+        new Color(100, 180, 255, 160),
+        new Color(255, 160, 80, 160),
+        new Color(120, 220, 140, 160),
+        new Color(220, 120, 220, 160),
+        new Color(220, 220, 100, 160),
+      };
+
+      for (int ci = 0; ci < children.size(); ci++) {
+        TimelineView.TrackTimeline child = children.get(ci);
+        int childY = contentY + ci * rowH;
+        int childRowH = Math.min(rowH - 1, contentH - ci * rowH);
+        if (childRowH < 2) break;
+        Color color = childColors[ci % childColors.length];
+
+        for (TimelineView.ClipRect clip : child.clips) {
+          int x = scaleLabelWidth + (int) (clip.startTime * pps);
+          int w = Math.max(2, (int) (clip.duration * pps));
+          g2.setColor(color);
+          g2.fillRect(x, childY, w, childRowH);
+          // Thin border
+          g2.setColor(new Color(255, 255, 255, 40));
+          g2.drawRect(x, childY, w, childRowH);
+        }
+      }
+
+      // Label: "N children collapsed"
+      g2.setColor(new Color(200, 200, 200, 120));
+      g2.setFont(
+          Theme.getInstance().FONT_UI.deriveFont(Font.PLAIN, Theme.getInstance().scale(9.0f)));
+      g2.drawString(
+          children.size() + " track" + (children.size() > 1 ? "s" : ""),
+          scaleLabelWidth + 4,
+          groupY + groupH - 4);
+    }
+  }
+
   private void drawClips(
       Graphics2D g2,
       List<TimelineView.TrackTimeline> tracks,
@@ -729,6 +800,7 @@ class TimelineRenderer {
     Color aliasColor = new Color(130, 130, 150); // Desaturated gray-blue for aliases
     for (int i = 0; i < tracks.size(); i++) {
       if (tracks.get(i).hidden) continue;
+      if (view.getTotalTrackHeight(i) == 0) continue; // collapsed child
       int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight(i));
       int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i)) + 5;
       for (TimelineView.ClipRect clip : tracks.get(i).clips) {

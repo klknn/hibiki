@@ -955,4 +955,268 @@ public class TimelineViewTest {
     int trackAtY = view.getTrackIdxAtY(scaledGroupHeight + 1);
     assertEquals("Track at Y after collapsed group should be track 3", 3, trackAtY);
   }
+
+  /**
+   * Verifies the correct pattern: set groupParentIndex AFTER reorderTrackLocally, using the group
+   * track's new ArrayList position.
+   */
+  @Test
+  public void testReorderLocally_groupParentIndex_afterDnD() {
+    TimelineView view = new TimelineView();
+    // 5 tracks: [0, 1, 2, 3, 4(group)]
+    view.tracks.add(new TimelineView.TrackTimeline(4));
+    view.tracks.get(4).trackType = 1; // GROUP
+
+    // Simulate correct DnD: drag track 3 onto group track 4
+    int dndSource = 3;
+    int hoverGroup = 4;
+    TimelineView.TrackTimeline groupTrack = view.tracks.get(hoverGroup);
+    TimelineView.TrackTimeline childTrack = view.tracks.get(dndSource);
+
+    // Reorder FIRST
+    int destIdx = dndSource < hoverGroup ? hoverGroup : hoverGroup + 1; // = 4
+    view.reorderTrackLocally(dndSource, destIdx);
+
+    // Set groupParentIndex AFTER reorder using group's new position
+    childTrack.groupParentIndex = view.tracks.indexOf(groupTrack);
+
+    // After reorder: [0, 1, 2, 4(group), 3(child)]
+    int groupNewPos = view.tracks.indexOf(groupTrack);
+    int childNewPos = view.tracks.indexOf(childTrack);
+
+    assertEquals("Group track should be at position 3", 3, groupNewPos);
+    assertEquals("Child track should be at position 4", 4, childNewPos);
+    assertEquals(
+        "Child's groupParentIndex should point to group's new position",
+        groupNewPos,
+        childTrack.groupParentIndex);
+  }
+
+  /**
+   * Verifies collapse works correctly after DnD onto group when groupParentIndex is set AFTER
+   * reorder.
+   */
+  @Test
+  public void testCollapseGroup_afterDnD_childShouldHaveZeroHeight() {
+    TimelineView view = new TimelineView();
+    // 5 tracks: [0, 1, 2, 3, 4(group)]
+    view.tracks.add(new TimelineView.TrackTimeline(4));
+    view.tracks.get(4).trackType = 1; // GROUP
+
+    int dndSource = 3;
+    int hoverGroup = 4;
+    TimelineView.TrackTimeline groupTrack = view.tracks.get(hoverGroup);
+    TimelineView.TrackTimeline childTrack = view.tracks.get(dndSource);
+
+    // Reorder first, then set parent
+    view.reorderTrackLocally(dndSource, hoverGroup);
+    childTrack.groupParentIndex = view.tracks.indexOf(groupTrack);
+
+    // Collapse the group track
+    groupTrack.collapsed = true;
+
+    int childPos = view.tracks.indexOf(childTrack);
+    int childHeight = view.getTotalTrackHeight(childPos);
+    assertEquals("Collapsed group child should have zero height", 0, childHeight);
+  }
+
+  /** Engine indices (track.index) must remain stable after UI-only reorder. */
+  @Test
+  public void testReorderLocally_engineIndicesStable() {
+    TimelineView view = new TimelineView();
+    // Default 4 tracks with engine indices 0,1,2,3
+    assertEquals(0, view.tracks.get(0).index);
+    assertEquals(1, view.tracks.get(1).index);
+    assertEquals(2, view.tracks.get(2).index);
+    assertEquals(3, view.tracks.get(3).index);
+
+    // Move track 0 to position 2
+    view.reorderTrackLocally(0, 2);
+
+    // Display order changed: [1, 2, 0, 3]
+    // But engine indices must remain unchanged
+    assertEquals("Engine index must stay stable", 1, view.tracks.get(0).index);
+    assertEquals("Engine index must stay stable", 2, view.tracks.get(1).index);
+    assertEquals("Engine index must stay stable", 0, view.tracks.get(2).index);
+    assertEquals("Engine index must stay stable", 3, view.tracks.get(3).index);
+  }
+
+  /** Multiple children can be dragged into the same group. */
+  @Test
+  public void testDnD_multipleChildrenInGroup() {
+    TimelineView view = new TimelineView();
+    view.tracks.add(new TimelineView.TrackTimeline(4));
+    // Track 0 is group
+    view.tracks.get(0).trackType = 1;
+
+    // Drag track 2 onto group track 0
+    TimelineView.TrackTimeline group = view.tracks.get(0);
+    TimelineView.TrackTimeline child1 = view.tracks.get(2);
+    // source=2, group=0 → destIdx = 0+1 = 1
+    view.reorderTrackLocally(2, 1);
+    child1.groupParentIndex = view.tracks.indexOf(group);
+
+    // Drag track 3 (now at pos 3 after first reorder) onto group track 0
+    TimelineView.TrackTimeline child2 = view.tracks.get(3);
+    view.reorderTrackLocally(3, 1);
+    child2.groupParentIndex = view.tracks.indexOf(group);
+
+    // Both children should point to the group
+    assertEquals(
+        "First child should point to group", view.tracks.indexOf(group), child1.groupParentIndex);
+    assertEquals(
+        "Second child should point to group", view.tracks.indexOf(group), child2.groupParentIndex);
+
+    // Collapse should hide both
+    group.collapsed = true;
+    assertEquals(0, view.getTotalTrackHeight(view.tracks.indexOf(child1)));
+    assertEquals(0, view.getTotalTrackHeight(view.tracks.indexOf(child2)));
+  }
+
+  /** Drag track above group (reverse direction). */
+  @Test
+  public void testDnD_dragTrackAboveGroup_reverseDirection() {
+    TimelineView view = new TimelineView();
+    view.tracks.add(new TimelineView.TrackTimeline(4));
+    // Track 4 is group at position 4, drag track 3 onto it
+    view.tracks.get(4).trackType = 1;
+
+    // source=3, group=4 → destIdx = 3 < 4 ? 4 : 5 = 4
+    TimelineView.TrackTimeline groupTrack = view.tracks.get(4);
+    TimelineView.TrackTimeline childTrack = view.tracks.get(3);
+    view.reorderTrackLocally(3, 4);
+    childTrack.groupParentIndex = view.tracks.indexOf(groupTrack);
+
+    // Child should be right after group
+    int groupPos = view.tracks.indexOf(groupTrack);
+    int childPos = view.tracks.indexOf(childTrack);
+    assertEquals("Child should be right after group", groupPos + 1, childPos);
+    assertEquals("groupParentIndex correct", groupPos, childTrack.groupParentIndex);
+  }
+
+  /** Normal reorder (non-group) should not change groupParentIndex. */
+  @Test
+  public void testReorderLocally_normalReorder_noGroupParentChange() {
+    TimelineView view = new TimelineView();
+    // All tracks are normal, move track 0 to position 2
+    TimelineView.TrackTimeline t0 = view.tracks.get(0);
+    assertEquals(-1, t0.groupParentIndex);
+
+    view.reorderTrackLocally(0, 2);
+
+    // groupParentIndex should remain -1
+    // groupParentIndex should remain -1
+    assertEquals("Normal reorder should not set groupParentIndex", -1, t0.groupParentIndex);
+  }
+
+  /** findDisplayPosition maps engine index → ArrayList position after reorder. */
+  @Test
+  public void testFindDisplayPosition_afterReorder() {
+    TimelineView view = new TimelineView();
+    view.tracks.add(new TimelineView.TrackTimeline(4));
+    // Before reorder: positions match engine indices
+    assertEquals(0, view.findDisplayPosition(0));
+    assertEquals(3, view.findDisplayPosition(3));
+    assertEquals(4, view.findDisplayPosition(4));
+
+    // Reorder: move track 3 to position 4
+    view.reorderTrackLocally(3, 4);
+    // After: [0, 1, 2, 4, 3]
+
+    assertEquals("Engine idx 3 should be at display pos 4", 4, view.findDisplayPosition(3));
+    assertEquals("Engine idx 4 should be at display pos 3", 3, view.findDisplayPosition(4));
+    assertEquals("Engine idx 0 unchanged", 0, view.findDisplayPosition(0));
+  }
+
+  /**
+   * After reorder, handleTrackInfo must update the correct track. Reproduces bug: engine sends
+   * TrackInfo(index=3), but after reorder the track at ArrayList pos 3 is a DIFFERENT track.
+   */
+  @Test
+  public void testHandleTrackInfo_afterReorder_updatesCorrectTrack() {
+    TimelineView view = new TimelineView();
+    view.tracks.add(new TimelineView.TrackTimeline(4));
+    // Track 4 is GROUP
+    view.tracks.get(4).trackType = 1;
+    view.tracks.get(4).customName = "MyGroup";
+
+    // Reorder: move track 3 to position 4 (behind group)
+    view.reorderTrackLocally(3, 4);
+    // After: [0, 1, 2, T4("MyGroup",GROUP), T3]
+
+    // Simulate engine sending TrackInfo for engine index 3 (child)
+    Notification n =
+        Notification.newBuilder()
+            .setTrackInfo(
+                TrackInfo.newBuilder()
+                    .setTrackIndex(3) // engine index
+                    .setName("ChildTrack")
+                    .setGroupParentIndex(4) // engine index of group
+                    .setTrackType(hibiki.pb.core.TrackType.TRACK_NORMAL))
+            .build();
+    view.handleNotification(n);
+
+    // The track with engine index 3 should be updated (at display pos 4)
+    TimelineView.TrackTimeline child = view.tracks.get(4);
+    assertEquals("Child track name should be updated", "ChildTrack", child.customName);
+    assertEquals("Child engine index unchanged", 3, child.index);
+
+    // The group track at display pos 3 should NOT be affected
+    TimelineView.TrackTimeline group = view.tracks.get(3);
+    assertEquals("Group track name should be preserved", "MyGroup", group.customName);
+    assertEquals("Group track type should still be GROUP", 1, group.trackType);
+
+    // groupParentIndex should be translated to display position (3, not engine index 4)
+    assertEquals("groupParentIndex should be display pos of group", 3, child.groupParentIndex);
+  }
+
+  /**
+   * Reproduces exact user bug: two sequential DnDs into the same group. 1. Add group track 4 2.
+   * Move Track 3 to group Track 4 3. Move Track 2 to group Track 4 After step 3, collapsing group
+   * must hide BOTH children.
+   */
+  @Test
+  public void testTwoSequentialDnD_collapseHidesBothChildren() {
+    TimelineView view = new TimelineView();
+    view.tracks.add(new TimelineView.TrackTimeline(4));
+    // Track 4 is GROUP
+    view.tracks.get(4).trackType = 1;
+
+    // --- DnD 1: drag Track 3 onto group Track 4 ---
+    TimelineView.TrackTimeline groupTrack = view.tracks.get(4);
+    TimelineView.TrackTimeline track3 = view.tracks.get(3);
+    // source=3 < hover=4, so destIdx = 4
+    view.reorderTrackLocally(3, 4);
+    track3.groupParentIndex = view.tracks.indexOf(groupTrack);
+    // State: [0, 1, 2, T4(group@pos3), T3(@pos4, gpi=3)]
+
+    assertEquals("After DnD1: group at pos 3", 3, view.tracks.indexOf(groupTrack));
+    assertEquals("After DnD1: T3 at pos 4", 4, view.tracks.indexOf(track3));
+    assertEquals("After DnD1: T3.gpi = 3", 3, track3.groupParentIndex);
+
+    // --- DnD 2: drag Track 2 onto group Track 4 (now at pos 3) ---
+    TimelineView.TrackTimeline track2 = view.tracks.get(2);
+    // source=2 < hover=3 (group pos), so destIdx = 3
+    view.reorderTrackLocally(2, 3);
+    track2.groupParentIndex = view.tracks.indexOf(groupTrack);
+    // State: [0, 1, T4(group@pos2), T2(@pos3, gpi=2), T3(@pos4, gpi=?)]
+
+    int groupPos = view.tracks.indexOf(groupTrack);
+    assertEquals("After DnD2: group at pos 2", 2, groupPos);
+    assertEquals("After DnD2: T2.gpi = group pos", groupPos, track2.groupParentIndex);
+    // KEY: T3's groupParentIndex must have been updated by reorderTrackLocally
+    assertEquals(
+        "After DnD2: T3.gpi must track group's new position", groupPos, track3.groupParentIndex);
+
+    // Collapse the group: BOTH children must have zero height
+    groupTrack.collapsed = true;
+    assertEquals(
+        "Collapsed: T2 should have zero height",
+        0,
+        view.getTotalTrackHeight(view.tracks.indexOf(track2)));
+    assertEquals(
+        "Collapsed: T3 should have zero height",
+        0,
+        view.getTotalTrackHeight(view.tracks.indexOf(track3)));
+  }
 }

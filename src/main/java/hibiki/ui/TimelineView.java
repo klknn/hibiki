@@ -99,6 +99,17 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   }
 
   /**
+   * Find the ArrayList position of the track with the given engine index. Returns the engine index
+   * itself if no track with that index is found (fallback for tracks not yet reordered).
+   */
+  int findDisplayPosition(int engineIndex) {
+    for (int i = 0; i < tracks.size(); i++) {
+      if (tracks.get(i).index == engineIndex) return i;
+    }
+    return engineIndex; // fallback: assume position == engine index (no reorder happened)
+  }
+
+  /**
    * Reorder tracks locally in the UI by moving a track from fromIdx to toIdx. This is purely a
    * display operation — track.index (engine slot ID) is NOT changed. Only the ArrayList position
    * and display-side groupParentIndex references are updated.
@@ -112,6 +123,23 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     TrackTimeline moving = tracks.remove(fromIdx);
     int insertAt = Math.min(toIdx, tracks.size());
     tracks.add(insertAt, moving);
+
+    // Update all existing groupParentIndex values to track the position shift.
+    // Old position → new position mapping:
+    //   fromIdx < insertAt: pos in (fromIdx, insertAt] shifts down by 1
+    //   fromIdx > insertAt: pos in [insertAt, fromIdx) shifts up by 1
+    //   fromIdx itself → insertAt
+    for (TrackTimeline t : tracks) {
+      int gpi = t.groupParentIndex;
+      if (gpi < 0) continue;
+      if (fromIdx < insertAt) {
+        if (gpi == fromIdx) t.groupParentIndex = insertAt;
+        else if (gpi > fromIdx && gpi <= insertAt) t.groupParentIndex = gpi - 1;
+      } else {
+        if (gpi == fromIdx) t.groupParentIndex = insertAt;
+        else if (gpi >= insertAt && gpi < fromIdx) t.groupParentIndex = gpi + 1;
+      }
+    }
 
     // Update selected track position
     if (selectedTrack == fromIdx) {
@@ -415,32 +443,16 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
               int trackIdx = getTrackIdxAtY(e.getY() - scaleTimeRuler);
               if (trackIdx >= 0 && trackIdx < tracks.size()) {
                 TrackTimeline clickedTrack = tracks.get(trackIdx);
-                int scaleLabelWidthDbg = Theme.getInstance().scale(trackLabelWidth);
                 int trackTopYDbg = Theme.getInstance().scale(getTrackY(trackIdx));
                 int clickYInTrackDbg = (e.getY() - scaleTimeRuler) - trackTopYDbg;
-                System.out.println(
-                    "[CLICK] x="
-                        + e.getX()
-                        + " y="
-                        + e.getY()
-                        + " trackIdx="
-                        + trackIdx
-                        + " clickYInTrack="
-                        + clickYInTrackDbg
-                        + " labelW="
-                        + scaleLabelWidthDbg
-                        + " isGroup="
-                        + clickedTrack.isGroupTrack());
                 // Right-click: show track header context menu
                 if (SwingUtilities.isRightMouseButton(e)) {
-                  System.out.println("[CLICK] -> RIGHT_CLICK");
                   showTrackHeaderContextMenu(trackIdx, e);
                   return;
                 }
 
                 // Check if click is on ▶/▼ toggle for group tracks (left 16px area)
                 if (clickedTrack.isGroupTrack() && e.getX() < 16) {
-                  System.out.println("[CLICK] -> GROUP_TOGGLE");
                   clickedTrack.collapsed = !clickedTrack.collapsed;
                   rowHeader.revalidate();
                   rowHeader.repaint();
@@ -606,7 +618,6 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                 // Start DnD-aware track selection (drag to reorder/group)
                 final int dndSourceTrack = trackIdx;
                 final int dndStartY = e.getYOnScreen();
-                System.out.println("[DnD] PRESS source=" + dndSourceTrack + " startY=" + dndStartY);
                 setSelectedTrack(trackIdx);
                 rowHeader.repaint();
                 contentPanel.repaint();
@@ -621,20 +632,16 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                         int dy = Math.abs(de.getYOnScreen() - dndStartY);
                         if (dy > 5 && !dragging) {
                           dragging = true;
-                          System.out.println("[DnD] DRAG ACTIVATED dy=" + dy);
                           rowHeader.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
                         }
                       }
 
                       @Override
                       public void mouseReleased(java.awt.event.MouseEvent re) {
-                        System.out.println(
-                            "[DnD] RELEASE dragging=" + dragging + " y=" + re.getY());
                         rowHeader.removeMouseMotionListener(this);
                         rowHeader.removeMouseListener(this);
                         rowHeader.setCursor(Cursor.getDefaultCursor());
                         if (!dragging) {
-                          System.out.println("[DnD] ABORT: not dragging");
                           return;
                         }
 
@@ -674,24 +681,25 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                             && hoverTrack < tracks.size()
                             && tracks.get(hoverTrack).isGroupTrack()
                             && hoverTrack != dndSourceTrack) {
-                          // Drop onto group: set parent, then move right after group
-                          tracks.get(dndSourceTrack).groupParentIndex = hoverTrack;
+                          // Save references and engine indices BEFORE reorder
+                          int srcEngineIdx = tracks.get(dndSourceTrack).index;
+                          int grpEngineIdx = tracks.get(hoverTrack).index;
+                          TrackTimeline groupRef = tracks.get(hoverTrack);
+                          TrackTimeline childRef = tracks.get(dndSourceTrack);
                           int destIdx = dndSourceTrack < hoverTrack ? hoverTrack : hoverTrack + 1;
                           if (destIdx != dndSourceTrack) {
                             reorderTrackLocally(dndSourceTrack, destIdx);
-                          } else {
-                            updateContentSize();
-                            repaint();
                           }
+                          // Set groupParentIndex AFTER reorder using group's new position
+                          childRef.groupParentIndex = tracks.indexOf(groupRef);
+                          // Notify engine for audio routing (stable engine indices)
+                          BackendManager.getInstance().setGroupParent(srcEngineIdx, grpEngineIdx);
+                          updateContentSize();
+                          repaint();
                         } else if (insertPos != dndSourceTrack && insertPos != dndSourceTrack + 1) {
                           // Normal reorder (UI-only, engine indices unchanged)
                           int targetPos = insertPos > dndSourceTrack ? insertPos - 1 : insertPos;
-                          System.out.println(
-                              "[DnD] REORDER " + dndSourceTrack + " -> " + targetPos);
                           reorderTrackLocally(dndSourceTrack, targetPos);
-                        } else {
-                          System.out.println(
-                              "[DnD] NO-OP: src=" + dndSourceTrack + " ins=" + insertPos);
                         }
                       }
                     };

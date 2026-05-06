@@ -137,6 +137,8 @@ class TimelineNotificationHandler {
     }
     String name = info.getName();
     view.tracks.get(tidx).customName = name.isEmpty() ? null : name;
+    view.tracks.get(tidx).groupParentIndex = info.getGroupParentIndex();
+    view.tracks.get(tidx).trackType = info.getTrackType().getNumber();
     view.repaint();
     // Sync with SessionView
     if (SessionView.getInstance() != null && SessionView.getInstance().trackHeaders.size() > tidx) {
@@ -144,6 +146,14 @@ class TimelineNotificationHandler {
       if (header != null) {
         String displayName = view.tracks.get(tidx).getDisplayName();
         header.setText(tidx + " " + displayName);
+        // Update header color for group tracks
+        if (view.tracks.get(tidx).isGroupTrack()) {
+          header.setBackground(new java.awt.Color(0xCC9933));
+        } else if (view.tracks.get(tidx).groupParentIndex >= 0) {
+          header.setBackground(new java.awt.Color(0x554422));
+        } else {
+          header.setBackground(Theme.getInstance().TRACK_HEADER);
+        }
       }
     }
   }

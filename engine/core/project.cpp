@@ -390,8 +390,20 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
     std::vector<float> mixBufferL(block_size, 0.0f);
     std::vector<float> mixBufferR(block_size, 0.0f);
 
+    // Group bus accumulation buffers for bounce
+    std::map<int, std::pair<std::vector<float>, std::vector<float>>>
+        group_bus_buffers;
+    for (auto& pair : state.tracks) {
+      if (pair.second->track_type == Track::TrackType::GROUP) {
+        group_bus_buffers[pair.first] = {std::vector<float>(block_size, 0.0f),
+                                         std::vector<float>(block_size, 0.0f)};
+      }
+    }
+
+    // Pass 1: Process normal tracks
     for (auto& pair : state.tracks) {
       Track* track = pair.second.get();
+      if (track->track_type != Track::TrackType::NORMAL) continue;
       std::fill(bufferL, bufferL + block_size, 0.0f);
       std::fill(bufferR, bufferR + block_size, 0.0f);
 
@@ -495,6 +507,44 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
       for (size_t i = 0; i < track->plugins.size(); ++i) {
         if (i == 0 && track->plugins[i]->isInstrument()) continue;
         if (track->plugin_bypass.count((int)i)) continue;  // bypassed
+        track->plugins[i]->process(outChannels, outChannels, block_size,
+                                   context, {});
+      }
+
+      // Route to group bus or master
+      if (track->group_parent_index >= 0) {
+        auto git = group_bus_buffers.find(track->group_parent_index);
+        if (git != group_bus_buffers.end()) {
+          for (int i = 0; i < block_size; ++i) {
+            git->second.first[i] += bufferL[i];
+            git->second.second[i] += bufferR[i];
+          }
+          continue;  // Don't sum to master
+        }
+      }
+      for (int i = 0; i < block_size; ++i) {
+        mixBufferL[i] += bufferL[i];
+        mixBufferR[i] += bufferR[i];
+      }
+    }
+
+    // Pass 2: Process group tracks (sum their bus into master)
+    for (auto& pair : state.tracks) {
+      Track* track = pair.second.get();
+      if (track->track_type != Track::TrackType::GROUP) continue;
+      auto git = group_bus_buffers.find(pair.first);
+      if (git == group_bus_buffers.end()) continue;
+
+      // Load bus input into buffers
+      for (int i = 0; i < block_size; ++i) {
+        bufferL[i] = git->second.first[i];
+        bufferR[i] = git->second.second[i];
+      }
+
+      // Apply group track effects
+      for (size_t i = 0; i < track->plugins.size(); ++i) {
+        if (i == 0 && track->plugins[i]->isInstrument()) continue;
+        if (track->plugin_bypass.count((int)i)) continue;
         track->plugins[i]->process(outChannels, outChannels, block_size,
                                    context, {});
       }

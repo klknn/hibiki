@@ -169,7 +169,7 @@ class Track {
   int current_midi_idx = 0;
   std::atomic<bool> panic_requested_{false};
 
-  Track(int idx) : index(idx) {}
+  Track(int idx) : index(idx), name("Track " + std::to_string(idx)) {}
 
   // Mixer state
   float volume = 0.31623f;  // linear gain; default = -10 dB

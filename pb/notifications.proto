@@ -319,6 +319,8 @@ message Notification {
 
     // Project info (directory path after save/load/collect)
     ProjectInfo project_info = 30;
+
+    // Field 31 reserved (was track_reorder, removed — reordering is UI-only)
   }
 }
 

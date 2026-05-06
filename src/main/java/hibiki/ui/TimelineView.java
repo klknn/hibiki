@@ -61,6 +61,15 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
   /** Total height for a track including expanded automation lanes. */
   int getTotalTrackHeight(int trackIdx) {
     if (trackIdx >= 0 && trackIdx < tracks.size() && tracks.get(trackIdx).hidden) return 0;
+    // Collapsed children take zero height
+    if (trackIdx >= 0 && trackIdx < tracks.size()) {
+      TrackTimeline t = tracks.get(trackIdx);
+      if (t.groupParentIndex >= 0
+          && t.groupParentIndex < tracks.size()
+          && tracks.get(t.groupParentIndex).collapsed) {
+        return 0;
+      }
+    }
     int h = getBaseTrackHeight(trackIdx);
     if (trackIdx >= 0 && trackIdx < tracks.size()) {
       TrackTimeline t = tracks.get(trackIdx);
@@ -87,6 +96,34 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
       h += getTotalTrackHeight(i);
     }
     return h;
+  }
+
+  /**
+   * Reorder tracks locally in the UI by moving a track from fromIdx to toIdx. This is purely a
+   * display operation — track.index (engine slot ID) is NOT changed. Only the ArrayList position
+   * and display-side groupParentIndex references are updated.
+   */
+  void reorderTrackLocally(int fromIdx, int toIdx) {
+    if (fromIdx < 0 || fromIdx >= tracks.size()) return;
+    toIdx = Math.max(0, Math.min(toIdx, tracks.size() - 1));
+    if (fromIdx == toIdx) return;
+
+    // Remove and re-insert the TrackTimeline object
+    TrackTimeline moving = tracks.remove(fromIdx);
+    int insertAt = Math.min(toIdx, tracks.size());
+    tracks.add(insertAt, moving);
+
+    // Update selected track position
+    if (selectedTrack == fromIdx) {
+      selectedTrack = insertAt;
+    } else if (fromIdx < toIdx) {
+      if (selectedTrack > fromIdx && selectedTrack <= toIdx) selectedTrack--;
+    } else {
+      if (selectedTrack >= toIdx && selectedTrack < fromIdx) selectedTrack++;
+    }
+
+    updateContentSize();
+    repaint();
   }
 
   /** Resolve a track index from a scaled Y offset (after time ruler). */
@@ -377,9 +414,46 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
             if (e.getY() >= scaleTimeRuler) {
               int trackIdx = getTrackIdxAtY(e.getY() - scaleTimeRuler);
               if (trackIdx >= 0 && trackIdx < tracks.size()) {
+                TrackTimeline clickedTrack = tracks.get(trackIdx);
+                int scaleLabelWidthDbg = Theme.getInstance().scale(trackLabelWidth);
+                int trackTopYDbg = Theme.getInstance().scale(getTrackY(trackIdx));
+                int clickYInTrackDbg = (e.getY() - scaleTimeRuler) - trackTopYDbg;
+                System.out.println(
+                    "[CLICK] x="
+                        + e.getX()
+                        + " y="
+                        + e.getY()
+                        + " trackIdx="
+                        + trackIdx
+                        + " clickYInTrack="
+                        + clickYInTrackDbg
+                        + " labelW="
+                        + scaleLabelWidthDbg
+                        + " isGroup="
+                        + clickedTrack.isGroupTrack());
                 // Right-click: show track header context menu
                 if (SwingUtilities.isRightMouseButton(e)) {
+                  System.out.println("[CLICK] -> RIGHT_CLICK");
                   showTrackHeaderContextMenu(trackIdx, e);
+                  return;
+                }
+
+                // Check if click is on ▶/▼ toggle for group tracks (left 16px area)
+                if (clickedTrack.isGroupTrack() && e.getX() < 16) {
+                  System.out.println("[CLICK] -> GROUP_TOGGLE");
+                  clickedTrack.collapsed = !clickedTrack.collapsed;
+                  rowHeader.revalidate();
+                  rowHeader.repaint();
+                  updateContentSize();
+                  contentPanel.repaint();
+                  // Also toggle SessionView child strip visibility
+                  if (SessionView.getInstance() != null) {
+                    for (int ci = 0; ci < tracks.size(); ci++) {
+                      if (tracks.get(ci).groupParentIndex == trackIdx) {
+                        SessionView.getInstance().setTrackVisible(ci, !clickedTrack.collapsed);
+                      }
+                    }
+                  }
                   return;
                 }
                 TrackTimeline track = tracks.get(trackIdx);
@@ -529,9 +603,100 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
                   contentPanel.repaint();
                   return;
                 }
+                // Start DnD-aware track selection (drag to reorder/group)
+                final int dndSourceTrack = trackIdx;
+                final int dndStartY = e.getYOnScreen();
+                System.out.println("[DnD] PRESS source=" + dndSourceTrack + " startY=" + dndStartY);
                 setSelectedTrack(trackIdx);
                 rowHeader.repaint();
                 contentPanel.repaint();
+
+                // Install drag adapter for reorder/group
+                java.awt.event.MouseAdapter dndAdapter =
+                    new java.awt.event.MouseAdapter() {
+                      boolean dragging = false;
+
+                      @Override
+                      public void mouseDragged(java.awt.event.MouseEvent de) {
+                        int dy = Math.abs(de.getYOnScreen() - dndStartY);
+                        if (dy > 5 && !dragging) {
+                          dragging = true;
+                          System.out.println("[DnD] DRAG ACTIVATED dy=" + dy);
+                          rowHeader.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                        }
+                      }
+
+                      @Override
+                      public void mouseReleased(java.awt.event.MouseEvent re) {
+                        System.out.println(
+                            "[DnD] RELEASE dragging=" + dragging + " y=" + re.getY());
+                        rowHeader.removeMouseMotionListener(this);
+                        rowHeader.removeMouseListener(this);
+                        rowHeader.setCursor(Cursor.getDefaultCursor());
+                        if (!dragging) {
+                          System.out.println("[DnD] ABORT: not dragging");
+                          return;
+                        }
+
+                        // Compute insertion position from Y
+                        int scaleRuler = Theme.getInstance().scale(TOTAL_RULER_HEIGHT);
+                        int relY = re.getY() - scaleRuler;
+
+                        // Find which track the mouse is over AND whether in top/bottom half
+                        int cumY = 0;
+                        int insertPos = -1;
+                        int hoverTrack = -1;
+                        for (int ti = 0; ti < tracks.size(); ti++) {
+                          if (tracks.get(ti).hidden) continue;
+                          int th = Theme.getInstance().scale(getTotalTrackHeight(ti));
+                          if (th == 0) continue;
+                          if (relY < cumY + th) {
+                            hoverTrack = ti;
+                            // Top half → insert before this track
+                            // Bottom half → insert after this track
+                            if (relY < cumY + th / 2) {
+                              insertPos = ti;
+                            } else {
+                              insertPos = ti + 1;
+                            }
+                            break;
+                          }
+                          cumY += th;
+                        }
+                        if (insertPos < 0) {
+                          // Dropped below all tracks → insert at end
+                          insertPos = tracks.size();
+                        }
+                        if (hoverTrack < 0) hoverTrack = tracks.size() - 1;
+
+                        // Check if dropping onto a group track (hovering over it)
+                        if (hoverTrack >= 0
+                            && hoverTrack < tracks.size()
+                            && tracks.get(hoverTrack).isGroupTrack()
+                            && hoverTrack != dndSourceTrack) {
+                          // Drop onto group: set parent, then move right after group
+                          tracks.get(dndSourceTrack).groupParentIndex = hoverTrack;
+                          int destIdx = dndSourceTrack < hoverTrack ? hoverTrack : hoverTrack + 1;
+                          if (destIdx != dndSourceTrack) {
+                            reorderTrackLocally(dndSourceTrack, destIdx);
+                          } else {
+                            updateContentSize();
+                            repaint();
+                          }
+                        } else if (insertPos != dndSourceTrack && insertPos != dndSourceTrack + 1) {
+                          // Normal reorder (UI-only, engine indices unchanged)
+                          int targetPos = insertPos > dndSourceTrack ? insertPos - 1 : insertPos;
+                          System.out.println(
+                              "[DnD] REORDER " + dndSourceTrack + " -> " + targetPos);
+                          reorderTrackLocally(dndSourceTrack, targetPos);
+                        } else {
+                          System.out.println(
+                              "[DnD] NO-OP: src=" + dndSourceTrack + " ins=" + insertPos);
+                        }
+                      }
+                    };
+                rowHeader.addMouseMotionListener(dndAdapter);
+                rowHeader.addMouseListener(dndAdapter);
               }
             }
           }
@@ -1450,9 +1615,20 @@ public class TimelineView extends JPanel implements Theme.ThemeListener {
     int inputChannelStart = 0; // Starting input channel
     boolean inputStereo = true; // Mono vs stereo input
     String midiInputDeviceId = "__global__"; // MIDI input device (default: global)
+    int groupParentIndex = -1; // -1 = no parent, >= 0 = index of group parent track
+    int trackType = 0; // 0 = NORMAL, 1 = GROUP, 2 = AUX
+    boolean collapsed = false; // For group tracks: whether children are hidden
 
     TrackTimeline(int index) {
       this.index = index;
+    }
+
+    boolean isGroupTrack() {
+      return trackType == 1;
+    }
+
+    boolean isChildOf(int parentIdx) {
+      return groupParentIndex == parentIdx;
     }
 
     String getDisplayName() {

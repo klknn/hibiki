@@ -666,18 +666,6 @@ public class BackendManager {
             .build());
   }
 
-  /** Reorder a track from one index to another. */
-  public void reorderTrack(int fromIndex, int toIndex) {
-    sendRequest(
-        Request.newBuilder()
-            .setTrack(
-                TrackCmd.newBuilder()
-                    .setAction(TrackCmd.Action.ACTION_REORDER_TRACK)
-                    .setTarget(EntityRef.newBuilder().setTrackIndex(fromIndex))
-                    .setNewTrackIndex(toIndex))
-            .build());
-  }
-
   /** Set or clear the group parent of a track. */
   public void setGroupParent(int trackIndex, int groupParentIndex) {
     sendRequest(

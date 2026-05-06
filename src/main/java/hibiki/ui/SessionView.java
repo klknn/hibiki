@@ -45,6 +45,15 @@ public class SessionView extends JPanel {
     return trackStrips.size();
   }
 
+  /** Show or hide a track strip (used by group track collapse). */
+  public void setTrackVisible(int trackIdx, boolean visible) {
+    if (trackIdx >= 0 && trackIdx < trackStrips.size() && trackStrips.get(trackIdx) != null) {
+      trackStrips.get(trackIdx).setVisible(visible);
+      trackPanel.revalidate();
+      trackPanel.repaint();
+    }
+  }
+
   public SessionView() {
     instance = this;
     setLayout(new BorderLayout());
@@ -391,7 +400,24 @@ public class SessionView extends JPanel {
               int stripW = Theme.getInstance().scale(110);
               int targetIdx = Math.max(0, Math.min(trackStrips.size() - 1, p.x / stripW));
               if (targetIdx != finalTrackIdx) {
-                BackendManager.getInstance().reorderTrack(finalTrackIdx, targetIdx);
+                // Check if target is a group track — drop = group under it
+                TimelineView tv = TimelineView.getInstance();
+                if (tv != null
+                    && targetIdx < tv.tracks.size()
+                    && tv.tracks.get(targetIdx).isGroupTrack()) {
+                  // Drop onto group: set parent locally, then move right after group
+                  tv.tracks.get(finalTrackIdx).groupParentIndex = targetIdx;
+                  int destIdx = finalTrackIdx < targetIdx ? targetIdx : targetIdx + 1;
+                  if (destIdx != finalTrackIdx) {
+                    tv.reorderTrackLocally(finalTrackIdx, destIdx);
+                  } else {
+                    tv.updateContentSize();
+                    tv.repaint();
+                  }
+                } else if (tv != null) {
+                  // Normal reorder (UI-only)
+                  tv.reorderTrackLocally(finalTrackIdx, targetIdx);
+                }
               }
             }
             dragStartX = -1;

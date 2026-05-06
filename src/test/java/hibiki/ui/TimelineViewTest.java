@@ -834,4 +834,125 @@ public class TimelineViewTest {
     clip.isLooped = clip.loopInterval > 0 && clip.duration > clip.loopInterval;
     assertFalse("isLooped should be false when shrunk below loopInterval", clip.isLooped);
   }
+
+  // ─── Group Track Folder Tests ────────────────────────────────────────
+
+  @Test
+  public void testTrackTimeline_groupFields_defaults() {
+    TimelineView.TrackTimeline track = new TimelineView.TrackTimeline(0);
+    assertEquals(-1, track.groupParentIndex);
+    assertEquals(0, track.trackType);
+    assertFalse(track.collapsed);
+    assertFalse(track.isGroupTrack());
+  }
+
+  @Test
+  public void testIsGroupTrack_returnsTrue_when_trackType_is_1() {
+    TimelineView.TrackTimeline track = new TimelineView.TrackTimeline(0);
+    track.trackType = 1; // GROUP
+    assertTrue(track.isGroupTrack());
+  }
+
+  @Test
+  public void testCollapsedChildren_haveZeroHeight() {
+    TimelineView view = new TimelineView();
+    // Set track 0 as group (type=1)
+    view.tracks.get(0).trackType = 1;
+    // Set tracks 1, 2 as children of track 0
+    view.tracks.get(1).groupParentIndex = 0;
+    view.tracks.get(2).groupParentIndex = 0;
+
+    // Before collapse: all tracks have height
+    int h1Before = view.getTotalTrackHeight(1);
+    int h2Before = view.getTotalTrackHeight(2);
+    assertTrue("Child track should have positive height before collapse", h1Before > 0);
+    assertTrue("Child track should have positive height before collapse", h2Before > 0);
+
+    // Collapse group
+    view.tracks.get(0).collapsed = true;
+
+    // After collapse: children have zero height
+    assertEquals("Collapsed child should have zero height", 0, view.getTotalTrackHeight(1));
+    assertEquals("Collapsed child should have zero height", 0, view.getTotalTrackHeight(2));
+    // Group itself should still have height
+    assertTrue("Group track should still have height", view.getTotalTrackHeight(0) > 0);
+    // Non-child track should still have height
+    assertTrue("Non-child track should still have height", view.getTotalTrackHeight(3) > 0);
+  }
+
+  @Test
+  public void testGetTrackY_skipsCollapsedChildren() {
+    TimelineView view = new TimelineView();
+    // Set track 0 as group, tracks 1,2 as children
+    view.tracks.get(0).trackType = 1;
+    view.tracks.get(1).groupParentIndex = 0;
+    view.tracks.get(2).groupParentIndex = 0;
+
+    int y3Before = view.getTrackY(3);
+
+    // Collapse group
+    view.tracks.get(0).collapsed = true;
+
+    int y3After = view.getTrackY(3);
+    // Track 3's Y should be smaller after collapse (children take 0 height)
+    assertTrue(
+        "Track 3 Y should be smaller after collapsing children: before="
+            + y3Before
+            + " after="
+            + y3After,
+        y3After < y3Before);
+
+    // Track 3 Y should equal track 0 height (since children are collapsed)
+    int groupHeight = view.getTotalTrackHeight(0);
+    assertEquals("Track 3 Y should be right after group track", groupHeight, y3After);
+  }
+
+  @Test
+  public void testGetTotalTracksHeight_decreasesOnCollapse() {
+    TimelineView view = new TimelineView();
+    view.tracks.get(0).trackType = 1;
+    view.tracks.get(1).groupParentIndex = 0;
+    view.tracks.get(2).groupParentIndex = 0;
+
+    int totalBefore = view.getTotalTracksHeight();
+
+    view.tracks.get(0).collapsed = true;
+
+    int totalAfter = view.getTotalTracksHeight();
+    assertTrue("Total height should decrease after collapsing children", totalAfter < totalBefore);
+  }
+
+  @Test
+  public void testHandleTrackInfo_setsGroupFields() {
+    TimelineView view = new TimelineView();
+    Notification n =
+        Notification.newBuilder()
+            .setTrackInfo(
+                TrackInfo.newBuilder()
+                    .setTrackIndex(1)
+                    .setName("Child Track")
+                    .setGroupParentIndex(0)
+                    .setTrackType(hibiki.pb.core.TrackType.TRACK_GROUP))
+            .build();
+    view.handleNotification(n);
+    assertEquals(0, view.tracks.get(1).groupParentIndex);
+    assertEquals(1, view.tracks.get(1).trackType); // GROUP = 1
+  }
+
+  @Test
+  public void testGetTrackIdxAtY_skipsCollapsedChildren() {
+    TimelineView view = new TimelineView();
+    view.tracks.get(0).trackType = 1;
+    view.tracks.get(1).groupParentIndex = 0;
+    view.tracks.get(2).groupParentIndex = 0;
+
+    // Collapse group
+    view.tracks.get(0).collapsed = true;
+
+    // Y position right after group should resolve to track 3 (not track 1)
+    int groupHeight = view.getTotalTrackHeight(0);
+    int scaledGroupHeight = Theme.getInstance().scale(groupHeight);
+    int trackAtY = view.getTrackIdxAtY(scaledGroupHeight + 1);
+    assertEquals("Track at Y after collapsed group should be track 3", 3, trackAtY);
+  }
 }

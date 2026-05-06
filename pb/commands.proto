@@ -63,8 +63,7 @@ message TrackCmd {
     ACTION_SET_TRACK_TYPE = 22;      // Set track type (Normal/Group/Aux)
     ACTION_SET_OUTPUT_ROUTING = 23;  // Set output routing to group or master
     ACTION_SET_AUX_SEND = 24;        // Set aux send level
-    ACTION_REORDER_TRACK = 25;       // Move track to new position
-    ACTION_SET_GROUP_PARENT = 26;    // Set/clear group parent
+    ACTION_SET_GROUP_PARENT = 25;    // Set/clear group parent
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -82,7 +81,7 @@ message TrackCmd {
   int32 aux_track_index = 14;     // Target aux track for send
   float send_level = 15;          // Aux send level [0.0, 1.0]
   bool pre_fader = 16;            // Pre-fader send flag
-  int32 new_track_index = 17;     // Destination for ACTION_REORDER_TRACK
+  // 17 reserved (was new_track_index for ACTION_REORDER_TRACK)
 }
 
 message PluginCmd {

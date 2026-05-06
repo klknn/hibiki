@@ -35,25 +35,72 @@ class TimelineRenderer {
 
     for (int i = 0; i < tracks.size(); i++) {
       if (tracks.get(i).hidden) continue;
+      TimelineView.TrackTimeline track = tracks.get(i);
+
+      // Skip collapsed children (parent is collapsed and this track is a child)
+      if (track.groupParentIndex >= 0
+          && track.groupParentIndex < tracks.size()
+          && tracks.get(track.groupParentIndex).collapsed) {
+        continue;
+      }
+
       int scaleBaseTrack = Theme.getInstance().scale(view.getBaseTrackHeight(i));
       int y = scaleTimeRuler + Theme.getInstance().scale(view.getTrackY(i));
 
-      // Main track label
+      // Background color based on group state
       if (i == selectedTrack) {
         g2.setColor(Theme.getInstance().ACCENT_BLUE.darker());
+      } else if (track.isGroupTrack()) {
+        g2.setColor(new Color(0x3D3520)); // golden-brown for group
+      } else if (track.groupParentIndex >= 0) {
+        g2.setColor(new Color(0x2A2A2A)); // slightly lighter for children
       } else {
         g2.setColor(Theme.getInstance().TRACK_HEADER);
       }
       g2.fillRect(0, y, scaleLabelWidth, scaleBaseTrack - 1);
 
-      TimelineView.TrackTimeline track = tracks.get(i);
+      // Indentation and tree connector lines for child tracks
+      int textX = 5;
+      if (track.groupParentIndex >= 0) {
+        textX = 20; // indent children
+        // Draw tree connector line
+        g2.setColor(new Color(0xCC9933));
+        int treeLineX = 6;
+        // Vertical line from top of track
+        boolean isLastChild = true;
+        for (int j = i + 1; j < tracks.size(); j++) {
+          if (tracks.get(j).groupParentIndex == track.groupParentIndex) {
+            isLastChild = false;
+            break;
+          }
+        }
+        if (isLastChild) {
+          // └── connector: vertical line to mid, then horizontal
+          g2.fillRect(treeLineX, y, 2, scaleBaseTrack / 2);
+          g2.fillRect(treeLineX, y + scaleBaseTrack / 2 - 1, 10, 2);
+        } else {
+          // ├── connector: vertical line full height, horizontal at mid
+          g2.fillRect(treeLineX, y, 2, scaleBaseTrack - 1);
+          g2.fillRect(treeLineX, y + scaleBaseTrack / 2 - 1, 10, 2);
+        }
+      }
+
+      // ▶/▼ toggle for group tracks
+      if (track.isGroupTrack()) {
+        g2.setColor(new Color(0xCC9933));
+        String arrow = track.collapsed ? "▶" : "▼";
+        g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(10.0f)));
+        g2.drawString(arrow, 3, y + 14);
+        textX = 16; // offset for group name after arrow
+      }
 
       // Row 1: Track name
       g2.setColor(Theme.getInstance().TEXT_BRIGHT);
       g2.setFont(Theme.getInstance().FONT_UI_BOLD);
       String displayName = track.getDisplayName();
+      if (track.isGroupTrack()) displayName = "📁 " + displayName;
       if (displayName.length() > 14) displayName = displayName.substring(0, 13) + "…";
-      g2.drawString(displayName, 5, y + 14);
+      g2.drawString(displayName, textX, y + 14);
 
       // Row 2: Plugin name
       g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(9.0f)));

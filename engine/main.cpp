@@ -536,6 +536,10 @@ void playback_thread(ProjectState& state) {
 
         // Determine output destination
         int out_idx = track->output_track_index;
+        // Route child tracks to their group parent's bus
+        if (out_idx < 0 && track->group_parent_index >= 0) {
+          out_idx = track->group_parent_index;
+        }
         auto* dest_l = &mixBufferL;
         auto* dest_r = &mixBufferR;
         if (out_idx >= 0) {

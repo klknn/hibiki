@@ -13,7 +13,6 @@
 #include "engine/core/track.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/commands.pb.h"
-#include "pb/notifications.pb.h"
 
 namespace hibiki {
 
@@ -581,53 +580,6 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
                         track->output_track_index, sends,
                         track->group_parent_index);
       sendAck("SET_AUX_SEND", true);
-      break;
-    }
-    case pb::commands::TrackCmd::ACTION_REORDER_TRACK: {
-      std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      int from_idx = tidx;
-      int to_idx = cmd.new_track_index();
-      if (state.tracks.count(from_idx) == 0) {
-        sendAck("REORDER_TRACK", false);
-        break;
-      }
-      // Extract the track being moved
-      auto moving = std::move(state.tracks[from_idx]);
-      state.tracks.erase(from_idx);
-      // Shift other tracks to make room
-      std::map<int, std::unique_ptr<Track>> new_tracks;
-      // Rebuild with new ordering
-      int pos = 0;
-      bool inserted = false;
-      for (auto& [idx, trk] : state.tracks) {
-        if (pos == to_idx && !inserted) {
-          moving->index = pos;
-          new_tracks[pos] = std::move(moving);
-          inserted = true;
-          pos++;
-        }
-        trk->index = pos;
-        // Update group_parent_index references
-        if (trk->group_parent_index == from_idx) {
-          trk->group_parent_index = to_idx;
-        }
-        new_tracks[pos] = std::move(trk);
-        pos++;
-      }
-      if (!inserted) {
-        moving->index = pos;
-        new_tracks[pos] = std::move(moving);
-      }
-      state.tracks = std::move(new_tracks);
-      // Send full track info refresh
-      for (auto& [idx, trk] : state.tracks) {
-        std::vector<std::tuple<int, float, bool>> s;
-        for (const auto& as : trk->aux_sends)
-          s.emplace_back(as.aux_track_index, as.level, as.pre_fader);
-        sendTrackInfoFull(idx, trk->name, static_cast<int>(trk->track_type),
-                          trk->output_track_index, s, trk->group_parent_index);
-      }
-      sendAck("REORDER_TRACK", true);
       break;
     }
     case pb::commands::TrackCmd::ACTION_SET_GROUP_PARENT: {

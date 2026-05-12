@@ -1,8 +1,8 @@
-package hibiki.ui;
+package hibiki.ui.panels.devices;
 
-import hibiki.BackendManager;
-import hibiki.pb.commands.*;
-import hibiki.pb.core.EntityRef;
+import hibiki.ui.PluginPane;
+import hibiki.ui.Theme;
+import hibiki.ui.panels.KnobPanel;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.*;
@@ -12,7 +12,7 @@ import javax.swing.*;
  * Phaser device panel with Lissajous scope visualization (+20dB boost), mode selector strip, and
  * clockwise arc-knob controls.
  */
-public class PhaserDevicePanel extends JPanel {
+public class PhaserDevicePanel extends AbstractDevicePanel {
   private static final int PARAM_RATE = 0;
   private static final int PARAM_DEPTH = 1;
   private static final int PARAM_FEEDBACK = 2;
@@ -25,11 +25,11 @@ public class PhaserDevicePanel extends JPanel {
   private static final int PARAM_SPREAD = 9;
   private static final int PARAM_SYNC = 10;
   private static final int PARAM_ENABLE = 11;
+  private static final int TOTAL_PARAMS = 12;
 
   private static final String[] MODE_NAMES = {"Phaser", "Chorus", "Flanger", "RingMod", "Disper."};
   private static final String[] LFO_NAMES = {"Sin", "Tri", "Saw", "Sqr"};
 
-  private final int trackIndex, pluginIndex;
   private final KnobPanel rateKnob,
       depthKnob,
       fbKnob,
@@ -48,8 +48,7 @@ public class PhaserDevicePanel extends JPanel {
   private float[] scopeR = new float[256];
 
   public PhaserDevicePanel(int trackIndex, int pluginIndex) {
-    this.trackIndex = trackIndex;
-    this.pluginIndex = pluginIndex;
+    super(trackIndex, pluginIndex, TOTAL_PARAMS);
     Theme theme = Theme.getInstance();
 
     setLayout(new BorderLayout());
@@ -297,7 +296,8 @@ public class PhaserDevicePanel extends JPanel {
             @Override
             protected void paintComponent(Graphics g) {
               super.paintComponent(g);
-              paintArcKnob((Graphics2D) g.create(), getWidth(), getHeight(), value);
+              paintArcKnob(
+                  (Graphics2D) g.create(), getWidth(), getHeight(), value, new Color(0xE040FB));
             }
           };
       knobArea.setOpaque(false);
@@ -343,50 +343,4 @@ public class PhaserDevicePanel extends JPanel {
   }
 
   /** Arc knob matching existing panel convention: clockwise 0→100%. */
-  private static void paintArcKnob(Graphics2D g2, int w, int h, double value) {
-    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-    int sz = Math.min(w, h) - 4;
-    int kx = (w - sz) / 2, ky = (h - sz) / 2;
-    g2.setColor(new Color(0x3A3A3A));
-    g2.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-    g2.drawArc(kx, ky, sz, sz, 225, -270);
-    g2.setColor(new Color(0x4A9BD9));
-    g2.drawArc(kx, ky, sz, sz, 225, (int) (-270 * value));
-    g2.setColor(new Color(0xEEEEEE));
-    double angle = Math.toRadians(225 - 270 * value);
-    int cx = kx + sz / 2 + (int) ((sz / 2 - 2) * Math.cos(angle));
-    int cy = ky + sz / 2 - (int) ((sz / 2 - 2) * Math.sin(angle));
-    g2.fillOval(cx - 2, cy - 2, 5, 5);
-    g2.dispose();
-  }
-
-  private void sendParam(int paramId, double value) {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex))
-                        .setParamId(paramId)
-                        .setParamValue((float) value))
-                .build());
-  }
-
-  private void sendRemove() {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_REMOVE)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex)))
-                .build());
-  }
 }

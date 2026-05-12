@@ -1,8 +1,7 @@
-package hibiki.ui;
+package hibiki.ui.panels.devices;
 
-import hibiki.BackendManager;
-import hibiki.pb.commands.*;
-import hibiki.pb.core.EntityRef;
+import hibiki.ui.PluginPane;
+import hibiki.ui.Theme;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.*;
@@ -14,7 +13,7 @@ import javax.swing.*;
  * draggable band handles, shift-drag Q control, double-click to create bands, and real-time FFT
  * spectrum overlay.
  */
-public class EqDevicePanel extends JPanel {
+public class EqDevicePanel extends AbstractDevicePanel {
   private static final int NUM_BANDS = 8;
   private static final int PARAMS_PER_BAND = 4; // type, freq, gain, q
 
@@ -30,24 +29,18 @@ public class EqDevicePanel extends JPanel {
   // Normalized values for each type (matching C++ thresholds)
   private static final double[] TYPE_NORM = {0.0, 0.2, 0.4, 0.6, 0.8, 1.0};
 
+  private static final int TOTAL_PARAMS = NUM_BANDS * PARAMS_PER_BAND + 1;
+
   // Band colors (Ableton-style rainbow)
   private static final Color[] BAND_COLORS = {
     new Color(0xE04040), new Color(0xE07020), new Color(0xD0C020),
     new Color(0x40B040), new Color(0x30A0A0), new Color(0x4080E0),
     new Color(0x8060D0), new Color(0xC050A0),
   };
-
-  private final int trackIndex;
-  private final int pluginIndex;
-  private final double[] params = new double[NUM_BANDS * PARAMS_PER_BAND + 1];
   private boolean enabled = true;
   private final CurvePanel curvePanel;
   private final JPanel bandControlsPanel;
   private final JComboBox<String>[] typeDropdowns;
-  private boolean updatingFromBackend = false;
-
-  /** Callback invoked when user clicks Mod button; set by PluginPane wrapper. */
-  public Runnable modToggleCallback;
 
   // FFT spectrum data (64 bins, log-spaced 20Hz-20kHz)
   private float[] spectrumInputDb = null;
@@ -55,8 +48,7 @@ public class EqDevicePanel extends JPanel {
 
   @SuppressWarnings("unchecked")
   public EqDevicePanel(int trackIndex, int pluginIndex) {
-    this.trackIndex = trackIndex;
-    this.pluginIndex = pluginIndex;
+    super(trackIndex, pluginIndex, TOTAL_PARAMS);
 
     // Initialize default params
     double[] defaultFreqs = {30, 80, 250, 700, 2000, 5000, 10000, 16000};
@@ -641,34 +633,4 @@ public class EqDevicePanel extends JPanel {
   }
 
   // ─── Backend communication ──────────────────────────────────────
-
-  private void sendParam(int paramId, double value) {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex))
-                        .setParamId(paramId)
-                        .setParamValue((float) value))
-                .build());
-  }
-
-  private void sendRemove() {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_REMOVE)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex)))
-                .build());
-  }
 }

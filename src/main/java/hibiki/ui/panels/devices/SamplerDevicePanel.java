@@ -1,8 +1,11 @@
-package hibiki.ui;
+package hibiki.ui.panels.devices;
 
 import hibiki.BackendManager;
 import hibiki.pb.commands.*;
 import hibiki.pb.core.EntityRef;
+import hibiki.ui.PluginPane;
+import hibiki.ui.Theme;
+import hibiki.ui.panels.KnobPanel;
 import java.awt.*;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.*;
@@ -17,7 +20,7 @@ import javax.swing.filechooser.FileNameExtensionFilter;
  * Ableton Simpler-style single-waveform sampler panel. Top: waveform display with draggable
  * start/end markers. Bottom: root note, gain ADSR, filter section.
  */
-public class SamplerDevicePanel extends JPanel {
+public class SamplerDevicePanel extends AbstractDevicePanel {
   private static final int TOTAL_PARAMS = 17;
 
   // Param IDs (matching C++ BuiltinSampler::ParamId)
@@ -32,21 +35,13 @@ public class SamplerDevicePanel extends JPanel {
   private static final String[] NOTE_NAMES = {
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
   };
-
-  private final int trackIndex;
-  private final int pluginIndex;
-  private final double[] params = new double[TOTAL_PARAMS];
   private boolean enabled = true;
   private float[] waveform = null;
   private String sampleName = "(no sample)";
   private final WaveformPanel waveformPanel;
 
-  /** Callback invoked when user clicks Mod button; set by PluginPane wrapper. */
-  public Runnable modToggleCallback;
-
   public SamplerDevicePanel(int trackIndex, int pluginIndex) {
-    this.trackIndex = trackIndex;
-    this.pluginIndex = pluginIndex;
+    super(trackIndex, pluginIndex, TOTAL_PARAMS);
 
     // Defaults
     params[P_SAMPLE_END] = 1.0;
@@ -463,22 +458,6 @@ public class SamplerDevicePanel extends JPanel {
     return p;
   }
 
-  private void sendParam(int paramId, double value) {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex))
-                        .setParamId(paramId)
-                        .setParamValue((float) value))
-                .build());
-  }
-
   // ── Mini arc-knob ─────────────────────────────────────────
   private class KnobPanel extends JPanel {
     protected double value;
@@ -536,19 +515,5 @@ public class SamplerDevicePanel extends JPanel {
       g2.fillOval(cx - 2, cy - 2, 4, 4);
       g2.dispose();
     }
-  }
-
-  private void sendRemove() {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_REMOVE)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex)))
-                .build());
   }
 }

@@ -1,20 +1,18 @@
-package hibiki.ui;
+package hibiki.ui.panels.devices;
 
-import hibiki.BackendManager;
-import hibiki.pb.commands.*;
-import hibiki.pb.core.EntityRef;
+import hibiki.ui.PluginPane;
+import hibiki.ui.Theme;
+import hibiki.ui.panels.KnobPanel;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.*;
 import javax.swing.*;
-import javax.swing.event.ChangeEvent;
-import javax.swing.event.ChangeListener;
 
 /**
  * Ableton Live-style Compressor device panel. Shows a transfer curve (input vs output dB), gain
  * reduction meter, and parameter knobs.
  */
-public class CompressorDevicePanel extends JPanel {
+public class CompressorDevicePanel extends AbstractDevicePanel {
   // Parameter IDs (matching C++ BuiltinCompressor::ParamId)
   private static final int PARAM_THRESHOLD = 0;
   private static final int PARAM_RATIO = 1;
@@ -30,19 +28,13 @@ public class CompressorDevicePanel extends JPanel {
   private static final String[] PARAM_NAMES = {
     "Thresh", "Ratio", "Attack", "Release", "Knee", "Makeup", "Enable", "UpThresh", "UpRatio"
   };
+  private static final Color ACCENT = new Color(0xCD853F);
 
-  private final int trackIndex;
-  private final int pluginIndex;
-  private final double[] params = new double[TOTAL_PARAMS];
   private boolean enabled = true;
   private float gainReductionDb = 0;
   private final TransferCurvePanel curvePanel;
   private final GrMeterPanel grMeter;
   private final KnobPanel[] knobs = new KnobPanel[8]; // threshold..makeup + upthresh, upratio
-  private boolean updatingFromBackend = false;
-
-  /** Callback invoked when user clicks Mod button; set by PluginPane wrapper. */
-  public Runnable modToggleCallback;
 
   // Real-time I/O levels for transfer curve dot
   private float inputLevelDb = -200;
@@ -50,8 +42,7 @@ public class CompressorDevicePanel extends JPanel {
   private float sidechainLevelDb = -200;
 
   public CompressorDevicePanel(int trackIndex, int pluginIndex) {
-    this.trackIndex = trackIndex;
-    this.pluginIndex = pluginIndex;
+    super(trackIndex, pluginIndex, TOTAL_PARAMS);
 
     // Defaults (matching C++)
     params[PARAM_THRESHOLD] = 1.0; // 0 dB
@@ -139,7 +130,8 @@ public class CompressorDevicePanel extends JPanel {
     int[] knobParamIds = {0, 1, 2, 3, 4, 5, 7, 8};
     for (int k = 0; k < 8; k++) {
       final int paramId = knobParamIds[k];
-      knobs[k] = new KnobPanel(PARAM_NAMES[paramId], params[paramId]);
+      knobs[k] =
+          new KnobPanel(PARAM_NAMES[paramId], params[paramId], makeFormatter(paramId), ACCENT);
       knobs[k].addChangeListener(
           e -> {
             if (updatingFromBackend) return;
@@ -377,130 +369,20 @@ public class CompressorDevicePanel extends JPanel {
     }
   }
 
-  // ─── Knob panel ────────────────────────────────────────────────
-
-  private class KnobPanel extends JPanel {
-    private double value;
-    private final String name;
-    private final java.util.List<ChangeListener> listeners = new java.util.ArrayList<>();
-    private int dragStartY;
-    private final JLabel nameLabel;
-    private final JLabel valLabel;
-
-    KnobPanel(String name, double initialValue) {
-      this.name = name;
-      this.value = initialValue;
-      Theme theme = Theme.getInstance();
-      setBackground(theme.BG_DARK);
-      setLayout(new BorderLayout());
-
-      nameLabel = new JLabel(name, SwingConstants.CENTER);
-      nameLabel.setForeground(theme.TEXT_DIM);
-      nameLabel.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
-      add(nameLabel, BorderLayout.NORTH);
-
-      // Arc knob canvas
-      JPanel knobCanvas =
-          new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-              super.paintComponent(g);
-              Graphics2D g2 = (Graphics2D) g.create();
-              g2.setRenderingHint(
-                  RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-              int sz = Math.min(getWidth(), getHeight()) - 4;
-              int kx = (getWidth() - sz) / 2;
-              int ky = (getHeight() - sz) / 2;
-
-              // Background arc
-              g2.setColor(new Color(0x3A3A3A));
-              g2.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-              g2.drawArc(kx, ky, sz, sz, 225, -270);
-
-              // Value arc
-              int arcAngle = (int) (-270 * value);
-              g2.setColor(new Color(0xCD853F));
-              g2.drawArc(kx, ky, sz, sz, 225, arcAngle);
-
-              // Indicator dot
-              g2.setColor(new Color(0xEEEEEE));
-              double angle = Math.toRadians(225 - 270 * value);
-              int cx = kx + sz / 2 + (int) ((sz / 2 - 2) * Math.cos(angle));
-              int cy = ky + sz / 2 - (int) ((sz / 2 - 2) * Math.sin(angle));
-              g2.fillOval(cx - 2, cy - 2, 5, 5);
-
-              g2.dispose();
-            }
-          };
-      knobCanvas.setOpaque(false);
-      knobCanvas.setPreferredSize(new Dimension(theme.scale(32), theme.scale(32)));
-      knobCanvas.setCursor(Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR));
-      knobCanvas.addMouseListener(
-          new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-              dragStartY = e.getY();
-            }
-          });
-      knobCanvas.addMouseMotionListener(
-          new MouseMotionAdapter() {
-            @Override
-            public void mouseDragged(MouseEvent e) {
-              int dy = dragStartY - e.getY();
-              dragStartY = e.getY();
-              value = Math.max(0.0, Math.min(1.0, value + dy * 0.005));
-              valLabel.setText(formatValue(value));
-              knobCanvas.repaint();
-              for (ChangeListener l : listeners) {
-                l.stateChanged(new ChangeEvent(KnobPanel.this));
-              }
-            }
-          });
-      add(knobCanvas, BorderLayout.CENTER);
-
-      // Value display
-      valLabel = new JLabel(formatValue(initialValue), SwingConstants.CENTER);
-      valLabel.setForeground(theme.TEXT_LIGHT);
-      valLabel.setFont(theme.FONT_UI.deriveFont(theme.scale(8.0f)));
-      add(valLabel, BorderLayout.SOUTH);
-    }
-
-    double getValue() {
-      return value;
-    }
-
-    void setValue(double v) {
-      this.value = v;
-      valLabel.setText(formatValue(v));
-      repaint();
-    }
-
-    void addChangeListener(ChangeListener l) {
-      listeners.add(l);
-    }
-
-    private String formatValue(double norm) {
-      if ("Thresh".equals(name)) return String.format("%.1f dB", norm * 60 - 60);
-      if ("Ratio".equals(name)) {
-        float r = normToRatioStatic(norm);
+  private ValueFormatter makeFormatter(int paramId) {
+    return norm -> {
+      if (paramId == PARAM_THRESHOLD) return String.format("%.1f dB", norm * 60 - 60);
+      if (paramId == PARAM_RATIO || paramId == PARAM_UP_RATIO) {
+        float r = normToRatio(norm);
         return r > 100 ? "\u221E:1" : String.format("%.1f:1", r);
       }
-      if ("Attack".equals(name)) return String.format("%.1f ms", 0.1 * Math.pow(1000, norm));
-      if ("Release".equals(name)) return String.format("%.0f ms", 10.0 * Math.pow(100, norm));
-      if ("Knee".equals(name)) return String.format("%.1f dB", norm * 30);
-      if ("Makeup".equals(name)) return String.format("%.1f dB", norm * 30);
-      if ("UpThresh".equals(name)) return String.format("%.1f dB", norm * 72 - 60);
-      if ("UpRatio".equals(name)) {
-        float r = normToRatioStatic(norm);
-        return r > 100 ? "\u221E:1" : String.format("%.1f:1", r);
-      }
+      if (paramId == PARAM_ATTACK) return String.format("%.1f ms", 0.1 * Math.pow(1000, norm));
+      if (paramId == PARAM_RELEASE) return String.format("%.0f ms", 10.0 * Math.pow(100, norm));
+      if (paramId == PARAM_KNEE) return String.format("%.1f dB", norm * 30);
+      if (paramId == PARAM_MAKEUP) return String.format("%.1f dB", norm * 30);
+      if (paramId == PARAM_UP_THRESHOLD) return String.format("%.1f dB", norm * 72 - 60);
       return String.format("%.2f", norm);
-    }
-
-    private float normToRatioStatic(double norm) {
-      if (norm >= 0.999) return 1000;
-      return 1.0f / (1.0f - (float) norm);
-    }
+    };
   }
 
   // ─── Param mapping (matching C++) ──────────────────────────────
@@ -541,37 +423,5 @@ public class CompressorDevicePanel extends JPanel {
 
   private static float normToUpThreshold(double norm) {
     return (float) (norm * 72.0 - 60.0);
-  }
-
-  // ─── Backend communication ─────────────────────────────────────
-
-  private void sendParam(int paramId, double value) {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex))
-                        .setParamId(paramId)
-                        .setParamValue((float) value))
-                .build());
-  }
-
-  private void sendRemove() {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_REMOVE)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex)))
-                .build());
   }
 }

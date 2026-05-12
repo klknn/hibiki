@@ -1,8 +1,8 @@
-package hibiki.ui;
+package hibiki.ui.panels.devices;
 
-import hibiki.BackendManager;
-import hibiki.pb.commands.*;
-import hibiki.pb.core.EntityRef;
+import hibiki.ui.PluginPane;
+import hibiki.ui.Theme;
+import hibiki.ui.panels.KnobPanel;
 import java.awt.*;
 import java.awt.event.*;
 import javax.swing.*;
@@ -11,7 +11,7 @@ import javax.swing.*;
  * FL Studio 3xOSC-style synthesizer panel. 3 oscillators (sin/saw/square/tri) with coarse/fine
  * tune, volume, pan. Global gain ADSR + filter (LP/HP/BP) with ADSR modulation.
  */
-public class ThreeOscDevicePanel extends JPanel {
+public class ThreeOscDevicePanel extends AbstractDevicePanel {
   private static final int NUM_OSC = 3;
   private static final int PARAMS_PER_OSC = 5; // waveform, coarse, fine, vol, pan
   private static final int OSC_PARAMS = NUM_OSC * PARAMS_PER_OSC; // 15
@@ -27,18 +27,10 @@ public class ThreeOscDevicePanel extends JPanel {
   private static final double[] WAVE_NORMS = {0.0, 0.33, 0.67, 1.0};
   private static final String[] FILT_NAMES = {"LP", "HP", "BP"};
   private static final double[] FILT_NORMS = {0.0, 0.5, 1.0};
-
-  private final int trackIndex;
-  private final int pluginIndex;
-  private final double[] params = new double[TOTAL_PARAMS];
   private boolean enabled = true;
 
-  /** Callback invoked when user clicks Mod button; set by PluginPane wrapper. */
-  public Runnable modToggleCallback;
-
   public ThreeOscDevicePanel(int trackIndex, int pluginIndex) {
-    this.trackIndex = trackIndex;
-    this.pluginIndex = pluginIndex;
+    super(trackIndex, pluginIndex, TOTAL_PARAMS);
 
     // Set defaults
     params[3] = 1.0; // osc1 vol
@@ -283,22 +275,6 @@ public class ThreeOscDevicePanel extends JPanel {
     }
   }
 
-  private void sendParam(int paramId, double value) {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex))
-                        .setParamId(paramId)
-                        .setParamValue((float) value))
-                .build());
-  }
-
   // ── Mini arc-knob ─────────────────────────────────────────
   private class KnobPanel extends JPanel {
     private double value;
@@ -361,19 +337,5 @@ public class ThreeOscDevicePanel extends JPanel {
 
       g2.dispose();
     }
-  }
-
-  private void sendRemove() {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_REMOVE)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex)))
-                .build());
   }
 }

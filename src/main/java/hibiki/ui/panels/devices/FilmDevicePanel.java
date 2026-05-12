@@ -1,8 +1,9 @@
-package hibiki.ui;
+package hibiki.ui.panels.devices;
 
-import hibiki.BackendManager;
-import hibiki.pb.commands.*;
-import hibiki.pb.core.EntityRef;
+import hibiki.ui.EnvelopeEditorPanel;
+import hibiki.ui.PluginPane;
+import hibiki.ui.Theme;
+import hibiki.ui.panels.KnobPanel;
 import java.awt.*;
 import java.awt.event.*;
 import javax.swing.*;
@@ -11,21 +12,22 @@ import javax.swing.*;
  * FilM 6-operator FM Synthesizer device panel. Sytrus-inspired layout: left side has tabbed content
  * (Main/Op1-6/Filter1-3/FX), right side has always-visible 6×12 modulation matrix.
  */
-public class FilmDevicePanel extends JPanel {
-  static final int NUM_OPS = 6;
-  static final int NUM_FILTERS = 3;
-  static final int PARAMS_PER_OP = 38;
-  static final int PARAMS_PER_FILTER = 12;
+public class FilmDevicePanel extends AbstractDevicePanel {
+  public static final int NUM_OPS = 6;
+  public static final int NUM_FILTERS = 3;
+  public static final int PARAMS_PER_OP = 38;
+  public static final int PARAMS_PER_FILTER = 12;
   private static final int OP_PARAMS = NUM_OPS * PARAMS_PER_OP; // 138
   private static final int FILTER_PARAMS = NUM_FILTERS * PARAMS_PER_FILTER; // 36
-  static final int NUM_GLOBAL = 8;
+  public static final int NUM_GLOBAL = 8;
   private static final int MATRIX_COLS = 12;
   private static final int MATRIX_PARAMS = NUM_OPS * MATRIX_COLS; // 72
   // Multi-point envelope fixed-slot params.
-  static final int MAX_ENV_POINTS = 16;
+  public static final int MAX_ENV_POINTS = 16;
   private static final int MP_SLOT_PARAMS = 3; // time, value, tension
   private static final int MP_META_PARAMS = 2; // count, sustain_idx
-  static final int MP_PARAMS_PER_ENV = MP_META_PARAMS + MAX_ENV_POINTS * MP_SLOT_PARAMS; // 50
+  public static final int MP_PARAMS_PER_ENV =
+      MP_META_PARAMS + MAX_ENV_POINTS * MP_SLOT_PARAMS; // 50
   private static final int NUM_MP_ENVS = NUM_OPS + NUM_FILTERS; // 9
   private static final int MP_TOTAL = NUM_MP_ENVS * MP_PARAMS_PER_ENV; // 450
   private static final int MATRIX_BASE = OP_PARAMS + FILTER_PARAMS + NUM_GLOBAL;
@@ -54,7 +56,7 @@ public class FilmDevicePanel extends JPanel {
   private static final int G_RM_MODE = G_ALGORITHM + 7;
 
   // Per-op param offsets (relative)
-  static final int OP_WAVEFORM = 0, OP_LEVEL = 1, OP_RATIO = 2, OP_FINE = 3;
+  public static final int OP_WAVEFORM = 0, OP_LEVEL = 1, OP_RATIO = 2, OP_FINE = 3;
   private static final int OP_ENV_A = 4, OP_ENV_D = 5, OP_ENV_S = 6, OP_ENV_R = 7;
   private static final int OP_FEEDBACK = 8, OP_PAN = 9;
   private static final int OP_LFO_RATE = 10, OP_LFO_DEPTH = 11, OP_LFO_WAVE = 12, OP_PHASE = 13;
@@ -75,10 +77,6 @@ public class FilmDevicePanel extends JPanel {
   private static final int FLT_ENV_A = 3, FLT_ENV_D = 4, FLT_ENV_S = 5, FLT_ENV_R = 6;
   private static final int FLT_ENV_DEPTH = 7, FLT_MIX = 8;
   private static final int FLT_LFO_RATE = 9, FLT_LFO_DEPTH = 10, FLT_LFO_WAVE = 11;
-
-  private final int trackIndex;
-  private final int pluginIndex;
-  private final double[] params = new double[TOTAL_PARAMS];
   private boolean enabled = true;
   private final KnobPanel[] matrixKnobs = new KnobPanel[MATRIX_PARAMS];
   private final java.util.Map<Integer, KnobPanel> allKnobs = new java.util.HashMap<>();
@@ -104,8 +102,7 @@ public class FilmDevicePanel extends JPanel {
   private static final Color MATRIX_INACTIVE = new Color(0x444450);
 
   public FilmDevicePanel(int trackIndex, int pluginIndex) {
-    this.trackIndex = trackIndex;
-    this.pluginIndex = pluginIndex;
+    super(trackIndex, pluginIndex, TOTAL_PARAMS);
     initDefaults();
 
     setLayout(new BorderLayout());
@@ -755,44 +752,14 @@ public class FilmDevicePanel extends JPanel {
   }
 
   /** Test accessor: get the params[] array value for a given paramId. */
-  double getParamValue(int paramId) {
+  public double getParamValue(int paramId) {
     return params[paramId];
   }
 
   /** Test accessor: get the KnobPanel's rendered value for a given paramId. */
-  double getKnobValue(int paramId) {
+  public double getKnobValue(int paramId) {
     KnobPanel knob = allKnobs.get(paramId);
     return knob != null ? knob.value : Double.NaN;
-  }
-
-  private void sendParam(int paramId, double value) {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex))
-                        .setParamId(paramId)
-                        .setParamValue((float) value))
-                .build());
-  }
-
-  private void sendRemove() {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_REMOVE)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex)))
-                .build());
   }
 
   // ── KnobPanel ───────────────────────────────────────────────

@@ -1,8 +1,8 @@
-package hibiki.ui;
+package hibiki.ui.panels.devices;
 
-import hibiki.BackendManager;
-import hibiki.pb.commands.*;
-import hibiki.pb.core.EntityRef;
+import hibiki.ui.PluginPane;
+import hibiki.ui.Theme;
+import hibiki.ui.panels.KnobPanel;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.*;
@@ -12,7 +12,7 @@ import javax.swing.*;
  * Envelope Shaper device panel with interactive curve editor, audio envelope visualization,
  * catmull-rom smoothing display, and arc-knob controls.
  */
-public class EnvelopeShaperDevicePanel extends JPanel {
+public class EnvelopeShaperDevicePanel extends AbstractDevicePanel {
   private static final int PARAM_MIX = 0;
   private static final int PARAM_RATE = 1;
   private static final int PARAM_SMOOTH = 2;
@@ -21,8 +21,8 @@ public class EnvelopeShaperDevicePanel extends JPanel {
   private static final int PARAM_POINT_Y_0 = 5;
   private static final int PARAM_NUM_POINTS = 21;
   private static final int MAX_POINTS = 16;
+  private static final int TOTAL_PARAMS = PARAM_NUM_POINTS + 1;
 
-  private final int trackIndex, pluginIndex;
   private final KnobPanel mixKnob, rateKnob, smoothKnob;
   private final JComboBox<String> modeCombo;
   private final JToggleButton enableBtn;
@@ -46,8 +46,7 @@ public class EnvelopeShaperDevicePanel extends JPanel {
   private static final double[] MODE_VALUES = {0.0, 0.15, 0.4, 0.8};
 
   public EnvelopeShaperDevicePanel(int trackIndex, int pluginIndex) {
-    this.trackIndex = trackIndex;
-    this.pluginIndex = pluginIndex;
+    super(trackIndex, pluginIndex, TOTAL_PARAMS);
     Theme theme = Theme.getInstance();
 
     setLayout(new BorderLayout());
@@ -398,7 +397,7 @@ public class EnvelopeShaperDevicePanel extends JPanel {
           new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
-              paintArcKnob((Graphics2D) g, getWidth(), getHeight(), value);
+              paintArcKnob((Graphics2D) g, getWidth(), getHeight(), value, new Color(0x8BC34A));
             }
           };
       knobArea.setOpaque(false);
@@ -447,50 +446,4 @@ public class EnvelopeShaperDevicePanel extends JPanel {
   }
 
   /** Arc knob matching existing panel convention: clockwise 0→100%. */
-  private static void paintArcKnob(Graphics2D g2, int w, int h, double value) {
-    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-    int sz = Math.min(w, h) - 4;
-    int kx = (w - sz) / 2, ky = (h - sz) / 2;
-    g2.setColor(new Color(0x3A3A3A));
-    g2.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-    g2.drawArc(kx, ky, sz, sz, 225, -270);
-    g2.setColor(new Color(0xFF8800));
-    g2.drawArc(kx, ky, sz, sz, 225, (int) (-270 * value));
-    g2.setColor(new Color(0xEEEEEE));
-    double angle = Math.toRadians(225 - 270 * value);
-    int cx = kx + sz / 2 + (int) ((sz / 2 - 2) * Math.cos(angle));
-    int cy = ky + sz / 2 - (int) ((sz / 2 - 2) * Math.sin(angle));
-    g2.fillOval(cx - 2, cy - 2, 5, 5);
-    g2.dispose();
-  }
-
-  private void sendParam(int paramId, double value) {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex))
-                        .setParamId(paramId)
-                        .setParamValue((float) value))
-                .build());
-  }
-
-  private void sendRemove() {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_REMOVE)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex)))
-                .build());
-  }
 }

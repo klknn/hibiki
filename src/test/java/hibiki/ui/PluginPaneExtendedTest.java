@@ -3,6 +3,8 @@ package hibiki.ui;
 import static org.junit.Assert.*;
 
 import hibiki.pb.notifications.*;
+import hibiki.ui.panels.*;
+import hibiki.ui.panels.devices.*;
 import org.junit.Test;
 
 /**

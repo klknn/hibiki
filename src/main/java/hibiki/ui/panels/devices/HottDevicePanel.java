@@ -1,8 +1,8 @@
-package hibiki.ui;
+package hibiki.ui.panels.devices;
 
-import hibiki.BackendManager;
-import hibiki.pb.commands.*;
-import hibiki.pb.core.EntityRef;
+import hibiki.ui.PluginPane;
+import hibiki.ui.Theme;
+import hibiki.ui.panels.KnobPanel;
 import java.awt.*;
 import java.awt.event.*;
 import javax.swing.*;
@@ -16,7 +16,7 @@ import javax.swing.event.ChangeListener;
  *
  * <p>Reference: https://www.makou.com/available-xfer-ott-parameters/
  */
-public class HottDevicePanel extends JPanel {
+public class HottDevicePanel extends AbstractDevicePanel {
   // Parameter IDs matching C++ BuiltinHott::ParamId
   private static final int PARAM_LOW_XOVER = 0;
   private static final int PARAM_HIGH_XOVER = 1;
@@ -59,10 +59,6 @@ public class HottDevicePanel extends JPanel {
   private static final int TAB_TIME = 0;
   private static final int TAB_BELOW = 1;
   private static final int TAB_ABOVE = 2;
-
-  private final int trackIndex;
-  private final int pluginIndex;
-  private final double[] params = new double[TOTAL_PARAMS];
   private boolean enabled = true;
   private final float[] bandGrDb = {0, 0, 0};
   private float inputDb = -200, outputDb = -200;
@@ -73,14 +69,9 @@ public class HottDevicePanel extends JPanel {
   private final BandMeterPanel meterPanel;
   private JToggleButton softKneeBtn, rmsBtn;
   private JToggleButton tabT, tabB, tabA;
-  private boolean updatingFromBackend = false;
-
-  /** Callback invoked when user clicks Mod button; set by PluginPane wrapper. */
-  public Runnable modToggleCallback;
 
   public HottDevicePanel(int trackIndex, int pluginIndex) {
-    this.trackIndex = trackIndex;
-    this.pluginIndex = pluginIndex;
+    super(trackIndex, pluginIndex, TOTAL_PARAMS);
 
     // Defaults matching C++ BuiltinHott::reset()
     params[PARAM_LOW_XOVER] = 0.461;
@@ -922,34 +913,4 @@ public class HottDevicePanel extends JPanel {
   }
 
   // ─── Backend communication ──────────────────────────────────────
-
-  private void sendParam(int paramId, double value) {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex))
-                        .setParamId(paramId)
-                        .setParamValue((float) value))
-                .build());
-  }
-
-  private void sendRemove() {
-    BackendManager.getInstance()
-        .sendRequest(
-            Request.newBuilder()
-                .setPlugin(
-                    PluginCmd.newBuilder()
-                        .setAction(PluginCmd.Action.ACTION_REMOVE)
-                        .setTarget(
-                            EntityRef.newBuilder()
-                                .setTrackIndex(trackIndex)
-                                .setPluginIndex(pluginIndex)))
-                .build());
-  }
 }

@@ -6,6 +6,8 @@ import hibiki.pb.core.EntityRef;
 import hibiki.pb.notifications.*;
 import hibiki.pb.notifications.ModulationSlotInfo;
 import hibiki.pb.notifications.ParamInfo;
+import hibiki.ui.panels.*;
+import hibiki.ui.panels.devices.*;
 import java.awt.*;
 import java.awt.datatransfer.*;
 import java.awt.dnd.*;
@@ -577,7 +579,7 @@ public class PluginPane extends JPanel {
    * Static helper to show sidechain source popup menu for any device panel. Called by built-in
    * device panels (Compressor, EQ, Hott, etc.) and DevicePanel.
    */
-  static void showSidechainPopup(JButton source, int trackIndex, int pluginIndex) {
+  public static void showSidechainPopup(JButton source, int trackIndex, int pluginIndex) {
     PluginPane pane = getInstance();
     if (pane == null) return;
 

@@ -8,7 +8,46 @@ namespace hibiki {
 static const std::string kMaximName = "Maxim";
 static const std::string kMaximPath = "builtin://maxim";
 
-// --- BandProcessor Implementation ---
+// --- BandProcessor Definition & Implementation ---
+
+struct BuiltinMaxim::BandProcessor {
+  double sample_rate = 44100.0;
+  float envelope_db = 0.0f;
+  float limiter_envelope = 1.0f;
+  std::vector<float> la_l, la_r;
+  int la_write = 0;
+  float max_gr_db = 0.0f;
+  float peak_in_db = -200.0f;
+  float peak_out_db = -200.0f;
+
+  void init(double sample_rate) {
+    this->sample_rate = sample_rate;
+    la_l.resize(kMaxLookahead, 0.0f);
+    la_r.resize(kMaxLookahead, 0.0f);
+    reset();
+  }
+
+  void reset() {
+    envelope_db = 0.0f;
+    limiter_envelope = 1.0f;
+    std::fill(la_l.begin(), la_l.end(), 0.0f);
+    std::fill(la_r.begin(), la_r.end(), 0.0f);
+    la_write = 0;
+    max_gr_db = 0.0f;
+    peak_in_db = -200.0f;
+    peak_out_db = -200.0f;
+  }
+
+  void process(float* in_l, float* in_r, float* out_l, float* out_r,
+               int num_samples, float pre_gain_db, float post_gain_db,
+               float sat_amount, float sat_threshold_db, float thresh_db,
+               float ratio, float knee_db, float attack_ms, float release_ms,
+               float ceiling_db, float lookahead_ms);
+
+  static float saturate(float x, float threshold, float amount);
+  static float computeGainReduction(float input_db, float threshold,
+                                    float ratio, float knee_db);
+};
 
 void BuiltinMaxim::BandProcessor::process(
     float* in_l, float* in_r, float* out_l, float* out_r, int num_samples,
@@ -21,18 +60,18 @@ void BuiltinMaxim::BandProcessor::process(
   float ceiling_lin = std::pow(10.0f, ceiling_db / 20.0f);
 
   float att_coeff =
-      std::exp(-1.0f / (attack_ms * 0.001f * (float)sample_rate_));
+      std::exp(-1.0f / (attack_ms * 0.001f * (float)sample_rate));
   float rel_coeff =
-      std::exp(-1.0f / (release_ms * 0.001f * (float)sample_rate_));
+      std::exp(-1.0f / (release_ms * 0.001f * (float)sample_rate));
 
   // Faster release for limiter to avoid prolonged pumping
   float lim_release_ms = std::max(5.0f, release_ms * 0.5f);
   float lim_release_coeff =
-      std::exp(-1.0f / (lim_release_ms * 0.001f * (float)sample_rate_));
+      std::exp(-1.0f / (lim_release_ms * 0.001f * (float)sample_rate));
 
   int la_samples = std::clamp(
-      (int)(lookahead_ms * 0.001f * (float)sample_rate_), 0, kMaxLookahead - 1);
-  int buf_size = (int)la_l_.size();
+      (int)(lookahead_ms * 0.001f * (float)sample_rate), 0, kMaxLookahead - 1);
+  int buf_size = (int)la_l.size();
 
   float current_max_gr = 0.0f;
   float current_peak_in = -200.0f;
@@ -57,35 +96,35 @@ void BuiltinMaxim::BandProcessor::process(
         (comp_in_abs > 1e-10f) ? 20.0f * std::log10(comp_in_abs) : -200.0f;
 
     float gr_db = computeGainReduction(comp_in_db, thresh_db, ratio, knee_db);
-    if (gr_db < envelope_db_) {
-      envelope_db_ = att_coeff * envelope_db_ + (1.0f - att_coeff) * gr_db;
+    if (gr_db < envelope_db) {
+      envelope_db = att_coeff * envelope_db + (1.0f - att_coeff) * gr_db;
     } else {
-      envelope_db_ = rel_coeff * envelope_db_ + (1.0f - rel_coeff) * gr_db;
+      envelope_db = rel_coeff * envelope_db + (1.0f - rel_coeff) * gr_db;
     }
 
-    float comp_gain = std::pow(10.0f, envelope_db_ / 20.0f);
+    float comp_gain = std::pow(10.0f, envelope_db / 20.0f);
     x_l *= comp_gain;
     x_r *= comp_gain;
 
     // 4. Lookahead Ceiling Limiter
-    la_l_[la_write_] = x_l;
-    la_r_[la_write_] = x_r;
+    la_l[la_write] = x_l;
+    la_r[la_write] = x_r;
 
     float peak = std::max(std::abs(x_l), std::abs(x_r));
     float target = (peak > ceiling_lin) ? ceiling_lin / peak : 1.0f;
 
-    if (target < limiter_envelope_) {
-      limiter_envelope_ = target;
+    if (target < limiter_envelope) {
+      limiter_envelope = target;
     } else {
-      limiter_envelope_ = limiter_envelope_ * lim_release_coeff +
-                          target * (1.0f - lim_release_coeff);
+      limiter_envelope = limiter_envelope * lim_release_coeff +
+                         target * (1.0f - lim_release_coeff);
     }
 
-    int la_read = (la_write_ - la_samples + buf_size) % buf_size;
-    float out_sample_l = la_l_[la_read] * limiter_envelope_;
-    float out_sample_r = la_r_[la_read] * limiter_envelope_;
+    int la_read = (la_write - la_samples + buf_size) % buf_size;
+    float out_sample_l = la_l[la_read] * limiter_envelope;
+    float out_sample_r = la_r[la_read] * limiter_envelope;
 
-    la_write_ = (la_write_ + 1) % buf_size;
+    la_write = (la_write + 1) % buf_size;
 
     // 5. Post-Gain
     out_sample_l *= post_gain_lin;
@@ -99,14 +138,14 @@ void BuiltinMaxim::BandProcessor::process(
     float out_db = (out_abs > 1e-10f) ? 20.0f * std::log10(out_abs) : -200.0f;
     if (out_db > current_peak_out) current_peak_out = out_db;
 
-    float lim_gr_db = 20.0f * std::log10(std::max(limiter_envelope_, 1e-10f));
-    float total_gr_db = envelope_db_ + lim_gr_db;
+    float lim_gr_db = 20.0f * std::log10(std::max(limiter_envelope, 1e-10f));
+    float total_gr_db = envelope_db + lim_gr_db;
     if (total_gr_db < current_max_gr) current_max_gr = total_gr_db;
   }
 
-  max_gr_db_ = current_max_gr;
-  peak_in_db_ = current_peak_in;
-  peak_out_db_ = current_peak_out;
+  max_gr_db = current_max_gr;
+  peak_in_db = current_peak_in;
+  peak_out_db = current_peak_out;
 }
 
 float BuiltinMaxim::BandProcessor::saturate(float x, float threshold,
@@ -151,13 +190,20 @@ float BuiltinMaxim::BandProcessor::computeGainReduction(float input_db,
 
 // --- BuiltinMaxim Implementation ---
 
-BuiltinMaxim::BuiltinMaxim() { reset(); }
+BuiltinMaxim::BuiltinMaxim() {
+  for (int b = 0; b < 4; ++b) {
+    bands_[b] = std::make_unique<BandProcessor>();
+  }
+  reset();
+}
+
+BuiltinMaxim::~BuiltinMaxim() = default;
 
 bool BuiltinMaxim::load(const std::string& /*path*/, int /*plugin_index*/,
                         double sample_rate) {
   sample_rate_ = sample_rate;
   for (int b = 0; b < 4; ++b) {
-    bands_[b].init(sample_rate_);
+    bands_[b]->init(sample_rate_);
   }
   reset();
   return true;
@@ -204,7 +250,7 @@ void BuiltinMaxim::reset() {
   }
 
   for (int b = 0; b < 4; ++b) {
-    bands_[b].reset();
+    bands_[b]->reset();
   }
 
   updateCrossoverCoeffs();
@@ -251,7 +297,7 @@ void BuiltinMaxim::process(float** inputs, float** outputs, int num_samples,
     sample_rate_ = context.sampleRate;
     updateCrossoverCoeffs();
     for (int b = 0; b < 4; ++b) {
-      bands_[b].setSampleRate(sample_rate_);
+      bands_[b]->sample_rate = sample_rate_;
     }
   }
 
@@ -273,7 +319,7 @@ void BuiltinMaxim::process(float** inputs, float** outputs, int num_samples,
       hp2_low_R_[s].reset();
     }
     for (int b = 0; b < 4; ++b) {
-      bands_[b].reset();
+      bands_[b]->reset();
     }
   }
   last_time_samples_ = context.continuousTimeSamples + num_samples;
@@ -335,7 +381,7 @@ void BuiltinMaxim::process(float** inputs, float** outputs, int num_samples,
   float lookahead_ms = normToLookaheadMs(params_[PARAM_LOOKAHEAD]);
   for (int b = 0; b < kNumBands; ++b) {
     int offset = 4 + b * 10;
-    bands_[b].process(
+    bands_[b]->process(
         band_l[b], band_r[b], band_l[b], band_r[b], num_samples,
         normToGainDb(params_[offset + 0]), normToGainDb(params_[offset + 1]),
         (float)params_[offset + 2], normToSatThreshDb(params_[offset + 3]),
@@ -357,7 +403,7 @@ void BuiltinMaxim::process(float** inputs, float** outputs, int num_samples,
 
   // 4. Process Master Band on summed signals
   int offset = 4 + 3 * 10;
-  bands_[3].process(
+  bands_[3]->process(
       sum_l.data(), sum_r.data(), out_l, out_r, num_samples,
       normToGainDb(params_[offset + 0]), normToGainDb(params_[offset + 1]),
       (float)params_[offset + 2], normToSatThreshDb(params_[offset + 3]),
@@ -471,17 +517,17 @@ float BuiltinMaxim::normToLookaheadMs(double norm) {
 
 float BuiltinMaxim::getBandGainReductionDb(int band) const {
   if (band < 0 || band >= 4) return 0.0f;
-  return bands_[band].getGainReductionDb();
+  return bands_[band]->max_gr_db;
 }
 
 float BuiltinMaxim::getBandInputDb(int band) const {
   if (band < 0 || band >= 4) return -200.0f;
-  return bands_[band].getInputDb();
+  return bands_[band]->peak_in_db;
 }
 
 float BuiltinMaxim::getBandOutputDb(int band) const {
   if (band < 0 || band >= 4) return -200.0f;
-  return bands_[band].getOutputDb();
+  return bands_[band]->peak_out_db;
 }
 
 }  // namespace hibiki

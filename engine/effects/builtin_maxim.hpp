@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -72,54 +73,10 @@ class BuiltinMaxim : public IPlugin {
     PARAM_MASTER_CEILING = 43,
   };
 
-  class BandProcessor {
-   public:
-    void init(double sample_rate) {
-      sample_rate_ = sample_rate;
-      la_l_.resize(kMaxLookahead, 0.0f);
-      la_r_.resize(kMaxLookahead, 0.0f);
-      reset();
-    }
-
-    void reset() {
-      envelope_db_ = 0.0f;
-      limiter_envelope_ = 1.0f;
-      std::fill(la_l_.begin(), la_l_.end(), 0.0f);
-      std::fill(la_r_.begin(), la_r_.end(), 0.0f);
-      la_write_ = 0;
-      max_gr_db_ = 0.0f;
-      peak_in_db_ = -200.0f;
-      peak_out_db_ = -200.0f;
-    }
-
-    void setSampleRate(double sample_rate) { sample_rate_ = sample_rate; }
-
-    float getGainReductionDb() const { return max_gr_db_; }
-    float getInputDb() const { return peak_in_db_; }
-    float getOutputDb() const { return peak_out_db_; }
-
-    void process(float* in_l, float* in_r, float* out_l, float* out_r,
-                 int num_samples, float pre_gain_db, float post_gain_db,
-                 float sat_amount, float sat_threshold_db, float thresh_db,
-                 float ratio, float knee_db, float attack_ms, float release_ms,
-                 float ceiling_db, float lookahead_ms);
-
-   private:
-    double sample_rate_ = 44100.0;
-    float envelope_db_ = 0.0f;
-    float limiter_envelope_ = 1.0f;
-    std::vector<float> la_l_, la_r_;
-    int la_write_ = 0;
-    float max_gr_db_ = 0.0f;
-    float peak_in_db_ = -200.0f;
-    float peak_out_db_ = -200.0f;
-
-    static float saturate(float x, float threshold, float amount);
-    static float computeGainReduction(float input_db, float threshold,
-                                      float ratio, float knee_db);
-  };
+  struct BandProcessor;
 
   BuiltinMaxim();
+  ~BuiltinMaxim() override;
 
   // IPlugin interface
   bool load(const std::string& path, int plugin_index = 0,
@@ -174,7 +131,7 @@ class BuiltinMaxim : public IPlugin {
   BiquadFilter hp2_low_L_[2],
       hp2_low_R_[2];  // High-pass for Low band phase-alignment
 
-  BandProcessor bands_[4];  // 0=Low, 1=Mid, 2=High, 3=Master
+  std::unique_ptr<BandProcessor> bands_[4];  // 0=Low, 1=Mid, 2=High, 3=Master
 
   int64_t last_time_samples_ = -1;  // For transport reset
 

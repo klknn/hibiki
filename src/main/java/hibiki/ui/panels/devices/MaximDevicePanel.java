@@ -50,6 +50,14 @@ public class MaximDevicePanel extends AbstractDevicePanel {
   private final JToggleButton[] tabButtons = new JToggleButton[5];
   private final KnobPanel[] knobs = new KnobPanel[10];
 
+  private static final int HISTORY_SIZE = 600;
+  private final float[][] historyInput = new float[4][HISTORY_SIZE];
+  private final float[][] historyOutput = new float[4][HISTORY_SIZE];
+  private final float[][] historyGr = new float[4][HISTORY_SIZE];
+  private int historyWriteIdx = 0;
+  private boolean isPaused = false;
+  private boolean showMonitorMode = false;
+
   public MaximDevicePanel(int trackIndex, int pluginIndex) {
     super(trackIndex, pluginIndex, TOTAL_PARAMS);
 
@@ -76,8 +84,14 @@ public class MaximDevicePanel extends AbstractDevicePanel {
       params[offset + 6] = 0.0; // Knee (0 dB)
       params[offset + 7] = 0.3; // Attack (10 ms)
       params[offset + 8] = 0.3; // Release (100 ms)
-      params[offset + 9] =
-          (b == 3) ? 0.975 : 1.0; // Ceiling (Master defaults to ~ -0.3 dB, others 0 dB)
+      params[offset + 9] = (b == 3) ? 0.975 : 1.0; // Ceiling (Master defaults to ~ -0.3 dB, others 0 dB)
+    }
+
+    // Initialize scrolling history buffers to silent values
+    for (int b = 0; b < 4; b++) {
+      java.util.Arrays.fill(historyInput[b], -200.0f);
+      java.util.Arrays.fill(historyOutput[b], -200.0f);
+      java.util.Arrays.fill(historyGr[b], 0.0f);
     }
 
     Theme theme = Theme.getInstance();
@@ -363,6 +377,26 @@ public class MaximDevicePanel extends AbstractDevicePanel {
     outputLevels[3] = meter.getOutputDb(); // Master output
     grLevels[3] = meter.getGainReductionDb(); // Master GR
 
+    if (!isPaused) {
+      historyInput[0][historyWriteIdx] = meter.getLowInDb();
+      historyOutput[0][historyWriteIdx] = meter.getLowOutDb();
+      historyGr[0][historyWriteIdx] = meter.getLowGrDb();
+
+      historyInput[1][historyWriteIdx] = meter.getMidInDb();
+      historyOutput[1][historyWriteIdx] = meter.getMidOutDb();
+      historyGr[1][historyWriteIdx] = meter.getMidGrDb();
+
+      historyInput[2][historyWriteIdx] = meter.getHighInDb();
+      historyOutput[2][historyWriteIdx] = meter.getHighOutDb();
+      historyGr[2][historyWriteIdx] = meter.getHighGrDb();
+
+      historyInput[3][historyWriteIdx] = meter.getInputDb();
+      historyOutput[3][historyWriteIdx] = meter.getOutputDb();
+      historyGr[3][historyWriteIdx] = meter.getGainReductionDb();
+
+      historyWriteIdx = (historyWriteIdx + 1) % HISTORY_SIZE;
+    }
+
     visualizerPanel.repaint();
     meterPanel.repaint();
   }
@@ -374,6 +408,36 @@ public class MaximDevicePanel extends AbstractDevicePanel {
 
     VisualizerPanel() {
       setBackground(Theme.getInstance().BG_DARKER);
+      addMouseListener(new MouseAdapter() {
+        @Override
+        public void mousePressed(MouseEvent e) {
+          int mx = e.getX();
+          int my = e.getY();
+          Theme theme = Theme.getInstance();
+          int curveBtnWidth = theme.scale(42);
+          int monitorBtnWidth = theme.scale(46);
+          int btnHeight = theme.scale(15);
+          int yOffset = theme.scale(5);
+          int pad = theme.scale(6);
+
+          if (my >= yOffset && my <= yOffset + btnHeight) {
+            if (mx >= pad && mx <= pad + curveBtnWidth) {
+              showMonitorMode = false;
+              repaint();
+              return;
+            } else if (mx >= pad + curveBtnWidth + theme.scale(6) && mx <= pad + curveBtnWidth + theme.scale(6) + monitorBtnWidth) {
+              showMonitorMode = true;
+              repaint();
+              return;
+            }
+          }
+
+          if (showMonitorMode && !isCrossoversTab) {
+            isPaused = !isPaused;
+            repaint();
+          }
+        }
+      });
     }
 
     @Override
@@ -396,11 +460,109 @@ public class MaximDevicePanel extends AbstractDevicePanel {
 
       if (isCrossoversTab) {
         paintCrossoverSplits(g2, pw, ph, pad);
+      } else if (showMonitorMode) {
+        paintMonitorPlot(g2, pw, ph, pad);
       } else {
         paintTransferCurve(g2, pw, ph, pad);
       }
 
+      if (!isCrossoversTab) {
+        drawToggleButtons(g2);
+      }
+
       g2.dispose();
+    }
+
+    private void drawToggleButtons(Graphics2D g2) {
+      Theme theme = Theme.getInstance();
+      int curveBtnWidth = theme.scale(42);
+      int monitorBtnWidth = theme.scale(46);
+      int btnHeight = theme.scale(15);
+      int yOffset = theme.scale(5);
+      int pad = theme.scale(6);
+
+      // Curve Button
+      g2.setColor(showMonitorMode ? theme.BG_MEDIUM : getActiveColor());
+      g2.fillRoundRect(pad, yOffset, curveBtnWidth, btnHeight, theme.scale(6), theme.scale(6));
+      g2.setColor(showMonitorMode ? new Color(0xBBBBBB) : Color.BLACK);
+      g2.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(7.5f)));
+      FontMetrics fm = g2.getFontMetrics();
+      g2.drawString("Curve", pad + (curveBtnWidth - fm.stringWidth("Curve")) / 2, yOffset + theme.scale(10));
+
+      // Monitor Button
+      int mX = pad + curveBtnWidth + theme.scale(6);
+      g2.setColor(showMonitorMode ? getActiveColor() : theme.BG_MEDIUM);
+      g2.fillRoundRect(mX, yOffset, monitorBtnWidth, btnHeight, theme.scale(6), theme.scale(6));
+      g2.setColor(showMonitorMode ? Color.BLACK : new Color(0xBBBBBB));
+      g2.drawString("Monitor", mX + (monitorBtnWidth - fm.stringWidth("Monitor")) / 2, yOffset + theme.scale(10));
+    }
+
+    private void paintMonitorPlot(Graphics2D g2, int pw, int ph, int pad) {
+      float[] gridDbs = {0f, -6f, -12f, -18f, -24f, -36f, -48f};
+      g2.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(7.0f)));
+      for (float db : gridDbs) {
+        int y = dbToY(db, ph, pad);
+        g2.setColor(new Color(255, 255, 255, 12));
+        g2.drawLine(pad, y, pad + pw, y);
+        g2.setColor(new Color(255, 255, 255, 45));
+        g2.drawString(String.format("%.0fdB", db), pad + pw - 28, y - 2);
+      }
+
+      Color color = getTabColor(selectedBand);
+
+      GeneralPath inputPath = new GeneralPath();
+      GeneralPath outputPath = new GeneralPath();
+      GeneralPath grPath = new GeneralPath();
+
+      boolean first = true;
+      for (int px = 0; px < pw; px++) {
+        int age = pw - 1 - px;
+        int idx = (historyWriteIdx - 1 - age + HISTORY_SIZE) % HISTORY_SIZE;
+
+        float inDb = historyInput[selectedBand][idx];
+        float outDb = historyOutput[selectedBand][idx];
+        float grDb = historyGr[selectedBand][idx];
+
+        float inY = dbToY(Math.max(DB_MIN, Math.min(DB_MAX, inDb)), ph, pad);
+        float outY = dbToY(Math.max(DB_MIN, Math.min(DB_MAX, outDb)), ph, pad);
+        float grY = dbToY(Math.max(DB_MIN, Math.min(DB_MAX, grDb)), ph, pad);
+
+        int x = pad + px;
+
+        if (first) {
+          inputPath.moveTo(x, inY);
+          outputPath.moveTo(x, outY);
+          grPath.moveTo(x, grY);
+          first = false;
+        } else {
+          inputPath.lineTo(x, inY);
+          outputPath.lineTo(x, outY);
+          grPath.lineTo(x, grY);
+        }
+      }
+
+      g2.setColor(new Color(150, 150, 150, 60));
+      g2.setStroke(new BasicStroke(1.0f));
+      g2.draw(inputPath);
+
+      g2.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 200));
+      g2.setStroke(new BasicStroke(1.8f));
+      g2.draw(outputPath);
+
+      g2.setColor(new Color(239, 68, 68, 220));
+      g2.setStroke(new BasicStroke(1.5f));
+      g2.draw(grPath);
+
+      if (isPaused) {
+        g2.setColor(new Color(0, 0, 0, 100));
+        g2.fillRect(pad, pad, pw, ph);
+
+        g2.setColor(new Color(239, 68, 68, 200));
+        g2.setFont(Theme.getInstance().FONT_UI_BOLD.deriveFont(Theme.getInstance().scale(12.0f)));
+        FontMetrics fm = g2.getFontMetrics();
+        String txt = "PAUSED";
+        g2.drawString(txt, pad + (pw - fm.stringWidth(txt)) / 2, pad + ph / 2 + 4);
+      }
     }
 
     // Paint the Transfer Curve for the selected band

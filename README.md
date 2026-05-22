@@ -33,7 +33,8 @@ bazel test //:all -c opt --test_output=all
 ## Project Structure
 
 Common
-- `hibiki_*.fbs`: Flatbuffer schema for IPC and project files.- `testdata/`: Sample MIDI files and test plugins.
+- `pb/*.proto`: Protobuf schemas for IPC and project configuration.
+- `testdata/`: Sample MIDI files and test plugins.
 
 Audio engine backend
 - `main.cpp`: C++ audio engine entry point and IPC handler.

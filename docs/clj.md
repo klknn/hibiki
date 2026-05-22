@@ -414,10 +414,10 @@ intermediate return values. Two pitfalls:
   (.setUnitIncrement (.getVerticalScrollBar scroll) 10))
 ```
 
-**IPC class names**: FlatBuffer-generated classes exactly mirror the schema names:
-- `SetParamValue` (not `SetParam`)
-- `GetClipMidi` (not `RequestClipMidi`)
-- `ListPlugins` (exists in request schema)
+**IPC class names**: Protobuf-generated classes exactly mirror the schema message names:
+- `PluginCmd` (not `PluginCommand` or `Plugin`)
+- `TrackCmd` (not `TrackCommand` or `Track`)
+- `MidiCmd` (not `MidiCommand`)
 
 ## Type Safety
 
@@ -535,9 +535,9 @@ bazel build -c opt //:hibiki-gui-lib
 ```
 
 This produces `bazel-bin/libhibiki-gui-lib.jar` which `deps.edn` references as a
-local dependency. It contains all compiled Java classes and FlatBuffer-generated IPC code.
+local dependency. It contains all compiled Java classes and Protobuf-generated IPC code.
 
-> **Note**: Re-run this command when Java sources or `.fbs` schemas change.
+> **Note**: Re-run this command when Java sources or `.proto` schemas change.
 > For day-to-day Clojure-only changes, `clj -M:run` works directly.
 
 #### Common Commands
@@ -561,7 +561,7 @@ Connect to socket REPL: `rlwrap nc localhost 5555`
 
 | Aspect | Bazel | Clojure CLI |
 |--------|-------|-------------|
-| **Java/FlatBuffer build** | Automatic (build rule) | One-time: `bazel build -c opt //:hibiki-gui-lib` |
+| **Java/Protobuf build** | Automatic (build rule) | One-time: `bazel build -c opt //:hibiki-gui-lib` |
 | **C++ backend** | Built together | Not supported (uses pre-built `hbk-play`) |
 | **REPL** | Deploy JAR + `java -D...` | `clj -M:repl` |
 | **IDE integration** | Limited | CIDER, Calva, Cursive |
@@ -870,34 +870,36 @@ Clojure uses a vector of keywords + a `case` expression — no class needed:
 **Pattern eliminated**: No class, no constructor, no `toString`, no field storage.
 Keywords are their own representation. `case` replaces `switch` with less ceremony.
 
-### 4. Builder → `let` + `do` (threading)
+### 4. Builder → Thread-first macro (`->`)
 
-Java's Builder pattern is used for constructing FlatBuffer messages:
+Java's Builder pattern is used for constructing Protobuf messages:
 
 ```java
 // Java — Builder pattern with method chaining
-FlatBufferBuilder builder = new FlatBufferBuilder(128);
-int cmd = ShowPluginGui.createShowPluginGui(builder, trackIndex, pluginIndex);
-int req = Request.createRequest(builder, Command.ShowPluginGui, cmd);
-builder.finish(req);
+Request req = Request.newBuilder()
+    .setPlugin(PluginCmd.newBuilder()
+        .setAction(PluginCmd.Action.ACTION_SHOW_GUI)
+        .setTarget(EntityRef.newBuilder()
+            .setTrackIndex(trackIndex)
+            .setPluginIndex(pluginIndex)))
+    .build();
 ```
 
-Clojure uses `let` bindings + `do` — structurally similar but no separate Builder class:
+Clojure uses the thread-first macro (`->`) to chain builder method calls:
 
 ```clojure
-;; Clojure — let bindings replace method chaining
-(let [^FlatBufferBuilder b (FlatBufferBuilder. 64)
-      cmd (do (ShowPluginGui/startShowPluginGui b)
-              (ShowPluginGui/addTrackIndex b track-idx)
-              (ShowPluginGui/addPluginIndex b plugin-idx)
-              (ShowPluginGui/endShowPluginGui b))
-      req (Request/createRequest b Command/ShowPluginGui cmd)]
-  (.finish b req)
-  (.sendRequest backend b))
+;; Clojure — thread-first macro (->) mirrors method chaining
+(let [req (-> (Request/newBuilder)
+              (.setPlugin (-> (PluginCmd/newBuilder)
+                              (.setAction PluginCmd$Action/ACTION_SHOW_GUI)
+                              (.setTarget (-> (EntityRef/newBuilder)
+                                              (.setTrackIndex (int track-idx))
+                                              (.setPluginIndex (int plugin-idx))))))
+              (.build))]
+  (.sendRequest backend req))
 ```
 
-**Similar verbosity**: Builder is an inherently imperative pattern, so Clojure doesn't
-simplify it much. `let` does make the data flow explicit (each binding depends on the previous).
+**Clean and readable**: Clojure's thread-first macro elegantly maps to Java's method-chaining builder pattern without nested parenthetical clutter.
 
 ### 5. Template Method → `proxy` with closures
 

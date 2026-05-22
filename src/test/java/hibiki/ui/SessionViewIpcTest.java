@@ -17,9 +17,9 @@ public class SessionViewIpcTest {
   public void testSendLoadClip() {
     SessionView sv = new SessionView();
     SessionViewIpc ipc = new SessionViewIpc(sv);
-    // This will build the FlatBuffer and attempt to send it
+    // This will build the Protobuf message and attempt to send it
     // BackendManager is initialized but has no active process
-    // so send will be a no-op, but FlatBuffer construction is exercised
+    // so send will be a no-op, but Protobuf construction is exercised
     try {
       ipc.sendLoadClip(0, 0, "test.mid", true);
     } catch (Exception e) {

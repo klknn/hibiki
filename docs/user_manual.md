@@ -448,7 +448,7 @@ Use the `hbk-play` CLI tool for offline rendering:
 3. The project state is restored (including track names and clip positions)
 
 ### Project File Format
-- `.hbk` files use FlatBuffers binary serialization
+- `.hbk` files use Protobuf binary serialization
 - Compact and efficient for quick load times
 
 ---

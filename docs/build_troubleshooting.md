@@ -2,26 +2,23 @@
 
 Common issues and solutions for the Hibiki DAW build system.
 
-## FlatBuffer Synchronization Issues
+## Protobuf Compilation and IDE Synchronization Issues
 
-### Symptom: Compilation errors in Java/C++ related to new FlatBuffer fields or tables.
+### Symptom: Compilation errors or IDE unresolved references for generated Protobuf classes.
 
-When adding new fields to a FlatBuffer schema (e.g., `hibiki_response.fbs` or `hibiki_project.fbs`), the generated code may not immediately update in all sandbox environments, leading to "cannot resolve symbol" or "undefined reference" errors.
-
-**Solution:**
-1.  **Update `BUILD` file**: Ensure that any new generated files (like `NewMessage.java` or `NewMessageT.java`) are added to the `outs` list of the corresponding `flatbuffer_library_public` rule.
-2.  **Clean Rebuild**: Run `bazel clean` before building to force a complete regeneration of the FlatBuffer headers and JARs.
-    ```bash
-    bazel clean && bazel build -c opt //:hibiki-gui-java
-    ```
-
-### Symptom: Missing Object API classes (`...T.java`).
-
-The project uses `--gen-object-api` for both Java and C++. 
+When adding or modifying fields in `.proto` files in the `pb/` directory, Java/C++ source code might fail to compile or your IDE may report unresolved references for the newly added classes/fields.
 
 **Solution:**
-- Check the `language_flag` in the `BUILD` file for the flatbuffer rule.
-- Ensure the `outs` list includes both the standard class and the `T` variant (e.g., `Notification.java` AND `NotificationT.java`).
+1. **Bazel Rebuild**: Run a standard build to force Bazel to regenerate the protobuf source files:
+   ```bash
+   bazel build -c opt //:hibiki-gui-java
+   ```
+2. **IDE Refresh**: If the build succeeds but the IDE still highlights the classes as missing or red:
+   - For VS Code / IntelliJ IDEA: Sync/reload the project dependencies from Bazel files.
+3. **Clean Rebuild**: If there are cache invalidation issues, clean Bazel's output cache:
+   ```bash
+   bazel clean && bazel build -c opt //:hibiki-gui-java
+   ```
 
 ## Native Library Path Issues
 

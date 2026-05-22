@@ -11,6 +11,7 @@
 #include "engine/effects/builtin_eq.hpp"
 #include "engine/effects/builtin_hott.hpp"
 #include "engine/effects/builtin_limiter.hpp"
+#include "engine/effects/builtin_maxim.hpp"
 #include "engine/effects/builtin_phaser.hpp"
 #include "engine/effects/builtin_reverb.hpp"
 #include "engine/instruments/builtin_3xosc.hpp"
@@ -57,6 +58,9 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinHott::kPath) {
     plugin = std::make_unique<BuiltinHott>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinMaxim::kPath) {
+    plugin = std::make_unique<BuiltinMaxim>();
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinEnvelopeShaper::kPath) {
     plugin = std::make_unique<BuiltinEnvelopeShaper>();

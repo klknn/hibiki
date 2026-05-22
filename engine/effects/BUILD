@@ -86,6 +86,16 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_maxim",
+    srcs = ["builtin_maxim.cpp"],
+    hdrs = ["builtin_maxim.hpp"],
+    deps = [
+        "//engine/core:biquad_filter",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
     name = "effects",
     deps = [
         ":builtin_aux",
@@ -96,6 +106,7 @@ cc_library(
         ":builtin_eq",
         ":builtin_hott",
         ":builtin_limiter",
+        ":builtin_maxim",
         ":builtin_phaser",
         ":builtin_reverb",
     ],
@@ -189,6 +200,16 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_convolver",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_maxim_test",
+    srcs = ["builtin_maxim_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_maxim",
         "@googletest//:gtest_main",
     ],
 )

@@ -24,6 +24,7 @@ public class PluginPane extends JPanel {
       Map.ofEntries(
           Map.entry("EQ Eight", EqDevicePanel.class),
           Map.entry("Compressor", CompressorDevicePanel.class),
+          Map.entry("Maxim", MaximDevicePanel.class),
           Map.entry("3xOsc", ThreeOscDevicePanel.class),
           Map.entry("Sampler", SamplerDevicePanel.class),
           Map.entry("Delay", DelayDevicePanel.class),
@@ -131,14 +132,7 @@ public class PluginPane extends JPanel {
                   }
                 case PLUGIN_METERING:
                   {
-                    var meter = notification.getPluginMetering();
-                    handlePluginMetering(
-                        meter.getTrackIndex(),
-                        meter.getPluginIndex(),
-                        meter.getInputDb(),
-                        meter.getOutputDb(),
-                        meter.getGainReductionDb(),
-                        meter.getSidechainDb());
+                    handlePluginMetering(notification.getPluginMetering());
                     break;
                   }
                 case PLUGIN_SAMPLE_DATA:
@@ -197,6 +191,9 @@ public class PluginPane extends JPanel {
             } else if (bp instanceof CompressorDevicePanel) {
               ((CompressorDevicePanel) bp).updateParam(paramId, value);
               return;
+            } else if (bp instanceof MaximDevicePanel) {
+              ((MaximDevicePanel) bp).updateParam(paramId, value);
+              return;
             } else if (bp instanceof HottDevicePanel) {
               ((HottDevicePanel) bp).updateParam(paramId, value);
               return;
@@ -251,14 +248,10 @@ public class PluginPane extends JPanel {
         });
   }
 
-  /** Handle plugin metering data for compressor visualization. */
-  private void handlePluginMetering(
-      int trackIdx,
-      int pluginIdx,
-      float inputDb,
-      float outputDb,
-      float gainReductionDb,
-      float sidechainDb) {
+  /** Handle plugin metering data for compressor/limiter visualization. */
+  private void handlePluginMetering(hibiki.pb.notifications.PluginMeteringData meter) {
+    int trackIdx = meter.getTrackIndex();
+    int pluginIdx = meter.getPluginIndex();
     SwingUtilities.invokeLater(
         () -> {
           Map<Integer, JPanel> builtins = builtinPanels.get(trackIdx);
@@ -266,21 +259,25 @@ public class PluginPane extends JPanel {
           JPanel bp = builtins.get(pluginIdx);
           if (bp instanceof CompressorDevicePanel) {
             CompressorDevicePanel comp = (CompressorDevicePanel) bp;
-            comp.setInputOutputLevel(inputDb, outputDb);
-            comp.setGainReduction(gainReductionDb);
-            comp.setSidechainLevel(sidechainDb);
+            comp.setInputOutputLevel(meter.getInputDb(), meter.getOutputDb());
+            comp.setGainReduction(meter.getGainReductionDb());
+            comp.setSidechainLevel(meter.getSidechainDb());
+          } else if (bp instanceof MaximDevicePanel) {
+            MaximDevicePanel maxim = (MaximDevicePanel) bp;
+            maxim.updateMetering(meter);
           } else if (bp instanceof HottDevicePanel) {
             HottDevicePanel hott = (HottDevicePanel) bp;
-            hott.setInputOutputLevel(inputDb, outputDb);
-            hott.setGainReduction(gainReductionDb);
+            hott.setInputOutputLevel(meter.getInputDb(), meter.getOutputDb());
+            hott.setGainReduction(meter.getGainReductionDb());
           } else if (bp instanceof DelayDevicePanel) {
-            ((DelayDevicePanel) bp).setInputOutputLevel(inputDb, outputDb);
+            ((DelayDevicePanel) bp).setInputOutputLevel(meter.getInputDb(), meter.getOutputDb());
           } else if (bp instanceof ReverbDevicePanel) {
-            ((ReverbDevicePanel) bp).setInputOutputLevel(inputDb, outputDb);
+            ((ReverbDevicePanel) bp).setInputOutputLevel(meter.getInputDb(), meter.getOutputDb());
           } else if (bp instanceof EnvelopeShaperDevicePanel) {
-            ((EnvelopeShaperDevicePanel) bp).setInputOutputLevel(inputDb, outputDb);
+            ((EnvelopeShaperDevicePanel) bp)
+                .setInputOutputLevel(meter.getInputDb(), meter.getOutputDb());
           } else if (bp instanceof PhaserDevicePanel) {
-            ((PhaserDevicePanel) bp).setInputOutputLevel(inputDb, outputDb);
+            ((PhaserDevicePanel) bp).setInputOutputLevel(meter.getInputDb(), meter.getOutputDb());
           }
         });
   }
@@ -648,6 +645,8 @@ public class PluginPane extends JPanel {
       ((EqDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     } else if (device instanceof CompressorDevicePanel) {
       ((CompressorDevicePanel) device).modToggleCallback = wrapper::toggleMod;
+    } else if (device instanceof MaximDevicePanel) {
+      ((MaximDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     } else if (device instanceof ThreeOscDevicePanel) {
       ((ThreeOscDevicePanel) device).modToggleCallback = wrapper::toggleMod;
     } else if (device instanceof SamplerDevicePanel) {

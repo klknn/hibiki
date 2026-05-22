@@ -249,6 +249,18 @@ message PluginMeteringData {
   float output_db = 4;
   float gain_reduction_db = 5;
   float sidechain_db = 6;  // Sidechain detection level (-200 = no SC active)
+
+  // Multiband/Maxim-specific metering fields
+  float low_gr_db = 7;
+  float mid_gr_db = 8;
+  float high_gr_db = 9;
+  float master_gr_db = 10;
+  float low_in_db = 11;
+  float low_out_db = 12;
+  float mid_in_db = 13;
+  float mid_out_db = 14;
+  float high_in_db = 15;
+  float high_out_db = 16;
 }
 
 // Scope sample data for XY / Lissajous visualization (e.g. Phaser).

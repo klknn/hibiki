@@ -36,6 +36,7 @@
 #include "engine/effects/builtin_envelope_shaper.hpp"
 #include "engine/effects/builtin_eq.hpp"
 #include "engine/effects/builtin_hott.hpp"
+#include "engine/effects/builtin_maxim.hpp"
 #include "engine/effects/builtin_phaser.hpp"
 #include "engine/effects/builtin_reverb.hpp"
 #include "engine/ipc/ipc.hpp"
@@ -650,28 +651,81 @@ void notification_thread(ProjectState& state) {
                                    spec.output_db, BuiltinEq::kSpectrumBins);
           } else if (auto* comp =
                          dynamic_cast<BuiltinCompressor*>(plugin.get())) {
-            sendPluginMeteringData(
-                track_idx, (int)p, comp->getInputDb(), comp->getOutputDb(),
-                comp->getGainReductionDb(), comp->getSidechainDb());
+            hibiki::pb::notifications::PluginMeteringData meter;
+            meter.set_track_index(track_idx);
+            meter.set_plugin_index((int)p);
+            meter.set_input_db(comp->getInputDb());
+            meter.set_output_db(comp->getOutputDb());
+            meter.set_gain_reduction_db(comp->getGainReductionDb());
+            meter.set_sidechain_db(comp->getSidechainDb());
+            sendPluginMeteringData(meter);
+          } else if (auto* maxim = dynamic_cast<BuiltinMaxim*>(plugin.get())) {
+            hibiki::pb::notifications::PluginMeteringData meter;
+            meter.set_track_index(track_idx);
+            meter.set_plugin_index((int)p);
+            meter.set_input_db(maxim->getBandInputDb(3));
+            meter.set_output_db(maxim->getBandOutputDb(3));
+            meter.set_gain_reduction_db(maxim->getBandGainReductionDb(3));
+            meter.set_sidechain_db(-200.0f);
+            meter.set_low_gr_db(maxim->getBandGainReductionDb(0));
+            meter.set_mid_gr_db(maxim->getBandGainReductionDb(1));
+            meter.set_high_gr_db(maxim->getBandGainReductionDb(2));
+            meter.set_master_gr_db(maxim->getBandGainReductionDb(3));
+            meter.set_low_in_db(maxim->getBandInputDb(0));
+            meter.set_low_out_db(maxim->getBandOutputDb(0));
+            meter.set_mid_in_db(maxim->getBandInputDb(1));
+            meter.set_mid_out_db(maxim->getBandOutputDb(1));
+            meter.set_high_in_db(maxim->getBandInputDb(2));
+            meter.set_high_out_db(maxim->getBandOutputDb(2));
+            sendPluginMeteringData(meter);
           } else if (auto* hott = dynamic_cast<BuiltinHott*>(plugin.get())) {
-            sendPluginMeteringData(track_idx, (int)p, hott->getInputDb(),
-                                   hott->getOutputDb(),
-                                   hott->getBandGainReduction(0));
+            hibiki::pb::notifications::PluginMeteringData meter;
+            meter.set_track_index(track_idx);
+            meter.set_plugin_index((int)p);
+            meter.set_input_db(hott->getInputDb());
+            meter.set_output_db(hott->getOutputDb());
+            meter.set_gain_reduction_db(hott->getBandGainReduction(0));
+            meter.set_sidechain_db(-200.0f);
+            sendPluginMeteringData(meter);
           } else if (auto* delay = dynamic_cast<BuiltinDelay*>(plugin.get())) {
-            sendPluginMeteringData(track_idx, (int)p, delay->getInputDb(),
-                                   delay->getOutputDb(), 0.0f);
+            hibiki::pb::notifications::PluginMeteringData meter;
+            meter.set_track_index(track_idx);
+            meter.set_plugin_index((int)p);
+            meter.set_input_db(delay->getInputDb());
+            meter.set_output_db(delay->getOutputDb());
+            meter.set_gain_reduction_db(0.0f);
+            meter.set_sidechain_db(-200.0f);
+            sendPluginMeteringData(meter);
           } else if (auto* reverb =
                          dynamic_cast<BuiltinReverb*>(plugin.get())) {
-            sendPluginMeteringData(track_idx, (int)p, reverb->getInputDb(),
-                                   reverb->getOutputDb(), 0.0f);
+            hibiki::pb::notifications::PluginMeteringData meter;
+            meter.set_track_index(track_idx);
+            meter.set_plugin_index((int)p);
+            meter.set_input_db(reverb->getInputDb());
+            meter.set_output_db(reverb->getOutputDb());
+            meter.set_gain_reduction_db(0.0f);
+            meter.set_sidechain_db(-200.0f);
+            sendPluginMeteringData(meter);
           } else if (auto* envs =
                          dynamic_cast<BuiltinEnvelopeShaper*>(plugin.get())) {
-            sendPluginMeteringData(track_idx, (int)p, envs->getInputDb(),
-                                   envs->getOutputDb(), 0.0f);
+            hibiki::pb::notifications::PluginMeteringData meter;
+            meter.set_track_index(track_idx);
+            meter.set_plugin_index((int)p);
+            meter.set_input_db(envs->getInputDb());
+            meter.set_output_db(envs->getOutputDb());
+            meter.set_gain_reduction_db(0.0f);
+            meter.set_sidechain_db(-200.0f);
+            sendPluginMeteringData(meter);
           } else if (auto* phaser =
                          dynamic_cast<BuiltinPhaser*>(plugin.get())) {
-            sendPluginMeteringData(track_idx, (int)p, phaser->getInputDb(),
-                                   phaser->getOutputDb(), 0.0f);
+            hibiki::pb::notifications::PluginMeteringData meter;
+            meter.set_track_index(track_idx);
+            meter.set_plugin_index((int)p);
+            meter.set_input_db(phaser->getInputDb());
+            meter.set_output_db(phaser->getOutputDb());
+            meter.set_gain_reduction_db(0.0f);
+            meter.set_sidechain_db(-200.0f);
+            sendPluginMeteringData(meter);
             // Send scope data for Lissajous visualization
             {
               hibiki::pb::notifications::Notification notif;

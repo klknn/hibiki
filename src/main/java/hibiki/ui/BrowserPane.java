@@ -328,6 +328,9 @@ public class BrowserPane extends JPanel {
     FileItem limiterItem = new FileItem(new File("builtin"), "builtin", "Limiter", "Hibiki", 0);
     limiterItem.rawPath = "builtin://limiter";
     builtinNode.add(new DefaultMutableTreeNode(limiterItem));
+    FileItem maximItem = new FileItem(new File("builtin"), "builtin", "Maxim", "Hibiki", 0);
+    maximItem.rawPath = "builtin://maxim";
+    builtinNode.add(new DefaultMutableTreeNode(maximItem));
     FileItem hottItem = new FileItem(new File("builtin"), "builtin", "Hott", "Hibiki", 0);
     hottItem.rawPath = "builtin://hott";
     builtinNode.add(new DefaultMutableTreeNode(hottItem));

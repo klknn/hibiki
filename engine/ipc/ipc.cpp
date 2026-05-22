@@ -269,17 +269,10 @@ void sendPluginSpectrumData(int track_idx, int plugin_idx,
   sendProto(notification);
 }
 
-void sendPluginMeteringData(int track_idx, int plugin_idx, float input_db,
-                            float output_db, float gain_reduction_db,
-                            float sidechain_db) {
+void sendPluginMeteringData(
+    const hibiki::pb::notifications::PluginMeteringData& meter_data) {
   hibiki::pb::notifications::Notification notification;
-  auto* meter = notification.mutable_plugin_metering();
-  meter->set_track_index(track_idx);
-  meter->set_plugin_index(plugin_idx);
-  meter->set_input_db(input_db);
-  meter->set_output_db(output_db);
-  meter->set_gain_reduction_db(gain_reduction_db);
-  meter->set_sidechain_db(sidechain_db);
+  *notification.mutable_plugin_metering() = meter_data;
   sendProto(notification);
 }
 

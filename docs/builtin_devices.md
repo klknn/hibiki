@@ -125,3 +125,93 @@ All implement `IPlugin` (`engine/plugin/iplugin.hpp`). Parameters use normalized
 │              │── ParamChange ────────▸│  → handleParam     │
 └──────────────┘                        └──────────────────┘
 ```
+
+---
+
+## Creating a New Built-in Device
+
+Follow these step-by-step instructions to create, register, and wire a new built-in effect or instrument:
+
+### 1. Engine Backend (C++)
+
+1. **Define the Device**:
+   - Create a header and source file in `engine/effects/` (for effects) or `engine/instruments/` (for instruments).
+   - Inherit your class from `IPlugin` (`engine/plugin/iplugin.hpp`).
+   - Define a static unique path and name:
+     ```cpp
+     static constexpr const char* kPath = "builtin://my_device";
+     static constexpr const char* kName = "My Device";
+     ```
+   - Implement the DSP processing in `process(const float** inputs, float** outputs, int num_samples)`.
+
+2. **Register the Plugin**:
+   - Include your new header in `engine/core/track.cpp`.
+   - In `LoadPlugin(const std::string& path)`, map the path to instantiate your class:
+     ```cpp
+     if (path == BuiltinMyDevice::kPath) plugin = std::make_unique<BuiltinMyDevice>();
+     ```
+
+3. **Update Build Configuration**:
+   - Open `engine/effects/BUILD` (or `engine/instruments/BUILD`) and add your `.hpp`/`.cpp` files to the target's `srcs`/`hdrs` lists.
+   - Add any dependency libraries or target definitions if needed.
+
+---
+
+### 2. IPC & Real-time Notifications (Protobuf)
+
+If your device needs to send custom visualization data (e.g. metering, spectrum analysis) to the Java front-end:
+
+1. **Update Proto definition**:
+   - Open `pb/notifications.proto`.
+   - Add fields to the relevant message (e.g., `PluginMeteringData` or define a new message).
+
+2. **Update IPC Helper**:
+   - Update `engine/ipc/ipc.hpp`/`ipc.cpp` to add or modify serialization functions that accept your device's metering data and publish notifications.
+
+3. **Wire Event loop**:
+   - In `engine/main.cpp` (within the IPC notification thread loops), query your plugin class type and send data:
+     ```cpp
+     if (auto* dev = dynamic_cast<BuiltinMyDevice*>(plugin.get())) {
+       hibiki::pb::notifications::PluginMeteringData meter;
+       // ... populate and call sendPluginMeteringData(meter) ...
+     }
+     ```
+
+---
+
+### 3. Front-end UI (Java)
+
+1. **Implement UI Panel**:
+   - Create a new class extending `AbstractDevicePanel` in `src/main/java/hibiki/ui/panels/devices/`.
+   - Implement the layout, knobs (using `KnobPanel`), and paint custom components for visualizers/meters if needed.
+   - Assign final visual fields at the top of the constructor to avoid definite-assignment analysis issues in callbacks.
+
+2. **Register UI Class**:
+   - In `src/main/java/hibiki/ui/PluginPane.java`, add your device to the `BUILTIN_DEVICE_PANELS` map:
+     ```java
+     Map.entry("My Device", MyDevicePanel.class)
+     ```
+   - If handling custom metering notifications, update `handlePluginMetering` or the notification parser in `PluginPane` to pass the payload to your panel.
+
+3. **Add to Browser List**:
+   - Open `src/main/java/hibiki/ui/BrowserPane.java` and find `populateTree()`.
+   - Instantiation and register a `FileItem` under the "Built-in" node:
+     ```java
+     FileItem myDeviceItem = new FileItem(new File("builtin"), "builtin", "My Device", "Hibiki", 0);
+     myDeviceItem.rawPath = "builtin://my_device";
+     builtinNode.add(new DefaultMutableTreeNode(myDeviceItem));
+     ```
+
+---
+
+### 4. Testing & Verification
+
+1. **Unit Tests**:
+   - Create a test file (e.g., `engine/effects/builtin_my_device_test.cpp`) using `gtest`.
+   - Add the test to the `BUILD` file.
+   - In `src/test/java/hibiki/ui/PluginPaneExtendedTest.java`, add `"My Device"` to the `builtinNames` array to verify mapping completeness.
+   - Run tests:
+     ```bash
+     bazel test //...
+     ```
+```

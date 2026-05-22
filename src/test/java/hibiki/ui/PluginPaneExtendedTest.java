@@ -321,6 +321,7 @@ public class PluginPaneExtendedTest {
       "Delay",
       "Reverb",
       "Limiter",
+      "Maxim",
       "Hott",
       "EnvShaper",
       "Phaser",

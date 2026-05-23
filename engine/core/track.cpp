@@ -21,6 +21,7 @@
 #include "engine/instruments/builtin_acid_bass.hpp"
 #include "engine/instruments/builtin_drum_machine.hpp"
 #include "engine/instruments/builtin_film.hpp"
+#include "engine/instruments/builtin_organ.hpp"
 #include "engine/instruments/builtin_sampler.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/commands.pb.h"
@@ -51,6 +52,9 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinAcidBass::kPath) {
     plugin = std::make_unique<BuiltinAcidBass>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinOrgan::kPath) {
+    plugin = std::make_unique<BuiltinOrgan>();
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinSampler::kPath) {
     plugin = std::make_unique<BuiltinSampler>();

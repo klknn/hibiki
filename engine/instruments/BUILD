@@ -40,6 +40,15 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_organ",
+    srcs = ["builtin_organ.cpp"],
+    hdrs = ["builtin_organ.hpp"],
+    deps = [
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
     name = "builtin_sampler",
     srcs = ["builtin_sampler.cpp"],
     hdrs = ["builtin_sampler.hpp"],
@@ -86,6 +95,7 @@ cc_library(
         ":builtin_acid_bass",
         ":builtin_drum_machine",
         ":builtin_film",
+        ":builtin_organ",
         ":builtin_sampler",
     ],
 )
@@ -153,6 +163,16 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_acid_bass",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_organ_test",
+    srcs = ["builtin_organ_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_organ",
         "@googletest//:gtest_main",
     ],
 )

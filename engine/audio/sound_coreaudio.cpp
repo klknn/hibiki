@@ -200,14 +200,14 @@ std::unique_ptr<SoundDevice> SoundDevice::create(int rate, int ch,
 
 std::unique_ptr<SoundDevice> SoundDevice::createInput(
     const std::string& /*device_id*/, int rate, int ch, int latency_ms) {
-  // TODO(karita): Implement CoreAudio input capture with HALOutput AudioUnit.
+  // TODO(klknn): Implement CoreAudio input capture with HALOutput AudioUnit.
   // For now return a non-ready device.
   return std::make_unique<SoundDeviceCoreAudio>(rate, ch, latency_ms);
 }
 
 std::vector<AudioInputInfo> SoundDevice::listInputDevices() {
   std::vector<AudioInputInfo> result;
-  // TODO(karita): Enumerate CoreAudio input devices via
+  // TODO(klknn): Enumerate CoreAudio input devices via
   // AudioObjectGetPropertyData(kAudioHardwarePropertyDevices).
   AudioInputInfo defaultDev;
   defaultDev.id = "default";

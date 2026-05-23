@@ -162,13 +162,13 @@ std::unique_ptr<SoundDevice> SoundDevice::create(int rate, int ch,
 
 std::unique_ptr<SoundDevice> SoundDevice::createInput(
     const std::string& /*device_id*/, int rate, int ch, int latency_ms) {
-  // TODO(karita): Implement WASAPI input capture with IAudioCaptureClient.
+  // TODO(klknn): Implement WASAPI input capture with IAudioCaptureClient.
   return std::make_unique<SoundDeviceWin32>(rate, ch, latency_ms);
 }
 
 std::vector<AudioInputInfo> SoundDevice::listInputDevices() {
   std::vector<AudioInputInfo> result;
-  // TODO(karita): Enumerate WASAPI capture endpoints via
+  // TODO(klknn): Enumerate WASAPI capture endpoints via
   // IMMDeviceEnumerator::EnumAudioEndpoints(eCapture).
   AudioInputInfo defaultDev;
   defaultDev.id = "default";

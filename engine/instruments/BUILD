@@ -49,6 +49,35 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_dr8_snare",
+    srcs = ["builtin_dr8_snare.cpp"],
+    hdrs = ["builtin_dr8_snare.hpp"],
+    deps = [
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
+    name = "builtin_dr8_hat",
+    srcs = ["builtin_dr8_hat.cpp"],
+    hdrs = ["builtin_dr8_hat.hpp"],
+    deps = [
+        "//engine/core:biquad_filter",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
+    name = "builtin_dr8_tom",
+    srcs = ["builtin_dr8_tom.cpp"],
+    hdrs = ["builtin_dr8_tom.hpp"],
+    deps = [
+        "//engine/core:biquad_filter",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
     name = "builtin_organ",
     srcs = ["builtin_organ.cpp"],
     hdrs = ["builtin_organ.hpp"],
@@ -102,7 +131,10 @@ cc_library(
     deps = [
         ":builtin_3xosc",
         ":builtin_acid_bass",
+        ":builtin_dr8_hat",
         ":builtin_dr8_kick",
+        ":builtin_dr8_snare",
+        ":builtin_dr8_tom",
         ":builtin_drum_machine",
         ":builtin_film",
         ":builtin_organ",
@@ -193,6 +225,36 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_dr8_kick",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_dr8_snare_test",
+    srcs = ["builtin_dr8_snare_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_dr8_snare",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_dr8_hat_test",
+    srcs = ["builtin_dr8_hat_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_dr8_hat",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_dr8_tom_test",
+    srcs = ["builtin_dr8_tom_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_dr8_tom",
         "@googletest//:gtest_main",
     ],
 )

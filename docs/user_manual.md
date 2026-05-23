@@ -399,6 +399,14 @@ A cowbell synthesizer utilizing two detuned square wave oscillators passed throu
   - **Detune**: Detuning ratio between oscillators (0.0 to 1.0).
   - **Volume**: Master level.
 
+#### DR8 Crash (`builtin://dr8_crash`)
+A crash cymbal synthesizer using a sum of 6 detuned square wave metallic oscillators mixed with high-pass filtered white noise, modulated by an exponential envelope and processed through parallel resonant bandpass filters.
+- **Parameters**:
+  - **Decay**: Amplitude envelope decay time (0.2s to 3.0s).
+  - **Tone**: Sizzle tone mix ratio (0.0 = only metallic waves, 1.0 = only noise).
+  - **Tension**: Oscillator detuning tension factor (0.0 to 1.0).
+  - **Volume**: Master level.
+
 ---
 
 ## Plugin Hosting Modes

@@ -21,6 +21,7 @@
 #include "engine/instruments/builtin_acid_bass.hpp"
 #include "engine/instruments/builtin_dr8_clap.hpp"
 #include "engine/instruments/builtin_dr8_cowbell.hpp"
+#include "engine/instruments/builtin_dr8_crash.hpp"
 #include "engine/instruments/builtin_dr8_hat.hpp"
 #include "engine/instruments/builtin_dr8_kick.hpp"
 #include "engine/instruments/builtin_dr8_snare.hpp"
@@ -76,6 +77,9 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinDr8Cowbell::kPath) {
     plugin = std::make_unique<BuiltinDr8Cowbell>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinDr8Crash::kPath) {
+    plugin = std::make_unique<BuiltinDr8Crash>();
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinOrgan::kPath) {
     plugin = std::make_unique<BuiltinOrgan>();

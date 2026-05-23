@@ -18,6 +18,7 @@
 #include "engine/effects/builtin_reverb.hpp"
 #include "engine/effects/builtin_stereo_width.hpp"
 #include "engine/instruments/builtin_3xosc.hpp"
+#include "engine/instruments/builtin_acid_bass.hpp"
 #include "engine/instruments/builtin_drum_machine.hpp"
 #include "engine/instruments/builtin_film.hpp"
 #include "engine/instruments/builtin_sampler.hpp"
@@ -47,6 +48,9 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == Builtin3xOsc::kPath) {
     plugin = std::make_unique<Builtin3xOsc>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinAcidBass::kPath) {
+    plugin = std::make_unique<BuiltinAcidBass>();
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinSampler::kPath) {
     plugin = std::make_unique<BuiltinSampler>();

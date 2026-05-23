@@ -31,6 +31,15 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_acid_bass",
+    srcs = ["builtin_acid_bass.cpp"],
+    hdrs = ["builtin_acid_bass.hpp"],
+    deps = [
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
     name = "builtin_sampler",
     srcs = ["builtin_sampler.cpp"],
     hdrs = ["builtin_sampler.hpp"],
@@ -74,6 +83,7 @@ cc_library(
     name = "instruments",
     deps = [
         ":builtin_3xosc",
+        ":builtin_acid_bass",
         ":builtin_drum_machine",
         ":builtin_film",
         ":builtin_sampler",
@@ -133,6 +143,16 @@ cc_test(
         ":builtin_drum_machine",
         "//engine:test_utils",
         "//engine:test_utils_state",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_acid_bass_test",
+    srcs = ["builtin_acid_bass_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_acid_bass",
         "@googletest//:gtest_main",
     ],
 )

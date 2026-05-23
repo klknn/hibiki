@@ -338,12 +338,50 @@ A polyphonic additive synthesizer simulating drawbar organs by summing fundament
   - **Rotary Speed**: Emulates Leslie rotary speaker speed, interpolating between Slow (1.2 Hz) and Fast (6.8 Hz) Doppler vibrato and tremolo.
   - **Volume**: Master level.
 
-### DR8 Drum Synthesizers (`builtin://dr8_kick`, `builtin://dr8_snare`, `builtin://dr8_hat`, `builtin://dr8_tom`)
+### DR8 Drum Synthesizers
+
 Dedicated, minimal synthesis modules inspired by classic analog drum machines like the TR-808.
-- **DR8 Kick**: Pitch-swept sine wave oscillator + short high-frequency noise transient click + overdrive drive stage.
-- **DR8 Snare**: Resonant skin body (two detuned sines) mixed with noise wires (white noise through a biquad highpass filter).
-- **DR8 Hat**: detuned 6-square-oscillator sound source passed through a resonant bandpass and highpass filter.
-- **DR8 Tom**: woody swept sine wave passed through a biquad lowpass filter with initial noise attack spike.
+
+#### DR8 Kick (`builtin://dr8_kick`)
+A punchy kick drum synthesizer utilizing a pitch-swept sine wave oscillator, an exponential amplitude decay envelope, a short high-frequency noise transient click, and a soft-clipping distortion stage.
+- **Parameters**:
+  - **Pitch**: Base oscillator frequency (40 Hz to 80 Hz).
+  - **Decay**: Amplitude envelope decay time (0.05s to 1.0s).
+  - **Pitch Env Decay**: Pitch sweep decay time (0.01s to 0.15s).
+  - **Pitch Env Depth**: Pitch sweep depth added to the base pitch (0 Hz to 300 Hz).
+  - **Click Level**: Level of the short noise-click transient (0.0 to 1.0).
+  - **Distortion**: Soft-clipping overdrive drive depth (0.0 to 1.0).
+  - **Volume**: Master level.
+
+#### DR8 Snare (`builtin://dr8_snare`)
+A snare drum synthesizer that splits the sound generator into two components: a resonant skin body (two detuned sine wave oscillators tuned to a fundamental and a 1.6x harmonic) and snare wires (a white noise generator passed through a resonant high-pass filter).
+- **Parameters**:
+  - **Pitch**: Fundamental skin pitch (100 Hz to 250 Hz).
+  - **Decay**: Skin body tone decay time (0.05s to 0.5s).
+  - **Noise Level**: Snare wire noise volume (0.0 to 1.0).
+  - **Noise Decay**: Snare wire noise decay time (0.05s to 1.0s).
+  - **Noise HPF**: High-pass filter cutoff frequency for the noise (800 Hz to 8000 Hz).
+  - **Tone/Noise Mix**: Mix balance between skin body tone (0.0) and wire noise (1.0).
+  - **Volume**: Master level.
+
+#### DR8 Hat (`builtin://dr8_hat`)
+A hihat synthesizer emulating the classic TR-808 metallic sound source by summing 6 detuned square wave oscillators, then processing the sum through a resonant bandpass filter and high-pass filter cascade.
+- **Parameters**:
+  - **Decay**: Amplitude decay time (0.02s to 0.8s).
+  - **HPF Freq**: High-pass filter cutoff frequency (3 kHz to 12 kHz).
+  - **BPF Freq**: Bandpass filter center frequency (6 kHz to 15 kHz).
+  - **Tension**: Detuning tension factor of the 6 oscillators (0.0 to 1.0).
+  - **Volume**: Master level.
+
+#### DR8 Tom (`builtin://dr8_tom`)
+A tom synthesizer featuring a pitch-swept sine wave oscillator passed through a low-pass filter for a clean, woody tone, combined with an initial noise attack click.
+- **Parameters**:
+  - **Pitch**: Base oscillator frequency (70 Hz to 200 Hz).
+  - **Decay**: Amplitude envelope decay time (0.1s to 1.5s).
+  - **Pitch Env Decay**: Pitch sweep decay time (0.02s to 0.3s).
+  - **Pitch Env Depth**: Pitch sweep depth added to base pitch (0 Hz to 100 Hz).
+  - **Noise Attack**: Initial attack noise click level (0.0 to 1.0).
+  - **Volume**: Master level.
 
 ---
 

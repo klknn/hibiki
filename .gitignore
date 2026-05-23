@@ -12,7 +12,6 @@ genhtml
 .vscode/
 .idea/
 .antigravitycli/
-.agents/
 
 # OS generated files
 .DS_Store

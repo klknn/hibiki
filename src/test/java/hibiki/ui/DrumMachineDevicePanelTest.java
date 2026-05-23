@@ -35,14 +35,14 @@ public class DrumMachineDevicePanelTest {
   }
 
   private Request getLatestRequest() throws Exception {
-    byte[] bytes = interceptedBytes.toByteArray();
-    if (bytes.length == 0) return null;
-    java.io.DataInputStream dis =
-        new java.io.DataInputStream(new java.io.ByteArrayInputStream(bytes));
-    int size = Integer.reverseBytes(dis.readInt());
-    byte[] payload = new byte[size];
-    dis.readFully(payload);
-    return Request.parseFrom(payload);
+    List<Request> reqs = getAllRequests();
+    for (int i = reqs.size() - 1; i >= 0; i--) {
+      Request r = reqs.get(i);
+      if (!r.hasSendVirtualMidi()) {
+        return r;
+      }
+    }
+    return null;
   }
 
   private List<Request> getAllRequests() throws Exception {

@@ -357,6 +357,44 @@ public class BrowserPane extends JPanel {
     auxItem.rawPath = "builtin://aux";
     builtinNode.add(new DefaultMutableTreeNode(auxItem));
 
+    FileItem bitcrusherItem =
+        new FileItem(new File("builtin"), "builtin", "Bitcrusher", "Hibiki", 0);
+    bitcrusherItem.rawPath = "builtin://bitcrusher";
+    builtinNode.add(new DefaultMutableTreeNode(bitcrusherItem));
+
+    FileItem chorusItem = new FileItem(new File("builtin"), "builtin", "Chorus", "Hibiki", 0);
+    chorusItem.rawPath = "builtin://chorus";
+    builtinNode.add(new DefaultMutableTreeNode(chorusItem));
+
+    FileItem stereoWidthItem =
+        new FileItem(new File("builtin"), "builtin", "Stereo Width", "Hibiki", 0);
+    stereoWidthItem.rawPath = "builtin://stereo_width";
+    builtinNode.add(new DefaultMutableTreeNode(stereoWidthItem));
+
+    FileItem acidBassItem = new FileItem(new File("builtin"), "builtin", "Acid Bass", "Hibiki", 0);
+    acidBassItem.rawPath = "builtin://acid_bass";
+    builtinNode.add(new DefaultMutableTreeNode(acidBassItem));
+
+    FileItem organItem = new FileItem(new File("builtin"), "builtin", "Drawbar Organ", "Hibiki", 0);
+    organItem.rawPath = "builtin://organ";
+    builtinNode.add(new DefaultMutableTreeNode(organItem));
+
+    FileItem dr8KickItem = new FileItem(new File("builtin"), "builtin", "DR8 Kick", "Hibiki", 0);
+    dr8KickItem.rawPath = "builtin://dr8_kick";
+    builtinNode.add(new DefaultMutableTreeNode(dr8KickItem));
+
+    FileItem dr8SnareItem = new FileItem(new File("builtin"), "builtin", "DR8 Snare", "Hibiki", 0);
+    dr8SnareItem.rawPath = "builtin://dr8_snare";
+    builtinNode.add(new DefaultMutableTreeNode(dr8SnareItem));
+
+    FileItem dr8HatItem = new FileItem(new File("builtin"), "builtin", "DR8 Hat", "Hibiki", 0);
+    dr8HatItem.rawPath = "builtin://dr8_hat";
+    builtinNode.add(new DefaultMutableTreeNode(dr8HatItem));
+
+    FileItem dr8TomItem = new FileItem(new File("builtin"), "builtin", "DR8 Tom", "Hibiki", 0);
+    dr8TomItem.rawPath = "builtin://dr8_tom";
+    builtinNode.add(new DefaultMutableTreeNode(dr8TomItem));
+
     // DX7 SysEx presets: scan testdata/ for .syx files and list patches.
     DefaultMutableTreeNode dx7Node = new DefaultMutableTreeNode("DX7 Presets");
     File testDataDir = new File("testdata");

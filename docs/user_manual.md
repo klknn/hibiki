@@ -383,6 +383,14 @@ A tom synthesizer featuring a pitch-swept sine wave oscillator passed through a 
   - **Noise Attack**: Initial attack noise click level (0.0 to 1.0).
   - **Volume**: Master level.
 
+#### DR8 Clap (`builtin://dr8_clap`)
+A hand clap synthesizer utilizing a white noise sound source modulated by a multi-trigger amplitude envelope (3 rapid pre-claps followed by a main decay tail), processed through a resonant bandpass filter.
+- **Parameters**:
+  - **Decay**: Main tail decay time (0.05s to 1.0s).
+  - **Filter Cutoff**: Bandpass filter center frequency (500 Hz to 3000 Hz).
+  - **Spread**: Micro-trigger timing spread (5ms to 20ms).
+  - **Volume**: Master level.
+
 ---
 
 ## Plugin Hosting Modes

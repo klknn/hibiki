@@ -78,6 +78,16 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_dr8_clap",
+    srcs = ["builtin_dr8_clap.cpp"],
+    hdrs = ["builtin_dr8_clap.hpp"],
+    deps = [
+        "//engine/core:biquad_filter",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
     name = "builtin_organ",
     srcs = ["builtin_organ.cpp"],
     hdrs = ["builtin_organ.hpp"],
@@ -131,6 +141,7 @@ cc_library(
     deps = [
         ":builtin_3xosc",
         ":builtin_acid_bass",
+        ":builtin_dr8_clap",
         ":builtin_dr8_hat",
         ":builtin_dr8_kick",
         ":builtin_dr8_snare",
@@ -255,6 +266,16 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_dr8_tom",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_dr8_clap_test",
+    srcs = ["builtin_dr8_clap_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_dr8_clap",
         "@googletest//:gtest_main",
     ],
 )

@@ -19,6 +19,7 @@
 #include "engine/effects/builtin_stereo_width.hpp"
 #include "engine/instruments/builtin_3xosc.hpp"
 #include "engine/instruments/builtin_acid_bass.hpp"
+#include "engine/instruments/builtin_dr8_clap.hpp"
 #include "engine/instruments/builtin_dr8_hat.hpp"
 #include "engine/instruments/builtin_dr8_kick.hpp"
 #include "engine/instruments/builtin_dr8_snare.hpp"
@@ -68,6 +69,9 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinDr8Tom::kPath) {
     plugin = std::make_unique<BuiltinDr8Tom>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinDr8Clap::kPath) {
+    plugin = std::make_unique<BuiltinDr8Clap>();
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinOrgan::kPath) {
     plugin = std::make_unique<BuiltinOrgan>();

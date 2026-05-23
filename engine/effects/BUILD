@@ -114,6 +114,7 @@ cc_library(
     deps = [
         ":builtin_aux",
         ":builtin_bitcrusher",
+        ":builtin_chorus",
         ":builtin_compressor",
         ":builtin_convolver",
         ":builtin_delay",
@@ -235,6 +236,16 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_bitcrusher",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_chorus_test",
+    srcs = ["builtin_chorus_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_chorus",
         "@googletest//:gtest_main",
     ],
 )

@@ -391,6 +391,14 @@ A hand clap synthesizer utilizing a white noise sound source modulated by a mult
   - **Spread**: Micro-trigger timing spread (5ms to 20ms).
   - **Volume**: Master level.
 
+#### DR8 Cowbell (`builtin://dr8_cowbell`)
+A cowbell synthesizer utilizing two detuned square wave oscillators passed through a resonant bandpass filter, modulated by an exponential amplitude decay envelope.
+- **Parameters**:
+  - **Pitch**: Base tuning frequency (400 Hz to 700 Hz).
+  - **Decay**: Amplitude envelope decay time (0.05s to 0.5s).
+  - **Detune**: Detuning ratio between oscillators (0.0 to 1.0).
+  - **Volume**: Master level.
+
 ---
 
 ## Plugin Hosting Modes

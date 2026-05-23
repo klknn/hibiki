@@ -283,6 +283,70 @@ Knobs default to center (neutral). Turn right to increase, left to invert.
 
 ---
 
+## Built-in Audio Effects
+
+### Bitcrusher (`builtin://bitcrusher`)
+A lo-fi distortion effect that reduces audio quality through fractional bit-depth quantization and sample-rate reduction.
+- **Parameters**:
+  - **Drive**: Pre-drive input gain (0 to 24 dB) to color/drive the signal.
+  - **Bit Depth**: Resolution reduction (1 to 24 bits), allowing continuous automation.
+  - **Sample Rate**: Downsampling range (20 Hz to host sample rate) using a phase accumulator and sample-and-hold.
+  - **Wet/Dry**: Mix control between clean and processed audio.
+  - **Enable**: Bypass switch.
+
+### Chorus (`builtin://chorus`)
+A stereo chorus effect that modulates dual delay lines (5ms to 30ms) using multi-phase LFOs to create thickness, pitch variation, detuning, and stereo spread.
+- **Parameters**:
+  - **Rate**: LFO modulation frequency (0.1 Hz to 10 Hz).
+  - **Depth**: Delay modulation depth (0 ms to 5 ms).
+  - **Delay**: Base delay time offset (5 ms to 30 ms).
+  - **Feedback**: Feeds delayed signal back into delay lines (0.0 to 0.95).
+  - **Wet/Dry**: Mix ratio (default 50% for classic chorus summation).
+  - **Enable**: Bypass switch.
+
+### Stereo Width (`builtin://stereo_width`)
+A spatial stereo enhancer that delays one channel relative to the other (0 to 40ms) exploiting the Haas effect, coupled with a crossover to keep low frequencies in mono.
+- **Parameters**:
+  - **Delay**: Haas delay time offset (0 ms to 40 ms).
+  - **Channel**: Selects which channel to delay (Left or Right).
+  - **Mono Crossover**: Frequency below which audio is forced to mono (50 Hz to 500 Hz) to keep low frequencies focused and phase-aligned.
+  - **Width**: Mid/side scaling factor (0.0 to 2.0) applied to high frequencies.
+  - **Enable**: Bypass switch.
+
+---
+
+## Built-in Instruments
+
+### Acid Bass (`builtin://acid_bass`)
+A monophonic bass synthesizer inspired by the TB-303, featuring band-limited Saw/Square oscillators, a resonant diode-ladder lowpass filter, accent/glide behaviors, and built-in overdrive.
+- **Parameters**:
+  - **Waveform**: Selects between band-limited Sawtooth (0.0) and Square (1.0) oscillators.
+  - **Cutoff**: Base filter cutoff frequency (100 Hz to 3000 Hz).
+  - **Resonance**: Resonant peak level (zero-delay feedback loop up to self-oscillation).
+  - **Env Mod**: Envelope depth applied to filter cutoff.
+  - **Decay**: Filter envelope decay time (0.05s to 3.0s).
+  - **Accent**: Boosts volume and drives filter cutoff decay based on MIDI velocity threshold.
+  - **Overdrive**: Tanh saturation stage post-filter.
+  - **Volume**: Master level.
+
+### Drawbar Organ (`builtin://organ`)
+A polyphonic additive synthesizer simulating drawbar organs by summing fundamental and harmonic sine waves. Includes Leslie-style rotary speaker emulation and percussion key click envelope.
+- **Parameters**:
+  - **Drawbars 1–9**: Relative levels for standard Hammond harmonics (16', 5 1/3', 8', 4', 2 2/3', 2', 1 3/5', 1 1/3', 1').
+  - **Percussion Enable**: Triggers a fast key-click decay at note onset.
+  - **Percussion Decay**: Decay time of percussion transient.
+  - **Rotary Speed**: Emulates Leslie rotary speaker speed, interpolating between Slow (1.2 Hz) and Fast (6.8 Hz) Doppler vibrato and tremolo.
+  - **Volume**: Master level.
+
+### DR8 Drum Synthesizers (`builtin://dr8_kick`, `builtin://dr8_snare`, `builtin://dr8_hat`, `builtin://dr8_tom`)
+Dedicated, minimal synthesis modules inspired by classic analog drum machines like the TR-808.
+- **DR8 Kick**: Pitch-swept sine wave oscillator + short high-frequency noise transient click + overdrive drive stage.
+- **DR8 Snare**: Resonant skin body (two detuned sines) mixed with noise wires (white noise through a biquad highpass filter).
+- **DR8 Hat**: detuned 6-square-oscillator sound source passed through a resonant bandpass and highpass filter.
+- **DR8 Tom**: woody swept sine wave passed through a biquad lowpass filter with initial noise attack spike.
+
+---
+
 ## Plugin Hosting Modes
 
 Hibiki supports three modes for running VST3 plugins, selectable in

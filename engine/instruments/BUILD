@@ -40,6 +40,15 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_dr8_kick",
+    srcs = ["builtin_dr8_kick.cpp"],
+    hdrs = ["builtin_dr8_kick.hpp"],
+    deps = [
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
     name = "builtin_organ",
     srcs = ["builtin_organ.cpp"],
     hdrs = ["builtin_organ.hpp"],
@@ -93,6 +102,7 @@ cc_library(
     deps = [
         ":builtin_3xosc",
         ":builtin_acid_bass",
+        ":builtin_dr8_kick",
         ":builtin_drum_machine",
         ":builtin_film",
         ":builtin_organ",
@@ -173,6 +183,16 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_organ",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_dr8_kick_test",
+    srcs = ["builtin_dr8_kick_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_dr8_kick",
         "@googletest//:gtest_main",
     ],
 )

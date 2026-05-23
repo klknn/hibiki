@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "engine/effects/builtin_aux.hpp"
+#include "engine/effects/builtin_bitcrusher.hpp"
 #include "engine/effects/builtin_compressor.hpp"
 #include "engine/effects/builtin_convolver.hpp"
 #include "engine/effects/builtin_delay.hpp"
@@ -61,6 +62,9 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinLimiter::kPath) {
     plugin = std::make_unique<BuiltinLimiter>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinBitcrusher::kPath) {
+    plugin = std::make_unique<BuiltinBitcrusher>();
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinHott::kPath) {
     plugin = std::make_unique<BuiltinHott>();

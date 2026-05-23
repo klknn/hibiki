@@ -1,19 +1,26 @@
 # Built-in Devices
 
-Hibiki includes 4 built-in audio devices: 2 effects (EQ, Compressor) and 2 instruments (3xOsc, Sampler). This document describes the registration flow, engine processing, proto notifications, and Java UI panels for each.
+Hibiki includes 14 built-in audio devices:
+- **Effects**: Equalizer (`eq`), Compressor (`compressor`), Multiband Upward/Downward Compressor (`hott`), Delay (`delay`), Reverb (`reverb`), Limiter (`limiter`), Maximizer (`maxim`), Transient Designer (`envelope_shaper`), Phaser (`phaser`), Convolution Reverb (`convolver`), and Routing Aux Send (`aux`).
+- **Instruments**: 3xOsc Synth (`3xosc`), Sampler (`sampler`), Drum Machine (`drum_machine`), and 6-operator FM Synthesizer (`film`).
+
+This document describes the registration flow, engine processing, proto notifications, and Java UI panels for these devices.
 
 ## Registration
 
-Plugins are loaded in `track.cpp` `LoadPlugin()` by matching `builtin://` paths:
+Plugins are loaded in `track.cpp` `Track::LoadPlugin()` by matching `builtin://` paths:
 
 ```cpp
-if (path == BuiltinEq::kPath)     plugin = std::make_unique<BuiltinEq>();
-if (path == BuiltinCompressor::kPath) plugin = std::make_unique<BuiltinCompressor>();
-if (path == Builtin3xOsc::kPath)  plugin = std::make_unique<Builtin3xOsc>();
-if (path == BuiltinSampler::kPath) plugin = std::make_unique<BuiltinSampler>();
+  if (path == BuiltinEq::kPath) {
+    plugin = std::make_unique<BuiltinEq>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinCompressor::kPath) {
+    plugin = std::make_unique<BuiltinCompressor>();
+    plugin->load(path, 0, sample_rate);
+  }
 ```
 
-All implement `IPlugin` (`engine/plugin/iplugin.hpp`). Parameters use normalized 0-1 range.
+All implement `IPlugin` (`engine/plugin/iplugin.hpp`). Parameters use a normalized 0-1 range.
 
 ---
 

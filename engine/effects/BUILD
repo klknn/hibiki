@@ -53,6 +53,20 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_bitcrusher",
+    srcs = ["builtin_bitcrusher.cpp"],
+    hdrs = ["builtin_bitcrusher.hpp"],
+    deps = ["//engine/plugin:iplugin"],
+)
+
+cc_library(
+    name = "builtin_chorus",
+    srcs = ["builtin_chorus.cpp"],
+    hdrs = ["builtin_chorus.hpp"],
+    deps = ["//engine/plugin:iplugin"],
+)
+
+cc_library(
     name = "builtin_reverb",
     srcs = ["builtin_reverb.cpp"],
     hdrs = ["builtin_reverb.hpp"],
@@ -99,6 +113,7 @@ cc_library(
     name = "effects",
     deps = [
         ":builtin_aux",
+        ":builtin_bitcrusher",
         ":builtin_compressor",
         ":builtin_convolver",
         ":builtin_delay",
@@ -210,6 +225,16 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_maxim",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_bitcrusher_test",
+    srcs = ["builtin_bitcrusher_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_bitcrusher",
         "@googletest//:gtest_main",
     ],
 )

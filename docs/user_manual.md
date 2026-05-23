@@ -414,6 +414,15 @@ A woodblock-like rimshot synthesizer utilizing three bandpass-filtered oscillato
   - **Decay**: Amplitude envelope decay time (0.01s to 0.1s).
   - **Volume**: Master level.
 
+#### DR8 Conga (`builtin://dr8_conga`)
+A warm analog conga synthesizer utilizing a pitch-swept sine wave oscillator combined with a fast initial attack click, passed through a biquad lowpass filter.
+- **Parameters**:
+  - **Pitch**: Base tuning frequency (150 Hz to 350 Hz).
+  - **Decay**: Amplitude envelope decay time (0.05s to 0.8s).
+  - **Pitch Env Decay**: Pitch sweep decay time (0.01s to 0.15s).
+  - **Pitch Env Depth**: Pitch sweep depth (0 Hz to 120 Hz).
+  - **Volume**: Master level.
+
 ---
 
 ## Plugin Hosting Modes

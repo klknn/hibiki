@@ -15,6 +15,7 @@
 #include "engine/effects/builtin_phaser.hpp"
 #include "engine/effects/builtin_reverb.hpp"
 #include "engine/instruments/builtin_3xosc.hpp"
+#include "engine/instruments/builtin_drum_machine.hpp"
 #include "engine/instruments/builtin_film.hpp"
 #include "engine/instruments/builtin_sampler.hpp"
 #include "engine/ipc/ipc.hpp"
@@ -46,6 +47,11 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinSampler::kPath) {
     plugin = std::make_unique<BuiltinSampler>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinDrumMachine::kPath) {
+    auto dm = std::make_unique<BuiltinDrumMachine>();
+    dm->setTrackIndex(index);
+    plugin = std::move(dm);
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinDelay::kPath) {
     plugin = std::make_unique<BuiltinDelay>();
@@ -172,6 +178,10 @@ bool Track::LoadClip(int slot, const std::string& path, bool is_loop,
   auto result = hibiki::LoadClip(path, is_loop, sample_rate);
   if (!result.ok()) return false;
   auto clip = std::make_unique<Clip>(std::move(*result));
+  std::string basename = path;
+  size_t pos = basename.find_last_of("/\\");
+  if (pos != std::string::npos) basename = basename.substr(pos + 1);
+  clip->name = basename;
 
   // Exclusivity rule: If loading an audio clip, clear instruments
   if (clip->type == Clip::Type::AUDIO) {
@@ -299,6 +309,11 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec,
     clip = std::make_unique<Clip>(std::move(*result));
   }
 
+  std::string basename = path.empty() ? "New Clip" : path;
+  size_t pos = basename.find_last_of("/\\");
+  if (pos != std::string::npos) basename = basename.substr(pos + 1);
+  clip->name = basename;
+
   auto tc = std::make_unique<TimelineClip>();
   tc->duration_sec =
       clip->duration_sec;  // In seconds for audio clips, 0 for MIDI
@@ -315,9 +330,6 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec,
   timeline_clips.push_back(std::move(tc));
   int clip_idx = (int)timeline_clips.size() - 1;
   // Use basename for display name
-  std::string basename = path.empty() ? "New Clip" : path;
-  size_t pos = basename.find_last_of("/\\");
-  if (pos != std::string::npos) basename = basename.substr(pos + 1);
   hibiki::sendTimelineClipInfo(index, clip_idx, basename, path,
                                (float)start_time_sec, duration_for_gui,
                                waveform);

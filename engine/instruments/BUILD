@@ -56,9 +56,25 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_drum_machine",
+    srcs = ["builtin_drum_machine.cpp"],
+    hdrs = ["builtin_drum_machine.hpp"],
+    deps = [
+        ":builtin_3xosc",
+        ":builtin_sampler",
+        "//engine/ipc",
+        "//engine/plugin:iplugin",
+        "//pb:commands_cc_proto",
+        "//pb:core_cc_proto",
+        "//pb:notifications_cc_proto",
+    ],
+)
+
+cc_library(
     name = "instruments",
     deps = [
         ":builtin_3xosc",
+        ":builtin_drum_machine",
         ":builtin_film",
         ":builtin_sampler",
     ],
@@ -104,6 +120,17 @@ cc_test(
     linkstatic = True,
     deps = [
         ":multi_point_envelope",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_drum_machine_test",
+    srcs = ["builtin_drum_machine_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_drum_machine",
+        "//engine:test_utils_state",
         "@googletest//:gtest_main",
     ],
 )

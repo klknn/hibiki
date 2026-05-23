@@ -5,6 +5,8 @@
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "engine/core/audio_file.hpp"
+#include "engine/core/midi.hpp"
+#include "engine/instruments/builtin_drum_machine.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
@@ -21,6 +23,47 @@ Track* GetOrCreateTrack(ProjectState& state, int track_index) {
     state.tracks[track_index] = std::make_unique<Track>(track_index);
   }
   return state.tracks[track_index].get();
+}
+
+static void SerializeClipMidiEvents(const Clip& clip,
+                                    pb::core::Clip* proto_clip) {
+  proto_clip->set_type(clip.type == Clip::Type::MIDI
+                           ? pb::core::CLIP_TYPE_MIDI
+                           : pb::core::CLIP_TYPE_AUDIO);
+  proto_clip->set_path(clip.path);
+  proto_clip->set_name(clip.name);
+  proto_clip->set_is_loop(clip.is_loop);
+  proto_clip->set_duration_beats(clip.duration_beats);
+  proto_clip->set_duration_sec(clip.duration_sec);
+
+  for (float val : clip.waveform_summary) {
+    proto_clip->add_waveform_summary(val);
+  }
+
+  if (clip.type == Clip::Type::MIDI) {
+    const double ppq = 480.0;
+    proto_clip->set_resolution(ppq);
+
+    for (size_t i = 0; i < clip.midi_events.size(); ++i) {
+      const auto& ev = clip.midi_events[i];
+      if (isNoteOn(ev)) {
+        double duration = 0.1;
+        for (size_t j = i + 1; j < clip.midi_events.size(); ++j) {
+          const auto& off_ev = clip.midi_events[j];
+          if (off_ev.note == ev.note && off_ev.channel == ev.channel &&
+              isNoteOff(off_ev)) {
+            duration = off_ev.beats - ev.beats;
+            break;
+          }
+        }
+        auto* pme = proto_clip->add_midi_events();
+        pme->set_tick(std::round(ev.beats * ppq));
+        pme->set_pitch(ev.note);
+        pme->set_duration_ticks(std::round(duration * ppq));
+        pme->set_velocity(ev.velocity);
+      }
+    }
+  }
 }
 
 // Helper: populate a Project protobuf from a ProjectState
@@ -71,34 +114,34 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
           sc_it->second.source_track_index >= 0) {
         ps->set_sidechain_track_index(sc_it->second.source_track_index);
       }
+
+      if (auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugin.get())) {
+        dm->serializeState(ps->mutable_drum_machine_state());
+      }
     }
 
     for (const auto& [slot, clip] : track->clips) {
+      if (!clip) continue;
       auto* ss = ts->add_session_slots();
       ss->set_slot_index(slot);
-      auto* cs = ss->mutable_clip();
-      cs->set_path(clip->path);
-      cs->set_is_loop(clip->is_loop);
-      cs->set_type(clip->type == Clip::Type::MIDI
-                       ? hibiki::pb::core::CLIP_TYPE_MIDI
-                       : hibiki::pb::core::CLIP_TYPE_AUDIO);
+      SerializeClipMidiEvents(*clip, ss->mutable_clip());
     }
 
     for (const auto& tc : track->timeline_clips) {
       if (!tc->clip) continue;
       auto* tcs = ts->add_timeline_clips();
-      auto* clip = tcs->mutable_clip();
-      clip->set_path(tc->clip->path);
       tcs->set_start_time_sec(tc->start_time_sec);
-      clip->set_duration_sec(tc->duration_sec);
       tcs->set_alias_source(tc->alias_source);
-      clip->set_is_loop(tc->clip->is_loop);
-      clip->set_trim_start_beats(tc->trim_start_beats);
-      clip->set_duration_beats(
-          tc->loop_interval_beats);  // reuse field for loop interval
       tcs->set_fade_in_sec(tc->fade_in_sec);
       tcs->set_fade_out_sec(tc->fade_out_sec);
       tcs->set_muted(tc->muted);
+
+      auto* clip = tcs->mutable_clip();
+      SerializeClipMidiEvents(*tc->clip, clip);
+      clip->set_duration_sec(tc->duration_sec);
+      clip->set_trim_start_beats(tc->trim_start_beats);
+      clip->set_duration_beats(
+          tc->loop_interval_beats);  // reuse field for loop interval
     }
 
     for (const auto& lane : track->automation_lanes) {
@@ -166,29 +209,178 @@ static void LoadTracksFromProto(ProjectState& state,
         if (plugin_data.has_sidechain_track_index()) {
           track->plugin_sidechain[pidx] = {plugin_data.sidechain_track_index()};
         }
+
+        if (plugin_data.has_drum_machine_state()) {
+          if (auto* dm = dynamic_cast<BuiltinDrumMachine*>(
+                  track->plugins[pidx].get())) {
+            dm->deserializeState(plugin_data.drum_machine_state());
+          }
+        }
       }
     }
 
     for (const auto& slot_data : track_data.session_slots()) {
-      if (!slot_data.has_clip() || slot_data.clip().path().empty()) continue;
-      track->LoadClip(slot_data.slot_index(), slot_data.clip().path(),
-                      slot_data.clip().is_loop());
+      if (!slot_data.has_clip()) continue;
+      const auto& clip_data = slot_data.clip();
+      std::unique_ptr<Clip> clip;
+      if (clip_data.type() == pb::core::CLIP_TYPE_MIDI) {
+        if (clip_data.path().empty()) {
+          clip = std::make_unique<Clip>();
+          clip->type = Clip::Type::MIDI;
+          clip->path = "";
+          clip->duration_beats = clip_data.duration_beats();
+          clip->duration_sec = 0.0;
+        } else {
+          auto result = hibiki::LoadClip(clip_data.path());
+          if (result.ok()) {
+            clip = std::make_unique<Clip>(std::move(*result));
+          } else {
+            clip = std::make_unique<Clip>();
+            clip->type = Clip::Type::MIDI;
+            clip->path = clip_data.path();
+            clip->duration_beats = clip_data.duration_beats();
+            clip->duration_sec = 0.0;
+          }
+        }
+
+        // Restore midi events
+        clip->midi_events.clear();
+        const double ppq = 480.0;
+        for (const auto& ev : clip_data.midi_events()) {
+          double startBeats = (double)ev.tick() / ppq;
+          double endBeats = (double)(ev.tick() + ev.duration_ticks()) / ppq;
+          MidiEvent noteOn;
+          noteOn.beats = startBeats;
+          noteOn.type = 0x90;
+          noteOn.channel = 0;
+          noteOn.note = (uint8_t)ev.pitch();
+          noteOn.velocity = (uint8_t)ev.velocity();
+          clip->midi_events.push_back(noteOn);
+
+          MidiEvent noteOff;
+          noteOff.beats = endBeats;
+          noteOff.type = 0x80;
+          noteOff.channel = 0;
+          noteOff.note = (uint8_t)ev.pitch();
+          noteOff.velocity = 0;
+          clip->midi_events.push_back(noteOff);
+        }
+        std::sort(clip->midi_events.begin(), clip->midi_events.end(),
+                  [](const MidiEvent& a, const MidiEvent& b) {
+                    return a.beats < b.beats;
+                  });
+      } else {
+        // AUDIO clip
+        auto result = hibiki::LoadClip(clip_data.path(), clip_data.is_loop());
+        if (result.ok()) {
+          clip = std::make_unique<Clip>(std::move(*result));
+        }
+      }
+
+      if (clip) {
+        clip->name = clip_data.name();
+        if (clip->name.empty() && !clip->path.empty()) {
+          std::string basename = clip->path;
+          size_t pos = basename.find_last_of("/\\");
+          if (pos != std::string::npos) basename = basename.substr(pos + 1);
+          clip->name = basename;
+        }
+        clip->is_loop = clip_data.is_loop();
+        if (clip_data.waveform_summary_size() > 0) {
+          clip->waveform_summary.clear();
+          for (float val : clip_data.waveform_summary()) {
+            clip->waveform_summary.push_back(val);
+          }
+        }
+        track->clips[slot_data.slot_index()] = std::move(clip);
+      }
     }
 
     for (const auto& tc_data : track_data.timeline_clips()) {
-      if (!tc_data.has_clip() || tc_data.clip().path().empty()) continue;
+      if (!tc_data.has_clip()) continue;
+      const auto& clip_data = tc_data.clip();
       auto tc = std::make_unique<TimelineClip>();
-      auto result = hibiki::LoadClip(tc_data.clip().path());
-      if (result.ok()) {
-        tc->clip = std::make_unique<Clip>(std::move(*result));
+
+      std::unique_ptr<Clip> clip;
+      if (clip_data.type() == pb::core::CLIP_TYPE_MIDI) {
+        if (clip_data.path().empty()) {
+          clip = std::make_unique<Clip>();
+          clip->type = Clip::Type::MIDI;
+          clip->path = "";
+          clip->duration_beats = clip_data.duration_beats();
+          clip->duration_sec = 0.0;
+        } else {
+          auto result = hibiki::LoadClip(clip_data.path());
+          if (result.ok()) {
+            clip = std::make_unique<Clip>(std::move(*result));
+          } else {
+            clip = std::make_unique<Clip>();
+            clip->type = Clip::Type::MIDI;
+            clip->path = clip_data.path();
+            clip->duration_beats = clip_data.duration_beats();
+            clip->duration_sec = 0.0;
+          }
+        }
+
+        // Restore midi events
+        clip->midi_events.clear();
+        const double ppq = 480.0;
+        for (const auto& ev : clip_data.midi_events()) {
+          double startBeats = (double)ev.tick() / ppq;
+          double endBeats = (double)(ev.tick() + ev.duration_ticks()) / ppq;
+          MidiEvent noteOn;
+          noteOn.beats = startBeats;
+          noteOn.type = 0x90;
+          noteOn.channel = 0;
+          noteOn.note = (uint8_t)ev.pitch();
+          noteOn.velocity = (uint8_t)ev.velocity();
+          clip->midi_events.push_back(noteOn);
+
+          MidiEvent noteOff;
+          noteOff.beats = endBeats;
+          noteOff.type = 0x80;
+          noteOff.channel = 0;
+          noteOff.note = (uint8_t)ev.pitch();
+          noteOff.velocity = 0;
+          clip->midi_events.push_back(noteOff);
+        }
+        std::sort(clip->midi_events.begin(), clip->midi_events.end(),
+                  [](const MidiEvent& a, const MidiEvent& b) {
+                    return a.beats < b.beats;
+                  });
+      } else {
+        // AUDIO clip
+        auto result = hibiki::LoadClip(clip_data.path());
+        if (result.ok()) {
+          clip = std::make_unique<Clip>(std::move(*result));
+        }
       }
+
+      if (clip) {
+        clip->name = clip_data.name();
+        if (clip->name.empty() && !clip->path.empty()) {
+          std::string basename = clip->path;
+          size_t pos = basename.find_last_of("/\\");
+          if (pos != std::string::npos) basename = basename.substr(pos + 1);
+          clip->name = basename;
+        }
+        clip->is_loop = clip_data.is_loop();
+        if (clip_data.waveform_summary_size() > 0) {
+          clip->waveform_summary.clear();
+          for (float val : clip_data.waveform_summary()) {
+            clip->waveform_summary.push_back(val);
+          }
+        }
+        tc->clip = std::move(clip);
+      }
+
       tc->start_time_sec = tc_data.start_time_sec();
       tc->duration_sec =
           tc->clip ? tc->clip->duration_sec : tc_data.clip().duration_sec();
       tc->duration_beats = tc->clip ? tc->clip->duration_beats : 0.0;
       tc->alias_source = tc_data.alias_source();
       tc->trim_start_beats = tc_data.clip().trim_start_beats();
-      if (tc_data.clip().is_loop()) {
+      if (tc_data.clip().is_loop() && tc->clip) {
         tc->clip->is_loop = true;
         tc->loop_interval_beats = tc_data.clip().duration_beats();
       }
@@ -274,10 +466,14 @@ void SyncProjectToGui(const ProjectState& state) {
   for (const auto& [tidx, track] : state.tracks) {
     // Sync Session Clips
     for (const auto& [sidx, clip] : track->clips) {
-      std::string cname = clip->path;
+      if (!clip) continue;
+      std::string cname = clip->name.empty() ? clip->path : clip->name;
       size_t last_slash = cname.find_last_of("/\\");
       if (last_slash != std::string::npos) {
         cname = cname.substr(last_slash + 1);
+      }
+      if (cname.empty()) {
+        cname = "New Clip";
       }
       hibiki::sendClipInfo(tidx, sidx, cname, clip->path);
     }
@@ -293,15 +489,22 @@ void SyncProjectToGui(const ProjectState& state) {
       }
       hibiki::sendParamList(tidx, pidx, plugin->getName(),
                             plugin->isInstrument(), params);
+      if (auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugin.get())) {
+        dm->sendAllPadStates();
+      }
     }
     // Sync Timeline Clips
     for (int tc_idx = 0; tc_idx < (int)track->timeline_clips.size(); ++tc_idx) {
       const auto& tc = track->timeline_clips[tc_idx];
       if (!tc->clip) continue;
-      std::string cname = tc->clip->path;
+      std::string cname =
+          tc->clip->name.empty() ? tc->clip->path : tc->clip->name;
       size_t last_slash = cname.find_last_of("/\\");
       if (last_slash != std::string::npos) {
         cname = cname.substr(last_slash + 1);
+      }
+      if (cname.empty()) {
+        cname = "New Clip";
       }
       // For MIDI clips, convert duration_beats to seconds using project BPM
       float duration_for_gui =

@@ -6,6 +6,7 @@
 #include "absl/log/log.h"
 #include "engine/commands/commands.hpp"
 #include "engine/core/track.hpp"
+#include "engine/instruments/builtin_drum_machine.hpp"
 #include "engine/instruments/builtin_sampler.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "engine/ipc/tcp.hpp"
@@ -67,6 +68,9 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
           for (int i = 0; i < plugin->getParameterCount(); ++i) {
             sendParamValueChange(tidx, target_idx, i,
                                  plugin->getParameterValue(i));
+          }
+          if (auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugin.get())) {
+            dm->sendAllPadStates();
           }
           // If instrument was inserted at front, re-send param lists for all
           // shifted effect plugins so Java panel indices stay in sync.
@@ -477,6 +481,71 @@ void handleScanRemotePlugins(const pb::commands::ScanRemotePlugins& cmd) {
     }).detach();
   }
   sendAck("SCAN_REMOTE_PLUGINS", true);
+}
+
+void handleDrumPadCmd(const pb::commands::DrumPadCmd& cmd,
+                      ProjectState& state) {
+  int tidx = cmd.track_index();
+  int pidx = cmd.plugin_index();
+  int pad_idx = cmd.pad_index();
+
+  std::lock_guard<std::mutex> lock(state.tracks_mutex);
+  if (!state.tracks.count(tidx)) {
+    sendAck("DRUM_PAD_CMD", false);
+    return;
+  }
+
+  auto& plugins = state.tracks[tidx]->plugins;
+  if (pidx < 0 || pidx >= (int)plugins.size()) {
+    sendAck("DRUM_PAD_CMD", false);
+    return;
+  }
+
+  auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugins[pidx].get());
+  if (!dm) {
+    sendAck("DRUM_PAD_CMD", false);
+    return;
+  }
+
+  bool success = false;
+  switch (cmd.action()) {
+    case pb::commands::DrumPadCmd::ACTION_LOAD_PLUGIN:
+      success = dm->loadPadPlugin(pad_idx, cmd.plugin_path());
+      break;
+    case pb::commands::DrumPadCmd::ACTION_REMOVE_PLUGIN:
+      success = dm->removePadPlugin(pad_idx);
+      break;
+    case pb::commands::DrumPadCmd::ACTION_SET_PARAM:
+      success = dm->setPadParam(pad_idx, cmd.param_id(), cmd.param_value());
+      break;
+    case pb::commands::DrumPadCmd::ACTION_LOAD_SAMPLE:
+      success = dm->loadPadSample(pad_idx, cmd.sample_path());
+      break;
+    case pb::commands::DrumPadCmd::ACTION_SET_VOLUME:
+      dm->setPadVolume(pad_idx, cmd.param_value());
+      success = true;
+      break;
+    case pb::commands::DrumPadCmd::ACTION_SET_PAN:
+      dm->setPadPan(pad_idx, cmd.param_value());
+      success = true;
+      break;
+    case pb::commands::DrumPadCmd::ACTION_SET_MUTE:
+      dm->setPadMute(pad_idx, cmd.param_value() >= 0.5f);
+      success = true;
+      break;
+    case pb::commands::DrumPadCmd::ACTION_SET_SOLO:
+      dm->setPadSolo(pad_idx, cmd.param_value() >= 0.5f);
+      success = true;
+      break;
+    case pb::commands::DrumPadCmd::ACTION_SET_TRIGGER_NOTE:
+      dm->setPadTriggerNote(pad_idx, cmd.trigger_note());
+      success = true;
+      break;
+    default:
+      break;
+  }
+
+  sendAck("DRUM_PAD_CMD", success);
 }
 
 }  // namespace hibiki

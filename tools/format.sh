@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 TOOLS_DIR="$REPO_ROOT/tools"
 CHECK_MODE=false
 [[ "${1:-}" == "--check" ]] && CHECK_MODE=true

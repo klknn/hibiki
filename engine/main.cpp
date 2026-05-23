@@ -899,6 +899,9 @@ void run_ipc_loop(ProjectState& state) {
       case hibiki::pb::commands::Request::kAudioEditor:
         handleAudioEditorCmd(request.audio_editor(), state);
         break;
+      case hibiki::pb::commands::Request::kDrumPad:
+        handleDrumPadCmd(request.drum_pad(), state);
+        break;
     }
     if (state.quit) break;
   }

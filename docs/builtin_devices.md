@@ -214,4 +214,26 @@ If your device needs to send custom visualization data (e.g. metering, spectrum 
      ```bash
      bazel test //...
      ```
-```
+
+---
+
+## Advanced Tips & Best Practices (Lessons from Drum Machine)
+
+If you are building a complex or container-style built-in device (like the Drum Machine), keep the following architectural lessons in mind:
+
+### 1. Host-Child Plugin Serialization
+- If a built-in device hosts child plugins, ensure you recursively serialize and deserialize their states. 
+- In your C++ state capture (e.g., `BuildProjectProto` in `engine/core/project.cpp`), call the child plugin's state serialization methods inside the parent's serialization routines.
+
+### 2. Thread-Safety & Deadlock Prevention
+- **Backend Mutex Locks**: Avoid calling IPC notification-dispatching functions (e.g., `sendNotification` or `sendPadState`) from within a mutex-locked scope in C++ if those notifications trigger callbacks that require engine locks. This prevents cross-thread deadlock between the audio process/IPC worker threads and the main UI thread.
+
+### 3. Java Swing UI Initialization & Lambdas
+- **Initialization Order**: In your Swing panel constructors, always initialize labels, lookups, and dependent visual components *before* adding event listeners to controls (such as `JSpinner` or sliders). Adding listeners that reference local controls before they are fully declared can cause "variable might not have been initialized" errors in lambda contexts.
+
+### 4. Drag & Drop for Built-ins
+- Ensure drag handlers preserve the `rawPath` schema (`builtin://...`) instead of trying to resolve them as filesystem files. Check `BrowserPane.java` and your drop-target panels to allow drop gestures to distinguish between builtin instruments and raw audio files.
+
+### 5. Preserving In-memory MIDI State (Undo/Redo)
+- Timeline clips and session slots containing empty paths (`""`) are treated as in-memory clips (e.g., manually composed MIDI notes).
+- Ensure that the project serialization helper (`engine/core/project.cpp`) serializes the note array (`midi_events`), display name, and waveform summaries into the project protobuf so they survive undo/redo captures and apply routines.

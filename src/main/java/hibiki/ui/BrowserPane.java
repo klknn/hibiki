@@ -134,8 +134,11 @@ public class BrowserPane extends JPanel {
               Object userObject = node.getUserObject();
               if (userObject instanceof FileItem) {
                 FileItem item = (FileItem) userObject;
-                return new java.awt.datatransfer.StringSelection(
-                    item.type + ":" + item.file.getAbsolutePath());
+                String pathStr =
+                    (item.rawPath != null && !item.rawPath.isEmpty())
+                        ? item.rawPath
+                        : item.file.getAbsolutePath();
+                return new java.awt.datatransfer.StringSelection(item.type + ":" + pathStr);
               }
             }
             return null;
@@ -319,6 +322,10 @@ public class BrowserPane extends JPanel {
     FileItem samplerItem = new FileItem(new File("builtin"), "builtin", "Sampler", "Hibiki", 0);
     samplerItem.rawPath = "builtin://sampler";
     builtinNode.add(new DefaultMutableTreeNode(samplerItem));
+    FileItem drumMachineItem =
+        new FileItem(new File("builtin"), "builtin", "Drum Machine", "Hibiki", 0);
+    drumMachineItem.rawPath = "builtin://drum_machine";
+    builtinNode.add(new DefaultMutableTreeNode(drumMachineItem));
     FileItem delayItem = new FileItem(new File("builtin"), "builtin", "Delay", "Hibiki", 0);
     delayItem.rawPath = "builtin://delay";
     builtinNode.add(new DefaultMutableTreeNode(delayItem));

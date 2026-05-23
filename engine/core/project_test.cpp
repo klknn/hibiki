@@ -452,10 +452,59 @@ TEST_F(ProjectTest, ApplyProjectState_EmptyData) {
   EXPECT_THAT(status, ::testing::Not(IsOk()));
 }
 
+TEST_F(ProjectTest, InMemoryMidiClipUndoRedo) {
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+
+  // Create an in-memory MIDI clip
+  auto* track = hibiki::GetOrCreateTrack(state, 0);
+  track->AddTimelineClip("", 0.0, state.bpm, 4.0, state.sample_rate);
+  ASSERT_EQ(track->timeline_clips.size(), 1);
+  auto* clip = track->timeline_clips[0]->clip.get();
+  ASSERT_NE(clip, nullptr);
+  EXPECT_EQ(clip->type, hibiki::Clip::Type::MIDI);
+  EXPECT_TRUE(clip->path.empty());
+
+  // Add MIDI events to the in-memory clip
+  hibiki::MidiEvent noteOn;
+  noteOn.beats = 1.0;
+  noteOn.note = 64;
+  noteOn.velocity = 90;
+  noteOn.type = 0x90;
+  noteOn.channel = 0;
+  clip->midi_events.push_back(noteOn);
+
+  hibiki::MidiEvent noteOff;
+  noteOff.beats = 2.0;
+  noteOff.note = 64;
+  noteOff.velocity = 0;
+  noteOff.type = 0x80;
+  noteOff.channel = 0;
+  clip->midi_events.push_back(noteOff);
+
+  // Capture the project state
+  auto snapshot = hibiki::CaptureProjectState(state);
+
+  // Apply to a new project state
+  hibiki::ProjectState restored_state;
+  restored_state.sample_rate = state.sample_rate;
+  auto status = hibiki::ApplyProjectState(restored_state, snapshot);
+  ASSERT_THAT(status, IsOk());
+
+  // Verify the timeline clip and its notes are restored
+  ASSERT_EQ(restored_state.tracks.size(), 1);
+  auto* restored_track = restored_state.tracks[0].get();
+  ASSERT_EQ(restored_track->timeline_clips.size(), 1);
+  auto* restored_clip = restored_track->timeline_clips[0]->clip.get();
+  ASSERT_NE(restored_clip, nullptr);
+  EXPECT_EQ(restored_clip->type, hibiki::Clip::Type::MIDI);
+  EXPECT_TRUE(restored_clip->path.empty());
+  EXPECT_EQ(restored_clip->midi_events.size(), 2);
+}
+
 // ── E2E: Automation Edit + Undo/Redo ────────────────────────────────
-// NOTE: Session and timeline MIDI clips serialize only the file path,
-// so in-memory MIDI edits don't survive CaptureProjectState round-trips.
-// Automation clips DO round-trip their breakpoint data, so we test those.
+// NOTE: Automation clips DO round-trip their breakpoint data, so we test those.
 
 TEST_F(ProjectTest, AutomationEditUndoRedo) {
   hibiki::HistoryManager history;

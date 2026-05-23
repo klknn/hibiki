@@ -314,6 +314,20 @@ java_test(
 )
 
 java_test(
+    name = "drum_machine_device_panel_test",
+    srcs = ["src/test/java/hibiki/ui/DrumMachineDevicePanelTest.java"],
+    test_class = "hibiki.ui.panels.devices.DrumMachineDevicePanelTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "//pb:commands_java_proto",
+        "//pb:core_java_proto",
+        "//pb:notifications_java_proto",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
     name = "settings_dialog_test",
     srcs = ["src/test/java/hibiki/ui/SettingsDialogTest.java"],
     test_class = "hibiki.ui.SettingsDialogTest",

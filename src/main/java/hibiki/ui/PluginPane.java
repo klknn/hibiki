@@ -35,7 +35,8 @@ public class PluginPane extends JPanel {
           Map.entry("Phaser", PhaserDevicePanel.class),
           Map.entry("Convolver", ConvolverDevicePanel.class),
           Map.entry("FilM", FilmDevicePanel.class),
-          Map.entry("Aux", AuxDevicePanel.class));
+          Map.entry("Aux", AuxDevicePanel.class),
+          Map.entry("Drum Machine", DrumMachineDevicePanel.class));
 
   private static PluginPane instance;
   private final JPanel deviceChainContent;
@@ -160,6 +161,11 @@ public class PluginPane extends JPanel {
                         sd.getPluginIndex(),
                         sd.getLeftSamplesList(),
                         sd.getRightSamplesList());
+                    break;
+                  }
+                case DRUM_PAD:
+                  {
+                    handleDrumPadNotification(notification.getDrumPad());
                     break;
                   }
                 default:
@@ -1029,6 +1035,21 @@ public class PluginPane extends JPanel {
           DeviceWrapper wrapper = findWrapper(trackIndex, pluginIndex);
           if (wrapper != null) {
             wrapper.modPanel.updateFromNotification(slots);
+          }
+        });
+  }
+
+  private void handleDrumPadNotification(hibiki.pb.notifications.DrumPadNotification notif) {
+    SwingUtilities.invokeLater(
+        () -> {
+          int trackIdx = notif.getTrackIndex();
+          int pluginIdx = notif.getPluginIndex();
+          Map<Integer, JPanel> bi = builtinPanels.get(trackIdx);
+          if (bi != null) {
+            JPanel panel = bi.get(pluginIdx);
+            if (panel instanceof DrumMachineDevicePanel) {
+              ((DrumMachineDevicePanel) panel).handlePadNotification(notif);
+            }
           }
         });
   }

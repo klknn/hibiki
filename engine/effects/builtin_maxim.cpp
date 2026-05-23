@@ -59,8 +59,7 @@ void BuiltinMaxim::BandProcessor::process(
   float sat_thresh_lin = std::pow(10.0f, sat_threshold_db / 20.0f);
   float ceiling_lin = std::pow(10.0f, ceiling_db / 20.0f);
 
-  float att_coeff =
-      std::exp(-1.0f / (attack_ms * 0.001f * (float)sample_rate));
+  float att_coeff = std::exp(-1.0f / (attack_ms * 0.001f * (float)sample_rate));
   float rel_coeff =
       std::exp(-1.0f / (release_ms * 0.001f * (float)sample_rate));
 
@@ -69,8 +68,8 @@ void BuiltinMaxim::BandProcessor::process(
   float lim_release_coeff =
       std::exp(-1.0f / (lim_release_ms * 0.001f * (float)sample_rate));
 
-  int la_samples = std::clamp(
-      (int)(lookahead_ms * 0.001f * (float)sample_rate), 0, kMaxLookahead - 1);
+  int la_samples = std::clamp((int)(lookahead_ms * 0.001f * (float)sample_rate),
+                              0, kMaxLookahead - 1);
   int buf_size = (int)la_l.size();
 
   float current_max_gr = 0.0f;

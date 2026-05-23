@@ -88,6 +88,10 @@ public class BackendManager {
     ipcClient.removeNotificationListener(listener);
   }
 
+  public void dispatchNotificationForTest(Notification notification) {
+    ipcClient.handleNotification(notification);
+  }
+
   public HibikiConfig getCurrentConfig() {
     return currentConfig;
   }

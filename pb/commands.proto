@@ -282,6 +282,30 @@ message AudioEditorCmd {
   int32 blur_envelope = 13;  // 0=Flat, 1=Triangle, 2=Parabolic
 }
 
+message DrumPadCmd {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_LOAD_PLUGIN = 1;
+    ACTION_REMOVE_PLUGIN = 2;
+    ACTION_SET_PARAM = 3;
+    ACTION_LOAD_SAMPLE = 4;
+    ACTION_SET_VOLUME = 5;
+    ACTION_SET_PAN = 6;
+    ACTION_SET_MUTE = 7;
+    ACTION_SET_SOLO = 8;
+    ACTION_SET_TRIGGER_NOTE = 9;
+  }
+  Action action = 1;
+  uint32 track_index = 2;
+  uint32 plugin_index = 3;
+  uint32 pad_index = 4;
+  string plugin_path = 5;
+  uint32 param_id = 6;
+  float param_value = 7;
+  string sample_path = 8;
+  uint32 trigger_note = 9;
+}
+
 // ─── Request Envelope ───────────────────────────────────────────────
 
 // Contains the new domain-grouped commands.
@@ -303,5 +327,6 @@ message Request {
     RestartWorkers restart_workers = 53;
     SetProcessingPrecision set_processing_precision = 54;
     AudioEditorCmd audio_editor = 55;
+    DrumPadCmd drum_pad = 56;
   }
 }

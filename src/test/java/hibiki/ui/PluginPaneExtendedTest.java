@@ -2,6 +2,7 @@ package hibiki.ui;
 
 import static org.junit.Assert.*;
 
+import hibiki.BackendManager;
 import hibiki.pb.notifications.*;
 import hibiki.ui.panels.*;
 import hibiki.ui.panels.devices.*;
@@ -325,7 +326,8 @@ public class PluginPaneExtendedTest {
       "Hott",
       "EnvShaper",
       "Phaser",
-      "FilM"
+      "FilM",
+      "Drum Machine"
     };
     for (String name : builtinNames) {
       ParamList pl =
@@ -334,6 +336,42 @@ public class PluginPaneExtendedTest {
       PluginPane pane = new PluginPane();
       assertNotNull(pane);
     }
+  }
+
+  @Test
+  public void testDrumPadNotificationRouting() throws Exception {
+    PluginPane pane = new PluginPane();
+    // Load Drum Machine
+    ParamList pl =
+        ParamList.newBuilder()
+            .setTrackIndex(0)
+            .setPluginIndex(0)
+            .setPluginName("Drum Machine")
+            .setIsInstrument(true)
+            .build();
+    pane.updateParams(pl);
+    javax.swing.SwingUtilities.invokeAndWait(() -> {});
+
+    // Create a mock drum pad state notification
+    DrumPadNotification notif =
+        DrumPadNotification.newBuilder()
+            .setType(DrumPadNotification.Type.TYPE_PAD_STATE)
+            .setTrackIndex(0)
+            .setPluginIndex(0)
+            .setPadIndex(1)
+            .setPluginPath("builtin://sampler")
+            .setVolume(0.8f)
+            .setPan(0.2f)
+            .setMute(false)
+            .setSolo(true)
+            .setSampleName("kick.wav")
+            .build();
+
+    Notification n = Notification.newBuilder().setDrumPad(notif).build();
+    // Send it via BackendManager dispatch helper
+    BackendManager.getInstance().dispatchNotificationForTest(n);
+    javax.swing.SwingUtilities.invokeAndWait(() -> {});
+    // Should not throw, verification complete
   }
 
   // ── WaveformPanel ─────────────────────────────────────────────

@@ -333,7 +333,31 @@ message Notification {
     ProjectInfo project_info = 30;
 
     // Field 31 reserved (was track_reorder, removed — reordering is UI-only)
+    DrumPadNotification drum_pad = 32;
   }
+}
+
+message DrumPadNotification {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_PAD_STATE = 1;
+    TYPE_PAD_TRIGGER = 2;
+  }
+  Type type = 1;
+  uint32 track_index = 2;
+  uint32 plugin_index = 3;
+  uint32 pad_index = 4;
+
+  // For TYPE_PAD_STATE
+  string plugin_path = 5;
+  float volume = 6;
+  float pan = 7;
+  bool mute = 8;
+  bool solo = 9;
+  repeated hibiki.pb.core.ParamInfo params = 10;
+  string sample_name = 11;
+  repeated float sample_waveform = 12;
+  optional uint32 trigger_note = 13;
 }
 
 // Sampler waveform summary sent after sample load.

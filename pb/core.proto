@@ -69,6 +69,23 @@ message Plugin {
   repeated ParamInfo params = 7;
   optional int32 sidechain_track_index =
       8;  // Source track for sidechain (0-based, absent = none)
+  optional DrumMachineState drum_machine_state = 10;
+}
+
+message DrumPadState {
+  uint32 pad_index = 1;
+  string plugin_path = 2;
+  repeated ParamInfo params = 3;
+  float volume = 4;
+  float pan = 5;
+  bool mute = 6;
+  bool solo = 7;
+  string sample_path = 8;
+  optional uint32 trigger_note = 9;
+}
+
+message DrumMachineState {
+  repeated DrumPadState pads = 1;
 }
 
 // Media type discriminator.

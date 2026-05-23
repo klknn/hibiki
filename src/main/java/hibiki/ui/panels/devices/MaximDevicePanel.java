@@ -84,7 +84,8 @@ public class MaximDevicePanel extends AbstractDevicePanel {
       params[offset + 6] = 0.0; // Knee (0 dB)
       params[offset + 7] = 0.3; // Attack (10 ms)
       params[offset + 8] = 0.3; // Release (100 ms)
-      params[offset + 9] = (b == 3) ? 0.975 : 1.0; // Ceiling (Master defaults to ~ -0.3 dB, others 0 dB)
+      params[offset + 9] =
+          (b == 3) ? 0.975 : 1.0; // Ceiling (Master defaults to ~ -0.3 dB, others 0 dB)
     }
 
     // Initialize scrolling history buffers to silent values
@@ -408,36 +409,38 @@ public class MaximDevicePanel extends AbstractDevicePanel {
 
     VisualizerPanel() {
       setBackground(Theme.getInstance().BG_DARKER);
-      addMouseListener(new MouseAdapter() {
-        @Override
-        public void mousePressed(MouseEvent e) {
-          int mx = e.getX();
-          int my = e.getY();
-          Theme theme = Theme.getInstance();
-          int curveBtnWidth = theme.scale(42);
-          int monitorBtnWidth = theme.scale(46);
-          int btnHeight = theme.scale(15);
-          int yOffset = theme.scale(5);
-          int pad = theme.scale(6);
+      addMouseListener(
+          new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+              int mx = e.getX();
+              int my = e.getY();
+              Theme theme = Theme.getInstance();
+              int curveBtnWidth = theme.scale(42);
+              int monitorBtnWidth = theme.scale(46);
+              int btnHeight = theme.scale(15);
+              int yOffset = theme.scale(5);
+              int pad = theme.scale(6);
 
-          if (my >= yOffset && my <= yOffset + btnHeight) {
-            if (mx >= pad && mx <= pad + curveBtnWidth) {
-              showMonitorMode = false;
-              repaint();
-              return;
-            } else if (mx >= pad + curveBtnWidth + theme.scale(6) && mx <= pad + curveBtnWidth + theme.scale(6) + monitorBtnWidth) {
-              showMonitorMode = true;
-              repaint();
-              return;
+              if (my >= yOffset && my <= yOffset + btnHeight) {
+                if (mx >= pad && mx <= pad + curveBtnWidth) {
+                  showMonitorMode = false;
+                  repaint();
+                  return;
+                } else if (mx >= pad + curveBtnWidth + theme.scale(6)
+                    && mx <= pad + curveBtnWidth + theme.scale(6) + monitorBtnWidth) {
+                  showMonitorMode = true;
+                  repaint();
+                  return;
+                }
+              }
+
+              if (showMonitorMode && !isCrossoversTab) {
+                isPaused = !isPaused;
+                repaint();
+              }
             }
-          }
-
-          if (showMonitorMode && !isCrossoversTab) {
-            isPaused = !isPaused;
-            repaint();
-          }
-        }
-      });
+          });
     }
 
     @Override
@@ -487,14 +490,18 @@ public class MaximDevicePanel extends AbstractDevicePanel {
       g2.setColor(showMonitorMode ? new Color(0xBBBBBB) : Color.BLACK);
       g2.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(7.5f)));
       FontMetrics fm = g2.getFontMetrics();
-      g2.drawString("Curve", pad + (curveBtnWidth - fm.stringWidth("Curve")) / 2, yOffset + theme.scale(10));
+      g2.drawString(
+          "Curve", pad + (curveBtnWidth - fm.stringWidth("Curve")) / 2, yOffset + theme.scale(10));
 
       // Monitor Button
       int mX = pad + curveBtnWidth + theme.scale(6);
       g2.setColor(showMonitorMode ? getActiveColor() : theme.BG_MEDIUM);
       g2.fillRoundRect(mX, yOffset, monitorBtnWidth, btnHeight, theme.scale(6), theme.scale(6));
       g2.setColor(showMonitorMode ? Color.BLACK : new Color(0xBBBBBB));
-      g2.drawString("Monitor", mX + (monitorBtnWidth - fm.stringWidth("Monitor")) / 2, yOffset + theme.scale(10));
+      g2.drawString(
+          "Monitor",
+          mX + (monitorBtnWidth - fm.stringWidth("Monitor")) / 2,
+          yOffset + theme.scale(10));
     }
 
     private void paintMonitorPlot(Graphics2D g2, int pw, int ph, int pad) {

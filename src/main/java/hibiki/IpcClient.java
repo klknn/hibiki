@@ -127,7 +127,7 @@ public class IpcClient {
     }
   }
 
-  private void handleNotification(Notification notification) {
+  void handleNotification(Notification notification) {
     synchronized (listeners) {
       for (Consumer<Notification> listener : listeners) {
         try {

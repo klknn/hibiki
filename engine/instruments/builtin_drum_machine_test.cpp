@@ -8,6 +8,7 @@
 #include "engine/instruments/builtin_3xosc.hpp"
 #include "engine/instruments/builtin_sampler.hpp"
 #include "engine/ipc/ipc.hpp"
+#include "engine/test_utils.hpp"
 #include "engine/test_utils_state.hpp"
 
 namespace hibiki {
@@ -87,6 +88,142 @@ TEST(BuiltinDrumMachineTest, MixAndRouting) {
     peak = std::max(peak, std::abs(outL[i]));
   }
   EXPECT_GT(peak, 0.001f) << "Synthesizer on Pad 0 should generate audio";
+}
+
+TEST(BuiltinDrumMachineTest, PadSamplerProducesSound) {
+  g_ipc_enabled = false;
+  BuiltinDrumMachine dm;
+  dm.load("", 0, 44100.0);
+
+  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://sampler"));
+  std::string wav_path = hibiki::find_test_file("testdata/loop140.wav");
+  ASSERT_TRUE(dm.loadPadSample(0, wav_path));
+
+  constexpr int N = 256;
+  float outL[N] = {0};
+  float outR[N] = {0};
+  float* outs[2] = {outL, outR};
+
+  // Trigger Pad 0 (pitch 36)
+  std::vector<MidiNoteEvent> events;
+  MidiNoteEvent ev;
+  ev.pitch = 36;
+  ev.velocity = 1.0f;
+  ev.isNoteOn = true;
+  events.push_back(ev);
+
+  auto ctx = MakeContext();
+  dm.process(nullptr, outs, N, ctx, events);
+
+  float peak = 0;
+  for (int i = 0; i < N; ++i) {
+    peak = std::max(peak, std::abs(outL[i]));
+  }
+  EXPECT_GT(peak, 0.001f) << "Sampler on Pad 0 should generate audio";
+}
+
+TEST(BuiltinDrumMachineTest, PadSamplerMultipleTriggers) {
+  g_ipc_enabled = false;
+  BuiltinDrumMachine dm;
+  dm.load("", 0, 44100.0);
+
+  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://sampler"));
+  std::string wav_path = hibiki::find_test_file("testdata/loop140.wav");
+  ASSERT_TRUE(dm.loadPadSample(0, wav_path));
+
+  constexpr int N = 256;
+  float outL[N] = {0};
+  float outR[N] = {0};
+  float* outs[2] = {outL, outR};
+  auto ctx = MakeContext();
+
+  // Trigger it 16 times with note-on/off
+  for (int t = 0; t < 16; ++t) {
+    // Note on
+    std::vector<MidiNoteEvent> events1;
+    MidiNoteEvent ev1;
+    ev1.pitch = 36;
+    ev1.velocity = 1.0f;
+    ev1.isNoteOn = true;
+    ev1.sampleOffset = 0;
+    ev1.channel = 0;
+    events1.push_back(ev1);
+
+    std::fill(outL, outL + N, 0.0f);
+    std::fill(outR, outR + N, 0.0f);
+    dm.process(nullptr, outs, N, ctx, events1);
+
+    float peak1 = 0;
+    for (int i = 0; i < N; ++i) {
+      peak1 = std::max(peak1, std::abs(outL[i]));
+    }
+    EXPECT_GT(peak1, 0.001f)
+        << "Trigger " << t << " note-on should generate audio";
+
+    // Play a few blocks to let the sample progress or finish
+    for (int b = 0; b < 20; ++b) {
+      std::fill(outL, outL + N, 0.0f);
+      std::fill(outR, outR + N, 0.0f);
+      dm.process(nullptr, outs, N, ctx, {});
+    }
+
+    // Note off
+    std::vector<MidiNoteEvent> events2;
+    MidiNoteEvent ev2;
+    ev2.pitch = 36;
+    ev2.velocity = 0.0f;
+    ev2.isNoteOn = false;
+    ev2.sampleOffset = 0;
+    ev2.channel = 0;
+    events2.push_back(ev2);
+
+    std::fill(outL, outL + N, 0.0f);
+    std::fill(outR, outR + N, 0.0f);
+    dm.process(nullptr, outs, N, ctx, events2);
+  }
+}
+
+TEST(BuiltinDrumMachineTest, PadSamplerNoteOnNoteOffSameBlock) {
+  g_ipc_enabled = false;
+  BuiltinDrumMachine dm;
+  dm.load("", 0, 44100.0);
+
+  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://sampler"));
+  std::string wav_path = hibiki::find_test_file("testdata/loop140.wav");
+  ASSERT_TRUE(dm.loadPadSample(0, wav_path));
+
+  constexpr int N = 256;
+  float outL[N] = {0};
+  float outR[N] = {0};
+  float* outs[2] = {outL, outR};
+  auto ctx = MakeContext();
+
+  // Create note-on and note-off in the same block
+  std::vector<MidiNoteEvent> events;
+  MidiNoteEvent ev1;
+  ev1.pitch = 36;
+  ev1.velocity = 1.0f;
+  ev1.isNoteOn = true;
+  ev1.sampleOffset = 0;
+  ev1.channel = 0;
+  events.push_back(ev1);
+
+  MidiNoteEvent ev2;
+  ev2.pitch = 36;
+  ev2.velocity = 0.0f;
+  ev2.isNoteOn = false;
+  ev2.sampleOffset = 128;  // later in the same block
+  ev2.channel = 0;
+  events.push_back(ev2);
+
+  dm.process(nullptr, outs, N, ctx, events);
+
+  float peak = 0;
+  for (int i = 0; i < N; ++i) {
+    peak = std::max(peak, std::abs(outL[i]));
+  }
+  EXPECT_GT(peak, 0.001f)
+      << "Note-on and note-off in the same block should still generate audio";
 }
 
 TEST(BuiltinDrumMachineTest, MuteAndSolo) {

@@ -74,7 +74,7 @@ class BuiltinSampler : public IPlugin {
     uint64_t age = 0;
   };
 
-  void noteOn(int pitch, float velocity);
+  int noteOn(int pitch, float velocity);
   void noteOff(int pitch);
   double getDefaultValue(int id) const;
   void generateWaveformSummary();

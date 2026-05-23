@@ -127,9 +127,11 @@ cc_test(
 cc_test(
     name = "builtin_drum_machine_test",
     srcs = ["builtin_drum_machine_test.cpp"],
+    data = ["//testdata"],
     linkstatic = True,
     deps = [
         ":builtin_drum_machine",
+        "//engine:test_utils",
         "//engine:test_utils_state",
         "@googletest//:gtest_main",
     ],

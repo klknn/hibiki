@@ -39,14 +39,6 @@ void BuiltinSampler::process(float** /*inputs*/, float** outputs,
                              float** /*sidechain*/) {
   sample_rate_ = context.sampleRate;
 
-  for (const auto& ev : events) {
-    if (ev.isNoteOn && ev.velocity > 0) {
-      noteOn(ev.pitch, ev.velocity);
-    } else {
-      noteOff(ev.pitch);
-    }
-  }
-
   float* outL = outputs[0];
   float* outR = outputs[1];
   for (int i = 0; i < num_samples; ++i) {
@@ -72,20 +64,42 @@ void BuiltinSampler::process(float** /*inputs*/, float** outputs,
   float base_cutoff = BiquadFilter::normToCutoff(filt_cut_norm);
   float filt_q = BiquadFilter::normToQ(filt_res_norm);
 
+  float pitch_ratios[kMaxVoices] = {0};
   for (int v = 0; v < kMaxVoices; ++v) {
-    auto& voice = voices_[v];
-    if (!voice.active && voice.gain_env.isIdle()) continue;
-
-    float pitch_ratio = std::pow(2.0f, (voice.note - root_note) / 12.0f) *
+    if (voices_[v].active || !voices_[v].gain_env.isIdle()) {
+      pitch_ratios[v] = std::pow(2.0f, (voices_[v].note - root_note) / 12.0f) *
                         (float)(sample_rate_file_ / sample_rate_);
+    }
+  }
 
-    for (int i = 0; i < num_samples; ++i) {
+  size_t event_idx = 0;
+  for (int i = 0; i < num_samples; ++i) {
+    // Process MIDI events at or before sample offset i
+    while (event_idx < events.size() && events[event_idx].sampleOffset <= i) {
+      const auto& ev = events[event_idx];
+      if (ev.isNoteOn && ev.velocity > 0) {
+        int target = noteOn(ev.pitch, ev.velocity);
+        if (target >= 0 && target < kMaxVoices) {
+          pitch_ratios[target] =
+              std::pow(2.0f, (voices_[target].note - root_note) / 12.0f) *
+              (float)(sample_rate_file_ / sample_rate_);
+        }
+      } else {
+        noteOff(ev.pitch);
+      }
+      event_idx++;
+    }
+
+    for (int v = 0; v < kMaxVoices; ++v) {
+      auto& voice = voices_[v];
+      if (!voice.active && voice.gain_env.isIdle()) continue;
+
       float gain_val = voice.gain_env.process((float)sample_rate_);
       float filt_val = voice.filter_env.process((float)sample_rate_);
 
       if (voice.gain_env.isIdle()) {
         voice.active = false;
-        break;
+        continue;
       }
 
       double pos = voice.position + start_frame;
@@ -109,6 +123,7 @@ void BuiltinSampler::process(float** /*inputs*/, float** outputs,
         }
       }
 
+      float pitch_ratio = pitch_ratios[v];
       voice.position += pitch_ratio;
       if (voice.position + start_frame >= end_frame) {
         voice.gain_env.noteOff();
@@ -185,7 +200,7 @@ bool BuiltinSampler::isInstrument() const { return true; }
 
 // --- Private ---
 
-void BuiltinSampler::noteOn(int pitch, float velocity) {
+int BuiltinSampler::noteOn(int pitch, float velocity) {
   int target = -1;
   for (int i = 0; i < kMaxVoices; ++i) {
     if (!voices_[i].active && voices_[i].gain_env.isIdle()) {
@@ -218,6 +233,7 @@ void BuiltinSampler::noteOn(int pitch, float velocity) {
                              params_[P_FILT_S], params_[P_FILT_R]);
   v.gain_env.noteOn();
   v.filter_env.noteOn();
+  return target;
 }
 
 void BuiltinSampler::noteOff(int pitch) {

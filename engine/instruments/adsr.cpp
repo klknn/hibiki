@@ -30,7 +30,7 @@ void Adsr::noteOn() {
 }
 
 void Adsr::noteOff() {
-  if (stage_ != Stage::ENV_IDLE) {
+  if (stage_ != Stage::ENV_IDLE && stage_ != Stage::ENV_RELEASE) {
     release_start_ = value_;
     stage_ = Stage::ENV_RELEASE;
     phase_ = 0.0f;

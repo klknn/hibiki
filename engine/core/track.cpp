@@ -16,6 +16,7 @@
 #include "engine/effects/builtin_maxim.hpp"
 #include "engine/effects/builtin_phaser.hpp"
 #include "engine/effects/builtin_reverb.hpp"
+#include "engine/effects/builtin_stereo_width.hpp"
 #include "engine/instruments/builtin_3xosc.hpp"
 #include "engine/instruments/builtin_drum_machine.hpp"
 #include "engine/instruments/builtin_film.hpp"
@@ -69,6 +70,9 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinChorus::kPath) {
     plugin = std::make_unique<BuiltinChorus>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinStereoWidth::kPath) {
+    plugin = std::make_unique<BuiltinStereoWidth>();
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinHott::kPath) {
     plugin = std::make_unique<BuiltinHott>();

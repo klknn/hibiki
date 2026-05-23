@@ -67,6 +67,13 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_stereo_width",
+    srcs = ["builtin_stereo_width.cpp"],
+    hdrs = ["builtin_stereo_width.hpp"],
+    deps = ["//engine/plugin:iplugin"],
+)
+
+cc_library(
     name = "builtin_reverb",
     srcs = ["builtin_reverb.cpp"],
     hdrs = ["builtin_reverb.hpp"],
@@ -125,6 +132,7 @@ cc_library(
         ":builtin_maxim",
         ":builtin_phaser",
         ":builtin_reverb",
+        ":builtin_stereo_width",
     ],
 )
 
@@ -246,6 +254,16 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_chorus",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_stereo_width_test",
+    srcs = ["builtin_stereo_width_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_stereo_width",
         "@googletest//:gtest_main",
     ],
 )

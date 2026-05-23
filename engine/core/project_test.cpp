@@ -501,6 +501,53 @@ TEST_F(ProjectTest, InMemoryMidiClipUndoRedo) {
   EXPECT_EQ(restored_clip->type, hibiki::Clip::Type::MIDI);
   EXPECT_TRUE(restored_clip->path.empty());
   EXPECT_EQ(restored_clip->midi_events.size(), 2);
+  EXPECT_EQ(restored_track->timeline_clips[0]->duration_beats, 4.0);
+}
+
+TEST_F(ProjectTest, UndoInstrumentLoadOverDrumMachine) {
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+
+  hibiki::HistoryManager history;
+
+  // 1. Create a track
+  auto* track = hibiki::GetOrCreateTrack(state, 0);
+
+  // 2. Load the drum machine plugin
+  auto result =
+      track->LoadPlugin("builtin://drum_machine", 0, state.sample_rate);
+  ASSERT_GE(result.index, 0);
+  ASSERT_EQ(track->plugins.size(), 1);
+  EXPECT_EQ(track->plugins[0]->getPath(), "builtin://drum_machine");
+
+  // 3. Add MIDI clip to the timeline
+  track->AddTimelineClip("", 0.0, state.bpm, 4.0, state.sample_rate);
+  ASSERT_EQ(track->timeline_clips.size(), 1);
+  EXPECT_EQ(track->timeline_clips[0]->clip->type, hibiki::Clip::Type::MIDI);
+  EXPECT_EQ(track->timeline_clips[0]->duration_beats, 4.0);
+
+  // 4. Capture the project state before the next instrument load (which will be
+  // undone)
+  history.pushState(hibiki::CaptureProjectState(state));
+
+  // 5. Load a new instrument (3xOsc) over the drum machine
+  auto result2 = track->LoadPlugin("builtin://3xosc", 0, state.sample_rate);
+  ASSERT_GE(result2.index, 0);
+  ASSERT_EQ(track->plugins.size(), 1);
+  EXPECT_EQ(track->plugins[0]->getPath(), "builtin://3xosc");
+
+  // 6. Undo the instrument load
+  ASSERT_TRUE(hibiki::test::UndoOnce(history, state));
+
+  // 7. Verify the drum machine is restored and the MIDI timeline clip is still
+  // there
+  ASSERT_EQ(state.tracks[0]->plugins.size(), 1);
+  EXPECT_EQ(state.tracks[0]->plugins[0]->getPath(), "builtin://drum_machine");
+  ASSERT_EQ(state.tracks[0]->timeline_clips.size(), 1);
+  EXPECT_EQ(state.tracks[0]->timeline_clips[0]->clip->type,
+            hibiki::Clip::Type::MIDI);
+  EXPECT_EQ(state.tracks[0]->timeline_clips[0]->duration_beats, 4.0);
 }
 
 // ── E2E: Automation Edit + Undo/Redo ────────────────────────────────

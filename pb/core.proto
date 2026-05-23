@@ -122,6 +122,8 @@ message TimelineClip {
   float fade_in_sec = 5;     // Linear fade-in duration in seconds
   float fade_out_sec = 6;    // Linear fade-out duration in seconds
   bool muted = 7;            // Clip is muted (bounced-in-place)
+  float duration_beats = 8;
+  float loop_interval_beats = 9;
 }
 
 // A session slot — one cell in the clip launcher grid.

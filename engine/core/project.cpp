@@ -135,13 +135,13 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
       tcs->set_fade_in_sec(tc->fade_in_sec);
       tcs->set_fade_out_sec(tc->fade_out_sec);
       tcs->set_muted(tc->muted);
+      tcs->set_duration_beats(tc->duration_beats);
+      tcs->set_loop_interval_beats(tc->loop_interval_beats);
 
       auto* clip = tcs->mutable_clip();
       SerializeClipMidiEvents(*tc->clip, clip);
       clip->set_duration_sec(tc->duration_sec);
       clip->set_trim_start_beats(tc->trim_start_beats);
-      clip->set_duration_beats(
-          tc->loop_interval_beats);  // reuse field for loop interval
     }
 
     for (const auto& lane : track->automation_lanes) {
@@ -377,12 +377,17 @@ static void LoadTracksFromProto(ProjectState& state,
       tc->start_time_sec = tc_data.start_time_sec();
       tc->duration_sec =
           tc->clip ? tc->clip->duration_sec : tc_data.clip().duration_sec();
-      tc->duration_beats = tc->clip ? tc->clip->duration_beats : 0.0;
+      tc->duration_beats = tc_data.duration_beats() > 0
+                               ? tc_data.duration_beats()
+                               : (tc->clip ? tc->clip->duration_beats : 0.0);
+      tc->loop_interval_beats = tc_data.loop_interval_beats();
       tc->alias_source = tc_data.alias_source();
       tc->trim_start_beats = tc_data.clip().trim_start_beats();
       if (tc_data.clip().is_loop() && tc->clip) {
         tc->clip->is_loop = true;
-        tc->loop_interval_beats = tc_data.clip().duration_beats();
+        if (tc->loop_interval_beats <= 0.0) {
+          tc->loop_interval_beats = tc_data.clip().duration_beats();
+        }
       }
       tc->fade_in_sec = tc_data.fade_in_sec();
       tc->fade_out_sec = tc_data.fade_out_sec();

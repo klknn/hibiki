@@ -407,6 +407,13 @@ A crash cymbal synthesizer using a sum of 6 detuned square wave metallic oscilla
   - **Tension**: Oscillator detuning tension factor (0.0 to 1.0).
   - **Volume**: Master level.
 
+#### DR8 Rimshot (`builtin://dr8_rim`)
+A woodblock-like rimshot synthesizer utilizing three bandpass-filtered oscillators tuned at fundamental f, 2.6f, and 4.6f, modulated by extremely short exponential decay envelopes.
+- **Parameters**:
+  - **Pitch**: Base fundamental pitch frequency (200 Hz to 500 Hz).
+  - **Decay**: Amplitude envelope decay time (0.01s to 0.1s).
+  - **Volume**: Master level.
+
 ---
 
 ## Plugin Hosting Modes

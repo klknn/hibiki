@@ -24,6 +24,7 @@
 #include "engine/instruments/builtin_dr8_crash.hpp"
 #include "engine/instruments/builtin_dr8_hat.hpp"
 #include "engine/instruments/builtin_dr8_kick.hpp"
+#include "engine/instruments/builtin_dr8_rim.hpp"
 #include "engine/instruments/builtin_dr8_snare.hpp"
 #include "engine/instruments/builtin_dr8_tom.hpp"
 #include "engine/instruments/builtin_drum_machine.hpp"
@@ -80,6 +81,9 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinDr8Crash::kPath) {
     plugin = std::make_unique<BuiltinDr8Crash>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinDr8Rim::kPath) {
+    plugin = std::make_unique<BuiltinDr8Rim>();
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinOrgan::kPath) {
     plugin = std::make_unique<BuiltinOrgan>();

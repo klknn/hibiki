@@ -108,6 +108,16 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_dr8_rim",
+    srcs = ["builtin_dr8_rim.cpp"],
+    hdrs = ["builtin_dr8_rim.hpp"],
+    deps = [
+        "//engine/core:biquad_filter",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
     name = "builtin_organ",
     srcs = ["builtin_organ.cpp"],
     hdrs = ["builtin_organ.hpp"],
@@ -166,6 +176,7 @@ cc_library(
         ":builtin_dr8_crash",
         ":builtin_dr8_hat",
         ":builtin_dr8_kick",
+        ":builtin_dr8_rim",
         ":builtin_dr8_snare",
         ":builtin_dr8_tom",
         ":builtin_drum_machine",
@@ -318,6 +329,16 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_dr8_crash",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_dr8_rim_test",
+    srcs = ["builtin_dr8_rim_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_dr8_rim",
         "@googletest//:gtest_main",
     ],
 )

@@ -36,7 +36,8 @@ public class PluginPane extends JPanel {
           Map.entry("Convolver", ConvolverDevicePanel.class),
           Map.entry("FilM", FilmDevicePanel.class),
           Map.entry("Aux", AuxDevicePanel.class),
-          Map.entry("Drum Machine", DrumMachineDevicePanel.class));
+          Map.entry("Drum Machine", DrumMachineDevicePanel.class),
+          Map.entry("Vocodey", VocodeyDevicePanel.class));
 
   private static PluginPane instance;
   private final JPanel deviceChainContent;
@@ -229,6 +230,9 @@ public class PluginPane extends JPanel {
               return;
             } else if (bp instanceof AuxDevicePanel) {
               ((AuxDevicePanel) bp).updateParam(paramId, value);
+              return;
+            } else if (bp instanceof VocodeyDevicePanel) {
+              ((VocodeyDevicePanel) bp).updateParam(paramId, value);
               return;
             }
           }

@@ -37,7 +37,16 @@ public class PluginPane extends JPanel {
           Map.entry("FilM", FilmDevicePanel.class),
           Map.entry("Aux", AuxDevicePanel.class),
           Map.entry("Drum Machine", DrumMachineDevicePanel.class),
-          Map.entry("Vocodey", VocodeyDevicePanel.class));
+          Map.entry("Vocodey", VocodeyDevicePanel.class),
+          Map.entry("DR8 Kick", Dr8KickDevicePanel.class),
+          Map.entry("DR8 Snare", Dr8SnareDevicePanel.class),
+          Map.entry("DR8 Hat", Dr8HatDevicePanel.class),
+          Map.entry("DR8 Tom", Dr8TomDevicePanel.class),
+          Map.entry("DR8 Clap", Dr8ClapDevicePanel.class),
+          Map.entry("DR8 Cowbell", Dr8CowbellDevicePanel.class),
+          Map.entry("DR8 Crash", Dr8CrashDevicePanel.class),
+          Map.entry("DR8 Rimshot", Dr8RimshotDevicePanel.class),
+          Map.entry("DR8 Conga", Dr8CongaDevicePanel.class));
 
   private static PluginPane instance;
   private final JPanel deviceChainContent;
@@ -233,6 +242,9 @@ public class PluginPane extends JPanel {
               return;
             } else if (bp instanceof VocodeyDevicePanel) {
               ((VocodeyDevicePanel) bp).updateParam(paramId, value);
+              return;
+            } else if (bp instanceof Dr8DevicePanel) {
+              ((Dr8DevicePanel) bp).updateParam(paramId, value);
               return;
             }
           }

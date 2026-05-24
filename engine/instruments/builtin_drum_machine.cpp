@@ -3,9 +3,12 @@
 #include <algorithm>
 #include <cmath>
 
-#include "engine/instruments/builtin_3xosc.hpp"
+#include "engine/effects/registry.hpp"
 #include "engine/instruments/builtin_sampler.hpp"
+#include "engine/instruments/registry.hpp"
 #include "engine/ipc/ipc.hpp"
+#include "engine/plugin/plugin_proxy.hpp"
+#include "engine/vst3/vst3_host.hpp"
 
 namespace hibiki {
 
@@ -183,11 +186,14 @@ int BuiltinDrumMachine::getPluginIndex() const { return plugin_index_; }
 
 bool BuiltinDrumMachine::isInstrument() const { return true; }
 
-bool BuiltinDrumMachine::loadPadPlugin(int pad_idx,
-                                       const std::string& plugin_path) {
+absl::Status BuiltinDrumMachine::loadPadPlugin(int pad_idx,
+                                               const std::string& plugin_path) {
   {
     std::lock_guard<std::mutex> lock(pads_mutex_);
-    if (pad_idx < 0 || pad_idx >= kNumPads) return false;
+    if (pad_idx < 0 || pad_idx >= kNumPads) {
+      return absl::InvalidArgumentError("Invalid pad index: " +
+                                        std::to_string(pad_idx));
+    }
 
     pads_[pad_idx].plugin.reset();
     pads_[pad_idx].plugin_path = plugin_path;
@@ -195,25 +201,39 @@ bool BuiltinDrumMachine::loadPadPlugin(int pad_idx,
     pads_[pad_idx].sample_name = "";
     pads_[pad_idx].sample_waveform.clear();
 
-    if (plugin_path == BuiltinSampler::kPath) {
-      pads_[pad_idx].plugin = std::make_unique<BuiltinSampler>();
-      pads_[pad_idx].plugin->load(plugin_path, 0, sample_rate_);
-    } else if (plugin_path == Builtin3xOsc::kPath) {
-      pads_[pad_idx].plugin = std::make_unique<Builtin3xOsc>();
-      pads_[pad_idx].plugin->load(plugin_path, 0, sample_rate_);
+    if (plugin_path.empty()) {
+      sendPadState(pad_idx);
+      return absl::OkStatus();
     }
+
+    auto plugin = createPadPlugin(plugin_path);
+    if (!plugin) {
+      pads_[pad_idx].plugin_path = "";
+      sendPadState(pad_idx);
+      return absl::NotFoundError("Plugin not found or unrecognized path: " +
+                                 plugin_path);
+    }
+
+    if (!plugin->load(plugin_path, 0, sample_rate_)) {
+      pads_[pad_idx].plugin_path = "";
+      sendPadState(pad_idx);
+      return absl::InternalError("Failed to load plugin: " + plugin_path);
+    }
+
+    pads_[pad_idx].plugin = std::move(plugin);
   }
 
   sendPadState(pad_idx);
-  return true;
+  return absl::OkStatus();
 }
 
-// Wrapper methods that lock pads_mutex_, update state, unlock, and send
-// notifications
-bool BuiltinDrumMachine::removePadPlugin(int pad_idx) {
+absl::Status BuiltinDrumMachine::removePadPlugin(int pad_idx) {
   {
     std::lock_guard<std::mutex> lock(pads_mutex_);
-    if (pad_idx < 0 || pad_idx >= kNumPads) return false;
+    if (pad_idx < 0 || pad_idx >= kNumPads) {
+      return absl::InvalidArgumentError("Invalid pad index: " +
+                                        std::to_string(pad_idx));
+    }
     pads_[pad_idx].plugin.reset();
     pads_[pad_idx].plugin_path = "";
     pads_[pad_idx].sample_path = "";
@@ -221,48 +241,52 @@ bool BuiltinDrumMachine::removePadPlugin(int pad_idx) {
     pads_[pad_idx].sample_waveform.clear();
   }
   sendPadState(pad_idx);
-  return true;
+  return absl::OkStatus();
 }
 
-bool BuiltinDrumMachine::setPadParam(int pad_idx, uint32_t param_id,
-                                     float value) {
-  bool ok = false;
+absl::Status BuiltinDrumMachine::setPadParam(int pad_idx, uint32_t param_id,
+                                             float value) {
   {
     std::lock_guard<std::mutex> lock(pads_mutex_);
-    if (pad_idx >= 0 && pad_idx < kNumPads && pads_[pad_idx].plugin) {
-      pads_[pad_idx].plugin->setParameterValue(param_id, value);
-      ok = true;
+    if (pad_idx < 0 || pad_idx >= kNumPads) {
+      return absl::InvalidArgumentError("Invalid pad index: " +
+                                        std::to_string(pad_idx));
     }
+    if (!pads_[pad_idx].plugin) {
+      return absl::FailedPreconditionError("No plugin loaded on pad " +
+                                           std::to_string(pad_idx));
+    }
+    pads_[pad_idx].plugin->setParameterValue(param_id, value);
   }
-  if (ok) {
-    sendPadState(pad_idx);
-  }
-  return ok;
+  sendPadState(pad_idx);
+  return absl::OkStatus();
 }
 
-bool BuiltinDrumMachine::loadPadSample(int pad_idx,
-                                       const std::string& sample_path) {
-  bool ok = false;
+absl::Status BuiltinDrumMachine::loadPadSample(int pad_idx,
+                                               const std::string& sample_path) {
   {
     std::lock_guard<std::mutex> lock(pads_mutex_);
-    if (pad_idx >= 0 && pad_idx < kNumPads) {
-      auto* sampler =
-          dynamic_cast<BuiltinSampler*>(pads_[pad_idx].plugin.get());
-      if (sampler && sampler->loadSample(sample_path)) {
-        pads_[pad_idx].sample_path = sample_path;
-        auto slash = sample_path.rfind('/');
-        pads_[pad_idx].sample_name = (slash != std::string::npos)
-                                         ? sample_path.substr(slash + 1)
-                                         : sample_path;
-        pads_[pad_idx].sample_waveform = sampler->getWaveformSummary();
-        ok = true;
-      }
+    if (pad_idx < 0 || pad_idx >= kNumPads) {
+      return absl::InvalidArgumentError("Invalid pad index: " +
+                                        std::to_string(pad_idx));
     }
+    auto* sampler = dynamic_cast<BuiltinSampler*>(pads_[pad_idx].plugin.get());
+    if (!sampler) {
+      return absl::FailedPreconditionError("Pad " + std::to_string(pad_idx) +
+                                           " is not a Sampler");
+    }
+    if (!sampler->loadSample(sample_path)) {
+      return absl::InternalError("Failed to load sample file: " + sample_path);
+    }
+    pads_[pad_idx].sample_path = sample_path;
+    auto slash = sample_path.rfind('/');
+    pads_[pad_idx].sample_name = (slash != std::string::npos)
+                                     ? sample_path.substr(slash + 1)
+                                     : sample_path;
+    pads_[pad_idx].sample_waveform = sampler->getWaveformSummary();
   }
-  if (ok) {
-    sendPadState(pad_idx);
-  }
-  return ok;
+  sendPadState(pad_idx);
+  return absl::OkStatus();
 }
 
 void BuiltinDrumMachine::setPadVolume(int pad_idx, float vol) {
@@ -381,23 +405,21 @@ void BuiltinDrumMachine::deserializeState(
     pad.trigger_note =
         pad_state.has_trigger_note() ? pad_state.trigger_note() : 60;
 
-    if (pad.plugin_path == BuiltinSampler::kPath) {
-      auto sampler = std::make_unique<BuiltinSampler>();
-      sampler->load(pad.plugin_path, 0, sample_rate_);
-      if (!pad.sample_path.empty()) {
-        if (sampler->loadSample(pad.sample_path)) {
-          auto slash = pad.sample_path.rfind('/');
-          pad.sample_name = (slash != std::string::npos)
-                                ? pad.sample_path.substr(slash + 1)
-                                : pad.sample_path;
-          pad.sample_waveform = sampler->getWaveformSummary();
+    auto plugin = createPadPlugin(pad.plugin_path);
+    if (plugin) {
+      if (plugin->load(pad.plugin_path, 0, sample_rate_)) {
+        auto* sampler = dynamic_cast<BuiltinSampler*>(plugin.get());
+        if (sampler && !pad.sample_path.empty()) {
+          if (sampler->loadSample(pad.sample_path)) {
+            auto slash = pad.sample_path.rfind('/');
+            pad.sample_name = (slash != std::string::npos)
+                                  ? pad.sample_path.substr(slash + 1)
+                                  : pad.sample_path;
+            pad.sample_waveform = sampler->getWaveformSummary();
+          }
         }
+        pad.plugin = std::move(plugin);
       }
-      pad.plugin = std::move(sampler);
-    } else if (pad.plugin_path == Builtin3xOsc::kPath) {
-      auto osc = std::make_unique<Builtin3xOsc>();
-      osc->load(pad.plugin_path, 0, sample_rate_);
-      pad.plugin = std::move(osc);
     }
 
     if (pad.plugin) {
@@ -482,6 +504,27 @@ void BuiltinDrumMachine::sendPadState(int pad_idx) const {
   if (notification.SerializeToString(&serialized)) {
     hibiki::sendNotification(
         reinterpret_cast<const uint8_t*>(serialized.data()), serialized.size());
+  }
+}
+
+std::unique_ptr<IPlugin> BuiltinDrumMachine::createPadPlugin(
+    const std::string& path) const {
+  if (path.rfind("builtin://", 0) == 0) {
+    if (auto inst = createBuiltinInstrument(path)) {
+      return inst;
+    }
+    if (auto effect = createBuiltinEffect(path)) {
+      return effect;
+    }
+    return nullptr;
+  }
+
+  switch (host_mode_) {
+    case PluginHostMode::LOCAL_SANDBOX:
+      return std::make_unique<PluginProxy>();
+    case PluginHostMode::IN_PROCESS:
+    default:
+      return std::make_unique<Vst3Plugin>();
   }
 }
 

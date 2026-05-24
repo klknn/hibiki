@@ -21,15 +21,40 @@ public abstract class AbstractDevicePanel extends JPanel {
   /** Callback invoked when user clicks Mod button; set by PluginPane wrapper. */
   public Runnable modToggleCallback;
 
+  @FunctionalInterface
+  public interface ParamSender {
+    void send(int paramId, double value);
+  }
+
+  protected ParamSender customParamSender = null;
+
+  public void setCustomParamSender(ParamSender sender) {
+    this.customParamSender = sender;
+  }
+
   protected AbstractDevicePanel(int trackIndex, int pluginIndex, int totalParams) {
     this.trackIndex = trackIndex;
     this.pluginIndex = pluginIndex;
     this.params = new double[totalParams];
   }
 
+  public void handleParamChange(int paramId, double value) {
+    updateParam(paramId, value);
+  }
+
+  public void updateParam(int paramId, double value) {
+    if (paramId >= 0 && paramId < params.length) {
+      params[paramId] = value;
+    }
+  }
+
   // ─── Backend communication ──────────────────────────────────────
 
   public void sendParam(int paramId, double value) {
+    if (customParamSender != null) {
+      customParamSender.send(paramId, value);
+      return;
+    }
     BackendManager.getInstance()
         .sendRequest(
             Request.newBuilder()

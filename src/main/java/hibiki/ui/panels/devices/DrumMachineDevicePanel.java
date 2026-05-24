@@ -49,6 +49,12 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
   final JLabel sampleNameLabel;
   final JPanel paramListPanel;
   final JScrollPane paramScrollPane;
+  final JToggleButton editBtn;
+
+  private AbstractDevicePanel childUiPanel = null;
+  private JPanel childUiContainer = null;
+  private boolean showingChildUi = false;
+  private int childUiPadIndex = -1;
 
   private boolean updatingUi = false;
 
@@ -282,6 +288,20 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
           }
         });
     pluginSelRow.add(pluginCombo, BorderLayout.CENTER);
+
+    editBtn = new JToggleButton("Edit");
+    editBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
+    editBtn.setFocusPainted(false);
+    editBtn.addActionListener(
+        e -> {
+          showingChildUi = editBtn.isSelected();
+          if (showingChildUi) {
+            showChildUi();
+          } else {
+            hideChildUi();
+          }
+        });
+    pluginSelRow.add(editBtn, BorderLayout.EAST);
     detailTop.add(pluginSelRow);
 
     JPanel noteRow = new JPanel(new BorderLayout(5, 0));
@@ -454,7 +474,17 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
     detailCenter.add(paramScrollPane);
 
     rightPanel.add(detailCenter, BorderLayout.CENTER);
-    add(rightPanel, BorderLayout.EAST);
+
+    JPanel eastWrapper = new JPanel(new BorderLayout());
+    eastWrapper.setOpaque(false);
+    eastWrapper.add(rightPanel, BorderLayout.CENTER);
+
+    childUiContainer = new JPanel(new BorderLayout());
+    childUiContainer.setOpaque(false);
+    childUiContainer.setVisible(false);
+    eastWrapper.add(childUiContainer, BorderLayout.EAST);
+
+    add(eastWrapper, BorderLayout.EAST);
 
     // Initial state
     refreshGrid();
@@ -570,6 +600,11 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
       // If currently selected pad updated, refresh the detail editor
       if (padIdx == selectedPad) {
         refreshDetailEditor();
+        if (showingChildUi && childUiPanel != null) {
+          for (ParamInfo info : state.params) {
+            childUiPanel.handleParamChange(info.getId(), info.getCurrentValue());
+          }
+        }
       }
     }
   }
@@ -632,6 +667,25 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
     samplerLoadPanel.setVisible(isSampler);
     sampleNameLabel.setText(state.sampleName);
 
+    // Edit button and child UI state
+    boolean hasPlugin = !state.pluginPath.isEmpty();
+    editBtn.setEnabled(hasPlugin);
+    editBtn.setSelected(showingChildUi && hasPlugin);
+    if (showingChildUi && hasPlugin) {
+      Class<? extends AbstractDevicePanel> clz = getChildPanelClass(state.pluginPath);
+      if (childUiPanel == null
+          || childUiPadIndex != selectedPad
+          || (clz != null && !clz.isInstance(childUiPanel))) {
+        showChildUi();
+      } else {
+        for (ParamInfo info : state.params) {
+          childUiPanel.handleParamChange(info.getId(), info.getCurrentValue());
+        }
+      }
+    } else {
+      hideChildUi();
+    }
+
     // Rebuild parameters list
     paramListPanel.removeAll();
     Theme theme = Theme.getInstance();
@@ -678,5 +732,109 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
     int octave = (pitch / 12) - 1;
     String note = NOTE_NAMES[pitch % 12];
     return note + octave;
+  }
+
+  private Class<? extends AbstractDevicePanel> getChildPanelClass(String path) {
+    if ("builtin://sampler".equals(path)) {
+      return SamplerDevicePanel.class;
+    }
+    if ("builtin://3xosc".equals(path)) {
+      return ThreeOscDevicePanel.class;
+    }
+    if ("builtin://dr8_kick".equals(path)) return Dr8KickDevicePanel.class;
+    if ("builtin://dr8_snare".equals(path)) return Dr8SnareDevicePanel.class;
+    if ("builtin://dr8_hat".equals(path)) return Dr8HatDevicePanel.class;
+    if ("builtin://dr8_tom".equals(path)) return Dr8TomDevicePanel.class;
+    if ("builtin://dr8_clap".equals(path)) return Dr8ClapDevicePanel.class;
+    if ("builtin://dr8_cowbell".equals(path)) return Dr8CowbellDevicePanel.class;
+    if ("builtin://dr8_crash".equals(path)) return Dr8CrashDevicePanel.class;
+    if ("builtin://dr8_rim".equals(path)) return Dr8RimshotDevicePanel.class;
+    if ("builtin://dr8_conga".equals(path)) return Dr8CongaDevicePanel.class;
+    return null;
+  }
+
+  private void showChildUi() {
+    childUiContainer.removeAll();
+    if (childUiPanel != null) {
+      childUiPanel.setCustomParamSender(null);
+      childUiPanel = null;
+    }
+
+    PadUIState state = pads[selectedPad];
+    Class<? extends AbstractDevicePanel> panelClass = getChildPanelClass(state.pluginPath);
+    if (panelClass != null) {
+      try {
+        childUiPadIndex = selectedPad;
+        childUiPanel =
+            panelClass.getConstructor(int.class, int.class).newInstance(trackIndex, pluginIndex);
+
+        for (ParamInfo info : state.params) {
+          childUiPanel.handleParamChange(info.getId(), info.getCurrentValue());
+        }
+
+        final int targetPadIdx = selectedPad;
+        childUiPanel.setCustomParamSender(
+            (paramId, value) -> {
+              sendDrumPadCmd(
+                  DrumPadCmd.Action.ACTION_SET_PARAM, targetPadIdx, "", paramId, value, "");
+              for (ParamInfo info : state.params) {
+                if (info.getId() == paramId) {
+                  int idx = state.params.indexOf(info);
+                  state.params.set(idx, info.toBuilder().setCurrentValue((float) value).build());
+                  break;
+                }
+              }
+            });
+
+        childUiContainer.add(childUiPanel, BorderLayout.CENTER);
+        childUiContainer.setVisible(true);
+        showingChildUi = true;
+      } catch (Exception ex) {
+        ex.printStackTrace();
+        childUiContainer.setVisible(false);
+        showingChildUi = false;
+        childUiPadIndex = -1;
+      }
+    } else {
+      childUiContainer.setVisible(false);
+      showingChildUi = false;
+      childUiPadIndex = -1;
+    }
+    updatePanelSize();
+  }
+
+  private void hideChildUi() {
+    childUiContainer.removeAll();
+    childUiContainer.setVisible(false);
+    if (childUiPanel != null) {
+      childUiPanel.setCustomParamSender(null);
+      childUiPanel = null;
+    }
+    showingChildUi = false;
+    childUiPadIndex = -1;
+    updatePanelSize();
+  }
+
+  private void updatePanelSize() {
+    Theme theme = Theme.getInstance();
+    int baseWidth = theme.scale(640);
+    int height = theme.scale(330);
+
+    if (showingChildUi && childUiPanel != null) {
+      int childWidth = childUiPanel.getPreferredSize().width;
+      setPreferredSize(new Dimension(baseWidth + childWidth, height));
+      setMaximumSize(new Dimension(baseWidth + childWidth, Short.MAX_VALUE));
+    } else {
+      setPreferredSize(new Dimension(baseWidth, height));
+      setMaximumSize(new Dimension(baseWidth, Short.MAX_VALUE));
+    }
+
+    Container parent = getParent();
+    if (parent != null) {
+      parent.revalidate();
+      parent.repaint();
+    }
+    revalidate();
+    repaint();
   }
 }

@@ -42,3 +42,7 @@ Instead of putting many functions and fields in large classes, prefer pulling fu
 
 Because we always hide its implementation details, documenting is better way to make the API usable.
 In tests, we also prefer writing friendly detailed error messages on assertions.
+
+### 8. Prefer absl::Status over bool for Return Values
+- **Rule**: Prefer returning `absl::Status` with descriptive error messages instead of simple `bool` values for operations that can fail (e.g. loading plugins, processing commands).
+- **Benefit**: Provides readable, friendly error messages on failure, facilitating easier debugging.

@@ -127,6 +127,30 @@ cc_library(
 )
 
 cc_library(
+    name = "registry",
+    srcs = ["registry.cpp"],
+    hdrs = ["registry.hpp"],
+    deps = [
+        ":builtin_aux",
+        ":builtin_bitcrusher",
+        ":builtin_chorus",
+        ":builtin_compressor",
+        ":builtin_convolver",
+        ":builtin_delay",
+        ":builtin_envelope_shaper",
+        ":builtin_eq",
+        ":builtin_hott",
+        ":builtin_limiter",
+        ":builtin_maxim",
+        ":builtin_phaser",
+        ":builtin_reverb",
+        ":builtin_stereo_width",
+        ":builtin_vocodey",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
     name = "effects",
     deps = [
         ":builtin_aux",

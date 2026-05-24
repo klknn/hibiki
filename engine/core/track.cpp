@@ -3,36 +3,8 @@
 #include <algorithm>
 #include <iostream>
 
-#include "engine/effects/builtin_aux.hpp"
-#include "engine/effects/builtin_bitcrusher.hpp"
-#include "engine/effects/builtin_chorus.hpp"
-#include "engine/effects/builtin_compressor.hpp"
-#include "engine/effects/builtin_convolver.hpp"
-#include "engine/effects/builtin_delay.hpp"
-#include "engine/effects/builtin_envelope_shaper.hpp"
-#include "engine/effects/builtin_eq.hpp"
-#include "engine/effects/builtin_hott.hpp"
-#include "engine/effects/builtin_limiter.hpp"
-#include "engine/effects/builtin_maxim.hpp"
-#include "engine/effects/builtin_phaser.hpp"
-#include "engine/effects/builtin_reverb.hpp"
-#include "engine/effects/builtin_stereo_width.hpp"
-#include "engine/effects/builtin_vocodey.hpp"
-#include "engine/instruments/builtin_3xosc.hpp"
-#include "engine/instruments/builtin_acid_bass.hpp"
-#include "engine/instruments/builtin_dr8_clap.hpp"
-#include "engine/instruments/builtin_dr8_conga.hpp"
-#include "engine/instruments/builtin_dr8_cowbell.hpp"
-#include "engine/instruments/builtin_dr8_crash.hpp"
-#include "engine/instruments/builtin_dr8_hat.hpp"
-#include "engine/instruments/builtin_dr8_kick.hpp"
-#include "engine/instruments/builtin_dr8_rim.hpp"
-#include "engine/instruments/builtin_dr8_snare.hpp"
-#include "engine/instruments/builtin_dr8_tom.hpp"
+#include "engine/builtin_registry.hpp"
 #include "engine/instruments/builtin_drum_machine.hpp"
-#include "engine/instruments/builtin_film.hpp"
-#include "engine/instruments/builtin_organ.hpp"
-#include "engine/instruments/builtin_sampler.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "pb/commands.pb.h"
 #include "pb/core.pb.h"
@@ -48,97 +20,18 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
   std::unique_ptr<IPlugin> plugin;
 
   // Built-in devices: create native IPlugin implementations
-  if (path == BuiltinAux::kPath) {
-    plugin = std::make_unique<BuiltinAux>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinEq::kPath) {
-    plugin = std::make_unique<BuiltinEq>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinCompressor::kPath) {
-    plugin = std::make_unique<BuiltinCompressor>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == Builtin3xOsc::kPath) {
-    plugin = std::make_unique<Builtin3xOsc>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinAcidBass::kPath) {
-    plugin = std::make_unique<BuiltinAcidBass>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinDr8Kick::kPath) {
-    plugin = std::make_unique<BuiltinDr8Kick>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinDr8Snare::kPath) {
-    plugin = std::make_unique<BuiltinDr8Snare>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinDr8Hat::kPath) {
-    plugin = std::make_unique<BuiltinDr8Hat>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinDr8Tom::kPath) {
-    plugin = std::make_unique<BuiltinDr8Tom>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinDr8Clap::kPath) {
-    plugin = std::make_unique<BuiltinDr8Clap>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinDr8Cowbell::kPath) {
-    plugin = std::make_unique<BuiltinDr8Cowbell>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinDr8Crash::kPath) {
-    plugin = std::make_unique<BuiltinDr8Crash>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinDr8Rim::kPath) {
-    plugin = std::make_unique<BuiltinDr8Rim>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinDr8Conga::kPath) {
-    plugin = std::make_unique<BuiltinDr8Conga>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinOrgan::kPath) {
-    plugin = std::make_unique<BuiltinOrgan>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinSampler::kPath) {
-    plugin = std::make_unique<BuiltinSampler>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinDrumMachine::kPath) {
-    auto dm = std::make_unique<BuiltinDrumMachine>();
-    dm->setTrackIndex(index);
-    plugin = std::move(dm);
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinDelay::kPath) {
-    plugin = std::make_unique<BuiltinDelay>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinReverb::kPath) {
-    plugin = std::make_unique<BuiltinReverb>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinLimiter::kPath) {
-    plugin = std::make_unique<BuiltinLimiter>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinBitcrusher::kPath) {
-    plugin = std::make_unique<BuiltinBitcrusher>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinChorus::kPath) {
-    plugin = std::make_unique<BuiltinChorus>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinStereoWidth::kPath) {
-    plugin = std::make_unique<BuiltinStereoWidth>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinHott::kPath) {
-    plugin = std::make_unique<BuiltinHott>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinMaxim::kPath) {
-    plugin = std::make_unique<BuiltinMaxim>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinVocodey::kPath) {
-    plugin = std::make_unique<BuiltinVocodey>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinEnvelopeShaper::kPath) {
-    plugin = std::make_unique<BuiltinEnvelopeShaper>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path == BuiltinPhaser::kPath) {
-    plugin = std::make_unique<BuiltinPhaser>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path.rfind(BuiltinConvolver::kPath, 0) == 0) {
-    plugin = std::make_unique<BuiltinConvolver>();
-    plugin->load(path, 0, sample_rate);
-  } else if (path.rfind(BuiltinFilm::kPath, 0) == 0) {
-    plugin = std::make_unique<BuiltinFilm>();
+  if (isBuiltinPluginPath(path)) {
+    plugin = createBuiltinPlugin(path);
+    if (!plugin) {
+      return {-1, nullptr};
+    }
+    if (path == BuiltinDrumMachine::kPath) {
+      auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugin.get());
+      if (dm) {
+        dm->setTrackIndex(index);
+        dm->setPluginHostMode(host_mode);
+      }
+    }
     plugin->load(path, 0, sample_rate);
   } else if (!remote_host.empty()) {
     // Per-load remote host — always use TCP proxy

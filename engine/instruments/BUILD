@@ -162,14 +162,40 @@ cc_library(
 )
 
 cc_library(
+    name = "registry",
+    srcs = ["registry.cpp"],
+    hdrs = ["registry.hpp"],
+    deps = [
+        ":builtin_3xosc",
+        ":builtin_acid_bass",
+        ":builtin_dr8_clap",
+        ":builtin_dr8_conga",
+        ":builtin_dr8_cowbell",
+        ":builtin_dr8_crash",
+        ":builtin_dr8_hat",
+        ":builtin_dr8_kick",
+        ":builtin_dr8_rim",
+        ":builtin_dr8_snare",
+        ":builtin_dr8_tom",
+        ":builtin_film",
+        ":builtin_organ",
+        ":builtin_sampler",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
     name = "builtin_drum_machine",
     srcs = ["builtin_drum_machine.cpp"],
     hdrs = ["builtin_drum_machine.hpp"],
     deps = [
-        ":builtin_3xosc",
         ":builtin_sampler",
+        ":registry",
+        "//engine/effects:registry",
         "//engine/ipc",
         "//engine/plugin:iplugin",
+        "//engine/plugin:plugin_proxy",
+        "//engine/vst3:vst3_host",
         "//pb:commands_cc_proto",
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",
@@ -250,6 +276,7 @@ cc_test(
         ":builtin_drum_machine",
         "//engine:test_utils",
         "//engine:test_utils_state",
+        "//engine/vst3:vst3_host_stub",
         "@googletest//:gtest_main",
     ],
 )

@@ -25,6 +25,19 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "builtin_registry",
+    srcs = ["builtin_registry.cpp"],
+    hdrs = ["builtin_registry.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//engine/effects:registry",
+        "//engine/instruments:builtin_drum_machine",
+        "//engine/instruments:registry",
+        "//engine/plugin:iplugin",
+    ],
+)
+
 cc_binary(
     name = "hbk-play",
     srcs = ["main.cpp"],

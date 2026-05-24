@@ -507,45 +507,46 @@ void handleDrumPadCmd(const pb::commands::DrumPadCmd& cmd,
     return;
   }
 
-  bool success = false;
+  absl::Status status = absl::OkStatus();
   switch (cmd.action()) {
     case pb::commands::DrumPadCmd::ACTION_LOAD_PLUGIN:
-      success = dm->loadPadPlugin(pad_idx, cmd.plugin_path());
+      status = dm->loadPadPlugin(pad_idx, cmd.plugin_path());
       break;
     case pb::commands::DrumPadCmd::ACTION_REMOVE_PLUGIN:
-      success = dm->removePadPlugin(pad_idx);
+      status = dm->removePadPlugin(pad_idx);
       break;
     case pb::commands::DrumPadCmd::ACTION_SET_PARAM:
-      success = dm->setPadParam(pad_idx, cmd.param_id(), cmd.param_value());
+      status = dm->setPadParam(pad_idx, cmd.param_id(), cmd.param_value());
       break;
     case pb::commands::DrumPadCmd::ACTION_LOAD_SAMPLE:
-      success = dm->loadPadSample(pad_idx, cmd.sample_path());
+      status = dm->loadPadSample(pad_idx, cmd.sample_path());
       break;
     case pb::commands::DrumPadCmd::ACTION_SET_VOLUME:
       dm->setPadVolume(pad_idx, cmd.param_value());
-      success = true;
       break;
     case pb::commands::DrumPadCmd::ACTION_SET_PAN:
       dm->setPadPan(pad_idx, cmd.param_value());
-      success = true;
       break;
     case pb::commands::DrumPadCmd::ACTION_SET_MUTE:
       dm->setPadMute(pad_idx, cmd.param_value() >= 0.5f);
-      success = true;
       break;
     case pb::commands::DrumPadCmd::ACTION_SET_SOLO:
       dm->setPadSolo(pad_idx, cmd.param_value() >= 0.5f);
-      success = true;
       break;
     case pb::commands::DrumPadCmd::ACTION_SET_TRIGGER_NOTE:
       dm->setPadTriggerNote(pad_idx, cmd.trigger_note());
-      success = true;
       break;
     default:
+      status = absl::InvalidArgumentError("Unknown drum pad action");
       break;
   }
 
-  sendAck("DRUM_PAD_CMD", success);
+  if (!status.ok()) {
+    LOG(ERROR) << "Drum pad command failed: " << status.message();
+    sendAck("DRUM_PAD_CMD", false);
+  } else {
+    sendAck("DRUM_PAD_CMD", true);
+  }
 }
 
 }  // namespace hibiki

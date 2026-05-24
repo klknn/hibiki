@@ -26,3 +26,5 @@ tools/buildifier
 *.log
 *.txt
 .hibikirc.textproto
+.\#*
+\#*

@@ -35,9 +35,9 @@ TEST(BuiltinDrumMachineTest, LoadAndRemovePadPlugins) {
   dm.load("", 0, 44100.0);
 
   // Pad 0: Load Sampler
-  EXPECT_TRUE(dm.loadPadPlugin(0, "builtin://sampler"));
+  EXPECT_TRUE(dm.loadPadPlugin(0, "builtin://sampler").ok());
   // Pad 1: Load 3xOsc
-  EXPECT_TRUE(dm.loadPadPlugin(1, "builtin://3xosc"));
+  EXPECT_TRUE(dm.loadPadPlugin(1, "builtin://3xosc").ok());
 
   // Check state serialization (implicitly verifies load)
   pb::core::DrumMachineState state;
@@ -51,7 +51,7 @@ TEST(BuiltinDrumMachineTest, LoadAndRemovePadPlugins) {
   EXPECT_EQ(state.pads(1).plugin_path(), "builtin://3xosc");
 
   // Remove plugin from Pad 0
-  EXPECT_TRUE(dm.removePadPlugin(0));
+  EXPECT_TRUE(dm.removePadPlugin(0).ok());
   pb::core::DrumMachineState state2;
   dm.serializeState(&state2);
   ASSERT_EQ(state2.pads_size(), 1);
@@ -64,7 +64,7 @@ TEST(BuiltinDrumMachineTest, MixAndRouting) {
   dm.load("", 0, 44100.0);
 
   // Load 3xOsc on Pad 0 (triggers on note 36)
-  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://3xosc"));
+  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://3xosc").ok());
 
   constexpr int N = 256;
   float outL[N] = {0};
@@ -95,9 +95,9 @@ TEST(BuiltinDrumMachineTest, PadSamplerProducesSound) {
   BuiltinDrumMachine dm;
   dm.load("", 0, 44100.0);
 
-  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://sampler"));
+  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://sampler").ok());
   std::string wav_path = hibiki::find_test_file("testdata/loop140.wav");
-  ASSERT_TRUE(dm.loadPadSample(0, wav_path));
+  ASSERT_TRUE(dm.loadPadSample(0, wav_path).ok());
 
   constexpr int N = 256;
   float outL[N] = {0};
@@ -127,9 +127,9 @@ TEST(BuiltinDrumMachineTest, PadSamplerMultipleTriggers) {
   BuiltinDrumMachine dm;
   dm.load("", 0, 44100.0);
 
-  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://sampler"));
+  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://sampler").ok());
   std::string wav_path = hibiki::find_test_file("testdata/loop140.wav");
-  ASSERT_TRUE(dm.loadPadSample(0, wav_path));
+  ASSERT_TRUE(dm.loadPadSample(0, wav_path).ok());
 
   constexpr int N = 256;
   float outL[N] = {0};
@@ -188,9 +188,9 @@ TEST(BuiltinDrumMachineTest, PadSamplerNoteOnNoteOffSameBlock) {
   BuiltinDrumMachine dm;
   dm.load("", 0, 44100.0);
 
-  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://sampler"));
+  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://sampler").ok());
   std::string wav_path = hibiki::find_test_file("testdata/loop140.wav");
-  ASSERT_TRUE(dm.loadPadSample(0, wav_path));
+  ASSERT_TRUE(dm.loadPadSample(0, wav_path).ok());
 
   constexpr int N = 256;
   float outL[N] = {0};
@@ -231,8 +231,8 @@ TEST(BuiltinDrumMachineTest, MuteAndSolo) {
   BuiltinDrumMachine dm;
   dm.load("", 0, 44100.0);
 
-  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://3xosc"));
-  ASSERT_TRUE(dm.loadPadPlugin(1, "builtin://3xosc"));
+  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://3xosc").ok());
+  ASSERT_TRUE(dm.loadPadPlugin(1, "builtin://3xosc").ok());
 
   // Solo Pad 1, meaning Pad 0 should not play
   dm.setPadSolo(1, true);
@@ -278,7 +278,7 @@ TEST(BuiltinDrumMachineTest, SerializationRoundTrip) {
   g_ipc_enabled = false;
   BuiltinDrumMachine dm1;
   dm1.load("", 0, 44100.0);
-  ASSERT_TRUE(dm1.loadPadPlugin(3, "builtin://3xosc"));
+  ASSERT_TRUE(dm1.loadPadPlugin(3, "builtin://3xosc").ok());
   dm1.setPadVolume(3, 0.75f);
   dm1.setPadPan(3, -0.5f);
   dm1.setPadMute(3, true);
@@ -305,6 +305,77 @@ TEST(BuiltinDrumMachineTest, SerializationRoundTrip) {
   EXPECT_TRUE(state2.pads(0).mute());
   EXPECT_FALSE(state2.pads(0).solo());
   EXPECT_EQ(state2.pads(0).trigger_note(), 72u);
+}
+
+TEST(BuiltinDrumMachineTest, LoadOtherInstruments) {
+  g_ipc_enabled = false;
+  BuiltinDrumMachine dm;
+  dm.load("", 0, 44100.0);
+
+  // Try loading DR8 Kick
+  EXPECT_TRUE(dm.loadPadPlugin(0, "builtin://dr8_kick").ok());
+
+  constexpr int N = 256;
+  float outL[N] = {0};
+  float outR[N] = {0};
+  float* outs[2] = {outL, outR};
+
+  std::vector<MidiNoteEvent> events;
+  MidiNoteEvent ev;
+  ev.pitch = 36;
+  ev.velocity = 1.0f;
+  ev.isNoteOn = true;
+  events.push_back(ev);
+
+  auto ctx = MakeContext();
+  dm.process(nullptr, outs, N, ctx, events);
+
+  float peak = 0;
+  for (int i = 0; i < N; ++i) {
+    peak = std::max(peak, std::abs(outL[i]));
+  }
+  EXPECT_GT(peak, 0.001f) << "DR8 Kick on Pad 0 should generate audio";
+}
+
+TEST(BuiltinDrumMachineTest, LoadVst3Instrument) {
+  g_ipc_enabled = false;
+  BuiltinDrumMachine dm;
+  dm.load("", 0, 44100.0);
+
+  std::string dexed_path = hibiki::find_test_file("testdata/Dexed.vst3");
+
+  // Load Dexed VST3 plugin on Pad 0
+  EXPECT_TRUE(dm.loadPadPlugin(0, dexed_path).ok());
+
+  // Verify that it is loaded in the pads_ state
+  pb::core::DrumMachineState state;
+  dm.serializeState(&state);
+  ASSERT_EQ(state.pads_size(), 1);
+  EXPECT_EQ(state.pads(0).pad_index(), 0u);
+  EXPECT_EQ(state.pads(0).plugin_path(), dexed_path);
+
+  // Trigger Pad 0 with MIDI note 36
+  constexpr int N = 256;
+  float outL[N] = {0};
+  float outR[N] = {0};
+  float* outs[2] = {outL, outR};
+
+  std::vector<MidiNoteEvent> events;
+  MidiNoteEvent ev;
+  ev.pitch = 36;
+  ev.velocity = 1.0f;
+  ev.isNoteOn = true;
+  events.push_back(ev);
+
+  auto ctx = MakeContext();
+  dm.process(nullptr, outs, N, ctx, events);
+
+  // Assert that Dexed produced audio output
+  float peak = 0;
+  for (int i = 0; i < N; ++i) {
+    peak = std::max(peak, std::abs(outL[i]));
+  }
+  EXPECT_GT(peak, 0.001f) << "Dexed VST3 on Pad 0 should generate audio";
 }
 
 }  // namespace

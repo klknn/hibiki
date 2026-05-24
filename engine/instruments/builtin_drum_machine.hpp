@@ -5,7 +5,9 @@
 #include <string>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "engine/plugin/iplugin.hpp"
+#include "engine/plugin/plugin_proxy.hpp"
 #include "pb/commands.pb.h"
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
@@ -56,10 +58,10 @@ class BuiltinDrumMachine : public IPlugin {
   bool isInstrument() const override;
 
   // Custom DrumPad commands (called from plugin_commands)
-  bool loadPadPlugin(int pad_idx, const std::string& plugin_path);
-  bool removePadPlugin(int pad_idx);
-  bool setPadParam(int pad_idx, uint32_t param_id, float value);
-  bool loadPadSample(int pad_idx, const std::string& sample_path);
+  absl::Status loadPadPlugin(int pad_idx, const std::string& plugin_path);
+  absl::Status removePadPlugin(int pad_idx);
+  absl::Status setPadParam(int pad_idx, uint32_t param_id, float value);
+  absl::Status loadPadSample(int pad_idx, const std::string& sample_path);
   void setPadVolume(int pad_idx, float vol);
   void setPadPan(int pad_idx, float pan);
   void setPadMute(int pad_idx, bool mute);
@@ -75,6 +77,7 @@ class BuiltinDrumMachine : public IPlugin {
   void sendAllPadStates() const;
 
   void setTrackIndex(int idx) { track_index_ = idx; }
+  void setPluginHostMode(PluginHostMode mode) { host_mode_ = mode; }
 
  private:
   double sample_rate_ = 44100.0;
@@ -95,6 +98,9 @@ class BuiltinDrumMachine : public IPlugin {
   std::vector<float> temp_left_;
   std::vector<float> temp_right_;
   float* temp_channels_[2];
+
+  std::unique_ptr<IPlugin> createPadPlugin(const std::string& path) const;
+  PluginHostMode host_mode_ = PluginHostMode::IN_PROCESS;
 };
 
 }  // namespace hibiki

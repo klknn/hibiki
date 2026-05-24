@@ -93,6 +93,12 @@ void BuiltinDrumMachine::process(float** /*inputs*/, float** outputs,
     pad.plugin->process(nullptr, temp_channels_, num_samples, context,
                         pad_events);
 
+    // Call pad effect plugin process if present
+    if (pad.effect) {
+      pad.effect->process(temp_channels_, temp_channels_, num_samples, context,
+                          {});
+    }
+
     // Mix in if active and matching solo/mute rules
     bool play_pad = !pad.mute;
     if (any_solo && !pad.solo) {
@@ -244,19 +250,69 @@ absl::Status BuiltinDrumMachine::removePadPlugin(int pad_idx) {
   return absl::OkStatus();
 }
 
-absl::Status BuiltinDrumMachine::setPadParam(int pad_idx, uint32_t param_id,
-                                             float value) {
+absl::Status BuiltinDrumMachine::loadPadEffect(int pad_idx,
+                                               const std::string& effect_path) {
   {
     std::lock_guard<std::mutex> lock(pads_mutex_);
     if (pad_idx < 0 || pad_idx >= kNumPads) {
       return absl::InvalidArgumentError("Invalid pad index: " +
                                         std::to_string(pad_idx));
     }
-    if (!pads_[pad_idx].plugin) {
-      return absl::FailedPreconditionError("No plugin loaded on pad " +
-                                           std::to_string(pad_idx));
+
+    pads_[pad_idx].effect.reset();
+    pads_[pad_idx].effect_path = effect_path;
+
+    if (effect_path.empty()) {
+      sendPadState(pad_idx);
+      return absl::OkStatus();
     }
-    pads_[pad_idx].plugin->setParameterValue(param_id, value);
+
+    auto plugin = createPadPlugin(effect_path);
+    if (!plugin) {
+      pads_[pad_idx].effect_path = "";
+      sendPadState(pad_idx);
+      return absl::NotFoundError("Effect not found or unrecognized path: " +
+                                 effect_path);
+    }
+
+    if (!plugin->load(effect_path, 0, sample_rate_)) {
+      pads_[pad_idx].effect_path = "";
+      sendPadState(pad_idx);
+      return absl::InternalError("Failed to load effect: " + effect_path);
+    }
+
+    pads_[pad_idx].effect = std::move(plugin);
+  }
+
+  sendPadState(pad_idx);
+  return absl::OkStatus();
+}
+
+absl::Status BuiltinDrumMachine::removePadEffect(int pad_idx) {
+  return loadPadEffect(pad_idx, "");
+}
+
+absl::Status BuiltinDrumMachine::setPadParam(int pad_idx, uint32_t param_id,
+                                             float value, bool target_effect) {
+  {
+    std::lock_guard<std::mutex> lock(pads_mutex_);
+    if (pad_idx < 0 || pad_idx >= kNumPads) {
+      return absl::InvalidArgumentError("Invalid pad index: " +
+                                        std::to_string(pad_idx));
+    }
+    if (target_effect) {
+      if (!pads_[pad_idx].effect) {
+        return absl::FailedPreconditionError("No effect loaded on pad " +
+                                             std::to_string(pad_idx));
+      }
+      pads_[pad_idx].effect->setParameterValue(param_id, value);
+    } else {
+      if (!pads_[pad_idx].plugin) {
+        return absl::FailedPreconditionError("No plugin loaded on pad " +
+                                             std::to_string(pad_idx));
+      }
+      pads_[pad_idx].plugin->setParameterValue(param_id, value);
+    }
   }
   sendPadState(pad_idx);
   return absl::OkStatus();
@@ -286,6 +342,29 @@ absl::Status BuiltinDrumMachine::loadPadSample(int pad_idx,
     pads_[pad_idx].sample_waveform = sampler->getWaveformSummary();
   }
   sendPadState(pad_idx);
+  return absl::OkStatus();
+}
+
+absl::Status BuiltinDrumMachine::showPadEditor(int pad_idx,
+                                               bool target_effect) {
+  std::lock_guard<std::mutex> lock(pads_mutex_);
+  if (pad_idx < 0 || pad_idx >= kNumPads) {
+    return absl::InvalidArgumentError("Invalid pad index: " +
+                                      std::to_string(pad_idx));
+  }
+  if (target_effect) {
+    if (!pads_[pad_idx].effect) {
+      return absl::NotFoundError("No effect loaded on pad: " +
+                                 std::to_string(pad_idx));
+    }
+    pads_[pad_idx].effect->showEditor();
+  } else {
+    if (!pads_[pad_idx].plugin) {
+      return absl::NotFoundError("No plugin loaded on pad: " +
+                                 std::to_string(pad_idx));
+    }
+    pads_[pad_idx].plugin->showEditor();
+  }
   return absl::OkStatus();
 }
 
@@ -344,7 +423,7 @@ void BuiltinDrumMachine::serializeState(
   std::lock_guard<std::mutex> lock(pads_mutex_);
   for (int i = 0; i < kNumPads; ++i) {
     const auto& pad = pads_[i];
-    if (pad.plugin_path.empty()) continue;
+    if (pad.plugin_path.empty() && pad.effect_path.empty()) continue;
 
     auto* pad_state = state->add_pads();
     pad_state->set_pad_index(i);
@@ -355,6 +434,7 @@ void BuiltinDrumMachine::serializeState(
     pad_state->set_solo(pad.solo);
     pad_state->set_sample_path(pad.sample_path);
     pad_state->set_trigger_note(pad.trigger_note);
+    pad_state->set_effect_path(pad.effect_path);
 
     if (pad.plugin) {
       int count = pad.plugin->getParameterCount();
@@ -364,6 +444,21 @@ void BuiltinDrumMachine::serializeState(
           double val = pad.plugin->getParameterValue(info.id);
           if (val != info.defaultValue) {
             auto* param = pad_state->add_params();
+            param->set_id(info.id);
+            param->set_current_value(val);
+          }
+        }
+      }
+    }
+
+    if (pad.effect) {
+      int count = pad.effect->getParameterCount();
+      for (int p = 0; p < count; ++p) {
+        VstParamInfo info;
+        if (pad.effect->getParameterInfo(p, info)) {
+          double val = pad.effect->getParameterValue(info.id);
+          if (val != info.defaultValue) {
+            auto* param = pad_state->add_effect_params();
             param->set_id(info.id);
             param->set_current_value(val);
           }
@@ -381,6 +476,8 @@ void BuiltinDrumMachine::deserializeState(
   for (int i = 0; i < kNumPads; ++i) {
     pads_[i].plugin.reset();
     pads_[i].plugin_path = "";
+    pads_[i].effect.reset();
+    pads_[i].effect_path = "";
     pads_[i].volume = 1.0f;
     pads_[i].pan = 0.0f;
     pads_[i].mute = false;
@@ -397,6 +494,7 @@ void BuiltinDrumMachine::deserializeState(
 
     auto& pad = pads_[idx];
     pad.plugin_path = pad_state.plugin_path();
+    pad.effect_path = pad_state.effect_path();
     pad.volume = pad_state.volume();
     pad.pan = pad_state.pan();
     pad.mute = pad_state.mute();
@@ -428,6 +526,20 @@ void BuiltinDrumMachine::deserializeState(
                                       param_data.current_value());
       }
     }
+
+    auto effect_plugin = createPadPlugin(pad.effect_path);
+    if (effect_plugin) {
+      if (effect_plugin->load(pad.effect_path, 0, sample_rate_)) {
+        pad.effect = std::move(effect_plugin);
+      }
+    }
+
+    if (pad.effect) {
+      for (const auto& param_data : pad_state.effect_params()) {
+        pad.effect->setParameterValue(param_data.id(),
+                                      param_data.current_value());
+      }
+    }
   }
 }
 
@@ -441,6 +553,7 @@ void BuiltinDrumMachine::sendPadState(int pad_idx) const {
   if (pad_idx < 0 || pad_idx >= kNumPads) return;
 
   std::string plugin_path;
+  std::string effect_path;
   float volume;
   float pan;
   bool mute;
@@ -450,11 +563,14 @@ void BuiltinDrumMachine::sendPadState(int pad_idx) const {
   std::vector<float> sample_waveform;
   std::vector<VstParamInfo> param_infos;
   std::vector<double> param_values;
+  std::vector<VstParamInfo> effect_param_infos;
+  std::vector<double> effect_param_values;
 
   {
     std::lock_guard<std::mutex> lock(pads_mutex_);
     const auto& pad = pads_[pad_idx];
     plugin_path = pad.plugin_path;
+    effect_path = pad.effect_path;
     volume = pad.volume;
     pan = pad.pan;
     mute = pad.mute;
@@ -473,6 +589,17 @@ void BuiltinDrumMachine::sendPadState(int pad_idx) const {
         }
       }
     }
+
+    if (pad.effect) {
+      int count = pad.effect->getParameterCount();
+      for (int i = 0; i < count; ++i) {
+        VstParamInfo info;
+        if (pad.effect->getParameterInfo(i, info)) {
+          effect_param_infos.push_back(info);
+          effect_param_values.push_back(pad.effect->getParameterValue(info.id));
+        }
+      }
+    }
   }
 
   pb::notifications::Notification notification;
@@ -482,6 +609,7 @@ void BuiltinDrumMachine::sendPadState(int pad_idx) const {
   dp->set_plugin_index(plugin_index_);
   dp->set_pad_index(pad_idx);
   dp->set_plugin_path(plugin_path);
+  dp->set_effect_path(effect_path);
   dp->set_volume(volume);
   dp->set_pan(pan);
   dp->set_mute(mute);
@@ -498,6 +626,14 @@ void BuiltinDrumMachine::sendPadState(int pad_idx) const {
     p->set_name(param_infos[i].name);
     p->set_default_value(param_infos[i].defaultValue);
     p->set_current_value(param_values[i]);
+  }
+
+  for (size_t i = 0; i < effect_param_infos.size(); ++i) {
+    auto* p = dp->add_effect_params();
+    p->set_id(effect_param_infos[i].id);
+    p->set_name(effect_param_infos[i].name);
+    p->set_default_value(effect_param_infos[i].defaultValue);
+    p->set_current_value(effect_param_values[i]);
   }
 
   std::string serialized;

@@ -510,13 +510,22 @@ void handleDrumPadCmd(const pb::commands::DrumPadCmd& cmd,
   absl::Status status = absl::OkStatus();
   switch (cmd.action()) {
     case pb::commands::DrumPadCmd::ACTION_LOAD_PLUGIN:
-      status = dm->loadPadPlugin(pad_idx, cmd.plugin_path());
+      if (cmd.target_effect()) {
+        status = dm->loadPadEffect(pad_idx, cmd.plugin_path());
+      } else {
+        status = dm->loadPadPlugin(pad_idx, cmd.plugin_path());
+      }
       break;
     case pb::commands::DrumPadCmd::ACTION_REMOVE_PLUGIN:
-      status = dm->removePadPlugin(pad_idx);
+      if (cmd.target_effect()) {
+        status = dm->removePadEffect(pad_idx);
+      } else {
+        status = dm->removePadPlugin(pad_idx);
+      }
       break;
     case pb::commands::DrumPadCmd::ACTION_SET_PARAM:
-      status = dm->setPadParam(pad_idx, cmd.param_id(), cmd.param_value());
+      status = dm->setPadParam(pad_idx, cmd.param_id(), cmd.param_value(),
+                               cmd.target_effect());
       break;
     case pb::commands::DrumPadCmd::ACTION_LOAD_SAMPLE:
       status = dm->loadPadSample(pad_idx, cmd.sample_path());
@@ -535,6 +544,9 @@ void handleDrumPadCmd(const pb::commands::DrumPadCmd& cmd,
       break;
     case pb::commands::DrumPadCmd::ACTION_SET_TRIGGER_NOTE:
       dm->setPadTriggerNote(pad_idx, cmd.trigger_note());
+      break;
+    case pb::commands::DrumPadCmd::ACTION_SHOW_GUI:
+      status = dm->showPadEditor(pad_idx, cmd.target_effect());
       break;
     default:
       status = absl::InvalidArgumentError("Unknown drum pad action");

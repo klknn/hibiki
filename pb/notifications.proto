@@ -358,6 +358,8 @@ message DrumPadNotification {
   string sample_name = 11;
   repeated float sample_waveform = 12;
   optional uint32 trigger_note = 13;
+  string effect_path = 14;
+  repeated hibiki.pb.core.ParamInfo effect_params = 15;
 }
 
 // Sampler waveform summary sent after sample load.

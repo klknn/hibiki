@@ -294,6 +294,7 @@ message DrumPadCmd {
     ACTION_SET_MUTE = 7;
     ACTION_SET_SOLO = 8;
     ACTION_SET_TRIGGER_NOTE = 9;
+    ACTION_SHOW_GUI = 10;
   }
   Action action = 1;
   uint32 track_index = 2;
@@ -304,6 +305,7 @@ message DrumPadCmd {
   float param_value = 7;
   string sample_path = 8;
   uint32 trigger_note = 9;
+  bool target_effect = 10;
 }
 
 // ─── Request Envelope ───────────────────────────────────────────────

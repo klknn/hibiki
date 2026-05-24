@@ -21,12 +21,14 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
 
   static class PadUIState {
     String pluginPath = "";
+    String effectPath = "";
     float volume = 1.0f;
     float pan = 0.0f;
     boolean mute = false;
     boolean solo = false;
     String sampleName = "";
     List<ParamInfo> params = new ArrayList<>();
+    List<ParamInfo> effectParams = new ArrayList<>();
     int triggerNote = 60;
   }
 
@@ -38,6 +40,7 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
 
   final JLabel selectedPadLabel;
   final JComboBox<String> pluginCombo;
+  final JComboBox<String> effectCombo;
   final JSlider padVolSlider;
   final JSlider padPanSlider;
   final JToggleButton padMuteBtn;
@@ -49,11 +52,13 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
   final JLabel sampleNameLabel;
   final JPanel paramListPanel;
   final JScrollPane paramScrollPane;
-  final JToggleButton editBtn;
+  JToggleButton editBtn;
+  JToggleButton effectEditBtn;
 
   private AbstractDevicePanel childUiPanel = null;
   private JPanel childUiContainer = null;
   private boolean showingChildUi = false;
+  private boolean childUiIsEffect = false;
   private int childUiPadIndex = -1;
 
   private boolean updatingUi = false;
@@ -215,7 +220,7 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
     rightPanel.setBorder(BorderFactory.createMatteBorder(0, 1, 0, 0, theme.BORDER));
 
     // Pad Selection details (Top)
-    JPanel detailTop = new JPanel(new GridLayout(3, 1, 2, 2));
+    JPanel detailTop = new JPanel(new GridLayout(4, 1, 2, 2));
     detailTop.setBackground(theme.BG_MEDIUM);
     detailTop.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
@@ -266,7 +271,8 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
             int res = chooser.showOpenDialog(DrumMachineDevicePanel.this);
             if (res == JFileChooser.APPROVE_OPTION) {
               String vst3Path = chooser.getSelectedFile().getAbsolutePath();
-              sendDrumPadCmd(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, selectedPad, vst3Path, 0, 0, "");
+              sendDrumPadCmd(
+                  DrumPadCmd.Action.ACTION_LOAD_PLUGIN, selectedPad, vst3Path, 0, 0, "", false);
             } else {
               refreshDetailEditor(); // Reset combo selection to actual value
             }
@@ -293,9 +299,11 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
           }
 
           if (path.isEmpty()) {
-            sendDrumPadCmd(DrumPadCmd.Action.ACTION_REMOVE_PLUGIN, selectedPad, "", 0, 0, "");
+            sendDrumPadCmd(
+                DrumPadCmd.Action.ACTION_REMOVE_PLUGIN, selectedPad, "", 0, 0, "", false);
           } else {
-            sendDrumPadCmd(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, selectedPad, path, 0, 0, "");
+            sendDrumPadCmd(
+                DrumPadCmd.Action.ACTION_LOAD_PLUGIN, selectedPad, path, 0, 0, "", false);
           }
         });
     pluginSelRow.add(pluginCombo, BorderLayout.CENTER);
@@ -305,15 +313,161 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
     editBtn.setFocusPainted(false);
     editBtn.addActionListener(
         e -> {
-          showingChildUi = editBtn.isSelected();
-          if (showingChildUi) {
-            showChildUi();
+          PadUIState state = pads[selectedPad];
+          Class<? extends AbstractDevicePanel> panelClass = getChildPanelClass(state.pluginPath);
+          if (panelClass == null && !state.pluginPath.isEmpty()) {
+            editBtn.setSelected(false);
+            sendDrumPadCmd(DrumPadCmd.Action.ACTION_SHOW_GUI, selectedPad, "", 0, 0, "", false);
           } else {
-            hideChildUi();
+            showingChildUi = editBtn.isSelected();
+            childUiIsEffect = false;
+            if (showingChildUi) {
+              effectEditBtn.setSelected(false);
+              showChildUi();
+            } else {
+              hideChildUi();
+            }
           }
         });
     pluginSelRow.add(editBtn, BorderLayout.EAST);
     detailTop.add(pluginSelRow);
+
+    JPanel effectSelRow = new JPanel(new BorderLayout(5, 0));
+    effectSelRow.setOpaque(false);
+    JLabel effectLabel = new JLabel("Effect:");
+    effectLabel.setForeground(new Color(0xCCCCCC));
+    effectLabel.setFont(theme.FONT_UI);
+    effectSelRow.add(effectLabel, BorderLayout.WEST);
+
+    effectCombo =
+        new JComboBox<>(
+            new String[] {
+              "Empty",
+              "EQ Eight",
+              "Compressor",
+              "Delay",
+              "Reverb",
+              "Limiter",
+              "Maxim",
+              "Hott",
+              "EnvShaper",
+              "Phaser",
+              "Convolver",
+              "Bitcrusher",
+              "Chorus",
+              "Stereo Width",
+              "Vocodey",
+              "Load VST3..."
+            });
+    effectCombo.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
+    effectCombo.addActionListener(
+        e -> {
+          if (updatingUi) return;
+          String sel = (String) effectCombo.getSelectedItem();
+          if ("Load VST3...".equals(sel)) {
+            if (GraphicsEnvironment.isHeadless()) {
+              return;
+            }
+            JFileChooser chooser = new JFileChooser();
+            chooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+            chooser.setFileFilter(new FileNameExtensionFilter("VST3 Plugins", "vst3"));
+            int res = chooser.showOpenDialog(DrumMachineDevicePanel.this);
+            if (res == JFileChooser.APPROVE_OPTION) {
+              String vst3Path = chooser.getSelectedFile().getAbsolutePath();
+              sendDrumPadCmd(
+                  DrumPadCmd.Action.ACTION_LOAD_PLUGIN, selectedPad, vst3Path, 0, 0, "", true);
+            } else {
+              refreshDetailEditor(); // Reset combo selection to actual value
+            }
+            return;
+          }
+
+          String path = "";
+          if ("EQ Eight".equals(sel)) path = "builtin://eq";
+          else if ("Compressor".equals(sel)) path = "builtin://compressor";
+          else if ("Delay".equals(sel)) path = "builtin://delay";
+          else if ("Reverb".equals(sel)) path = "builtin://reverb";
+          else if ("Limiter".equals(sel)) path = "builtin://limiter";
+          else if ("Maxim".equals(sel)) path = "builtin://maxim";
+          else if ("Hott".equals(sel)) path = "builtin://hott";
+          else if ("EnvShaper".equals(sel)) path = "builtin://envelope_shaper";
+          else if ("Phaser".equals(sel)) path = "builtin://phaser";
+          else if ("Convolver".equals(sel)) path = "builtin://convolver";
+          else if ("Bitcrusher".equals(sel)) path = "builtin://bitcrusher";
+          else if ("Chorus".equals(sel)) path = "builtin://chorus";
+          else if ("Stereo Width".equals(sel)) path = "builtin://stereo_width";
+          else if ("Vocodey".equals(sel)) path = "builtin://vocodey";
+          else if (!"Empty".equals(sel)) {
+            path = pads[selectedPad].effectPath;
+          }
+
+          if (path.isEmpty()) {
+            sendDrumPadCmd(DrumPadCmd.Action.ACTION_REMOVE_PLUGIN, selectedPad, "", 0, 0, "", true);
+          } else {
+            sendDrumPadCmd(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, selectedPad, path, 0, 0, "", true);
+          }
+        });
+    effectSelRow.add(effectCombo, BorderLayout.CENTER);
+
+    if (!java.awt.GraphicsEnvironment.isHeadless()) {
+      new DropTarget(
+          effectCombo,
+          new DropTargetAdapter() {
+            @Override
+            public void drop(DropTargetDropEvent dtde) {
+              try {
+                if (dtde.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                  dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                  String data =
+                      (String) dtde.getTransferable().getTransferData(DataFlavor.stringFlavor);
+                  dtde.dropComplete(true);
+                  String[] parts = data.split(":", 2);
+                  if (parts.length == 2) {
+                    if ("builtin".equals(parts[0])
+                        || "vst".equals(parts[0])
+                        || "remote-vst".equals(parts[0])
+                        || "plugin".equals(parts[0])) {
+                      sendDrumPadCmd(
+                          DrumPadCmd.Action.ACTION_LOAD_PLUGIN,
+                          selectedPad,
+                          parts[1],
+                          0,
+                          0,
+                          "",
+                          true);
+                    }
+                  }
+                }
+              } catch (Exception ex) {
+                dtde.rejectDrop();
+              }
+            }
+          });
+    }
+
+    effectEditBtn = new JToggleButton("Edit");
+    effectEditBtn.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
+    effectEditBtn.setFocusPainted(false);
+    effectEditBtn.addActionListener(
+        e -> {
+          PadUIState state = pads[selectedPad];
+          Class<? extends AbstractDevicePanel> panelClass = getChildPanelClass(state.effectPath);
+          if (panelClass == null && !state.effectPath.isEmpty()) {
+            effectEditBtn.setSelected(false);
+            sendDrumPadCmd(DrumPadCmd.Action.ACTION_SHOW_GUI, selectedPad, "", 0, 0, "", true);
+          } else {
+            showingChildUi = effectEditBtn.isSelected();
+            childUiIsEffect = showingChildUi;
+            if (showingChildUi) {
+              editBtn.setSelected(false);
+              showChildUi();
+            } else {
+              hideChildUi();
+            }
+          }
+        });
+    effectSelRow.add(effectEditBtn, BorderLayout.EAST);
+    detailTop.add(effectSelRow);
 
     JPanel noteRow = new JPanel(new BorderLayout(5, 0));
     noteRow.setOpaque(false);
@@ -550,7 +704,18 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
       int paramId,
       double paramValue,
       String samplePath) {
-    sendDrumPadCmd(action, padIdx, pluginPath, paramId, paramValue, samplePath, -1);
+    sendDrumPadCmd(action, padIdx, pluginPath, paramId, paramValue, samplePath, -1, false);
+  }
+
+  private void sendDrumPadCmd(
+      DrumPadCmd.Action action,
+      int padIdx,
+      String pluginPath,
+      int paramId,
+      double paramValue,
+      String samplePath,
+      boolean targetEffect) {
+    sendDrumPadCmd(action, padIdx, pluginPath, paramId, paramValue, samplePath, -1, targetEffect);
   }
 
   private void sendDrumPadCmd(
@@ -561,6 +726,18 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
       double paramValue,
       String samplePath,
       int triggerNote) {
+    sendDrumPadCmd(action, padIdx, pluginPath, paramId, paramValue, samplePath, triggerNote, false);
+  }
+
+  private void sendDrumPadCmd(
+      DrumPadCmd.Action action,
+      int padIdx,
+      String pluginPath,
+      int paramId,
+      double paramValue,
+      String samplePath,
+      int triggerNote,
+      boolean targetEffect) {
     DrumPadCmd.Builder builder =
         DrumPadCmd.newBuilder()
             .setAction(action)
@@ -570,7 +747,8 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
             .setPluginPath(pluginPath != null ? pluginPath : "")
             .setParamId(paramId)
             .setParamValue((float) paramValue)
-            .setSamplePath(samplePath != null ? samplePath : "");
+            .setSamplePath(samplePath != null ? samplePath : "")
+            .setTargetEffect(targetEffect);
     if (triggerNote >= 0) {
       builder.setTriggerNote(triggerNote);
     }
@@ -634,12 +812,14 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
       // Update local pad state cache
       PadUIState state = pads[padIdx];
       state.pluginPath = notif.getPluginPath();
+      state.effectPath = notif.getEffectPath();
       state.volume = notif.getVolume();
       state.pan = notif.getPan();
       state.mute = notif.getMute();
       state.solo = notif.getSolo();
       state.sampleName = notif.getSampleName().isEmpty() ? "(no sample)" : notif.getSampleName();
       state.params = new ArrayList<>(notif.getParamsList());
+      state.effectParams = new ArrayList<>(notif.getEffectParamsList());
       state.triggerNote = notif.hasTriggerNote() ? notif.getTriggerNote() : 60;
 
       // If visible grid cell changed, refresh label
@@ -653,7 +833,8 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
       if (padIdx == selectedPad) {
         refreshDetailEditor();
         if (showingChildUi && childUiPanel != null) {
-          for (ParamInfo info : state.params) {
+          List<ParamInfo> activeParamsList = childUiIsEffect ? state.effectParams : state.params;
+          for (ParamInfo info : activeParamsList) {
             childUiPanel.handleParamChange(info.getId(), info.getCurrentValue());
           }
         }
@@ -720,11 +901,12 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
   }
 
   private void refreshDetailEditor() {
+    if (updatingUi) return;
     updatingUi = true;
-    PadUIState state = pads[selectedPad];
 
+    PadUIState state = pads[selectedPad];
     selectedPadLabel.setText(
-        "Selected: Pad " + (selectedPad + 1) + " (" + getNoteName(36 + selectedPad) + ")");
+        "Selected: Pad " + (selectedPad + 1) + " (" + getNoteName(state.triggerNote) + ")");
 
     // Plugin dropdown
     if (state.pluginPath.isEmpty()) {
@@ -779,6 +961,59 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
       pluginCombo.setSelectedItem(dispName);
     }
 
+    // Effect dropdown
+    if (state.effectPath.isEmpty()) {
+      effectCombo.setSelectedItem("Empty");
+    } else if ("builtin://eq".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("EQ Eight");
+    } else if ("builtin://compressor".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Compressor");
+    } else if ("builtin://delay".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Delay");
+    } else if ("builtin://reverb".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Reverb");
+    } else if ("builtin://limiter".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Limiter");
+    } else if ("builtin://maxim".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Maxim");
+    } else if ("builtin://hott".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Hott");
+    } else if ("builtin://envelope_shaper".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("EnvShaper");
+    } else if ("builtin://phaser".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Phaser");
+    } else if ("builtin://convolver".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Convolver");
+    } else if ("builtin://bitcrusher".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Bitcrusher");
+    } else if ("builtin://chorus".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Chorus");
+    } else if ("builtin://stereo_width".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Stereo Width");
+    } else if ("builtin://vocodey".equals(state.effectPath)) {
+      effectCombo.setSelectedItem("Vocodey");
+    } else {
+      DefaultComboBoxModel<String> model = (DefaultComboBoxModel<String>) effectCombo.getModel();
+      String dispName = state.effectPath;
+      int slash = dispName.lastIndexOf('/');
+      if (slash == -1) slash = dispName.lastIndexOf('\\');
+      dispName = (slash != -1) ? dispName.substring(slash + 1) : dispName;
+      if (dispName.endsWith(".vst3")) {
+        dispName = dispName.substring(0, dispName.length() - 5);
+      }
+      boolean found = false;
+      for (int i = 0; i < model.getSize(); ++i) {
+        if (model.getElementAt(i).equals(dispName)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        model.insertElementAt(dispName, model.getSize() - 1);
+      }
+      effectCombo.setSelectedItem(dispName);
+    }
+
     // Mixer sliders
     padVolSlider.setValue((int) (state.volume * 100));
     padPanSlider.setValue((int) (state.pan * 50));
@@ -796,16 +1031,26 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
 
     // Edit button and child UI state
     boolean hasPlugin = !state.pluginPath.isEmpty();
+    boolean hasEffect = !state.effectPath.isEmpty();
+
+    String childPath = childUiIsEffect ? state.effectPath : state.pluginPath;
+    Class<? extends AbstractDevicePanel> clz = getChildPanelClass(childPath);
+    if (clz == null) {
+      showingChildUi = false;
+    }
     editBtn.setEnabled(hasPlugin);
-    editBtn.setSelected(showingChildUi && hasPlugin);
-    if (showingChildUi && hasPlugin) {
-      Class<? extends AbstractDevicePanel> clz = getChildPanelClass(state.pluginPath);
-      if (childUiPanel == null
-          || childUiPadIndex != selectedPad
-          || (clz != null && !clz.isInstance(childUiPanel))) {
+    effectEditBtn.setEnabled(hasEffect);
+
+    editBtn.setSelected(showingChildUi && !childUiIsEffect && hasPlugin);
+    effectEditBtn.setSelected(showingChildUi && childUiIsEffect && hasEffect);
+
+    boolean shouldShowChild = showingChildUi && (childUiIsEffect ? hasEffect : hasPlugin);
+    if (shouldShowChild) {
+      if (childUiPanel == null || childUiPadIndex != selectedPad || !clz.isInstance(childUiPanel)) {
         showChildUi();
       } else {
-        for (ParamInfo info : state.params) {
+        List<ParamInfo> paramsList = childUiIsEffect ? state.effectParams : state.params;
+        for (ParamInfo info : paramsList) {
           childUiPanel.handleParamChange(info.getId(), info.getCurrentValue());
         }
       }
@@ -817,7 +1062,9 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
     paramListPanel.removeAll();
     Theme theme = Theme.getInstance();
 
-    for (ParamInfo info : state.params) {
+    List<ParamInfo> activeParamsList = childUiIsEffect ? state.effectParams : state.params;
+    final boolean activeIsEffect = childUiIsEffect;
+    for (ParamInfo info : activeParamsList) {
       JPanel row = new JPanel(new BorderLayout(5, 0));
       row.setOpaque(false);
       row.setMaximumSize(new Dimension(Short.MAX_VALUE, theme.scale(20)));
@@ -839,7 +1086,8 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
                 "",
                 info.getId(),
                 slider.getValue() / 1000.0,
-                "");
+                "",
+                activeIsEffect);
           });
       row.add(slider, BorderLayout.CENTER);
 
@@ -877,6 +1125,20 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
     if ("builtin://dr8_crash".equals(path)) return Dr8CrashDevicePanel.class;
     if ("builtin://dr8_rim".equals(path)) return Dr8RimshotDevicePanel.class;
     if ("builtin://dr8_conga".equals(path)) return Dr8CongaDevicePanel.class;
+
+    // Built-in effects
+    if ("builtin://eq".equals(path)) return EqDevicePanel.class;
+    if ("builtin://compressor".equals(path)) return CompressorDevicePanel.class;
+    if ("builtin://delay".equals(path)) return DelayDevicePanel.class;
+    if ("builtin://reverb".equals(path)) return ReverbDevicePanel.class;
+    if ("builtin://limiter".equals(path)) return LimiterDevicePanel.class;
+    if ("builtin://maxim".equals(path)) return MaximDevicePanel.class;
+    if ("builtin://hott".equals(path)) return HottDevicePanel.class;
+    if ("builtin://envelope_shaper".equals(path)) return EnvelopeShaperDevicePanel.class;
+    if ("builtin://phaser".equals(path)) return PhaserDevicePanel.class;
+    if ("builtin://convolver".equals(path)) return ConvolverDevicePanel.class;
+    if ("builtin://vocodey".equals(path)) return VocodeyDevicePanel.class;
+
     return null;
   }
 
@@ -888,26 +1150,36 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
     }
 
     PadUIState state = pads[selectedPad];
-    Class<? extends AbstractDevicePanel> panelClass = getChildPanelClass(state.pluginPath);
+    String path = childUiIsEffect ? state.effectPath : state.pluginPath;
+    Class<? extends AbstractDevicePanel> panelClass = getChildPanelClass(path);
     if (panelClass != null) {
       try {
         childUiPadIndex = selectedPad;
         childUiPanel =
             panelClass.getConstructor(int.class, int.class).newInstance(trackIndex, pluginIndex);
 
-        for (ParamInfo info : state.params) {
+        List<ParamInfo> paramsList = childUiIsEffect ? state.effectParams : state.params;
+        for (ParamInfo info : paramsList) {
           childUiPanel.handleParamChange(info.getId(), info.getCurrentValue());
         }
 
         final int targetPadIdx = selectedPad;
+        final boolean isEffect = childUiIsEffect;
         childUiPanel.setCustomParamSender(
             (paramId, value) -> {
               sendDrumPadCmd(
-                  DrumPadCmd.Action.ACTION_SET_PARAM, targetPadIdx, "", paramId, value, "");
-              for (ParamInfo info : state.params) {
+                  DrumPadCmd.Action.ACTION_SET_PARAM,
+                  targetPadIdx,
+                  "",
+                  paramId,
+                  value,
+                  "",
+                  isEffect);
+              List<ParamInfo> list = isEffect ? state.effectParams : state.params;
+              for (ParamInfo info : list) {
                 if (info.getId() == paramId) {
-                  int idx = state.params.indexOf(info);
-                  state.params.set(idx, info.toBuilder().setCurrentValue((float) value).build());
+                  int idx = list.indexOf(info);
+                  list.set(idx, info.toBuilder().setCurrentValue((float) value).build());
                   break;
                 }
               }

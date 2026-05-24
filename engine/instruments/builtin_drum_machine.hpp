@@ -23,6 +23,8 @@ class BuiltinDrumMachine : public IPlugin {
   struct Pad {
     std::unique_ptr<IPlugin> plugin;
     std::string plugin_path;
+    std::unique_ptr<IPlugin> effect;
+    std::string effect_path;
     float volume = 1.0f;
     float pan = 0.0f;
     bool mute = false;
@@ -60,8 +62,12 @@ class BuiltinDrumMachine : public IPlugin {
   // Custom DrumPad commands (called from plugin_commands)
   absl::Status loadPadPlugin(int pad_idx, const std::string& plugin_path);
   absl::Status removePadPlugin(int pad_idx);
-  absl::Status setPadParam(int pad_idx, uint32_t param_id, float value);
+  absl::Status loadPadEffect(int pad_idx, const std::string& effect_path);
+  absl::Status removePadEffect(int pad_idx);
+  absl::Status setPadParam(int pad_idx, uint32_t param_id, float value,
+                           bool target_effect = false);
   absl::Status loadPadSample(int pad_idx, const std::string& sample_path);
+  absl::Status showPadEditor(int pad_idx, bool target_effect = false);
   void setPadVolume(int pad_idx, float vol);
   void setPadPan(int pad_idx, float pan);
   void setPadMute(int pad_idx, bool mute);

@@ -82,6 +82,8 @@ message DrumPadState {
   bool solo = 7;
   string sample_path = 8;
   optional uint32 trigger_note = 9;
+  string effect_path = 10;
+  repeated ParamInfo effect_params = 11;
 }
 
 message DrumMachineState {

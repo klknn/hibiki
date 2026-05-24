@@ -202,6 +202,7 @@ public class DrumMachineDevicePanelTest {
             .setSolo(false)
             .setSampleName("snare.wav")
             .addParams(ParamInfo.newBuilder().setId(10).setName("Pitch").setCurrentValue(0.2f))
+            .setTriggerNote(41)
             .build();
 
     panel.handlePadNotification(notif);
@@ -392,5 +393,131 @@ public class DrumMachineDevicePanelTest {
     assertEquals(DrumPadCmd.Action.ACTION_LOAD_SAMPLE, reqs.get(1).getDrumPad().getAction());
     assertEquals(wavFile.getAbsolutePath(), reqs.get(1).getDrumPad().getSamplePath());
     assertEquals(5, reqs.get(1).getDrumPad().getPadIndex());
+  }
+
+  @Test
+  public void testEditBtnForVst3() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+    clearRequestLog();
+
+    // 1. Load a VST3 plugin on pad 0 using handleStringDrop
+    panel.handleStringDrop(0, "vst:/path/to/Dexed.vst3");
+    // Verify that the command to load plugin was sent
+    Request loadReq = getLatestRequest();
+    assertNotNull(loadReq);
+    assertTrue(loadReq.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, loadReq.getDrumPad().getAction());
+    assertEquals("/path/to/Dexed.vst3", loadReq.getDrumPad().getPluginPath());
+    clearRequestLog();
+
+    // 2. Select pad 0
+    panel.selectedPad = 0;
+    // Set the pad state to simulate plugin loaded on pad 0
+    DrumPadNotification notif =
+        DrumPadNotification.newBuilder()
+            .setType(DrumPadNotification.Type.TYPE_PAD_STATE)
+            .setTrackIndex(0)
+            .setPluginIndex(0)
+            .setPadIndex(0)
+            .setPluginPath("/path/to/Dexed.vst3")
+            .build();
+    panel.handlePadNotification(notif); // updates UI state
+
+    // Verify edit button is enabled
+    assertTrue(panel.editBtn.isEnabled());
+
+    // 3. Click the Edit button
+    panel.editBtn.setSelected(true);
+    panel.editBtn.getActionListeners()[0].actionPerformed(
+        new ActionEvent(panel.editBtn, ActionEvent.ACTION_PERFORMED, ""));
+
+    // 4. Verify that ACTION_SHOW_GUI is sent to the backend
+    Request editReq = getLatestRequest();
+    assertNotNull(editReq);
+    assertTrue(editReq.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_SHOW_GUI, editReq.getDrumPad().getAction());
+    assertEquals(0, editReq.getDrumPad().getPadIndex());
+
+    // And verify that editBtn is reset to unselected since it's a VST3 (no embeddable child UI)
+    assertFalse(panel.editBtn.isSelected());
+  }
+
+  @Test
+  public void testEffectComboOptions() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+
+    // Check that effect model contains the expected effects
+    javax.swing.ComboBoxModel<String> model = panel.effectCombo.getModel();
+
+    List<String> items = new ArrayList<>();
+    for (int i = 0; i < model.getSize(); i++) {
+      items.add(model.getElementAt(i));
+    }
+
+    assertTrue(items.contains("EQ Eight"));
+    assertTrue(items.contains("Compressor"));
+    assertTrue(items.contains("Delay"));
+    assertTrue(items.contains("Reverb"));
+    assertTrue(items.contains("Limiter"));
+    assertTrue(items.contains("Bitcrusher"));
+    assertTrue(items.contains("Load VST3..."));
+
+    // Select "EQ Eight" (index 1)
+    clearRequestLog();
+    panel.effectCombo.setSelectedItem("EQ Eight");
+    Request r1 = getLatestRequest();
+    assertNotNull(r1);
+    assertTrue(r1.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, r1.getDrumPad().getAction());
+    assertEquals("builtin://eq", r1.getDrumPad().getPluginPath());
+    assertTrue(r1.getDrumPad().getTargetEffect());
+    clearRequestLog();
+
+    // Select "Empty" (index 0)
+    panel.effectCombo.setSelectedIndex(0);
+    Request r0 = getLatestRequest();
+    assertNotNull(r0);
+    assertTrue(r0.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_REMOVE_PLUGIN, r0.getDrumPad().getAction());
+    assertTrue(r0.getDrumPad().getTargetEffect());
+  }
+
+  @Test
+  public void testEffectEditBtnVst3() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+    clearRequestLog();
+
+    // 1. Select pad 0
+    panel.selectedPad = 0;
+
+    // 2. Set the pad state to simulate VST3 effect loaded on pad 0
+    DrumPadNotification notif =
+        DrumPadNotification.newBuilder()
+            .setType(DrumPadNotification.Type.TYPE_PAD_STATE)
+            .setTrackIndex(0)
+            .setPluginIndex(0)
+            .setPadIndex(0)
+            .setEffectPath("/path/to/Vst3Effect.vst3")
+            .build();
+    panel.handlePadNotification(notif); // updates UI state
+
+    // Verify effectEditBtn is enabled
+    assertTrue(panel.effectEditBtn.isEnabled());
+
+    // 3. Click the Effect Edit button
+    panel.effectEditBtn.setSelected(true);
+    panel.effectEditBtn.getActionListeners()[0].actionPerformed(
+        new ActionEvent(panel.effectEditBtn, ActionEvent.ACTION_PERFORMED, ""));
+
+    // 4. Verify that ACTION_SHOW_GUI with target_effect = true is sent to the backend
+    Request editReq = getLatestRequest();
+    assertNotNull(editReq);
+    assertTrue(editReq.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_SHOW_GUI, editReq.getDrumPad().getAction());
+    assertEquals(0, editReq.getDrumPad().getPadIndex());
+    assertTrue(editReq.getDrumPad().getTargetEffect());
+
+    // Verify that effectEditBtn is reset to unselected since it's a VST3 (no embeddable child UI)
+    assertFalse(panel.effectEditBtn.isSelected());
   }
 }

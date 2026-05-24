@@ -378,5 +378,88 @@ TEST(BuiltinDrumMachineTest, LoadVst3Instrument) {
   EXPECT_GT(peak, 0.001f) << "Dexed VST3 on Pad 0 should generate audio";
 }
 
+TEST(BuiltinDrumMachineTest, ShowVst3PadEditor) {
+  g_ipc_enabled = false;
+  BuiltinDrumMachine dm;
+  dm.load("", 0, 44100.0);
+
+  std::string dexed_path = hibiki::find_test_file("testdata/Dexed.vst3");
+
+  // Show editor of empty pad should fail
+  EXPECT_EQ(dm.showPadEditor(0).code(), absl::StatusCode::kNotFound);
+
+  // Load Dexed VST3 plugin on Pad 0
+  ASSERT_TRUE(dm.loadPadPlugin(0, dexed_path).ok());
+
+  // Show editor of Dexed pad should succeed
+  EXPECT_TRUE(dm.showPadEditor(0).ok());
+
+  // Invalid pad index
+  EXPECT_EQ(dm.showPadEditor(-1).code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(dm.showPadEditor(64).code(), absl::StatusCode::kInvalidArgument);
+}
+
+TEST(BuiltinDrumMachineTest, PadEffectProcessing) {
+  g_ipc_enabled = false;
+  BuiltinDrumMachine dm;
+  dm.load("", 0, 44100.0);
+
+  // Load 3xOsc instrument on Pad 0
+  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://3xosc").ok());
+
+  // Trigger Pad 0 with MIDI note 36 and capture output without effect
+  constexpr int N = 256;
+  float outL_no_fx[N] = {0};
+  float outR_no_fx[N] = {0};
+  float* outs_no_fx[2] = {outL_no_fx, outR_no_fx};
+
+  std::vector<MidiNoteEvent> events;
+  MidiNoteEvent ev;
+  ev.pitch = 36;
+  ev.velocity = 1.0f;
+  ev.isNoteOn = true;
+  ev.channel = 0;
+  ev.sampleOffset = 0;
+  events.push_back(ev);
+
+  auto ctx = MakeContext();
+  dm.process(nullptr, outs_no_fx, N, ctx, events);
+
+  // Ensure sound is produced
+  float peak_no_fx = 0.0f;
+  for (int i = 0; i < N; ++i) {
+    peak_no_fx = std::max(peak_no_fx, std::abs(outL_no_fx[i]));
+  }
+  EXPECT_GT(peak_no_fx, 0.001f) << "3xOsc should produce sound";
+
+  // Create a new drum machine with the same setup but with a limiter effect
+  BuiltinDrumMachine dm_fx;
+  dm_fx.load("", 0, 44100.0);
+
+  ASSERT_TRUE(dm_fx.loadPadPlugin(0, "builtin://3xosc").ok());
+  ASSERT_TRUE(dm_fx.loadPadEffect(0, "builtin://limiter").ok());
+
+  // Set the limiter parameter 0 (e.g. threshold/ceiling) to a very low value
+  // (0.1)
+  EXPECT_TRUE(dm_fx.setPadParam(0, 0, 0.1f, true).ok());
+
+  float outL_fx[N] = {0};
+  float outR_fx[N] = {0};
+  float* outs_fx[2] = {outL_fx, outR_fx};
+
+  dm_fx.process(nullptr, outs_fx, N, ctx, events);
+
+  // Assert that output with effect is different from output without effect
+  bool output_differs = false;
+  for (int i = 0; i < N; ++i) {
+    if (std::abs(outL_no_fx[i] - outL_fx[i]) > 1e-4f) {
+      output_differs = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(output_differs) << "Audio output with pad effect should differ "
+                                 "from output without effect";
+}
+
 }  // namespace
 }  // namespace hibiki

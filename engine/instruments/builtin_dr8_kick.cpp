@@ -4,9 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "engine/core/math.hpp"
 
 namespace hibiki {
 
@@ -137,7 +135,7 @@ void BuiltinDr8Kick::process(float** /*inputs*/, float** outputs,
     impl_->osc_phase += dt;
     if (impl_->osc_phase >= 1.0) impl_->osc_phase -= 1.0;
 
-    double sine_out = std::sin(2.0 * M_PI * impl_->osc_phase);
+    double sine_out = std::sin(2.0 * hibiki::pi * impl_->osc_phase);
 
     // Generate Click noise
     double noise = (((double)std::rand() / RAND_MAX) * 2.0 - 1.0);

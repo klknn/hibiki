@@ -4,9 +4,7 @@
 #include <cmath>
 #include <vector>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "engine/core/math.hpp"
 
 namespace hibiki {
 
@@ -238,7 +236,8 @@ void BuiltinAcidBass::process(float** /*inputs*/, float** outputs,
     // 2x oversampled 4-pole ZDF low-pass filter stage
     double x = osc_out;
     for (int step = 0; step < 2; ++step) {
-      double g = std::tan(M_PI * current_cutoff / (2.0 * impl_->sample_rate));
+      double g =
+          std::tan(hibiki::pi * current_cutoff / (2.0 * impl_->sample_rate));
       g = std::clamp(g, 0.0, 0.999);
 
       // Feedback loop with soft-limiting tanh saturation

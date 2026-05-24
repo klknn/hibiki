@@ -3,6 +3,7 @@
 #include <cmath>
 #include <vector>
 
+#include "engine/core/math.hpp"
 #include "gtest/gtest.h"
 
 namespace hibiki {
@@ -27,7 +28,7 @@ TEST_F(BuiltinConvolverTest, NoIR_Passthrough) {
   constexpr int N = 512;
   std::vector<float> in_l(N), in_r(N), out_l(N), out_r(N);
   for (int i = 0; i < N; ++i) {
-    in_l[i] = (float)std::sin(2.0 * M_PI * 440.0 * i / 44100.0);
+    in_l[i] = (float)std::sin(2.0 * hibiki::pi * 440.0 * i / 44100.0);
     in_r[i] = in_l[i];
   }
   float* ins[] = {in_l.data(), in_r.data()};

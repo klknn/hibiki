@@ -3,9 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "engine/core/math.hpp"
 
 namespace hibiki {
 
@@ -90,7 +88,7 @@ void BuiltinStereoWidth::process(float** inputs, float** outputs,
   float width = normToWidth(impl_->params[PARAM_WIDTH]);
 
   // Crossover filter coefficient (one-pole lowpass)
-  double theta = 2.0 * M_PI * crossover_fc / impl_->sample_rate;
+  double theta = 2.0 * hibiki::pi * crossover_fc / impl_->sample_rate;
   double alpha = 1.0 - std::exp(-theta);
   alpha = std::clamp(alpha, 0.0, 1.0);
 

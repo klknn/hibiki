@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "engine/core/biquad_filter.hpp"
+#include "engine/core/math.hpp"
 
 namespace hibiki {
 
@@ -139,21 +140,21 @@ void BuiltinDr8Rim::process(float** /*inputs*/, float** outputs,
     // Component 1 (fundamental)
     impl_->osc_phase[0] += dt[0];
     if (impl_->osc_phase[0] >= 1.0) impl_->osc_phase[0] -= 1.0;
-    double osc0 = std::sin(2.0 * M_PI * impl_->osc_phase[0]);
+    double osc0 = std::sin(2.0 * hibiki::pi * impl_->osc_phase[0]);
     float filt0 = impl_->bpf[0].process((float)osc0);
     signal_sum += 0.4 * filt0 * impl_->env_amp[0];
 
     // Component 2 (2.6x harmonic)
     impl_->osc_phase[1] += dt[1];
     if (impl_->osc_phase[1] >= 1.0) impl_->osc_phase[1] -= 1.0;
-    double osc1 = std::sin(2.0 * M_PI * impl_->osc_phase[1]);
+    double osc1 = std::sin(2.0 * hibiki::pi * impl_->osc_phase[1]);
     float filt1 = impl_->bpf[1].process((float)osc1);
     signal_sum += 0.4 * filt1 * impl_->env_amp[1];
 
     // Component 3 (4.6x harmonic)
     impl_->osc_phase[2] += dt[2];
     if (impl_->osc_phase[2] >= 1.0) impl_->osc_phase[2] -= 1.0;
-    double osc2 = std::sin(2.0 * M_PI * impl_->osc_phase[2]);
+    double osc2 = std::sin(2.0 * hibiki::pi * impl_->osc_phase[2]);
     float filt2 = impl_->bpf[2].process((float)osc2);
     signal_sum += 0.2 * filt2 * impl_->env_amp[2];
 

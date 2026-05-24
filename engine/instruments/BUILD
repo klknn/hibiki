@@ -35,6 +35,7 @@ cc_library(
     srcs = ["builtin_acid_bass.cpp"],
     hdrs = ["builtin_acid_bass.hpp"],
     deps = [
+        "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
 )
@@ -44,6 +45,7 @@ cc_library(
     srcs = ["builtin_dr8_kick.cpp"],
     hdrs = ["builtin_dr8_kick.hpp"],
     deps = [
+        "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
 )
@@ -53,6 +55,7 @@ cc_library(
     srcs = ["builtin_dr8_snare.cpp"],
     hdrs = ["builtin_dr8_snare.hpp"],
     deps = [
+        "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
 )
@@ -73,6 +76,7 @@ cc_library(
     hdrs = ["builtin_dr8_tom.hpp"],
     deps = [
         "//engine/core:biquad_filter",
+        "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
 )
@@ -113,6 +117,7 @@ cc_library(
     hdrs = ["builtin_dr8_rim.hpp"],
     deps = [
         "//engine/core:biquad_filter",
+        "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
 )
@@ -123,6 +128,7 @@ cc_library(
     hdrs = ["builtin_dr8_conga.hpp"],
     deps = [
         "//engine/core:biquad_filter",
+        "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
 )
@@ -132,6 +138,7 @@ cc_library(
     srcs = ["builtin_organ.cpp"],
     hdrs = ["builtin_organ.hpp"],
     deps = [
+        "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
 )

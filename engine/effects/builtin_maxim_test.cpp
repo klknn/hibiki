@@ -4,6 +4,8 @@
 
 #include <cmath>
 
+#include "engine/core/math.hpp"
+
 namespace hibiki {
 namespace {
 
@@ -67,9 +69,9 @@ TEST_F(BuiltinMaximTest, CrossoverFiltersPreserveSignal) {
     ctx.continuousTimeSamples = block * kBlockSize;
     for (int i = 0; i < kBlockSize; ++i) {
       int sample_idx = block * kBlockSize + i;
-      in_l[i] = 0.5f * std::sin(2.0f * (float)M_PI * 1000.0f *
+      in_l[i] = 0.5f * std::sin(2.0f * (float)hibiki::pi * 1000.0f *
                                 (float)sample_idx / 44100.0f);
-      in_r[i] = 0.5f * std::cos(2.0f * (float)M_PI * 1000.0f *
+      in_r[i] = 0.5f * std::cos(2.0f * (float)hibiki::pi * 1000.0f *
                                 (float)sample_idx / 44100.0f);
     }
     maxim.process(inputs, outputs, kBlockSize, ctx, {});

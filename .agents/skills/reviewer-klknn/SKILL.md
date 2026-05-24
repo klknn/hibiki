@@ -46,3 +46,7 @@ In tests, we also prefer writing friendly detailed error messages on assertions.
 ### 8. Prefer absl::Status over bool for Return Values
 - **Rule**: Prefer returning `absl::Status` with descriptive error messages instead of simple `bool` values for operations that can fail (e.g. loading plugins, processing commands).
 - **Benefit**: Provides readable, friendly error messages on failure, facilitating easier debugging.
+
+### 9. Use hibiki::pi Instead of M_PI
+- **Rule**: Do not use `M_PI` in C++ code because it is not available in MSVC by default. Instead, use `hibiki::pi` from `engine/core/math.hpp`.
+- **Definition**: `inline constexpr double hibiki::pi = 3.14159265358979323846;`

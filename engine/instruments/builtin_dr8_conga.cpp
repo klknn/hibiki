@@ -5,10 +5,7 @@
 #include <cstdlib>
 
 #include "engine/core/biquad_filter.hpp"
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "engine/core/math.hpp"
 
 namespace hibiki {
 
@@ -140,7 +137,7 @@ void BuiltinDr8Conga::process(float** /*inputs*/, float** outputs,
     impl_->osc_phase += dt;
     if (impl_->osc_phase >= 1.0) impl_->osc_phase -= 1.0;
 
-    double sine_out = std::sin(2.0 * M_PI * impl_->osc_phase);
+    double sine_out = std::sin(2.0 * hibiki::pi * impl_->osc_phase);
 
     // Hardcoded noise click level (0.12) to emulate physical strike click
     double noise = (((double)std::rand() / RAND_MAX) * 2.0 - 1.0);

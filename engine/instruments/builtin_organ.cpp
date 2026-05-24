@@ -4,9 +4,7 @@
 #include <cmath>
 #include <vector>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "engine/core/math.hpp"
 
 namespace hibiki {
 
@@ -187,7 +185,8 @@ void BuiltinOrgan::process(float** /*inputs*/, float** outputs, int num_samples,
   double rotary_speed = impl_->params[PARAM_ROTARY_SPEED];
   // Leslie speed maps from slow (~1.2 Hz) to fast (~6.8 Hz)
   double rotary_rate_hz = 1.2 + rotary_speed * 5.6;
-  double rotary_phase_inc = 2.0 * M_PI * rotary_rate_hz / impl_->sample_rate;
+  double rotary_phase_inc =
+      2.0 * hibiki::pi * rotary_rate_hz / impl_->sample_rate;
 
   // Gate envelope coefficients (very fast attack/release, ~3ms)
   double env_attack_coeff = 1.0 - std::exp(-1.0 / (0.003 * impl_->sample_rate));
@@ -227,7 +226,7 @@ void BuiltinOrgan::process(float** /*inputs*/, float** outputs, int num_samples,
         voice.phase[d] += dt;
         if (voice.phase[d] >= 1.0) voice.phase[d] -= 1.0;
 
-        double sample = std::sin(2.0 * M_PI * voice.phase[d]);
+        double sample = std::sin(2.0 * hibiki::pi * voice.phase[d]);
         double gain = drawbars[d];
 
         // Apply percussion click to the 2nd harmonic (4')
@@ -249,8 +248,8 @@ void BuiltinOrgan::process(float** /*inputs*/, float** outputs, int num_samples,
 
     // Increment Leslie phase
     impl_->rotary_phase += rotary_phase_inc;
-    if (impl_->rotary_phase >= 2.0 * M_PI) {
-      impl_->rotary_phase -= 2.0 * M_PI;
+    if (impl_->rotary_phase >= 2.0 * hibiki::pi) {
+      impl_->rotary_phase -= 2.0 * hibiki::pi;
     }
 
     // Leslie Speaker Emulation: pitch modulation via dual-channel modulated

@@ -5,6 +5,8 @@
 #include <cmath>
 #include <vector>
 
+#include "engine/core/math.hpp"
+
 namespace hibiki {
 
 class BuiltinVocodeyTest : public ::testing::Test {
@@ -63,7 +65,7 @@ TEST_F(BuiltinVocodeyTest, WetVocodedWithSidechain) {
   std::vector<float> mod_l(500, 0.0f);
   std::vector<float> mod_r(500, 0.0f);
   for (int i = 0; i < 500; ++i) {
-    float val = std::sin(2.0f * (float)M_PI * 1000.0f * i / 44100.0f);
+    float val = std::sin(2.0f * (float)hibiki::pi * 1000.0f * i / 44100.0f);
     mod_l[i] = val;
     mod_r[i] = val;
   }
@@ -113,7 +115,7 @@ TEST_F(BuiltinVocodeyTest, WetVocodedWithInternalSynth) {
   std::vector<float> mod_l(500, 0.0f);
   std::vector<float> mod_r(500, 0.0f);
   for (int i = 0; i < 500; ++i) {
-    float val = std::sin(2.0f * (float)M_PI * 400.0f * i / 44100.0f);
+    float val = std::sin(2.0f * (float)hibiki::pi * 400.0f * i / 44100.0f);
     mod_l[i] = val;
     mod_r[i] = val;
   }

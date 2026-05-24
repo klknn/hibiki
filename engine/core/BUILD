@@ -12,6 +12,11 @@ cc_library(
 )
 
 cc_library(
+    name = "math",
+    hdrs = ["math.hpp"],
+)
+
+cc_library(
     name = "fft",
     srcs = ["fft.cpp"],
     hdrs = ["fft.hpp"],

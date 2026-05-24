@@ -63,14 +63,20 @@ cc_library(
     name = "builtin_chorus",
     srcs = ["builtin_chorus.cpp"],
     hdrs = ["builtin_chorus.hpp"],
-    deps = ["//engine/plugin:iplugin"],
+    deps = [
+        "//engine/core:math",
+        "//engine/plugin:iplugin",
+    ],
 )
 
 cc_library(
     name = "builtin_stereo_width",
     srcs = ["builtin_stereo_width.cpp"],
     hdrs = ["builtin_stereo_width.hpp"],
-    deps = ["//engine/plugin:iplugin"],
+    deps = [
+        "//engine/core:math",
+        "//engine/plugin:iplugin",
+    ],
 )
 
 cc_library(
@@ -122,6 +128,7 @@ cc_library(
     hdrs = ["builtin_vocodey.hpp"],
     deps = [
         "//engine/core:biquad_filter",
+        "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
 )
@@ -259,6 +266,7 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_convolver",
+        "//engine/core:math",
         "@googletest//:gtest_main",
     ],
 )
@@ -269,6 +277,7 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_maxim",
+        "//engine/core:math",
         "@googletest//:gtest_main",
     ],
 )
@@ -309,6 +318,7 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_vocodey",
+        "//engine/core:math",
         "@googletest//:gtest_main",
     ],
 )

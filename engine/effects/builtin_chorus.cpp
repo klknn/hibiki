@@ -3,9 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "engine/core/math.hpp"
 
 namespace hibiki {
 
@@ -99,7 +97,7 @@ void BuiltinChorus::process(float** inputs, float** outputs, int num_samples,
   float base_delay_samples = delay_ms * 0.001f * sample_rate_f;
   float depth_samples = depth_ms * 0.001f * sample_rate_f;
 
-  double phase_inc = 2.0 * M_PI * rate_hz / impl_->sample_rate;
+  double phase_inc = 2.0 * hibiki::pi * rate_hz / impl_->sample_rate;
   int buf_size = (int)impl_->delay_buf_l.size();
 
   for (int i = 0; i < num_samples; ++i) {
@@ -108,8 +106,8 @@ void BuiltinChorus::process(float** inputs, float** outputs, int num_samples,
 
     // Increment and wrap LFO phase
     impl_->lfo_phase += phase_inc;
-    if (impl_->lfo_phase >= 2.0 * M_PI) {
-      impl_->lfo_phase -= 2.0 * M_PI;
+    if (impl_->lfo_phase >= 2.0 * hibiki::pi) {
+      impl_->lfo_phase -= 2.0 * hibiki::pi;
     }
 
     // LFO outputs with 90-degree phase offset for stereo width

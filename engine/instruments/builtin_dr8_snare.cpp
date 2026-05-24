@@ -4,9 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "engine/core/math.hpp"
 
 namespace hibiki {
 
@@ -123,7 +121,7 @@ void BuiltinDr8Snare::process(float** /*inputs*/, float** outputs,
   double noise_decay_coeff =
       std::exp(-1.0 / (noise_decay_s * impl_->sample_rate));
 
-  double filter_theta = 2.0 * M_PI * noise_hpf_fc / impl_->sample_rate;
+  double filter_theta = 2.0 * hibiki::pi * noise_hpf_fc / impl_->sample_rate;
   double filter_alpha = 1.0 - std::exp(-filter_theta);
   filter_alpha = std::clamp(filter_alpha, 0.0, 1.0);
 
@@ -144,8 +142,8 @@ void BuiltinDr8Snare::process(float** /*inputs*/, float** outputs,
     if (impl_->phase2 >= 1.0) impl_->phase2 -= 1.0;
 
     // Resonant shell tone (sine + harmonic sine)
-    double tone_out = (std::sin(2.0 * M_PI * impl_->phase1) +
-                       0.4 * std::sin(2.0 * M_PI * impl_->phase2)) *
+    double tone_out = (std::sin(2.0 * hibiki::pi * impl_->phase1) +
+                       0.4 * std::sin(2.0 * hibiki::pi * impl_->phase2)) *
                       impl_->env_tone;
 
     // Snare wire noise

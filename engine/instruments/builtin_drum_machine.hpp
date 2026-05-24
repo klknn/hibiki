@@ -20,11 +20,15 @@ class BuiltinDrumMachine : public IPlugin {
   static constexpr const char* kName = "Drum Machine";
   static constexpr int kNumPads = 64;
 
+  struct PadEffect {
+    std::unique_ptr<IPlugin> plugin;
+    std::string path;
+  };
+
   struct Pad {
     std::unique_ptr<IPlugin> plugin;
     std::string plugin_path;
-    std::unique_ptr<IPlugin> effect;
-    std::string effect_path;
+    std::vector<PadEffect> effects;
     float volume = 1.0f;
     float pan = 0.0f;
     bool mute = false;
@@ -62,12 +66,14 @@ class BuiltinDrumMachine : public IPlugin {
   // Custom DrumPad commands (called from plugin_commands)
   absl::Status loadPadPlugin(int pad_idx, const std::string& plugin_path);
   absl::Status removePadPlugin(int pad_idx);
-  absl::Status loadPadEffect(int pad_idx, const std::string& effect_path);
-  absl::Status removePadEffect(int pad_idx);
+  absl::Status loadPadEffect(int pad_idx, int effect_idx,
+                             const std::string& effect_path);
+  absl::Status removePadEffect(int pad_idx, int effect_idx);
   absl::Status setPadParam(int pad_idx, uint32_t param_id, float value,
-                           bool target_effect = false);
+                           bool target_effect = false, int effect_idx = 0);
   absl::Status loadPadSample(int pad_idx, const std::string& sample_path);
-  absl::Status showPadEditor(int pad_idx, bool target_effect = false);
+  absl::Status showPadEditor(int pad_idx, bool target_effect = false,
+                             int effect_idx = 0);
   void setPadVolume(int pad_idx, float vol);
   void setPadPan(int pad_idx, float pan);
   void setPadMute(int pad_idx, bool mute);

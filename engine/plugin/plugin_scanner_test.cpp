@@ -34,7 +34,7 @@ std::vector<PluginDescription> fakeScanFn(const std::string& bundle_path) {
   std::string name = bundle_path;
   auto pos = name.find_last_of('/');
   if (pos != std::string::npos) name = name.substr(pos + 1);
-  return {{0, name, "TestVendor"}};
+  return {{0, name, "TestVendor", false}};
 }
 
 // ─── collectVst3Bundles ───────────────────────────────────────────

@@ -58,6 +58,7 @@ message PluginDescription {
   string name = 2;
   string vendor = 3;
   string path = 4;  // Filesystem path to the .vst3 bundle (from remote scan)
+  bool is_instrument = 5;
 }
 
 // ─── Legacy Notification Types ──────────────────────────────────────
@@ -360,6 +361,7 @@ message DrumPadNotification {
   optional uint32 trigger_note = 13;
   string effect_path = 14;
   repeated hibiki.pb.core.ParamInfo effect_params = 15;
+  repeated hibiki.pb.core.PadEffectState effects = 16;
 }
 
 // Sampler waveform summary sent after sample load.

@@ -919,7 +919,8 @@ int main(int argc, char** argv) {
   if (!list_path.empty()) {
     auto plugins = Vst3Plugin::listPlugins(list_path);
     for (const auto& p : plugins) {
-      std::cout << p.index << ":" << p.name << ":" << p.vendor << "\n";
+      std::cout << p.index << ":" << p.name << ":" << p.vendor << ":"
+                << (p.is_instrument ? "1" : "0") << "\n";
     }
     return 0;
   }

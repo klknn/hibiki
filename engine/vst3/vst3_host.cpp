@@ -373,7 +373,14 @@ std::vector<PluginDescription> Vst3Plugin::listPlugins(
   int idx = 0;
   for (auto& info : classes) {
     if (info.category() == kVstAudioEffectClass) {
-      plugins.push_back({idx++, info.name(), info.vendor()});
+      bool is_inst = false;
+      for (const auto& cat : info.subCategories()) {
+        if (cat == "Instrument") {
+          is_inst = true;
+          break;
+        }
+      }
+      plugins.push_back({idx++, info.name(), info.vendor(), is_inst});
     }
   }
   LOG(INFO) << "BACKEND: Found " << plugins.size() << " plugin(s) in " << path;
@@ -541,25 +548,42 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(
 
   std::string s;
   while (std::getline(ifs, s)) {
-    size_t first_colon = s.find(':');
-    size_t last_colon = s.find_last_of(':');
-    if (first_colon != std::string::npos && last_colon != std::string::npos &&
-        first_colon != last_colon) {
-      std::string idx_str = s.substr(0, first_colon);
-      bool all_digits = !idx_str.empty();
-      for (char c : idx_str)
+    std::vector<std::string> parts;
+    size_t start = 0;
+    while (true) {
+      size_t pos = s.find(':', start);
+      if (pos == std::string::npos) {
+        parts.push_back(s.substr(start));
+        break;
+      }
+      parts.push_back(s.substr(start, pos - start));
+      start = pos + 1;
+    }
+    if (parts.size() >= 3) {
+      bool all_digits = !parts[0].empty();
+      for (char c : parts[0])
         if (!isdigit(c)) all_digits = false;
       if (all_digits) {
-        int idx = std::stoi(idx_str);
-        std::string name =
-            s.substr(first_colon + 1, last_colon - first_colon - 1);
-        std::string vendor = s.substr(last_colon + 1);
-        // Trim newline from vendor
+        int idx = std::stoi(parts[0]);
+        std::string name = parts[1];
+        std::string vendor = parts[2];
         if (!vendor.empty() && (vendor.back() == '\n' || vendor.back() == '\r'))
           vendor.pop_back();
         if (!vendor.empty() && (vendor.back() == '\n' || vendor.back() == '\r'))
           vendor.pop_back();
-        plugins.push_back({idx, name, vendor});
+
+        bool is_inst = false;
+        if (parts.size() >= 4) {
+          std::string is_inst_str = parts[3];
+          if (!is_inst_str.empty() &&
+              (is_inst_str.back() == '\n' || is_inst_str.back() == '\r'))
+            is_inst_str.pop_back();
+          if (!is_inst_str.empty() &&
+              (is_inst_str.back() == '\n' || is_inst_str.back() == '\r'))
+            is_inst_str.pop_back();
+          is_inst = (is_inst_str == "1");
+        }
+        plugins.push_back({idx, name, vendor, is_inst});
       }
     }
   }

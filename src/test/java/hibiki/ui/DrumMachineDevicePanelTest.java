@@ -202,6 +202,11 @@ public class DrumMachineDevicePanelTest {
             .setSolo(false)
             .setSampleName("snare.wav")
             .addParams(ParamInfo.newBuilder().setId(10).setName("Pitch").setCurrentValue(0.2f))
+            .addEffects(
+                hibiki.pb.core.PadEffectState.newBuilder()
+                    .setEffectPath("builtin://eq")
+                    .addParams(
+                        ParamInfo.newBuilder().setId(1).setName("Freq").setCurrentValue(0.5f)))
             .setTriggerNote(41)
             .build();
 
@@ -217,6 +222,10 @@ public class DrumMachineDevicePanelTest {
     assertEquals(1, panel.pads[5].params.size());
     assertEquals("Pitch", panel.pads[5].params.get(0).getName());
     assertEquals(0.2f, panel.pads[5].params.get(0).getCurrentValue(), 1e-4);
+
+    // Verify effects list
+    assertEquals(1, panel.pads[5].effects.size());
+    assertEquals("builtin://eq", panel.pads[5].effects.get(0).effectPath);
 
     // Since pad 5 is not selected (currently 0), visual editor should NOT show its values yet
     assertNotEquals("Selected: Pad 6 (F2)", panel.selectedPadLabel.getText());
@@ -443,81 +452,256 @@ public class DrumMachineDevicePanelTest {
   }
 
   @Test
-  public void testEffectComboOptions() throws Exception {
-    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
-
-    // Check that effect model contains the expected effects
-    javax.swing.ComboBoxModel<String> model = panel.effectCombo.getModel();
-
-    List<String> items = new ArrayList<>();
-    for (int i = 0; i < model.getSize(); i++) {
-      items.add(model.getElementAt(i));
-    }
-
-    assertTrue(items.contains("EQ Eight"));
-    assertTrue(items.contains("Compressor"));
-    assertTrue(items.contains("Delay"));
-    assertTrue(items.contains("Reverb"));
-    assertTrue(items.contains("Limiter"));
-    assertTrue(items.contains("Bitcrusher"));
-    assertTrue(items.contains("Load VST3..."));
-
-    // Select "EQ Eight" (index 1)
-    clearRequestLog();
-    panel.effectCombo.setSelectedItem("EQ Eight");
-    Request r1 = getLatestRequest();
-    assertNotNull(r1);
-    assertTrue(r1.hasDrumPad());
-    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, r1.getDrumPad().getAction());
-    assertEquals("builtin://eq", r1.getDrumPad().getPluginPath());
-    assertTrue(r1.getDrumPad().getTargetEffect());
-    clearRequestLog();
-
-    // Select "Empty" (index 0)
-    panel.effectCombo.setSelectedIndex(0);
-    Request r0 = getLatestRequest();
-    assertNotNull(r0);
-    assertTrue(r0.hasDrumPad());
-    assertEquals(DrumPadCmd.Action.ACTION_REMOVE_PLUGIN, r0.getDrumPad().getAction());
-    assertTrue(r0.getDrumPad().getTargetEffect());
-  }
-
-  @Test
-  public void testEffectEditBtnVst3() throws Exception {
+  public void testEffectChainRenderingAndToggling() throws Exception {
     DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
     clearRequestLog();
 
-    // 1. Select pad 0
-    panel.selectedPad = 0;
-
-    // 2. Set the pad state to simulate VST3 effect loaded on pad 0
+    // 1. Set state with an EQ effect
     DrumPadNotification notif =
         DrumPadNotification.newBuilder()
             .setType(DrumPadNotification.Type.TYPE_PAD_STATE)
             .setTrackIndex(0)
             .setPluginIndex(0)
             .setPadIndex(0)
-            .setEffectPath("/path/to/Vst3Effect.vst3")
+            .setPluginPath("builtin://sampler")
+            .addEffects(
+                hibiki.pb.core.PadEffectState.newBuilder()
+                    .setEffectPath("builtin://eq")
+                    .addParams(
+                        ParamInfo.newBuilder().setId(1).setName("Freq").setCurrentValue(0.5f)))
             .build();
-    panel.handlePadNotification(notif); // updates UI state
+    panel.handlePadNotification(notif);
 
-    // Verify effectEditBtn is enabled
-    assertTrue(panel.effectEditBtn.isEnabled());
+    // Verify list renders 1 effect row
+    assertEquals(1, panel.pads[0].effects.size());
 
-    // 3. Click the Effect Edit button
-    panel.effectEditBtn.setSelected(true);
-    panel.effectEditBtn.getActionListeners()[0].actionPerformed(
-        new ActionEvent(panel.effectEditBtn, ActionEvent.ACTION_PERFORMED, ""));
+    // Verify loading/removal from effect chain sends correct index
+    panel.sendDrumPadCmd(DrumPadCmd.Action.ACTION_REMOVE_PLUGIN, 0, "", 0, 0.0, "", 0, true);
+    Request req = getLatestRequest();
+    assertNotNull(req);
+    assertTrue(req.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_REMOVE_PLUGIN, req.getDrumPad().getAction());
+    assertTrue(req.getDrumPad().getTargetEffect());
+    assertEquals(0, req.getDrumPad().getEffectIndex());
+  }
 
-    // 4. Verify that ACTION_SHOW_GUI with target_effect = true is sent to the backend
-    Request editReq = getLatestRequest();
-    assertNotNull(editReq);
-    assertTrue(editReq.hasDrumPad());
-    assertEquals(DrumPadCmd.Action.ACTION_SHOW_GUI, editReq.getDrumPad().getAction());
-    assertEquals(0, editReq.getDrumPad().getPadIndex());
-    assertTrue(editReq.getDrumPad().getTargetEffect());
+  @Test
+  public void testDnDStringToEffectChain() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+    clearRequestLog();
 
-    // Verify that effectEditBtn is reset to unselected since it's a VST3 (no embeddable child UI)
-    assertFalse(panel.effectEditBtn.isSelected());
+    // Setup pad state with 1 effect
+    DrumPadNotification notif =
+        DrumPadNotification.newBuilder()
+            .setType(DrumPadNotification.Type.TYPE_PAD_STATE)
+            .setTrackIndex(0)
+            .setPluginIndex(0)
+            .setPadIndex(0)
+            .addEffects(hibiki.pb.core.PadEffectState.newBuilder().setEffectPath("builtin://eq"))
+            .build();
+    panel.handlePadNotification(notif);
+
+    // Drop new effect builtin://limiter onto the active pad's effect chain (should append at index
+    // 1)
+    panel.handleEffectDrop(0, "plugin:builtin://limiter");
+
+    Request req = getLatestRequest();
+    assertNotNull(req);
+    assertTrue(req.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, req.getDrumPad().getAction());
+    assertTrue(req.getDrumPad().getTargetEffect());
+    assertEquals(1, req.getDrumPad().getEffectIndex());
+    assertEquals("builtin://limiter", req.getDrumPad().getPluginPath());
+  }
+
+  private static class TestPluginPane extends hibiki.ui.PluginPane {
+    private final DrumMachineDevicePanel dmPanel;
+
+    public TestPluginPane(DrumMachineDevicePanel dmPanel) {
+      super();
+      this.dmPanel = dmPanel;
+    }
+
+    @Override
+    public DrumMachineDevicePanel getActiveDrumMachinePanel() {
+      return dmPanel;
+    }
+  }
+
+  @Test
+  public void testBrowserDoubleClickInterception() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+    clearRequestLog();
+
+    // Register active drum machine panel using our TestPluginPane
+    new TestPluginPane(panel);
+
+    // Create a BrowserPane
+    hibiki.ui.BrowserPane browser = new hibiki.ui.BrowserPane();
+
+    // 1. Double click on an effect (isInstrument = false)
+    hibiki.ui.BrowserPane.FileItem effectItem =
+        new hibiki.ui.BrowserPane.FileItem(
+            new java.io.File("/path/to/VstEffect.vst3"),
+            "vst",
+            "VstEffect",
+            "Vendor",
+            0,
+            "",
+            false // isInstrument = false
+            );
+    javax.swing.tree.DefaultMutableTreeNode node =
+        new javax.swing.tree.DefaultMutableTreeNode(effectItem);
+
+    java.lang.reflect.Method method =
+        hibiki.ui.BrowserPane.class.getDeclaredMethod(
+            "onItemDoubleClicked", javax.swing.tree.DefaultMutableTreeNode.class);
+    method.setAccessible(true);
+
+    // Invoke double click
+    method.invoke(browser, node);
+
+    // It should load as an effect onto pad 0 (since selectedPad is 0 and empty) at index 0
+    Request req = getLatestRequest();
+    assertNotNull(req);
+    assertTrue(req.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, req.getDrumPad().getAction());
+    assertTrue(req.getDrumPad().getTargetEffect());
+    assertEquals(0, req.getDrumPad().getEffectIndex());
+    assertEquals("/path/to/VstEffect.vst3", req.getDrumPad().getPluginPath());
+    clearRequestLog();
+
+    // 2. Double click on an instrument (isInstrument = true)
+    hibiki.ui.BrowserPane.FileItem instItem =
+        new hibiki.ui.BrowserPane.FileItem(
+            new java.io.File("/path/to/VstInstrument.vst3"),
+            "vst",
+            "VstInstrument",
+            "Vendor",
+            0,
+            "",
+            true // isInstrument = true
+            );
+    javax.swing.tree.DefaultMutableTreeNode node2 =
+        new javax.swing.tree.DefaultMutableTreeNode(instItem);
+
+    method.invoke(browser, node2);
+
+    // It should load as instrument (targetEffect = false) on pad 0
+    Request req2 = getLatestRequest();
+    assertNotNull(req2);
+    assertTrue(req2.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, req2.getDrumPad().getAction());
+    assertFalse(req2.getDrumPad().getTargetEffect());
+    assertEquals("/path/to/VstInstrument.vst3", req2.getDrumPad().getPluginPath());
+  }
+
+  @Test
+  public void testGlobalControlSelection() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+    clearRequestLog();
+
+    // Verify default state
+    assertFalse(panel.globalSelected);
+    assertTrue(panel.pluginCombo.isEnabled());
+    assertTrue(panel.padSoloBtn.isVisible());
+
+    // Switch to the Global tab (index 4)
+    panel.bankButtons[4].getActionListeners()[0].actionPerformed(
+        new ActionEvent(panel.bankButtons[4], ActionEvent.ACTION_PERFORMED, ""));
+
+    assertTrue(panel.globalSelected);
+    assertEquals("Selected: Global Controls", panel.selectedPadLabel.getText());
+    assertFalse(panel.pluginCombo.isEnabled());
+    assertFalse(panel.editBtn.isEnabled());
+    assertFalse(panel.padSoloBtn.isVisible());
+    assertEquals("Active", panel.padMuteBtn.getText());
+
+    // Test volume slider change in global mode
+    panel.padVolSlider.setValue(80);
+    Request vReq = getLatestRequest();
+    assertNotNull(vReq);
+    assertTrue(vReq.hasPlugin());
+    assertEquals(PluginCmd.Action.ACTION_SET_PARAM, vReq.getPlugin().getAction());
+    assertEquals(0, vReq.getPlugin().getParamId());
+    assertEquals(0.8f, vReq.getPlugin().getParamValue(), 1e-4);
+    clearRequestLog();
+
+    // Test pan slider change in global mode
+    panel.padPanSlider.setValue(25); // (25 + 50) / 100 = 0.75
+    Request pReq = getLatestRequest();
+    assertNotNull(pReq);
+    assertTrue(pReq.hasPlugin());
+    assertEquals(PluginCmd.Action.ACTION_SET_PARAM, pReq.getPlugin().getAction());
+    assertEquals(1, pReq.getPlugin().getParamId());
+    assertEquals(0.75f, pReq.getPlugin().getParamValue(), 1e-4);
+    clearRequestLog();
+
+    // Test active toggle (mute button in global mode)
+    panel.padMuteBtn.setSelected(true);
+    panel.padMuteBtn.getActionListeners()[0].actionPerformed(
+        new ActionEvent(panel.padMuteBtn, ActionEvent.ACTION_PERFORMED, ""));
+    Request mReq = getLatestRequest();
+    assertNotNull(mReq);
+    assertTrue(mReq.hasPlugin());
+    assertEquals(PluginCmd.Action.ACTION_SET_PARAM, mReq.getPlugin().getAction());
+    assertEquals(2, mReq.getPlugin().getParamId());
+    assertEquals(1.0f, mReq.getPlugin().getParamValue(), 1e-4);
+    clearRequestLog();
+
+    // Verify that clicking a pad deselects global mode and switches focus
+    JButton padBtn = panel.padButtons[2];
+    padBtn.getActionListeners()[0].actionPerformed(
+        new ActionEvent(padBtn, ActionEvent.ACTION_PERFORMED, ""));
+
+    assertFalse(panel.globalSelected);
+    assertTrue(panel.pluginCombo.isEnabled());
+    assertTrue(panel.padSoloBtn.isVisible());
+    assertEquals("Mute", panel.padMuteBtn.getText());
+    assertEquals(2, panel.selectedPad);
+  }
+
+  @Test
+  public void testBrowserDoubleClickBypassInGlobalMode() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+    clearRequestLog();
+
+    // Register active drum machine panel using our TestPluginPane
+    new TestPluginPane(panel);
+
+    // Create a BrowserPane
+    hibiki.ui.BrowserPane browser = new hibiki.ui.BrowserPane();
+
+    // Turn on global selected
+    panel.globalSelected = true;
+
+    // Double click on an effect (isInstrument = false)
+    hibiki.ui.BrowserPane.FileItem effectItem =
+        new hibiki.ui.BrowserPane.FileItem(
+            new java.io.File("/path/to/VstEffect.vst3"),
+            "vst",
+            "VstEffect",
+            "Vendor",
+            0,
+            "",
+            false // isInstrument = false
+            );
+    javax.swing.tree.DefaultMutableTreeNode node =
+        new javax.swing.tree.DefaultMutableTreeNode(effectItem);
+
+    java.lang.reflect.Method method =
+        hibiki.ui.BrowserPane.class.getDeclaredMethod(
+            "onItemDoubleClicked", javax.swing.tree.DefaultMutableTreeNode.class);
+    method.setAccessible(true);
+
+    // Invoke double click - should load to track level (PluginCmd ACTION_LOAD) instead of pad
+    // (DrumPadCmd)
+    method.invoke(browser, node);
+
+    Request req = getLatestRequest();
+    assertNotNull(req);
+    assertTrue(req.hasPlugin());
+    assertEquals(PluginCmd.Action.ACTION_LOAD, req.getPlugin().getAction());
+    assertEquals("/path/to/VstEffect.vst3", req.getPlugin().getPath());
   }
 }

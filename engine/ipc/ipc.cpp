@@ -136,6 +136,7 @@ void sendPluginList(const std::string& path,
     pd->set_index(p.index);
     pd->set_name(p.name);
     pd->set_vendor(p.vendor);
+    pd->set_is_instrument(p.is_instrument);
   }
   sendProto(notification);
 }

@@ -63,12 +63,14 @@ public class BrowserPane extends JPanel {
     String name;
     String vendor;
     String path; // .vst3 bundle path on the remote filesystem
+    boolean isInstrument;
 
-    PluginMetadata(int index, String name, String vendor, String path) {
+    PluginMetadata(int index, String name, String vendor, String path, boolean isInstrument) {
       this.index = index;
       this.name = name;
       this.vendor = vendor;
       this.path = path;
+      this.isInstrument = isInstrument;
     }
   }
 
@@ -168,7 +170,9 @@ public class BrowserPane extends JPanel {
       List<PluginMetadata> plugins = new ArrayList<>();
       for (int i = 0; i < list.getPluginsCount(); i++) {
         var p = list.getPlugins(i);
-        plugins.add(new PluginMetadata(p.getIndex(), p.getName(), p.getVendor(), p.getPath()));
+        plugins.add(
+            new PluginMetadata(
+                p.getIndex(), p.getName(), p.getVendor(), p.getPath(), p.getIsInstrument()));
       }
       if (!remoteHost.isEmpty()) {
         // Remote daemon — store under host key
@@ -243,7 +247,8 @@ public class BrowserPane extends JPanel {
       for (PluginMetadata meta : plugins) {
         pluginsNode.add(
             new DefaultMutableTreeNode(
-                new FileItem(bundleFile, "vst", meta.name, meta.vendor, meta.index)));
+                new FileItem(
+                    bundleFile, "vst", meta.name, meta.vendor, meta.index, "", meta.isInstrument)));
       }
     }
     sortAndGroupPlugins(pluginsNode);
@@ -263,7 +268,14 @@ public class BrowserPane extends JPanel {
             (meta.path != null && !meta.path.isEmpty()) ? new File(meta.path) : new File(host);
         hostNode.add(
             new DefaultMutableTreeNode(
-                new FileItem(bundleFile, "remote-vst", meta.name, meta.vendor, meta.index, host)));
+                new FileItem(
+                    bundleFile,
+                    "remote-vst",
+                    meta.name,
+                    meta.vendor,
+                    meta.index,
+                    host,
+                    meta.isInstrument)));
       }
       sortAndGroupPlugins(hostNode);
       root.add(hostNode);
@@ -625,22 +637,102 @@ public class BrowserPane extends JPanel {
     }
   }
 
+  private boolean isBuiltinEffectPath(String rawPath) {
+    if (rawPath == null) return false;
+    return rawPath.equals("builtin://eq")
+        || rawPath.equals("builtin://compressor")
+        || rawPath.equals("builtin://delay")
+        || rawPath.equals("builtin://reverb")
+        || rawPath.equals("builtin://limiter")
+        || rawPath.equals("builtin://maxim")
+        || rawPath.equals("builtin://hott")
+        || rawPath.equals("builtin://envelope_shaper")
+        || rawPath.equals("builtin://phaser")
+        || rawPath.equals("builtin://convolver")
+        || rawPath.equals("builtin://bitcrusher")
+        || rawPath.equals("builtin://chorus")
+        || rawPath.equals("builtin://stereo_width")
+        || rawPath.equals("builtin://vocodey");
+  }
+
   private void onItemDoubleClicked(DefaultMutableTreeNode node) {
     Object userObject = node.getUserObject();
     if (userObject instanceof FileItem) {
       FileItem item = (FileItem) userObject;
+      hibiki.ui.panels.devices.DrumMachineDevicePanel dmPanel =
+          hibiki.ui.PluginPane.getInstance() != null
+              ? hibiki.ui.PluginPane.getInstance().getActiveDrumMachinePanel()
+              : null;
+      if (dmPanel != null && dmPanel.globalSelected) {
+        dmPanel = null;
+      }
+
       if ("builtin".equals(item.type)) {
-        sendLoadPlugin(item.rawPath, 0);
-      } else if ("vst".equals(item.type)) {
-        sendLoadPlugin(item.file.getAbsolutePath(), item.pluginIndex);
-      } else if ("remote-vst".equals(item.type)) {
-        // For remote plugins, use getPath() not getAbsolutePath() to avoid
-        // Linux CWD being prepended to Windows paths (e.g. C:\...).
-        sendLoadPlugin(item.file.getPath(), item.pluginIndex, item.remoteHost);
+        if (dmPanel != null) {
+          boolean isEffect = isBuiltinEffectPath(item.rawPath);
+          if (isEffect) {
+            int effectIdx = dmPanel.pads[dmPanel.selectedPad].effects.size();
+            dmPanel.sendDrumPadCmd(
+                hibiki.pb.commands.DrumPadCmd.Action.ACTION_LOAD_PLUGIN,
+                dmPanel.selectedPad,
+                item.rawPath,
+                0,
+                0,
+                "",
+                effectIdx,
+                true);
+          } else {
+            // Avoid loading drum machine inside itself
+            if (!"builtin://drum_machine".equals(item.rawPath)) {
+              dmPanel.sendDrumPadCmd(
+                  hibiki.pb.commands.DrumPadCmd.Action.ACTION_LOAD_PLUGIN,
+                  dmPanel.selectedPad,
+                  item.rawPath,
+                  0,
+                  0,
+                  "",
+                  false);
+            }
+          }
+        } else {
+          sendLoadPlugin(item.rawPath, 0);
+        }
+      } else if ("vst".equals(item.type) || "remote-vst".equals(item.type)) {
+        String path =
+            "remote-vst".equals(item.type) ? item.file.getPath() : item.file.getAbsolutePath();
+        if (dmPanel != null) {
+          if (!item.isInstrument) {
+            int effectIdx = dmPanel.pads[dmPanel.selectedPad].effects.size();
+            dmPanel.sendDrumPadCmd(
+                hibiki.pb.commands.DrumPadCmd.Action.ACTION_LOAD_PLUGIN,
+                dmPanel.selectedPad,
+                path,
+                0,
+                0,
+                "",
+                effectIdx,
+                true);
+          } else {
+            dmPanel.sendDrumPadCmd(
+                hibiki.pb.commands.DrumPadCmd.Action.ACTION_LOAD_PLUGIN,
+                dmPanel.selectedPad,
+                path,
+                0,
+                0,
+                "",
+                false);
+          }
+        } else {
+          sendLoadPlugin(path, item.pluginIndex, item.remoteHost);
+        }
       } else if ("midi".equals(item.type)) {
         sendLoadClip(item.file.getAbsolutePath(), false);
       } else if ("audio".equals(item.type)) {
-        sendLoadClip(item.file.getAbsolutePath(), true);
+        if (dmPanel != null) {
+          dmPanel.loadAudioSample(dmPanel.selectedPad, item.file.getAbsolutePath());
+        } else {
+          sendLoadClip(item.file.getAbsolutePath(), true);
+        }
       }
     }
   }
@@ -714,13 +806,14 @@ public class BrowserPane extends JPanel {
     public int pluginIndex;
     public String remoteHost; // non-empty for remote plugins ("host:port")
     public String rawPath; // for builtin:// paths that File would mangle
+    public boolean isInstrument = false;
 
     public FileItem(File file, String type, String displayName) {
-      this(file, type, displayName, "", 0, "");
+      this(file, type, displayName, "", 0, "", false);
     }
 
     public FileItem(File file, String type, String displayName, String vendor, int pluginIndex) {
-      this(file, type, displayName, vendor, pluginIndex, "");
+      this(file, type, displayName, vendor, pluginIndex, "", false);
     }
 
     public FileItem(
@@ -730,12 +823,24 @@ public class BrowserPane extends JPanel {
         String vendor,
         int pluginIndex,
         String remoteHost) {
+      this(file, type, displayName, vendor, pluginIndex, remoteHost, false);
+    }
+
+    public FileItem(
+        File file,
+        String type,
+        String displayName,
+        String vendor,
+        int pluginIndex,
+        String remoteHost,
+        boolean isInstrument) {
       this.file = file;
       this.type = type;
       this.displayName = displayName;
       this.vendor = vendor;
       this.pluginIndex = pluginIndex;
       this.remoteHost = remoteHost != null ? remoteHost : "";
+      this.isInstrument = isInstrument;
     }
 
     @Override

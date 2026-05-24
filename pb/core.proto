@@ -72,6 +72,11 @@ message Plugin {
   optional DrumMachineState drum_machine_state = 10;
 }
 
+message PadEffectState {
+  string effect_path = 1;
+  repeated ParamInfo params = 2;
+}
+
 message DrumPadState {
   uint32 pad_index = 1;
   string plugin_path = 2;
@@ -84,6 +89,7 @@ message DrumPadState {
   optional uint32 trigger_note = 9;
   string effect_path = 10;
   repeated ParamInfo effect_params = 11;
+  repeated PadEffectState effects = 12;
 }
 
 message DrumMachineState {

@@ -437,7 +437,7 @@ TEST(BuiltinDrumMachineTest, PadEffectProcessing) {
   dm_fx.load("", 0, 44100.0);
 
   ASSERT_TRUE(dm_fx.loadPadPlugin(0, "builtin://3xosc").ok());
-  ASSERT_TRUE(dm_fx.loadPadEffect(0, "builtin://limiter").ok());
+  ASSERT_TRUE(dm_fx.loadPadEffect(0, 0, "builtin://limiter").ok());
 
   // Set the limiter parameter 0 (e.g. threshold/ceiling) to a very low value
   // (0.1)
@@ -459,6 +459,80 @@ TEST(BuiltinDrumMachineTest, PadEffectProcessing) {
   }
   EXPECT_TRUE(output_differs) << "Audio output with pad effect should differ "
                                  "from output without effect";
+}
+
+TEST(BuiltinDrumMachineTest, PadMultipleEffectsProcessing) {
+  g_ipc_enabled = false;
+  BuiltinDrumMachine dm;
+  dm.load("", 0, 44100.0);
+
+  // Load 3xOsc instrument on Pad 0
+  ASSERT_TRUE(dm.loadPadPlugin(0, "builtin://3xosc").ok());
+
+  // Capture output without effects
+  constexpr int N = 256;
+  float outL_no_fx[N] = {0};
+  float outR_no_fx[N] = {0};
+  float* outs_no_fx[2] = {outL_no_fx, outR_no_fx};
+
+  std::vector<MidiNoteEvent> events;
+  MidiNoteEvent ev;
+  ev.pitch = 36;
+  ev.velocity = 1.0f;
+  ev.isNoteOn = true;
+  ev.channel = 0;
+  ev.sampleOffset = 0;
+  events.push_back(ev);
+
+  auto ctx = MakeContext();
+  dm.process(nullptr, outs_no_fx, N, ctx, events);
+
+  // Load first effect (Limiter) at index 0
+  ASSERT_TRUE(dm.loadPadEffect(0, 0, "builtin://limiter").ok());
+  // Load second effect (Bitcrusher) at index 1
+  ASSERT_TRUE(dm.loadPadEffect(0, 1, "builtin://bitcrusher").ok());
+
+  // Check serialization/deserialization of multiple effects
+  pb::core::DrumMachineState state;
+  dm.serializeState(&state);
+  ASSERT_EQ(state.pads_size(), 1);
+  ASSERT_EQ(state.pads(0).effects_size(), 2);
+  EXPECT_EQ(state.pads(0).effects(0).effect_path(), "builtin://limiter");
+  EXPECT_EQ(state.pads(0).effects(1).effect_path(), "builtin://bitcrusher");
+
+  // Round trip serialization
+  BuiltinDrumMachine dm2;
+  dm2.load("", 0, 44100.0);
+  dm2.deserializeState(state);
+
+  // Set bitcrusher parameter (e.g. downsampling or bits) to high distortion to
+  // ensure audio differs
+  EXPECT_TRUE(dm2.setPadParam(0, 0, 0.2f, true, 1).ok());  // Bitcrusher param 0
+
+  float outL_fx[N] = {0};
+  float outR_fx[N] = {0};
+  float* outs_fx[2] = {outL_fx, outR_fx};
+
+  dm2.process(nullptr, outs_fx, N, ctx, events);
+
+  // Audio output with pad effects should differ from output without effects
+  bool output_differs = false;
+  for (int i = 0; i < N; ++i) {
+    if (std::abs(outL_no_fx[i] - outL_fx[i]) > 1e-4f) {
+      output_differs = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(output_differs)
+      << "Audio output with multiple pad effects should differ";
+
+  // Remove first effect (Limiter)
+  EXPECT_TRUE(dm2.removePadEffect(0, 0).ok());
+
+  pb::core::DrumMachineState state2;
+  dm2.serializeState(&state2);
+  ASSERT_EQ(state2.pads(0).effects_size(), 1);
+  EXPECT_EQ(state2.pads(0).effects(0).effect_path(), "builtin://bitcrusher");
 }
 
 }  // namespace

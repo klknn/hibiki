@@ -33,6 +33,7 @@ struct PluginDescription {
   int index;
   std::string name;
   std::string vendor;
+  bool is_instrument = false;
 };
 
 // Abstract interface for audio plugins.

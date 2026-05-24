@@ -306,6 +306,7 @@ message DrumPadCmd {
   string sample_path = 8;
   uint32 trigger_note = 9;
   bool target_effect = 10;
+  uint32 effect_index = 11;
 }
 
 // ─── Request Envelope ───────────────────────────────────────────────

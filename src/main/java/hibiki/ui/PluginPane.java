@@ -84,6 +84,18 @@ public class PluginPane extends JPanel {
     return instance;
   }
 
+  public hibiki.ui.panels.devices.DrumMachineDevicePanel getActiveDrumMachinePanel() {
+    java.util.Map<Integer, javax.swing.JPanel> bi = builtinPanels.get(selectedTrack);
+    if (bi != null) {
+      for (javax.swing.JPanel panel : bi.values()) {
+        if (panel instanceof hibiki.ui.panels.devices.DrumMachineDevicePanel) {
+          return (hibiki.ui.panels.devices.DrumMachineDevicePanel) panel;
+        }
+      }
+    }
+    return null;
+  }
+
   public PluginPane() {
     instance = this;
     setLayout(new BorderLayout());
@@ -245,6 +257,9 @@ public class PluginPane extends JPanel {
               return;
             } else if (bp instanceof Dr8DevicePanel) {
               ((Dr8DevicePanel) bp).updateParam(paramId, value);
+              return;
+            } else if (bp instanceof DrumMachineDevicePanel) {
+              ((DrumMachineDevicePanel) bp).handleParamChange(paramId, value);
               return;
             }
           }

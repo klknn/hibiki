@@ -264,4 +264,133 @@ public class DrumMachineDevicePanelTest {
     assertEquals(72, req.getDrumPad().getTriggerNote());
     assertEquals("C5", panel.padTriggerNoteLabel.getText());
   }
+
+  @Test
+  public void testDropdownInstrumentOptions() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+
+    // Check that model contains other instruments
+    javax.swing.ComboBoxModel<String> model = panel.pluginCombo.getModel();
+
+    // Check list of options
+    List<String> items = new ArrayList<>();
+    for (int i = 0; i < model.getSize(); i++) {
+      items.add(model.getElementAt(i));
+    }
+
+    assertTrue(items.contains("DR8 Kick"));
+    assertTrue(items.contains("Film"));
+    assertTrue(items.contains("Acid Bass"));
+    assertTrue(items.contains("Organ"));
+    assertTrue(items.contains("Load VST3..."));
+
+    // Select "DR8 Kick"
+    clearRequestLog();
+    panel.pluginCombo.setSelectedItem("DR8 Kick");
+    Request r1 = getLatestRequest();
+    assertNotNull(r1);
+    assertTrue(r1.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, r1.getDrumPad().getAction());
+    assertEquals("builtin://dr8_kick", r1.getDrumPad().getPluginPath());
+  }
+
+  @Test
+  public void testDnDStringBuiltin() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+    clearRequestLog();
+
+    // Simulate drag and drop from browser of a builtin plugin onto pad 0
+    panel.handleStringDrop(0, "builtin:builtin://acid_bass");
+
+    Request req = getLatestRequest();
+    assertNotNull(req);
+    assertTrue(req.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, req.getDrumPad().getAction());
+    assertEquals("builtin://acid_bass", req.getDrumPad().getPluginPath());
+    assertEquals(0, req.getDrumPad().getPadIndex());
+  }
+
+  @Test
+  public void testDnDStringVst() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+    clearRequestLog();
+
+    // Simulate drag and drop from browser of a VST plugin onto pad 2
+    panel.handleStringDrop(2, "vst:/path/to/Dexed.vst3");
+
+    Request req = getLatestRequest();
+    assertNotNull(req);
+    assertTrue(req.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, req.getDrumPad().getAction());
+    assertEquals("/path/to/Dexed.vst3", req.getDrumPad().getPluginPath());
+    assertEquals(2, req.getDrumPad().getPadIndex());
+
+    // Also test with "plugin" prefix
+    clearRequestLog();
+    panel.handleStringDrop(3, "plugin:/path/to/Dexed.vst3");
+    req = getLatestRequest();
+    assertNotNull(req);
+    assertTrue(req.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, req.getDrumPad().getAction());
+    assertEquals("/path/to/Dexed.vst3", req.getDrumPad().getPluginPath());
+    assertEquals(3, req.getDrumPad().getPadIndex());
+  }
+
+  @Test
+  public void testDnDStringAudio() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+    clearRequestLog();
+
+    // Simulate drag and drop from browser of an audio sample onto pad 1
+    panel.handleStringDrop(1, "audio:/path/to/kick.wav");
+
+    // Since it's audio, it should first load Sampler if not loaded, then load sample
+    List<Request> reqs = getAllRequests();
+    assertTrue(reqs.size() >= 2);
+
+    // First request: load Sampler
+    Request r1 = reqs.get(0);
+    assertTrue(r1.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, r1.getDrumPad().getAction());
+    assertEquals("builtin://sampler", r1.getDrumPad().getPluginPath());
+    assertEquals(1, r1.getDrumPad().getPadIndex());
+
+    // Second request: load sample
+    Request r2 = reqs.get(1);
+    assertTrue(r2.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_SAMPLE, r2.getDrumPad().getAction());
+    assertEquals("/path/to/kick.wav", r2.getDrumPad().getSamplePath());
+    assertEquals(1, r2.getDrumPad().getPadIndex());
+  }
+
+  @Test
+  public void testDnDFileListDrop() throws Exception {
+    DrumMachineDevicePanel panel = new DrumMachineDevicePanel(0, 0);
+    clearRequestLog();
+
+    // Drop a VST3 file
+    java.io.File vstFile = new java.io.File("/path/to/Dexed.vst3");
+    panel.handleFileListDrop(4, List.of(vstFile));
+
+    Request req = getLatestRequest();
+    assertNotNull(req);
+    assertTrue(req.hasDrumPad());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, req.getDrumPad().getAction());
+    assertEquals(vstFile.getAbsolutePath(), req.getDrumPad().getPluginPath());
+    assertEquals(4, req.getDrumPad().getPadIndex());
+
+    // Drop a WAV file
+    clearRequestLog();
+    java.io.File wavFile = new java.io.File("/path/to/snare.wav");
+    panel.handleFileListDrop(5, List.of(wavFile));
+
+    List<Request> reqs = getAllRequests();
+    assertTrue(reqs.size() >= 2);
+    // First loads sampler, then loads sample
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, reqs.get(0).getDrumPad().getAction());
+    assertEquals("builtin://sampler", reqs.get(0).getDrumPad().getPluginPath());
+    assertEquals(DrumPadCmd.Action.ACTION_LOAD_SAMPLE, reqs.get(1).getDrumPad().getAction());
+    assertEquals(wavFile.getAbsolutePath(), reqs.get(1).getDrumPad().getSamplePath());
+    assertEquals(5, reqs.get(1).getDrumPad().getPadIndex());
+  }
 }

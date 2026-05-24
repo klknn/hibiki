@@ -181,30 +181,12 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
               public void drop(DropTargetDropEvent dtde) {
                 try {
                   int finalPadIdx = currentBank * 16 + targetPadIndex;
-                  String path = null;
                   if (dtde.isDataFlavorSupported(DataFlavor.stringFlavor)) {
                     dtde.acceptDrop(DnDConstants.ACTION_COPY);
                     String data =
                         (String) dtde.getTransferable().getTransferData(DataFlavor.stringFlavor);
                     dtde.dropComplete(true);
-                    String[] parts = data.split(":", 2);
-                    if (parts.length == 2) {
-                      if ("audio".equals(parts[0])) {
-                        path = parts[1];
-                      } else if ("builtin".equals(parts[0])) {
-                        String pluginPath = parts[1];
-                        if ("builtin://sampler".equals(pluginPath)
-                            || "builtin://3xosc".equals(pluginPath)) {
-                          sendDrumPadCmd(
-                              DrumPadCmd.Action.ACTION_LOAD_PLUGIN,
-                              finalPadIdx,
-                              pluginPath,
-                              0,
-                              0,
-                              "");
-                        }
-                      }
-                    }
+                    handleStringDrop(finalPadIdx, data);
                   } else if (dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
                     dtde.acceptDrop(DnDConstants.ACTION_COPY);
                     @SuppressWarnings("unchecked")
@@ -212,29 +194,7 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
                         (java.util.List<File>)
                             dtde.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
                     dtde.dropComplete(true);
-                    for (File f : files) {
-                      String name = f.getName().toLowerCase();
-                      if (name.endsWith(".wav")
-                          || name.endsWith(".aiff")
-                          || name.endsWith(".flac")) {
-                        path = f.getAbsolutePath();
-                        break;
-                      }
-                    }
-                  }
-                  if (path != null) {
-                    // First load Sampler if not already loaded, then load sample
-                    if (!"builtin://sampler".equals(pads[finalPadIdx].pluginPath)) {
-                      sendDrumPadCmd(
-                          DrumPadCmd.Action.ACTION_LOAD_PLUGIN,
-                          finalPadIdx,
-                          "builtin://sampler",
-                          0,
-                          0,
-                          "");
-                    }
-                    sendDrumPadCmd(
-                        DrumPadCmd.Action.ACTION_LOAD_SAMPLE, finalPadIdx, "", 0, 0, path);
+                    handleFileListDrop(finalPadIdx, files);
                   }
                 } catch (Exception ex) {
                   dtde.rejectDrop();
@@ -271,15 +231,66 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
     pluginLabel.setFont(theme.FONT_UI);
     pluginSelRow.add(pluginLabel, BorderLayout.WEST);
 
-    pluginCombo = new JComboBox<>(new String[] {"Empty", "Sampler", "3xOsc"});
+    pluginCombo =
+        new JComboBox<>(
+            new String[] {
+              "Empty",
+              "Sampler",
+              "3xOsc",
+              "Acid Bass",
+              "DR8 Kick",
+              "DR8 Snare",
+              "DR8 Hat",
+              "DR8 Tom",
+              "DR8 Clap",
+              "DR8 Cowbell",
+              "DR8 Crash",
+              "DR8 Rimshot",
+              "DR8 Conga",
+              "Organ",
+              "Film",
+              "Load VST3..."
+            });
     pluginCombo.setFont(theme.FONT_UI.deriveFont(theme.scale(9.0f)));
     pluginCombo.addActionListener(
         e -> {
           if (updatingUi) return;
           String sel = (String) pluginCombo.getSelectedItem();
+          if ("Load VST3...".equals(sel)) {
+            if (GraphicsEnvironment.isHeadless()) {
+              return;
+            }
+            JFileChooser chooser = new JFileChooser();
+            chooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+            chooser.setFileFilter(new FileNameExtensionFilter("VST3 Plugins", "vst3"));
+            int res = chooser.showOpenDialog(DrumMachineDevicePanel.this);
+            if (res == JFileChooser.APPROVE_OPTION) {
+              String vst3Path = chooser.getSelectedFile().getAbsolutePath();
+              sendDrumPadCmd(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, selectedPad, vst3Path, 0, 0, "");
+            } else {
+              refreshDetailEditor(); // Reset combo selection to actual value
+            }
+            return;
+          }
+
           String path = "";
           if ("Sampler".equals(sel)) path = "builtin://sampler";
           else if ("3xOsc".equals(sel)) path = "builtin://3xosc";
+          else if ("Acid Bass".equals(sel)) path = "builtin://acid_bass";
+          else if ("DR8 Kick".equals(sel)) path = "builtin://dr8_kick";
+          else if ("DR8 Snare".equals(sel)) path = "builtin://dr8_snare";
+          else if ("DR8 Hat".equals(sel)) path = "builtin://dr8_hat";
+          else if ("DR8 Tom".equals(sel)) path = "builtin://dr8_tom";
+          else if ("DR8 Clap".equals(sel)) path = "builtin://dr8_clap";
+          else if ("DR8 Cowbell".equals(sel)) path = "builtin://dr8_cowbell";
+          else if ("DR8 Crash".equals(sel)) path = "builtin://dr8_crash";
+          else if ("DR8 Rimshot".equals(sel)) path = "builtin://dr8_rim";
+          else if ("DR8 Conga".equals(sel)) path = "builtin://dr8_conga";
+          else if ("Organ".equals(sel)) path = "builtin://organ";
+          else if ("Film".equals(sel)) path = "builtin://film";
+          else if (!"Empty".equals(sel)) {
+            path = pads[selectedPad].pluginPath;
+          }
 
           if (path.isEmpty()) {
             sendDrumPadCmd(DrumPadCmd.Action.ACTION_REMOVE_PLUGIN, selectedPad, "", 0, 0, "");
@@ -491,6 +502,47 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
     refreshDetailEditor();
   }
 
+  void handleStringDrop(int padIdx, String data) {
+    String[] parts = data.split(":", 2);
+    if (parts.length == 2) {
+      if ("audio".equals(parts[0])) {
+        String path = parts[1];
+        loadAudioSample(padIdx, path);
+      } else if ("builtin".equals(parts[0])) {
+        String pluginPath = parts[1];
+        if (pluginPath.startsWith("builtin://")) {
+          sendDrumPadCmd(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, padIdx, pluginPath, 0, 0, "");
+        }
+      } else if ("vst".equals(parts[0])
+          || "remote-vst".equals(parts[0])
+          || "plugin".equals(parts[0])) {
+        String pluginPath = parts[1];
+        sendDrumPadCmd(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, padIdx, pluginPath, 0, 0, "");
+      }
+    }
+  }
+
+  void loadAudioSample(int padIdx, String path) {
+    // First load Sampler if not already loaded, then load sample
+    if (!"builtin://sampler".equals(pads[padIdx].pluginPath)) {
+      sendDrumPadCmd(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, padIdx, "builtin://sampler", 0, 0, "");
+    }
+    sendDrumPadCmd(DrumPadCmd.Action.ACTION_LOAD_SAMPLE, padIdx, "", 0, 0, path);
+  }
+
+  void handleFileListDrop(int padIdx, java.util.List<File> files) {
+    for (File f : files) {
+      String name = f.getName().toLowerCase();
+      if (name.endsWith(".vst3")) {
+        sendDrumPadCmd(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, padIdx, f.getAbsolutePath(), 0, 0, "");
+        break;
+      } else if (name.endsWith(".wav") || name.endsWith(".aiff") || name.endsWith(".flac")) {
+        loadAudioSample(padIdx, f.getAbsolutePath());
+        break;
+      }
+    }
+  }
+
   private void sendDrumPadCmd(
       DrumPadCmd.Action action,
       int padIdx,
@@ -618,14 +670,45 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
 
   private void updateGridButtonText(int gridIdx, int padIdx) {
     String pPath = pads[padIdx].pluginPath;
+    String noteName = getNoteName(36 + padIdx);
     String dispName = "Empty";
     if ("builtin://sampler".equals(pPath)) {
       dispName = "Sampler";
     } else if ("builtin://3xosc".equals(pPath)) {
       dispName = "3xOsc";
+    } else if ("builtin://acid_bass".equals(pPath)) {
+      dispName = "Acid Bass";
+    } else if ("builtin://dr8_kick".equals(pPath)) {
+      dispName = "DR8 Kick";
+    } else if ("builtin://dr8_snare".equals(pPath)) {
+      dispName = "DR8 Snare";
+    } else if ("builtin://dr8_hat".equals(pPath)) {
+      dispName = "DR8 Hat";
+    } else if ("builtin://dr8_tom".equals(pPath)) {
+      dispName = "DR8 Tom";
+    } else if ("builtin://dr8_clap".equals(pPath)) {
+      dispName = "DR8 Clap";
+    } else if ("builtin://dr8_cowbell".equals(pPath)) {
+      dispName = "DR8 Cowbell";
+    } else if ("builtin://dr8_crash".equals(pPath)) {
+      dispName = "DR8 Crash";
+    } else if ("builtin://dr8_rim".equals(pPath)) {
+      dispName = "DR8 Rimshot";
+    } else if ("builtin://dr8_conga".equals(pPath)) {
+      dispName = "DR8 Conga";
+    } else if ("builtin://organ".equals(pPath)) {
+      dispName = "Organ";
+    } else if (pPath.startsWith("builtin://film")) {
+      dispName = "Film";
+    } else if (!pPath.isEmpty()) {
+      int slash = pPath.lastIndexOf('/');
+      if (slash == -1) slash = pPath.lastIndexOf('\\');
+      dispName = (slash != -1) ? pPath.substring(slash + 1) : pPath;
+      if (dispName.endsWith(".vst3")) {
+        dispName = dispName.substring(0, dispName.length() - 5);
+      }
     }
 
-    String noteName = getNoteName(36 + padIdx);
     padButtons[gridIdx].setText(
         "<html><center>Pad "
             + (padIdx + 1)
@@ -650,6 +733,50 @@ public class DrumMachineDevicePanel extends AbstractDevicePanel {
       pluginCombo.setSelectedItem("Sampler");
     } else if ("builtin://3xosc".equals(state.pluginPath)) {
       pluginCombo.setSelectedItem("3xOsc");
+    } else if ("builtin://acid_bass".equals(state.pluginPath)) {
+      pluginCombo.setSelectedItem("Acid Bass");
+    } else if ("builtin://dr8_kick".equals(state.pluginPath)) {
+      pluginCombo.setSelectedItem("DR8 Kick");
+    } else if ("builtin://dr8_snare".equals(state.pluginPath)) {
+      pluginCombo.setSelectedItem("DR8 Snare");
+    } else if ("builtin://dr8_hat".equals(state.pluginPath)) {
+      pluginCombo.setSelectedItem("DR8 Hat");
+    } else if ("builtin://dr8_tom".equals(state.pluginPath)) {
+      pluginCombo.setSelectedItem("DR8 Tom");
+    } else if ("builtin://dr8_clap".equals(state.pluginPath)) {
+      pluginCombo.setSelectedItem("DR8 Clap");
+    } else if ("builtin://dr8_cowbell".equals(state.pluginPath)) {
+      pluginCombo.setSelectedItem("DR8 Cowbell");
+    } else if ("builtin://dr8_crash".equals(state.pluginPath)) {
+      pluginCombo.setSelectedItem("DR8 Crash");
+    } else if ("builtin://dr8_rim".equals(state.pluginPath)) {
+      pluginCombo.setSelectedItem("DR8 Rimshot");
+    } else if ("builtin://dr8_conga".equals(state.pluginPath)) {
+      pluginCombo.setSelectedItem("DR8 Conga");
+    } else if ("builtin://organ".equals(state.pluginPath)) {
+      pluginCombo.setSelectedItem("Organ");
+    } else if (state.pluginPath.startsWith("builtin://film")) {
+      pluginCombo.setSelectedItem("Film");
+    } else {
+      DefaultComboBoxModel<String> model = (DefaultComboBoxModel<String>) pluginCombo.getModel();
+      String dispName = state.pluginPath;
+      int slash = dispName.lastIndexOf('/');
+      if (slash == -1) slash = dispName.lastIndexOf('\\');
+      dispName = (slash != -1) ? dispName.substring(slash + 1) : dispName;
+      if (dispName.endsWith(".vst3")) {
+        dispName = dispName.substring(0, dispName.length() - 5);
+      }
+      boolean found = false;
+      for (int i = 0; i < model.getSize(); ++i) {
+        if (model.getElementAt(i).equals(dispName)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        model.insertElementAt(dispName, model.getSize() - 1);
+      }
+      pluginCombo.setSelectedItem(dispName);
     }
 
     // Mixer sliders

@@ -416,6 +416,10 @@ public class BrowserPane extends JPanel {
     dr8CongaItem.rawPath = "builtin://dr8_conga";
     builtinNode.add(new DefaultMutableTreeNode(dr8CongaItem));
 
+    FileItem vocodeyItem = new FileItem(new File("builtin"), "builtin", "Vocodey", "Hibiki", 0);
+    vocodeyItem.rawPath = "builtin://vocodey";
+    builtinNode.add(new DefaultMutableTreeNode(vocodeyItem));
+
     // DX7 SysEx presets: scan testdata/ for .syx files and list patches.
     DefaultMutableTreeNode dx7Node = new DefaultMutableTreeNode("DX7 Presets");
     File testDataDir = new File("testdata");

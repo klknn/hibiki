@@ -117,6 +117,16 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_vocodey",
+    srcs = ["builtin_vocodey.cpp"],
+    hdrs = ["builtin_vocodey.hpp"],
+    deps = [
+        "//engine/core:biquad_filter",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
     name = "effects",
     deps = [
         ":builtin_aux",
@@ -133,6 +143,7 @@ cc_library(
         ":builtin_phaser",
         ":builtin_reverb",
         ":builtin_stereo_width",
+        ":builtin_vocodey",
     ],
 )
 
@@ -264,6 +275,16 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_stereo_width",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_vocodey_test",
+    srcs = ["builtin_vocodey_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_vocodey",
         "@googletest//:gtest_main",
     ],
 )

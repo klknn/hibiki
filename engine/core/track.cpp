@@ -17,6 +17,7 @@
 #include "engine/effects/builtin_phaser.hpp"
 #include "engine/effects/builtin_reverb.hpp"
 #include "engine/effects/builtin_stereo_width.hpp"
+#include "engine/effects/builtin_vocodey.hpp"
 #include "engine/instruments/builtin_3xosc.hpp"
 #include "engine/instruments/builtin_acid_bass.hpp"
 #include "engine/instruments/builtin_dr8_clap.hpp"
@@ -123,6 +124,9 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinMaxim::kPath) {
     plugin = std::make_unique<BuiltinMaxim>();
+    plugin->load(path, 0, sample_rate);
+  } else if (path == BuiltinVocodey::kPath) {
+    plugin = std::make_unique<BuiltinVocodey>();
     plugin->load(path, 0, sample_rate);
   } else if (path == BuiltinEnvelopeShaper::kPath) {
     plugin = std::make_unique<BuiltinEnvelopeShaper>();

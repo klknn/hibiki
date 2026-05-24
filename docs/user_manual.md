@@ -313,6 +313,18 @@ A spatial stereo enhancer that delays one channel relative to the other (0 to 40
   - **Width**: Mid/side scaling factor (0.0 to 2.0) applied to high frequencies.
   - **Enable**: Bypass switch.
 
+### Vocodey (`builtin://vocodey`)
+A premium real-time channel vocoder featuring a 24-band bandpass filterbank, envelope followers per band, high-frequency sibilance noise bleed, sidechain carrier support, and a built-in polyphonic synthesizer.
+- **Parameters**:
+  - **Attack**: Envelope follower attack time (0.001s to 0.1s).
+  - **Decay**: Envelope follower decay/release time (0.01s to 2.0s).
+  - **Bandwidth**: Bandpass filter quality Q factor adjustment (0.5 to 10.0). Higher Q makes the bands narrower and more resonant (robotic); lower Q makes it warmer and more intelligible.
+  - **Noise Bleed**: Unvoiced sibilance white noise bleed ratio (0.0 to 1.0).
+  - **Detune**: Internal carrier synth unison detuning (0.0 to 1.0).
+  - **Dry**: Dry modulator mix level (0.0 to 1.0).
+  - **Wet**: Wet vocoded mix level (0.0 to 1.0).
+  - **Volume**: Master level.
+
 ---
 
 ## Built-in Instruments

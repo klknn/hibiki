@@ -568,7 +568,9 @@ public class DrumMachineDevicePanelTest {
     assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, req.getDrumPad().getAction());
     assertTrue(req.getDrumPad().getTargetEffect());
     assertEquals(0, req.getDrumPad().getEffectIndex());
-    assertEquals("/path/to/VstEffect.vst3", req.getDrumPad().getPluginPath());
+    assertEquals(
+        new java.io.File("/path/to/VstEffect.vst3").getAbsolutePath(),
+        req.getDrumPad().getPluginPath());
     clearRequestLog();
 
     // 2. Double click on an instrument (isInstrument = true)
@@ -593,7 +595,9 @@ public class DrumMachineDevicePanelTest {
     assertTrue(req2.hasDrumPad());
     assertEquals(DrumPadCmd.Action.ACTION_LOAD_PLUGIN, req2.getDrumPad().getAction());
     assertFalse(req2.getDrumPad().getTargetEffect());
-    assertEquals("/path/to/VstInstrument.vst3", req2.getDrumPad().getPluginPath());
+    assertEquals(
+        new java.io.File("/path/to/VstInstrument.vst3").getAbsolutePath(),
+        req2.getDrumPad().getPluginPath());
   }
 
   @Test
@@ -702,6 +706,7 @@ public class DrumMachineDevicePanelTest {
     assertNotNull(req);
     assertTrue(req.hasPlugin());
     assertEquals(PluginCmd.Action.ACTION_LOAD, req.getPlugin().getAction());
-    assertEquals("/path/to/VstEffect.vst3", req.getPlugin().getPath());
+    assertEquals(
+        new java.io.File("/path/to/VstEffect.vst3").getAbsolutePath(), req.getPlugin().getPath());
   }
 }

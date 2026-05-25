@@ -244,3 +244,19 @@ If you are building a complex or container-style built-in device (like the Drum 
 ### 5. Preserving In-memory MIDI State (Undo/Redo)
 - Timeline clips and session slots containing empty paths (`""`) are treated as in-memory clips (e.g., manually composed MIDI notes).
 - Ensure that the project serialization helper (`engine/core/project.cpp`) serializes the note array (`midi_events`), display name, and waveform summaries into the project protobuf so they survive undo/redo captures and apply routines.
+
+---
+
+## TODO: Missing Custom UI Panels
+
+The following built-in devices are registered in the C++ engine but do not have dedicated custom Swing UI panels. They currently fall back to the generic parameters panel:
+
+### Effects
+- [ ] **Bitcrusher** (`builtin://bitcrusher`) — [builtin_bitcrusher.hpp](file:///C:/Users/karita/repos/hibiki/engine/effects/builtin_bitcrusher.hpp)
+- [ ] **Chorus** (`builtin://chorus`) — [builtin_chorus.hpp](file:///C:/Users/karita/repos/hibiki/engine/effects/builtin_chorus.hpp)
+- [ ] **Stereo Width** (`builtin://stereo_width`) — [builtin_stereo_width.hpp](file:///C:/Users/karita/repos/hibiki/engine/effects/builtin_stereo_width.hpp)
+
+### Instruments
+- [ ] **Acid Bass** (`builtin://acid_bass`) — [builtin_acid_bass.hpp](file:///C:/Users/karita/repos/hibiki/engine/instruments/builtin_acid_bass.hpp)
+- [ ] **Drawbar Organ** (`builtin://organ`) — [builtin_organ.hpp](file:///C:/Users/karita/repos/hibiki/engine/instruments/builtin_organ.hpp)
+

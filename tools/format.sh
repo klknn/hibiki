@@ -15,17 +15,17 @@ CHANGED=0
 # ─── Helper: detect OS and arch ──────────────────────────────────────
 detect_platform() {
   local os arch
-  case "$(uname -s)" in
-    Linux*)  os=linux ;;
-    Darwin*) os=darwin ;;
-    *)       os=linux ;;
-  esac
   case "$(uname -m)" in
     x86_64|amd64) arch=amd64 ;;
     arm64|aarch64) arch=arm64 ;;
     *)             arch=amd64 ;;
   esac
-  echo "${os}-${arch}"
+  case "$(uname -s)" in
+    Linux*)  os=linux ;echo "${os}-${arch}";;
+    Darwin*) os=darwin ; echo "${os}-${arch}";;
+    *)       os=windows ; echo "${os}-${arch}.exe";;
+  esac
+
 }
 PLATFORM="$(detect_platform)"
 
@@ -52,9 +52,9 @@ ensure_buildifier() {
     return 0
   fi
   if [[ ! -x "$BUILDIFIER_BIN" ]]; then
-    echo "⬇️  Downloading buildifier ${BUILDIFIER_VERSION}..."
-    curl -fsSL -o "$BUILDIFIER_BIN" \
-      "https://github.com/bazelbuild/buildtools/releases/download/${BUILDIFIER_VERSION}/buildifier-${PLATFORM}"
+    BUILDIFIER_URL="https://github.com/bazelbuild/buildtools/releases/download/${BUILDIFIER_VERSION}/buildifier-${PLATFORM}"
+    echo "⬇️  Downloading buildifier $BUILDIFIER_URL"
+    curl -fsSL -o "$BUILDIFIER_BIN" "$BUILDIFIER_URL"
     chmod +x "$BUILDIFIER_BIN"
     echo "✅ Downloaded to $BUILDIFIER_BIN"
   fi

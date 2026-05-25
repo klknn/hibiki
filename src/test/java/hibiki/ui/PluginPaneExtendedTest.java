@@ -327,7 +327,8 @@ public class PluginPaneExtendedTest {
       "EnvShaper",
       "Phaser",
       "FilM",
-      "Drum Machine"
+      "Drum Machine",
+      "Acid Bass"
     };
     for (String name : builtinNames) {
       ParamList pl =

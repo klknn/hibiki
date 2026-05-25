@@ -46,7 +46,8 @@ public class PluginPane extends JPanel {
           Map.entry("DR8 Cowbell", Dr8CowbellDevicePanel.class),
           Map.entry("DR8 Crash", Dr8CrashDevicePanel.class),
           Map.entry("DR8 Rimshot", Dr8RimshotDevicePanel.class),
-          Map.entry("DR8 Conga", Dr8CongaDevicePanel.class));
+          Map.entry("DR8 Conga", Dr8CongaDevicePanel.class),
+          Map.entry("Acid Bass", AcidBassDevicePanel.class));
 
   private static PluginPane instance;
   private final JPanel deviceChainContent;

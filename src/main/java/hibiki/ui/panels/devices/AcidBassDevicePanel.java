@@ -1,5 +1,6 @@
 package hibiki.ui.panels.devices;
 
+import hibiki.BackendManager;
 import hibiki.ui.PluginPane;
 import hibiki.ui.Theme;
 import java.awt.*;
@@ -13,7 +14,8 @@ import javax.swing.event.ChangeListener;
 /**
  * Custom Swing UI panel for the built-in Acid Bass monophonic synthesizer. Styled after the classic
  * Roland TB-303 silver face, with vertical black partition lines, red glowing LED lights, and
- * custom metal dials with white pointers.
+ * custom metal dials with white pointers. Includes a virtual TB-303 style MIDI keyboard with 12
+ * note trigger indicators and red glowing LEDs.
  */
 public class AcidBassDevicePanel extends AbstractDevicePanel {
   private static final int PARAM_WAVEFORM = 0; // 0.0 = Saw, 1.0 = Square
@@ -24,12 +26,16 @@ public class AcidBassDevicePanel extends AbstractDevicePanel {
   private static final int PARAM_ACCENT = 5; // 0.0 to 1.0
   private static final int PARAM_OVERDRIVE = 6; // 0.0 to 1.0
   private static final int PARAM_VOLUME = 7; // 0.0 to 1.0
-  private static final int TOTAL_PARAMS = 8;
+  private static final int PARAM_TRANSPOSE = 8; // 0.0 to 1.0
+  private static final int PARAM_SLIDE = 9; // 0.0 or 1.0
+  private static final int PARAM_ACCENT_SWITCH = 10; // 0.0 or 1.0
+  private static final int TOTAL_PARAMS = 11;
 
   // Custom visual components
   private final WaveformSelectorPanel waveformSelector;
   private final AcidKnobPanel[] knobs;
   private final LedPanel powerLed;
+  private final MidiKeyboardPanel keyboardPanel;
 
   public AcidBassDevicePanel(int trackIndex, int pluginIndex) {
     super(trackIndex, pluginIndex, TOTAL_PARAMS);
@@ -43,10 +49,13 @@ public class AcidBassDevicePanel extends AbstractDevicePanel {
     params[PARAM_ACCENT] = 0.0;
     params[PARAM_OVERDRIVE] = 0.1;
     params[PARAM_VOLUME] = 0.7;
+    params[PARAM_TRANSPOSE] = 0.5;
+    params[PARAM_SLIDE] = 0.0;
+    params[PARAM_ACCENT_SWITCH] = 0.0;
 
     Theme theme = Theme.getInstance();
     setLayout(new BorderLayout());
-    setPreferredSize(new Dimension(theme.scale(500), theme.scale(160)));
+    setPreferredSize(new Dimension(theme.scale(500), theme.scale(245)));
     setMaximumSize(new Dimension(theme.scale(500), Short.MAX_VALUE));
     setBorder(BorderFactory.createLineBorder(new Color(0x333333)));
 
@@ -149,6 +158,10 @@ public class AcidBassDevicePanel extends AbstractDevicePanel {
     }
     add(body, BorderLayout.CENTER);
 
+    // Initialize keyboard panel
+    keyboardPanel = new MidiKeyboardPanel(theme);
+    add(keyboardPanel, BorderLayout.SOUTH);
+
     // Wire up event listeners AFTER everything is instantiated
     modBtn.addActionListener(
         e -> {
@@ -187,6 +200,12 @@ public class AcidBassDevicePanel extends AbstractDevicePanel {
     params[paramId] = value;
     if (paramId == PARAM_WAVEFORM) {
       waveformSelector.setValue(value);
+    } else if (paramId == PARAM_TRANSPOSE) {
+      keyboardPanel.setTransposeParam(value);
+    } else if (paramId == PARAM_SLIDE) {
+      keyboardPanel.setSlideParam(value);
+    } else if (paramId == PARAM_ACCENT_SWITCH) {
+      keyboardPanel.setAccentParam(value);
     } else {
       int ki = findKnobIndex(paramId);
       if (ki >= 0 && ki < knobs.length && knobs[ki] != null) {
@@ -470,7 +489,42 @@ public class AcidBassDevicePanel extends AbstractDevicePanel {
     }
   }
 
-  // ── Custom Painted Glowing Red LED Panel ───────────────────────
+  // ── Custom Painted Glowing Red LED Helper & Panel ──────────────
+  static void drawLed(Graphics2D g2, int cx, int cy, int size, boolean lit) {
+    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+    // Outer metallic ring
+    g2.setColor(new Color(0x777777));
+    g2.setStroke(new BasicStroke(1.0f));
+    g2.drawOval(cx - size / 2, cy - size / 2, size, size);
+
+    // Core color
+    Color ledColor = lit ? new Color(0xFF3333) : new Color(0x550000);
+    g2.setColor(ledColor);
+    g2.fillOval(cx - size / 2 + 1, cy - size / 2 + 1, size - 2, size - 2);
+
+    // Glow highlight / reflection
+    if (lit) {
+      // Red glow
+      RadialGradientPaint rgp =
+          new RadialGradientPaint(
+              new Point(cx - size / 4, cy - size / 4),
+              size * 0.8f,
+              new float[] {0.0f, 0.4f, 1.0f},
+              new Color[] {
+                new Color(255, 255, 255, 220),
+                new Color(255, 51, 51, 240),
+                new Color(255, 51, 51, 0)
+              });
+      g2.setPaint(rgp);
+      g2.fillOval(cx - size, cy - size, size * 2, size * 2);
+    } else {
+      // Small matte reflection dot
+      g2.setColor(new Color(255, 255, 255, 60));
+      g2.fillOval(cx - size / 3, cy - size / 3, size / 3, size / 3);
+    }
+  }
+
   private static class LedPanel extends JPanel {
     private boolean lit;
     private final int size;
@@ -493,42 +547,410 @@ public class AcidBassDevicePanel extends AbstractDevicePanel {
     protected void paintComponent(Graphics g) {
       super.paintComponent(g);
       Graphics2D g2 = (Graphics2D) g.create();
-      int w = getWidth(), h = getHeight();
-      int cx = w / 2;
-      int cy = h / 2;
+      drawLed(g2, getWidth() / 2, getHeight() / 2, size, lit);
+      g2.dispose();
+    }
+  }
 
+  // ── Custom TB-303 Styled MIDI Keyboard Panel ───────────────────
+  private class MidiKeyboardPanel extends JPanel {
+    private final Theme theme;
+    private final int baseMidiNoteOffset = 24; // base constant offset
+    private int octave = 3; // C3 = note 60 (3 * 12 + 24)
+    private boolean slideEnabled = false;
+    private boolean accentEnabled = false;
+    private int activeMidiNote = -1; // Currently triggered semitone offset [0..11]
+
+    MidiKeyboardPanel(Theme theme) {
+      this.theme = theme;
+      setOpaque(false);
+      setPreferredSize(new Dimension(theme.scale(500), theme.scale(95)));
+
+      // Mouse handler for virtual MIDI triggers and control buttons
+      MouseAdapter mouseHandler =
+          new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+              int mx = e.getX();
+              int my = e.getY();
+
+              int w = getWidth();
+              int spacing = theme.scale(32);
+              int kw = theme.scale(14);
+              int startX = (w - (6 * spacing + kw)) / 2;
+              int keysLeft = startX;
+              int keysRight = startX + 6 * spacing;
+
+              int octD_cx = keysLeft - theme.scale(85);
+              int octD_cy = theme.scale(45);
+              int octU_cx = keysLeft - theme.scale(25);
+              int octU_cy = theme.scale(45);
+
+              int slide_cx = keysRight + theme.scale(30);
+              int slide_cy = theme.scale(48);
+              int accent_cx = keysRight + theme.scale(70);
+              int accent_cy = theme.scale(48);
+
+              // Check control buttons first
+              if (isInsideCircle(mx, my, octD_cx, octD_cy, 9)) {
+                triggerNoteOff();
+                if (octave > 1) {
+                  double newVal = ((octave - 1) - 1) / 4.0;
+                  params[PARAM_TRANSPOSE] = newVal;
+                  sendParam(PARAM_TRANSPOSE, newVal);
+                  octave--;
+                  repaint();
+                }
+                return;
+              }
+              if (isInsideCircle(mx, my, octU_cx, octU_cy, 9)) {
+                triggerNoteOff();
+                if (octave < 5) {
+                  double newVal = ((octave - 1) + 1) / 4.0;
+                  params[PARAM_TRANSPOSE] = newVal;
+                  sendParam(PARAM_TRANSPOSE, newVal);
+                  octave++;
+                  repaint();
+                }
+                return;
+              }
+              if (isInsideCircle(mx, my, slide_cx, slide_cy, 9)) {
+                double newVal = slideEnabled ? 0.0 : 1.0;
+                params[PARAM_SLIDE] = newVal;
+                sendParam(PARAM_SLIDE, newVal);
+                slideEnabled = !slideEnabled;
+                repaint();
+                return;
+              }
+              if (isInsideCircle(mx, my, accent_cx, accent_cy, 9)) {
+                double newVal = accentEnabled ? 0.0 : 1.0;
+                params[PARAM_ACCENT_SWITCH] = newVal;
+                sendParam(PARAM_ACCENT_SWITCH, newVal);
+                accentEnabled = !accentEnabled;
+                repaint();
+                return;
+              }
+
+              // Check keys
+              int note = getNoteAt(mx, my);
+              if (note != -1) {
+                triggerNoteOn(note);
+              }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+              triggerNoteOff();
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+              int mx = e.getX();
+              int my = e.getY();
+              int note = getNoteAt(mx, my);
+              if (note != activeMidiNote) {
+                int prevNote = activeMidiNote;
+                activeMidiNote = note;
+                if (note != -1) {
+                  int baseMidiNote = 3 * 12 + baseMidiNoteOffset;
+                  int vel = accentEnabled ? 127 : 90;
+                  BackendManager.getInstance()
+                      .sendVirtualMidi(trackIndex, baseMidiNote + note, vel, true);
+                }
+                if (prevNote != -1) {
+                  int baseMidiNote = 3 * 12 + baseMidiNoteOffset;
+                  BackendManager.getInstance()
+                      .sendVirtualMidi(trackIndex, baseMidiNote + prevNote, 0, false);
+                }
+                repaint();
+              }
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+              triggerNoteOff();
+            }
+          };
+
+      addMouseListener(mouseHandler);
+      addMouseMotionListener(mouseHandler);
+    }
+
+    private boolean isInsideCircle(int mx, int my, int scaledCx, int scaledCy, int radius) {
+      int scaledR = theme.scale(radius);
+      int dx = mx - scaledCx;
+      int dy = my - scaledCy;
+      return dx * dx + dy * dy <= scaledR * scaledR;
+    }
+
+    void setTransposeParam(double value) {
+      int newOctave = (int) Math.round(value * 4.0) + 1;
+      if (newOctave >= 1 && newOctave <= 5) {
+        this.octave = newOctave;
+        repaint();
+      }
+    }
+
+    void setSlideParam(double value) {
+      this.slideEnabled = value >= 0.5;
+      repaint();
+    }
+
+    void setAccentParam(double value) {
+      this.accentEnabled = value >= 0.5;
+      repaint();
+    }
+
+    private void triggerNoteOn(int note) {
+      activeMidiNote = note;
+      int baseMidiNote = 3 * 12 + baseMidiNoteOffset;
+      int vel = accentEnabled ? 127 : 90;
+      BackendManager.getInstance().sendVirtualMidi(trackIndex, baseMidiNote + note, vel, true);
+      repaint();
+    }
+
+    private void triggerNoteOff() {
+      if (activeMidiNote != -1) {
+        int baseMidiNote = 3 * 12 + baseMidiNoteOffset;
+        BackendManager.getInstance()
+            .sendVirtualMidi(trackIndex, baseMidiNote + activeMidiNote, 0, false);
+        activeMidiNote = -1;
+        repaint();
+      }
+    }
+
+    private int getNoteAt(int mx, int my) {
+      int w = getWidth();
+      int spacing = theme.scale(32);
+      int kw = theme.scale(14);
+      int kh = theme.scale(28);
+      int startX = (w - (6 * spacing + kw)) / 2;
+
+      // Check black keys first (overlapping in front)
+      int[] blackOffsets = {1, 3, 6, 8, 10}; // C#, D#, F#, G#, A#
+      double[] blackXMultiplier = {0.5, 1.5, 3.5, 4.5, 5.5};
+      int blackY = theme.scale(28);
+
+      for (int i = 0; i < blackOffsets.length; i++) {
+        int kx = startX + (int) (blackXMultiplier[i] * spacing);
+        int ky = blackY;
+        int rx = kx - kw / 2;
+        int ry = ky - kh / 2;
+        if (mx >= rx && mx <= rx + kw && my >= ry && my <= ry + kh) {
+          return blackOffsets[i];
+        }
+      }
+
+      // Check white keys
+      int[] whiteOffsets = {0, 2, 4, 5, 7, 9, 11}; // C, D, E, F, G, A, B
+      int whiteY = theme.scale(62);
+
+      for (int i = 0; i < whiteOffsets.length; i++) {
+        int kx = startX + i * spacing;
+        int ky = whiteY;
+        int rx = kx - kw / 2;
+        int ry = ky - kh / 2;
+        if (mx >= rx && mx <= rx + kw && my >= ry && my <= ry + kh) {
+          return whiteOffsets[i];
+        }
+      }
+
+      return -1;
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+      super.paintComponent(g);
+      Graphics2D g2 = (Graphics2D) g.create();
       g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-      // Outer metallic ring
-      g2.setColor(new Color(0x777777));
-      g2.setStroke(new BasicStroke(1.0f));
-      g2.drawOval(cx - size / 2, cy - size / 2, size, size);
+      int w = getWidth(), h = getHeight();
 
-      // Core color
-      Color ledColor = lit ? new Color(0xFF3333) : new Color(0x550000);
-      g2.setColor(ledColor);
-      g2.fillOval(cx - size / 2 + 1, cy - size / 2 + 1, size - 2, size - 2);
+      // Silver keyboard chassis
+      GradientPaint gp = new GradientPaint(0, 0, new Color(0xEAEAEA), 0, h, new Color(0xB5B5B5));
+      g2.setPaint(gp);
+      g2.fillRect(0, 0, w, h);
 
-      // Glow highlight / reflection
-      if (lit) {
-        // Red glow
-        RadialGradientPaint rgp =
-            new RadialGradientPaint(
-                new Point(cx - size / 4, cy - size / 4),
-                size * 0.8f,
-                new float[] {0.0f, 0.4f, 1.0f},
-                new Color[] {
-                  new Color(255, 255, 255, 220),
-                  new Color(255, 51, 51, 240),
-                  new Color(255, 51, 51, 0)
-                });
-        g2.setPaint(rgp);
-        g2.fillOval(cx - size, cy - size, size * 2, size * 2);
-      } else {
-        // Small matte reflection dot
-        g2.setColor(new Color(255, 255, 255, 60));
-        g2.fillOval(cx - size / 3, cy - size / 3, size / 3, size / 3);
+      // Top partition line separating keyboard from knobs
+      g2.setColor(new Color(0x111111));
+      g2.setStroke(new BasicStroke(1.5f));
+      g2.drawLine(0, 0, w, 0);
+
+      int spacing = theme.scale(32);
+      int kw = theme.scale(14);
+      int kh = theme.scale(28);
+      int ledSize = theme.scale(5);
+      int startX = (w - (6 * spacing + kw)) / 2;
+      int keysLeft = startX;
+      int keysRight = startX + 6 * spacing;
+
+      // ─── Render Left Transpose Octave Section ───
+      g2.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(8.0f)));
+      g2.setColor(new Color(0x222222));
+      FontMetrics fmBold = g2.getFontMetrics();
+      g2.drawString("OCTAVE", (keysLeft - theme.scale(55)) - fmBold.stringWidth("OCTAVE") / 2, theme.scale(20));
+
+      // Octave Down Button (◀)
+      int octD_cx = keysLeft - theme.scale(85), octD_cy = theme.scale(45), r = theme.scale(9);
+      GradientPaint btnGradOct =
+          new GradientPaint(
+              octD_cx - r,
+              octD_cy - r,
+              new Color(0xEEEEEE),
+              octD_cx + r,
+              octD_cy + r,
+              new Color(0xCCCCCC));
+      g2.setPaint(btnGradOct);
+      g2.fillOval(octD_cx - r, octD_cy - r, r * 2, r * 2);
+      g2.setColor(new Color(0x333333));
+      g2.drawOval(octD_cx - r, octD_cy - r, r * 2, r * 2);
+      // Draw left arrow
+      g2.setColor(new Color(0x111111));
+      int[] xPointsL = {
+        octD_cx + theme.scale(3), octD_cx + theme.scale(3), octD_cx - theme.scale(3)
+      };
+      int[] yPointsL = {octD_cy - theme.scale(4), octD_cy + theme.scale(4), octD_cy};
+      g2.fillPolygon(xPointsL, yPointsL, 3);
+
+      // Octave Up Button (▶)
+      int octU_cx = keysLeft - theme.scale(25), octU_cy = theme.scale(45);
+      g2.setPaint(btnGradOct);
+      g2.fillOval(octU_cx - r, octU_cy - r, r * 2, r * 2);
+      g2.setColor(new Color(0x333333));
+      g2.drawOval(octU_cx - r, octU_cy - r, r * 2, r * 2);
+      // Draw right arrow
+      g2.setColor(new Color(0x111111));
+      int[] xPointsR = {
+        octU_cx - theme.scale(3), octU_cx - theme.scale(3), octU_cx + theme.scale(3)
+      };
+      int[] yPointsR = {octU_cy - theme.scale(4), octU_cy + theme.scale(4), octU_cy};
+      g2.fillPolygon(xPointsR, yPointsR, 3);
+
+      // Display Box for current Octave
+      int dispX = keysLeft - theme.scale(68),
+          dispY = theme.scale(66),
+          dispW = theme.scale(36),
+          dispH = theme.scale(16);
+      g2.setColor(new Color(0x222222));
+      g2.fillRoundRect(dispX, dispY, dispW, dispH, theme.scale(3), theme.scale(3));
+      g2.setColor(new Color(0xFF3333)); // Red glowing digital look
+      g2.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(8.0f)));
+      String octStr = "C" + octave;
+      FontMetrics fmDisp = g2.getFontMetrics();
+      g2.drawString(
+          octStr, dispX + (dispW - fmDisp.stringWidth(octStr)) / 2, dispY + theme.scale(11));
+
+      // ─── Render Keys ───
+      // 1. Black keys (upper row)
+      int[] blackOffsets = {1, 3, 6, 8, 10}; // C#, D#, F#, G#, A#
+      double[] blackXMultiplier = {0.5, 1.5, 3.5, 4.5, 5.5};
+      String[] blackNames = {"C#", "D#", "F#", "G#", "A#"};
+      int blackY = theme.scale(28);
+
+      for (int i = 0; i < blackOffsets.length; i++) {
+        int note = blackOffsets[i];
+        int kx = startX + (int) (blackXMultiplier[i] * spacing);
+        int ky = blackY;
+        boolean isLit = (activeMidiNote == note);
+
+        // LED trigger indicator placed vertically on top of key
+        drawLed(g2, kx, ky - kh / 2 - theme.scale(8), ledSize, isLit);
+
+        // Black surrounding box on the chassis
+        int boxW = kw + theme.scale(6);
+        int boxH = kh + theme.scale(6);
+        int bx = kx - boxW / 2;
+        int by = ky - boxH / 2;
+        g2.setColor(new Color(0x0E0E0E));
+        g2.fillRoundRect(bx, by, boxW, boxH, theme.scale(3), theme.scale(3));
+        g2.setColor(new Color(0x444444));
+        g2.setStroke(new BasicStroke(1.0f));
+        g2.drawRoundRect(bx, by, boxW, boxH, theme.scale(3), theme.scale(3));
+
+        // Rectangular silver key button
+        int rx = kx - kw / 2;
+        int ry = ky - kh / 2;
+        GradientPaint btnGrad =
+            isLit
+                ? new GradientPaint(rx, ry, new Color(0xDDDDDD), rx, ry + kh, new Color(0x999999))
+                : new GradientPaint(rx, ry, new Color(0xFAFAFA), rx, ry + kh, new Color(0xCCCCCC));
+        g2.setPaint(btnGrad);
+        g2.fillRoundRect(rx, ry, kw, kh, theme.scale(2), theme.scale(2));
+        g2.setColor(new Color(0x333333));
+        g2.setStroke(new BasicStroke(1.0f));
+        g2.drawRoundRect(rx, ry, kw, kh, theme.scale(2), theme.scale(2));
+
+        // Key labels
+        g2.setFont(theme.FONT_UI.deriveFont(theme.scale(7.0f)));
+        g2.setColor(new Color(0x333333));
+        FontMetrics fm = g2.getFontMetrics();
+        g2.drawString(
+            blackNames[i], kx - fm.stringWidth(blackNames[i]) / 2, ky + kh / 2 + theme.scale(10));
       }
+
+      // 2. White keys (lower row)
+      int[] whiteOffsets = {0, 2, 4, 5, 7, 9, 11}; // C, D, E, F, G, A, B
+      String[] whiteNames = {"C", "D", "E", "F", "G", "A", "B"};
+      int whiteY = theme.scale(62);
+
+      for (int i = 0; i < whiteOffsets.length; i++) {
+        int note = whiteOffsets[i];
+        int kx = startX + i * spacing;
+        int ky = whiteY;
+        boolean isLit = (activeMidiNote == note);
+
+        // LED trigger indicator placed vertically on top of key
+        drawLed(g2, kx, ky - kh / 2 - theme.scale(8), ledSize, isLit);
+
+        // Rectangular silver key button
+        int rx = kx - kw / 2;
+        int ry = ky - kh / 2;
+        GradientPaint btnGrad =
+            isLit
+                ? new GradientPaint(rx, ry, new Color(0xDDDDDD), rx, ry + kh, new Color(0x999999))
+                : new GradientPaint(rx, ry, new Color(0xFAFAFA), rx, ry + kh, new Color(0xCCCCCC));
+        g2.setPaint(btnGrad);
+        g2.fillRoundRect(rx, ry, kw, kh, theme.scale(2), theme.scale(2));
+        g2.setColor(new Color(0x555555));
+        g2.setStroke(new BasicStroke(1.0f));
+        g2.drawRoundRect(rx, ry, kw, kh, theme.scale(2), theme.scale(2));
+
+        // Key labels
+        g2.setFont(theme.FONT_UI.deriveFont(theme.scale(7.0f)));
+        g2.setColor(new Color(0x333333));
+        FontMetrics fm = g2.getFontMetrics();
+        g2.drawString(
+            whiteNames[i], kx - fm.stringWidth(whiteNames[i]) / 2, ky + kh / 2 + theme.scale(10));
+      }
+
+      // ─── Render Right Slide/Accent Buttons Section ───
+      // Slide Button
+      int slide_cx = keysRight + theme.scale(30), slide_cy = theme.scale(48);
+      drawLed(g2, slide_cx, slide_cy - theme.scale(24), ledSize, slideEnabled);
+      g2.setPaint(btnGradOct);
+      g2.fillOval(slide_cx - r, slide_cy - r, r * 2, r * 2);
+      g2.setColor(new Color(0x333333));
+      g2.drawOval(slide_cx - r, slide_cy - r, r * 2, r * 2);
+      g2.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(7.5f)));
+      g2.setColor(new Color(0x222222));
+      g2.drawString(
+          "SLIDE",
+          slide_cx - fmBold.stringWidth("SLIDE") / 2 + theme.scale(2),
+          slide_cy + r + theme.scale(10));
+
+      // Accent Button
+      int accent_cx = keysRight + theme.scale(70), accent_cy = theme.scale(48);
+      drawLed(g2, accent_cx, accent_cy - theme.scale(24), ledSize, accentEnabled);
+      g2.setPaint(btnGradOct);
+      g2.fillOval(accent_cx - r, accent_cy - r, r * 2, r * 2);
+      g2.setColor(new Color(0x333333));
+      g2.drawOval(accent_cx - r, accent_cy - r, r * 2, r * 2);
+      g2.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(7.5f)));
+      g2.setColor(new Color(0x222222));
+      g2.drawString(
+          "ACCENT",
+          accent_cx - fmBold.stringWidth("ACCENT") / 2 + theme.scale(2),
+          accent_cy + r + theme.scale(10));
 
       g2.dispose();
     }

@@ -18,7 +18,7 @@ namespace hibiki {
  */
 class BuiltinAcidBass : public IPlugin {
  public:
-  static constexpr int kTotalParams = 8;
+  static constexpr int kTotalParams = 11;
   static constexpr const char* kPath = "builtin://acid_bass";
   static constexpr const char* kName = "Acid Bass";
 
@@ -31,6 +31,9 @@ class BuiltinAcidBass : public IPlugin {
     PARAM_ACCENT = 5,     ///< Accent level (0.0 to 1.0)
     PARAM_OVERDRIVE = 6,  ///< Post-filter distortion (0.0 to 1.0)
     PARAM_VOLUME = 7,     ///< Master output volume (0.0 to 1.0)
+    PARAM_TRANSPOSE = 8,  ///< Octave transpose (-2 to +2 octaves)
+    PARAM_SLIDE = 9,      ///< Slide switch (0.0 = Off, 1.0 = On)
+    PARAM_ACCENT_SWITCH = 10, ///< Accent switch (0.0 = Off, 1.0 = On)
   };
 
   /**

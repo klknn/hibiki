@@ -42,7 +42,7 @@ class MidiInputWinMM : public MidiInput {
         }
       }
       if (handles_.empty()) {
-        LOG(ERROR) << "No MIDI devices available";
+        LOG_FIRST_N(INFO, 1) << "No MIDI devices available";
         return false;
       }
       // Set handle_ to first for close() compatibility

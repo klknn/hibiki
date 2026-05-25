@@ -5,6 +5,7 @@
 
 set -euo pipefail
 
+PATH=$JAVA_HOME/bin:$PATH
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 TOOLS_DIR="$REPO_ROOT/tools"
 CHECK_MODE=false

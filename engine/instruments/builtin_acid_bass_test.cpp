@@ -18,11 +18,34 @@ TEST_F(BuiltinAcidBassTest, MetadataAndParams) {
   EXPECT_EQ(plugin.getName(), "Acid Bass");
   EXPECT_EQ(plugin.getPath(), "builtin://acid_bass");
   EXPECT_TRUE(plugin.isInstrument());
-  EXPECT_EQ(plugin.getParameterCount(), 8);
+  EXPECT_EQ(plugin.getParameterCount(), 11);
 
   VstParamInfo info;
   EXPECT_TRUE(plugin.getParameterInfo(0, info));
   EXPECT_EQ(info.name, "Waveform");
+
+  EXPECT_TRUE(plugin.getParameterInfo(8, info));
+  EXPECT_EQ(info.name, "Transpose");
+
+  EXPECT_TRUE(plugin.getParameterInfo(9, info));
+  EXPECT_EQ(info.name, "Slide");
+
+  EXPECT_TRUE(plugin.getParameterInfo(10, info));
+  EXPECT_EQ(info.name, "Accent Switch");
+}
+
+TEST_F(BuiltinAcidBassTest, TransposeAndSlideParameters) {
+  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_TRANSPOSE), 0.5f);
+  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_SLIDE), 0.0f);
+  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_ACCENT_SWITCH), 0.0f);
+
+  plugin.setParameterValue(BuiltinAcidBass::PARAM_TRANSPOSE, 0.75);
+  plugin.setParameterValue(BuiltinAcidBass::PARAM_SLIDE, 1.0);
+  plugin.setParameterValue(BuiltinAcidBass::PARAM_ACCENT_SWITCH, 1.0);
+
+  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_TRANSPOSE), 0.75f);
+  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_SLIDE), 1.0f);
+  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_ACCENT_SWITCH), 1.0f);
 }
 
 TEST_F(BuiltinAcidBassTest, NoteOnNoteOffCycle) {

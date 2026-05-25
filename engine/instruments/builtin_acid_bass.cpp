@@ -71,6 +71,9 @@ BuiltinAcidBass::BuiltinAcidBass() : impl_(std::make_unique<Impl>()) {
   impl_->params[PARAM_ACCENT] = 0.0;     // no accent
   impl_->params[PARAM_OVERDRIVE] = 0.1;  // light overdrive
   impl_->params[PARAM_VOLUME] = 0.7;     // output volume
+  impl_->params[PARAM_TRANSPOSE] = 0.5;   // 0 octaves (middle)
+  impl_->params[PARAM_SLIDE] = 0.0;       // Slide off
+  impl_->params[PARAM_ACCENT_SWITCH] = 0.0; // Accent switch off
 
   impl_->reset();
 }
@@ -101,33 +104,44 @@ void BuiltinAcidBass::process(float** /*inputs*/, float** outputs,
                               float** /*sidechain*/) {
   impl_->sample_rate = context.sampleRate;
 
+  double transpose_val = impl_->params[PARAM_TRANSPOSE];
+  int transpose_octaves = (int)std::round(transpose_val * 4.0) - 2;
+  int transpose_semitones = transpose_octaves * 12;
+
   // Process MIDI events
   for (const auto& ev : events) {
+    int pitch = std::clamp(ev.pitch + transpose_semitones, 0, 127);
     if (ev.isNoteOn && ev.velocity > 0) {
       // Monophonic stack logic
       auto it = std::find(impl_->note_stack.begin(), impl_->note_stack.end(),
-                          ev.pitch);
+                          pitch);
       if (it != impl_->note_stack.end()) {
         impl_->note_stack.erase(it);
       }
-      impl_->note_stack.push_back(ev.pitch);
+      impl_->note_stack.push_back(pitch);
 
-      double note_freq = 440.0 * std::pow(2.0, (ev.pitch - 69.0) / 12.0);
+      double note_freq = 440.0 * std::pow(2.0, (pitch - 69.0) / 12.0);
       impl_->target_freq = note_freq;
-      impl_->current_pitch = ev.pitch;
+      impl_->current_pitch = pitch;
 
       // Retrigger envelope only if it's the first note in stack
       if (impl_->note_stack.size() == 1) {
         impl_->current_freq = note_freq;
         impl_->env_val = 1.0;
         impl_->note_active = true;
+      } else {
+        // Legato transition: if Slide is OFF, set current_freq instantly!
+        bool slide_on = impl_->params[PARAM_SLIDE] >= 0.5;
+        if (!slide_on) {
+          impl_->current_freq = note_freq;
+        }
       }
       impl_->accent_active =
-          (ev.velocity > 0.8f);  // High velocity activates accent
+          (ev.velocity > 0.8f) || (impl_->params[PARAM_ACCENT_SWITCH] >= 0.5);
     } else {
       // Note Off
       auto it = std::find(impl_->note_stack.begin(), impl_->note_stack.end(),
-                          ev.pitch);
+                          pitch);
       if (it != impl_->note_stack.end()) {
         impl_->note_stack.erase(it);
       }
@@ -135,13 +149,30 @@ void BuiltinAcidBass::process(float** /*inputs*/, float** outputs,
       if (impl_->note_stack.empty()) {
         impl_->note_active = false;
         impl_->current_pitch = -1;
+        impl_->accent_active = false;
       } else {
         // Legato switch to previous note in stack
         int prev_pitch = impl_->note_stack.back();
-        impl_->target_freq = 440.0 * std::pow(2.0, (prev_pitch - 69.0) / 12.0);
+        double note_freq = 440.0 * std::pow(2.0, (prev_pitch - 69.0) / 12.0);
+        impl_->target_freq = note_freq;
         impl_->current_pitch = prev_pitch;
+
+        // If Slide is OFF, set current_freq instantly!
+        bool slide_on = impl_->params[PARAM_SLIDE] >= 0.5;
+        if (!slide_on) {
+          impl_->current_freq = note_freq;
+        }
       }
     }
+  }
+
+  // Sync real-time accent override switch
+  if (impl_->note_active) {
+    if (impl_->params[PARAM_ACCENT_SWITCH] >= 0.5) {
+      impl_->accent_active = true;
+    }
+  } else {
+    impl_->accent_active = false;
   }
 
   float* out_l = outputs[0];
@@ -185,8 +216,13 @@ void BuiltinAcidBass::process(float** /*inputs*/, float** outputs,
   for (int i = 0; i < num_samples; ++i) {
     // Smooth glide frequency
     if (impl_->note_active) {
-      impl_->current_freq +=
-          (impl_->target_freq - impl_->current_freq) * glide_coeff;
+      bool slide_on = impl_->params[PARAM_SLIDE] >= 0.5;
+      if (slide_on) {
+        impl_->current_freq +=
+            (impl_->target_freq - impl_->current_freq) * glide_coeff;
+      } else {
+        impl_->current_freq = impl_->target_freq;
+      }
     }
 
     double freq = impl_->current_freq;
@@ -288,8 +324,10 @@ int BuiltinAcidBass::getParameterCount() const { return kTotalParams; }
 bool BuiltinAcidBass::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
   static const char* names[] = {"Waveform", "Cutoff", "Resonance", "Env Mod",
-                                "Decay",    "Accent", "Overdrive", "Volume"};
-  static const double defaults[] = {0.0, 0.3, 0.6, 0.5, 0.2, 0.0, 0.1, 0.7};
+                                "Decay",    "Accent", "Overdrive", "Volume",
+                                "Transpose", "Slide", "Accent Switch"};
+  static const double defaults[] = {0.0, 0.3, 0.6, 0.5, 0.2, 0.0, 0.1, 0.7,
+                                    0.5, 0.0, 0.0};
   info.id = index;
   info.name = names[index];
   info.defaultValue = defaults[index];

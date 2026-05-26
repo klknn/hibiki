@@ -1,6 +1,7 @@
 #include <google/protobuf/text_format.h>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -122,7 +123,30 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
       break;
     }
     case pb::commands::ProjectCmd::ACTION_SET_BPM: {
-      state.bpm = cmd.bpm();
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      double old_bpm = state.bpm;
+      double new_bpm = cmd.bpm();
+      if (new_bpm > 0 && !std::isnan(old_bpm) && old_bpm > 0 && old_bpm != new_bpm) {
+        state.bpm = new_bpm;
+        double scale = old_bpm / new_bpm;
+        for (auto& [tidx, track] : state.tracks) {
+          for (auto& tc : track->timeline_clips) {
+            tc->start_time_sec *= scale;
+          }
+          for (auto& lane : track->automation_lanes) {
+            for (auto& tc : lane.clips) {
+              tc->start_time_sec *= scale;
+            }
+          }
+        }
+        state.playhead_pos_sec *= scale;
+        state.record_start_sec *= scale;
+        state.loop_start_sec *= scale;
+        state.loop_end_sec *= scale;
+        SyncProjectToGui(state);
+      } else if (new_bpm > 0) {
+        state.bpm = new_bpm;
+      }
       sendAck("SET_BPM", true);
       break;
     }

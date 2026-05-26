@@ -22,12 +22,47 @@ class CommandsTest : public ::testing::Test {
 // ─── Project commands ───────────────────────────────────────────────
 
 TEST_F(CommandsTest, SetBpm) {
+  // Create a track with timeline clip and automation clip
+  auto track = hibiki::GetOrCreateTrack(state, 0);
+  track->AddTimelineClip("", 2.0, state.bpm, 4.0, state.sample_rate);
+
+  // Add an automation lane and clip
+  hibiki::pb::commands::AutomationCmd add_lane;
+  add_lane.set_action(hibiki::pb::commands::AutomationCmd::ACTION_ADD_LANE);
+  add_lane.mutable_target()->set_track_index(0);
+  add_lane.mutable_target()->set_plugin_index(0);
+  add_lane.set_param_id(1);
+  hibiki::handleAutomationCmd(add_lane, state, history);
+
+  hibiki::pb::commands::AutomationCmd add_clip;
+  add_clip.set_action(hibiki::pb::commands::AutomationCmd::ACTION_ADD_CLIP);
+  add_clip.mutable_target()->set_track_index(0);
+  add_clip.mutable_target()->set_lane_index(0);
+  add_clip.set_start_time_sec(3.0);
+  add_clip.set_duration_beats(2.0);
+  hibiki::handleAutomationCmd(add_clip, state, history);
+
+  // Set transport parameters
+  state.playhead_pos_sec = 4.0;
+  state.loop_start_sec = 1.0;
+  state.loop_end_sec = 5.0;
+
   hibiki::pb::commands::ProjectCmd cmd;
   cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_SET_BPM);
-  cmd.set_bpm(140.0f);
+  cmd.set_bpm(60.0f); // 120 -> 60 (factor of 2.0)
 
   hibiki::handleProjectCmd(cmd, state, history);
-  EXPECT_FLOAT_EQ(state.bpm, 140.0f);
+  EXPECT_FLOAT_EQ(state.bpm, 60.0f);
+
+  // Verify that all positions/times are scaled by old_bpm/new_bpm = 120/60 = 2.0
+  EXPECT_DOUBLE_EQ(track->timeline_clips[0]->start_time_sec, 4.0);
+  ASSERT_EQ(track->automation_lanes.size(), 1u);
+  ASSERT_EQ(track->automation_lanes[0].clips.size(), 1u);
+  EXPECT_DOUBLE_EQ(track->automation_lanes[0].clips[0]->start_time_sec, 6.0);
+
+  EXPECT_DOUBLE_EQ(state.playhead_pos_sec, 8.0);
+  EXPECT_DOUBLE_EQ(state.loop_start_sec, 2.0);
+  EXPECT_DOUBLE_EQ(state.loop_end_sec, 10.0);
 }
 
 TEST_F(CommandsTest, Quit) {

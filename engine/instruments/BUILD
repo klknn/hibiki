@@ -144,6 +144,19 @@ cc_library(
 )
 
 cc_library(
+    name = "builtin_epiano",
+    srcs = ["builtin_epiano.cpp"],
+    hdrs = [
+        "builtin_epiano.hpp",
+        "builtin_epiano_data.h",
+    ],
+    deps = [
+        "//engine/core:math",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+cc_library(
     name = "builtin_sampler",
     srcs = ["builtin_sampler.cpp"],
     hdrs = ["builtin_sampler.hpp"],
@@ -184,6 +197,7 @@ cc_library(
         ":builtin_dr8_rim",
         ":builtin_dr8_snare",
         ":builtin_dr8_tom",
+        ":builtin_epiano",
         ":builtin_film",
         ":builtin_organ",
         ":builtin_sampler",
@@ -224,6 +238,7 @@ cc_library(
         ":builtin_dr8_snare",
         ":builtin_dr8_tom",
         ":builtin_drum_machine",
+        ":builtin_epiano",
         ":builtin_film",
         ":builtin_organ",
         ":builtin_sampler",
@@ -394,6 +409,16 @@ cc_test(
     linkstatic = True,
     deps = [
         ":builtin_dr8_conga",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_epiano_test",
+    srcs = ["builtin_epiano_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_epiano",
         "@googletest//:gtest_main",
     ],
 )

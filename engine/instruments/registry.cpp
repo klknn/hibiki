@@ -11,6 +11,7 @@
 #include "engine/instruments/builtin_dr8_rim.hpp"
 #include "engine/instruments/builtin_dr8_snare.hpp"
 #include "engine/instruments/builtin_dr8_tom.hpp"
+#include "engine/instruments/builtin_epiano.hpp"
 #include "engine/instruments/builtin_film.hpp"
 #include "engine/instruments/builtin_organ.hpp"
 #include "engine/instruments/builtin_sampler.hpp"
@@ -42,6 +43,8 @@ std::unique_ptr<IPlugin> createBuiltinInstrument(const std::string& path) {
     return std::make_unique<BuiltinDr8Conga>();
   } else if (path == BuiltinOrgan::kPath) {
     return std::make_unique<BuiltinOrgan>();
+  } else if (path == BuiltinEPiano::kPath) {
+    return std::make_unique<BuiltinEPiano>();
   } else if (path == BuiltinSampler::kPath) {
     return std::make_unique<BuiltinSampler>();
   } else if (path.rfind(BuiltinFilm::kPath, 0) == 0) {

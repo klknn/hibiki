@@ -391,6 +391,11 @@ public class BrowserPane extends JPanel {
     organItem.rawPath = "builtin://organ";
     builtinNode.add(new DefaultMutableTreeNode(organItem));
 
+    FileItem epianoItem =
+        new FileItem(new File("builtin"), "builtin", "Electric Piano", "Hibiki", 0);
+    epianoItem.rawPath = "builtin://epiano";
+    builtinNode.add(new DefaultMutableTreeNode(epianoItem));
+
     FileItem dr8KickItem = new FileItem(new File("builtin"), "builtin", "DR8 Kick", "Hibiki", 0);
     dr8KickItem.rawPath = "builtin://dr8_kick";
     builtinNode.add(new DefaultMutableTreeNode(dr8KickItem));

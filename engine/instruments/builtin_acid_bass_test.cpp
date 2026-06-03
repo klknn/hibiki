@@ -35,17 +35,21 @@ TEST_F(BuiltinAcidBassTest, MetadataAndParams) {
 }
 
 TEST_F(BuiltinAcidBassTest, TransposeAndSlideParameters) {
-  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_TRANSPOSE), 0.5f);
+  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_TRANSPOSE),
+                  0.5f);
   EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_SLIDE), 0.0f);
-  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_ACCENT_SWITCH), 0.0f);
+  EXPECT_FLOAT_EQ(
+      plugin.getParameterValue(BuiltinAcidBass::PARAM_ACCENT_SWITCH), 0.0f);
 
   plugin.setParameterValue(BuiltinAcidBass::PARAM_TRANSPOSE, 0.75);
   plugin.setParameterValue(BuiltinAcidBass::PARAM_SLIDE, 1.0);
   plugin.setParameterValue(BuiltinAcidBass::PARAM_ACCENT_SWITCH, 1.0);
 
-  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_TRANSPOSE), 0.75f);
+  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_TRANSPOSE),
+                  0.75f);
   EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_SLIDE), 1.0f);
-  EXPECT_FLOAT_EQ(plugin.getParameterValue(BuiltinAcidBass::PARAM_ACCENT_SWITCH), 1.0f);
+  EXPECT_FLOAT_EQ(
+      plugin.getParameterValue(BuiltinAcidBass::PARAM_ACCENT_SWITCH), 1.0f);
 }
 
 TEST_F(BuiltinAcidBassTest, NoteOnNoteOffCycle) {

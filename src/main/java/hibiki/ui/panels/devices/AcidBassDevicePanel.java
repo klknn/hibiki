@@ -788,7 +788,10 @@ public class AcidBassDevicePanel extends AbstractDevicePanel {
       g2.setFont(theme.FONT_UI_BOLD.deriveFont(theme.scale(8.0f)));
       g2.setColor(new Color(0x222222));
       FontMetrics fmBold = g2.getFontMetrics();
-      g2.drawString("OCTAVE", (keysLeft - theme.scale(55)) - fmBold.stringWidth("OCTAVE") / 2, theme.scale(20));
+      g2.drawString(
+          "OCTAVE",
+          (keysLeft - theme.scale(55)) - fmBold.stringWidth("OCTAVE") / 2,
+          theme.scale(20));
 
       // Octave Down Button (◀)
       int octD_cx = keysLeft - theme.scale(85), octD_cy = theme.scale(45), r = theme.scale(9);

@@ -49,12 +49,13 @@ TEST_F(CommandsTest, SetBpm) {
 
   hibiki::pb::commands::ProjectCmd cmd;
   cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_SET_BPM);
-  cmd.set_bpm(60.0f); // 120 -> 60 (factor of 2.0)
+  cmd.set_bpm(60.0f);  // 120 -> 60 (factor of 2.0)
 
   hibiki::handleProjectCmd(cmd, state, history);
   EXPECT_FLOAT_EQ(state.bpm, 60.0f);
 
-  // Verify that all positions/times are scaled by old_bpm/new_bpm = 120/60 = 2.0
+  // Verify that all positions/times are scaled by old_bpm/new_bpm = 120/60
+  // = 2.0
   EXPECT_DOUBLE_EQ(track->timeline_clips[0]->start_time_sec, 4.0);
   ASSERT_EQ(track->automation_lanes.size(), 1u);
   ASSERT_EQ(track->automation_lanes[0].clips.size(), 1u);

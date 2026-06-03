@@ -33,7 +33,7 @@ class BuiltinAcidBass : public IPlugin {
     PARAM_VOLUME = 7,     ///< Master output volume (0.0 to 1.0)
     PARAM_TRANSPOSE = 8,  ///< Octave transpose (-2 to +2 octaves)
     PARAM_SLIDE = 9,      ///< Slide switch (0.0 = Off, 1.0 = On)
-    PARAM_ACCENT_SWITCH = 10, ///< Accent switch (0.0 = Off, 1.0 = On)
+    PARAM_ACCENT_SWITCH = 10,  ///< Accent switch (0.0 = Off, 1.0 = On)
   };
 
   /**

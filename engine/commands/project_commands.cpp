@@ -126,7 +126,8 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       double old_bpm = state.bpm;
       double new_bpm = cmd.bpm();
-      if (new_bpm > 0 && !std::isnan(old_bpm) && old_bpm > 0 && old_bpm != new_bpm) {
+      if (new_bpm > 0 && !std::isnan(old_bpm) && old_bpm > 0 &&
+          old_bpm != new_bpm) {
         state.bpm = new_bpm;
         double scale = old_bpm / new_bpm;
         for (auto& [tidx, track] : state.tracks) {

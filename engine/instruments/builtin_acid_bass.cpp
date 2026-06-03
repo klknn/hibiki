@@ -63,17 +63,17 @@ struct BuiltinAcidBass::Impl {
 };
 
 BuiltinAcidBass::BuiltinAcidBass() : impl_(std::make_unique<Impl>()) {
-  impl_->params[PARAM_WAVEFORM] = 0.0;   // Sawtooth default
-  impl_->params[PARAM_CUTOFF] = 0.3;     // moderate cutoff
-  impl_->params[PARAM_RESONANCE] = 0.6;  // high resonance
-  impl_->params[PARAM_ENV_MOD] = 0.5;    // env mod amount
-  impl_->params[PARAM_DECAY] = 0.2;      // moderate decay
-  impl_->params[PARAM_ACCENT] = 0.0;     // no accent
-  impl_->params[PARAM_OVERDRIVE] = 0.1;  // light overdrive
-  impl_->params[PARAM_VOLUME] = 0.7;     // output volume
-  impl_->params[PARAM_TRANSPOSE] = 0.5;   // 0 octaves (middle)
-  impl_->params[PARAM_SLIDE] = 0.0;       // Slide off
-  impl_->params[PARAM_ACCENT_SWITCH] = 0.0; // Accent switch off
+  impl_->params[PARAM_WAVEFORM] = 0.0;       // Sawtooth default
+  impl_->params[PARAM_CUTOFF] = 0.3;         // moderate cutoff
+  impl_->params[PARAM_RESONANCE] = 0.6;      // high resonance
+  impl_->params[PARAM_ENV_MOD] = 0.5;        // env mod amount
+  impl_->params[PARAM_DECAY] = 0.2;          // moderate decay
+  impl_->params[PARAM_ACCENT] = 0.0;         // no accent
+  impl_->params[PARAM_OVERDRIVE] = 0.1;      // light overdrive
+  impl_->params[PARAM_VOLUME] = 0.7;         // output volume
+  impl_->params[PARAM_TRANSPOSE] = 0.5;      // 0 octaves (middle)
+  impl_->params[PARAM_SLIDE] = 0.0;          // Slide off
+  impl_->params[PARAM_ACCENT_SWITCH] = 0.0;  // Accent switch off
 
   impl_->reset();
 }
@@ -113,8 +113,8 @@ void BuiltinAcidBass::process(float** /*inputs*/, float** outputs,
     int pitch = std::clamp(ev.pitch + transpose_semitones, 0, 127);
     if (ev.isNoteOn && ev.velocity > 0) {
       // Monophonic stack logic
-      auto it = std::find(impl_->note_stack.begin(), impl_->note_stack.end(),
-                          pitch);
+      auto it =
+          std::find(impl_->note_stack.begin(), impl_->note_stack.end(), pitch);
       if (it != impl_->note_stack.end()) {
         impl_->note_stack.erase(it);
       }
@@ -140,8 +140,8 @@ void BuiltinAcidBass::process(float** /*inputs*/, float** outputs,
           (ev.velocity > 0.8f) || (impl_->params[PARAM_ACCENT_SWITCH] >= 0.5);
     } else {
       // Note Off
-      auto it = std::find(impl_->note_stack.begin(), impl_->note_stack.end(),
-                          pitch);
+      auto it =
+          std::find(impl_->note_stack.begin(), impl_->note_stack.end(), pitch);
       if (it != impl_->note_stack.end()) {
         impl_->note_stack.erase(it);
       }
@@ -323,11 +323,11 @@ int BuiltinAcidBass::getParameterCount() const { return kTotalParams; }
 
 bool BuiltinAcidBass::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
-  static const char* names[] = {"Waveform", "Cutoff", "Resonance", "Env Mod",
-                                "Decay",    "Accent", "Overdrive", "Volume",
-                                "Transpose", "Slide", "Accent Switch"};
-  static const double defaults[] = {0.0, 0.3, 0.6, 0.5, 0.2, 0.0, 0.1, 0.7,
-                                    0.5, 0.0, 0.0};
+  static const char* names[] = {
+      "Waveform",  "Cutoff", "Resonance", "Env Mod", "Decay",        "Accent",
+      "Overdrive", "Volume", "Transpose", "Slide",   "Accent Switch"};
+  static const double defaults[] = {0.0, 0.3, 0.6, 0.5, 0.2, 0.0,
+                                    0.1, 0.7, 0.5, 0.0, 0.0};
   info.id = index;
   info.name = names[index];
   info.defaultValue = defaults[index];

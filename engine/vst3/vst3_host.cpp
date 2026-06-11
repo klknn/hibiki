@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -593,4 +594,114 @@ std::vector<PluginDescription> Vst3Plugin::listPluginsIsolated(
             << path;
   return plugins;
 }
+
+bool Vst3Plugin::getState(std::vector<uint8_t>& state) const {
+  if (!impl || !impl->component) {
+    return false;
+  }
+
+  // 1. Get processor state
+  Steinberg::MemoryStream compStream;
+  if (impl->component->getState(&compStream) != Steinberg::kResultTrue) {
+    return false;
+  }
+
+  // 2. Get controller state (optional)
+  Steinberg::MemoryStream ctrlStream;
+  bool hasCtrlState = false;
+  if (impl->controller) {
+    if (impl->controller->getState(&ctrlStream) == Steinberg::kResultTrue) {
+      hasCtrlState = true;
+    }
+  }
+
+  int32_t compSize = static_cast<int32_t>(compStream.getSize());
+  int32_t ctrlSize =
+      hasCtrlState ? static_cast<int32_t>(ctrlStream.getSize()) : 0;
+
+  state.resize(sizeof(int32_t) * 2 + compSize + ctrlSize);
+
+  uint8_t* ptr = state.data();
+  std::memcpy(ptr, &compSize, sizeof(int32_t));
+  ptr += sizeof(int32_t);
+
+  if (compSize > 0) {
+    std::memcpy(ptr, compStream.getData(), compSize);
+    ptr += compSize;
+  }
+
+  std::memcpy(ptr, &ctrlSize, sizeof(int32_t));
+  ptr += sizeof(int32_t);
+
+  if (ctrlSize > 0) {
+    std::memcpy(ptr, ctrlStream.getData(), ctrlSize);
+  }
+
+  return true;
+}
+
+bool Vst3Plugin::setState(const std::vector<uint8_t>& state) {
+  if (!impl || !impl->component) {
+    return false;
+  }
+
+  if (state.size() < sizeof(int32_t) * 2) {
+    return false;
+  }
+
+  const uint8_t* ptr = state.data();
+  int32_t compSize = 0;
+  std::memcpy(&compSize, ptr, sizeof(int32_t));
+  ptr += sizeof(int32_t);
+
+  if (compSize < 0 || ptr + compSize > state.data() + state.size()) {
+    return false;
+  }
+
+  const uint8_t* compData = ptr;
+  ptr += compSize;
+
+  int32_t ctrlSize = 0;
+  if (ptr + sizeof(int32_t) <= state.data() + state.size()) {
+    std::memcpy(&ctrlSize, ptr, sizeof(int32_t));
+    ptr += sizeof(int32_t);
+  }
+
+  if (ctrlSize < 0 || ptr + ctrlSize > state.data() + state.size()) {
+    return false;
+  }
+
+  const uint8_t* ctrlData = ptr;
+
+  // Set component state
+  if (compSize > 0) {
+    Steinberg::MemoryStream compStream;
+    int32_t written = 0;
+    compStream.write((void*)compData, compSize, &written);
+    compStream.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
+    if (impl->component->setState(&compStream) != Steinberg::kResultTrue) {
+      LOG(WARNING) << "Vst3Plugin::setState: Failed to set component state";
+    }
+
+    // Also sync component state to controller
+    if (impl->controller) {
+      compStream.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
+      impl->controller->setComponentState(&compStream);
+    }
+  }
+
+  // Set controller state
+  if (ctrlSize > 0 && impl->controller) {
+    Steinberg::MemoryStream ctrlStream;
+    int32_t written = 0;
+    ctrlStream.write((void*)ctrlData, ctrlSize, &written);
+    ctrlStream.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
+    if (impl->controller->setState(&ctrlStream) != Steinberg::kResultTrue) {
+      LOG(WARNING) << "Vst3Plugin::setState: Failed to set controller state";
+    }
+  }
+
+  return true;
+}
+
 }  // namespace hibiki

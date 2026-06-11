@@ -69,6 +69,7 @@ message Plugin {
   repeated ParamInfo params = 7;
   optional int32 sidechain_track_index =
       8;  // Source track for sidechain (0-based, absent = none)
+  bytes state = 9;
   optional DrumMachineState drum_machine_state = 10;
 }
 

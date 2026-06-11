@@ -103,6 +103,17 @@ message WorkerConfig {
   bool use_shared_memory = 3;  // false = inline audio in protos
 }
 
+message GetState {}
+
+message SetState {
+  bytes state = 1;
+}
+
+message StateResult {
+  bool success = 1;
+  bytes state = 2;
+}
+
 message WorkerRequest {
   oneof command {
     LoadPlugin load = 1;
@@ -119,6 +130,8 @@ message WorkerRequest {
     StopEditor stop_editor = 12;
     GetEditorFrame get_editor_frame = 13;
     EditorInput editor_input = 14;
+    GetState get_state = 15;
+    SetState set_state = 16;
   }
 }
 
@@ -190,5 +203,6 @@ message WorkerResponse {
     ConfigAck config_ack = 8;
     EditorResult editor_result = 9;
     EditorFrame editor_frame = 10;
+    StateResult state_result = 11;
   }
 }

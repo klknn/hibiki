@@ -28,6 +28,16 @@ cc_library(
 )
 
 cc_library(
+    name = "mock_plugin",
+    testonly = True,
+    srcs = ["mock_plugin.cpp"],
+    hdrs = ["mock_plugin.hpp"],
+    deps = [
+        ":iplugin",
+    ],
+)
+
+cc_library(
     name = "plugin_scanner",
     srcs = ["plugin_scanner.cpp"],
     hdrs = ["plugin_scanner.hpp"],

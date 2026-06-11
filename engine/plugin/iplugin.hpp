@@ -71,6 +71,11 @@ class IPlugin {
   virtual void sendEditorInput(int /*type*/, int /*x*/, int /*y*/,
                                int /*button*/, int /*key_code*/,
                                int /*delta*/) {}
+
+  // Get and set serialized binary state (for project save/load or preset
+  // handling)
+  virtual bool getState(std::vector<uint8_t>& /*state*/) const { return false; }
+  virtual bool setState(const std::vector<uint8_t>& /*state*/) { return false; }
 };
 
 }  // namespace hibiki

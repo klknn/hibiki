@@ -297,4 +297,37 @@ void PluginProxy::sendEditorInput(int type, int x, int y, int button,
   sendRequest(channel_.get(), req, resp);
 }
 
+bool PluginProxy::getState(std::vector<uint8_t>& state) const {
+  if (!channel_ || !isWorkerAlive()) return false;
+
+  hibiki::pb::worker::WorkerRequest req;
+  req.mutable_get_state();
+
+  hibiki::pb::worker::WorkerResponse resp;
+  // const_cast is safe since sendRequest doesn't modify the channel state
+  if (!sendRequest(const_cast<WorkerChannel*>(channel_.get()), req, resp))
+    return false;
+
+  if (!resp.has_state_result() || !resp.state_result().success()) {
+    return false;
+  }
+
+  const auto& state_bytes = resp.state_result().state();
+  state.assign(state_bytes.begin(), state_bytes.end());
+  return true;
+}
+
+bool PluginProxy::setState(const std::vector<uint8_t>& state) {
+  if (!channel_ || !isWorkerAlive()) return false;
+
+  hibiki::pb::worker::WorkerRequest req;
+  auto* cmd = req.mutable_set_state();
+  cmd->set_state(state.data(), state.size());
+
+  hibiki::pb::worker::WorkerResponse resp;
+  if (!sendRequest(channel_.get(), req, resp)) return false;
+
+  return resp.has_state_result() && resp.state_result().success();
+}
+
 }  // namespace hibiki

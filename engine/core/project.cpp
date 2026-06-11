@@ -95,6 +95,14 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
       auto* ps = ts->add_plugins();
       ps->set_path(plugin->getPath());
       ps->set_plugin_index(plugin->getPluginIndex());
+
+      // Save binary plugin state
+      std::vector<uint8_t> stateBytes;
+      if (plugin->getState(stateBytes)) {
+        ps->set_state(reinterpret_cast<const char*>(stateBytes.data()),
+                      stateBytes.size());
+      }
+
       int num_params = plugin->getParameterCount();
       for (int p = 0; p < num_params; ++p) {
         VstParamInfo info;
@@ -197,10 +205,18 @@ static void LoadTracksFromProto(ProjectState& state,
 
     for (const auto& plugin_data : track_data.plugins()) {
       if (plugin_data.path().empty()) continue;
-      auto result = track->LoadPlugin(
-          plugin_data.path(), plugin_data.plugin_index(), state.sample_rate);
+      auto result =
+          track->LoadPlugin(plugin_data.path(), plugin_data.plugin_index(),
+                            state.sample_rate, state.plugin_host_mode);
       int pidx = result.index;
-      if (pidx >= 0) {
+      if (pidx >= 0 && pidx < static_cast<int>(track->plugins.size()) &&
+          track->plugins[pidx]) {
+        if (!plugin_data.state().empty()) {
+          std::vector<uint8_t> state_bytes(plugin_data.state().begin(),
+                                           plugin_data.state().end());
+          track->plugins[pidx]->setState(state_bytes);
+        }
+
         for (const auto& param_data : plugin_data.params()) {
           track->plugins[pidx]->setParameterValue(param_data.id(),
                                                   param_data.current_value());

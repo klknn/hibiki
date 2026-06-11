@@ -229,6 +229,39 @@ int main(int argc, char** argv) {
         break;
       }
 
+      case hibiki::pb::worker::WorkerRequest::kGetState: {
+        auto* result = resp.mutable_state_result();
+        if (plugin) {
+          std::vector<uint8_t> state_bytes;
+          if (plugin->getState(state_bytes)) {
+            result->set_success(true);
+            result->set_state(state_bytes.data(), state_bytes.size());
+          } else {
+            result->set_success(false);
+          }
+        } else {
+          result->set_success(false);
+        }
+        break;
+      }
+
+      case hibiki::pb::worker::WorkerRequest::kSetState: {
+        auto* result = resp.mutable_state_result();
+        if (plugin) {
+          const auto& cmd = req.set_state();
+          std::vector<uint8_t> state_bytes(cmd.state().begin(),
+                                           cmd.state().end());
+          if (plugin->setState(state_bytes)) {
+            result->set_success(true);
+          } else {
+            result->set_success(false);
+          }
+        } else {
+          result->set_success(false);
+        }
+        break;
+      }
+
       default:
         break;
     }

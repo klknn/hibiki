@@ -10,7 +10,9 @@
 #include "absl/status/status_matchers.h"
 #include "engine/core/audio_file.hpp"
 #include "engine/core/history.hpp"
+#include "engine/builtin_registry.hpp"
 #include "engine/ipc/ipc.hpp"
+#include "engine/plugin/mock_plugin.hpp"
 #include "engine/test_utils.hpp"
 #include "engine/test_utils_state.hpp"
 
@@ -1492,6 +1494,113 @@ TEST_F(ProjectTest, PluginAddSaveLoadRoundTrip) {
 
   ASSERT_EQ(state.tracks[0]->plugins.size(), 1u);
   EXPECT_EQ(state.tracks[0]->plugins[0]->getPath(), dexed_path);
+
+  state.tracks.clear();
+  std::remove(tmp.c_str());
+}
+
+TEST_F(ProjectTest, PluginStateSaveLoadRoundTrip) {
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+
+  auto* track = hibiki::GetOrCreateTrack(state, 0);
+  std::string dexed_path = GetDexedPath();
+  auto result = track->LoadPlugin(dexed_path, 0, state.sample_rate);
+  ASSERT_GE(result.index, 0) << "Failed to load Dexed plugin";
+  auto* plugin = track->plugins[result.index].get();
+
+  // Get a parameter and change it so the state changes from default
+  VstParamInfo param_info;
+  ASSERT_TRUE(plugin->getParameterInfo(0, param_info));
+  uint32_t param_id = param_info.id;
+  double original_val = plugin->getParameterValue(param_id);
+  double target_val = original_val > 0.5 ? 0.1 : 0.9;
+  plugin->setParameterValue(param_id, target_val);
+
+  std::vector<uint8_t> modified_state;
+  ASSERT_TRUE(plugin->getState(modified_state)) << "getState returned false";
+  ASSERT_FALSE(modified_state.empty()) << "getState returned empty vector";
+
+  // Save project to a temp file
+  std::string tmp = std::tmpnam(nullptr);
+  ASSERT_THAT(hibiki::SaveProject(state, tmp), IsOk());
+
+  // Verify that the serialized protobuf contains the state bytes, then clear
+  // parameter mappings to force verification of setState.
+  {
+    std::ifstream ifs(tmp, std::ios::binary);
+    hibiki::pb::core::Project project_proto;
+    ASSERT_TRUE(project_proto.ParseFromIstream(&ifs))
+        << "Failed to parse project proto";
+    ifs.close();
+
+    ASSERT_EQ(project_proto.tracks_size(), 1);
+    ASSERT_EQ(project_proto.tracks(0).plugins_size(), 1);
+    EXPECT_FALSE(project_proto.tracks(0).plugins(0).state().empty())
+        << "Plugin state was not written to protobuf";
+
+    // Clear the params to force setState to do the restoration work
+    project_proto.mutable_tracks(0)->mutable_plugins(0)->clear_params();
+
+    std::ofstream ofs(tmp, std::ios::binary);
+    ASSERT_TRUE(project_proto.SerializeToOstream(&ofs));
+    ofs.close();
+  }
+
+  // Load project and verify that the reloaded plugin's parameter value matches
+  // target_val, which means the state was successfully loaded and restored.
+  state.tracks.clear();
+  ASSERT_THAT(hibiki::LoadProject(state, tmp), IsOk());
+
+  ASSERT_EQ(state.tracks[0]->plugins.size(), 1u);
+  auto* reloaded_plugin = state.tracks[0]->plugins[0].get();
+  EXPECT_NEAR(reloaded_plugin->getParameterValue(param_id), target_val, 1e-6)
+      << "Parameter value was not restored via setState (since params list was "
+         "cleared)";
+
+  state.tracks.clear();
+  std::remove(tmp.c_str());
+}
+
+TEST_F(ProjectTest, MockPluginStateRoundTrip) {
+  // Dynamically register mock plugin for this test
+  hibiki::registerTestBuiltinPlugin(MockPlugin::kPath, [](const std::string&) {
+    return std::make_unique<MockPlugin>();
+  });
+
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+
+  auto* track = hibiki::GetOrCreateTrack(state, 0);
+  auto result =
+      track->LoadPlugin("builtin://mock_plugin", 0, state.sample_rate);
+  ASSERT_GE(result.index, 0);
+  auto* plugin = dynamic_cast<MockPlugin*>(track->plugins[result.index].get());
+  ASSERT_NE(plugin, nullptr);
+
+  // Set mock-specific state
+  std::vector<uint8_t> new_mock_data = {9, 8, 7, 6, 5};
+  plugin->setInternalMockData(new_mock_data);
+  plugin->setParameterValue(0, 0.25);
+
+  // Save project
+  std::string tmp = std::tmpnam(nullptr);
+  ASSERT_THAT(hibiki::SaveProject(state, tmp), IsOk());
+
+  // Load project
+  state.tracks.clear();
+  ASSERT_THAT(hibiki::LoadProject(state, tmp), IsOk());
+
+  ASSERT_EQ(state.tracks[0]->plugins.size(), 1u);
+  auto* reloaded_plugin =
+      dynamic_cast<MockPlugin*>(state.tracks[0]->plugins[0].get());
+  ASSERT_NE(reloaded_plugin, nullptr);
+
+  // Verify state and parameter values are restored
+  EXPECT_EQ(reloaded_plugin->getInternalMockData(), new_mock_data);
+  EXPECT_NEAR(reloaded_plugin->getParameterValue(0), 0.25, 1e-6);
 
   state.tracks.clear();
   std::remove(tmp.c_str());

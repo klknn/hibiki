@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_library", "objc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test", "objc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -71,4 +71,18 @@ cc_library(
     srcs = ["vst3_host_stub.cpp"],
     deps = [":vst3_host"],
     alwayslink = True,
+)
+
+cc_test(
+    name = "vst3_host_test",
+    size = "medium",
+    srcs = ["vst3_host_test.cpp"],
+    data = ["//testdata"],
+    linkstatic = True,
+    deps = [
+        ":vst3_host",
+        ":vst3_host_stub",
+        "//engine:test_utils",
+        "@googletest//:gtest_main",
+    ],
 )

@@ -225,6 +225,32 @@ TEST_F(IntegrationTest, DexedNoteTimingMatchesSampleOffset) {
   EXPECT_GT(second_half_peak, 0.001f) << "Audio should start at sampleOffset";
 }
 
+TEST_F(IntegrationTest, DexedStateSaveLoad) {
+  auto plugin = std::make_unique<Vst3Plugin>();
+  ASSERT_TRUE(plugin->load(GetDexedPath(), 0, kSampleRate));
+
+  // Get initial state:
+  std::vector<uint8_t> initial_state;
+  ASSERT_TRUE(plugin->getState(initial_state)) << "getState returned false";
+  ASSERT_FALSE(initial_state.empty()) << "getState returned empty vector";
+
+  // Get first parameter ID:
+  VstParamInfo param_info;
+  ASSERT_TRUE(plugin->getParameterInfo(0, param_info)) << "No parameters found";
+  uint32_t param_id = param_info.id;
+
+  // Change parameter:
+  double original_val = plugin->getParameterValue(param_id);
+  double target_val = original_val > 0.5 ? 0.1 : 0.9;
+  plugin->setParameterValue(param_id, target_val);
+  EXPECT_DOUBLE_EQ(plugin->getParameterValue(param_id), target_val);
+
+  // Restore state:
+  ASSERT_TRUE(plugin->setState(initial_state)) << "setState returned false";
+  EXPECT_DOUBLE_EQ(plugin->getParameterValue(param_id), original_val)
+      << "State restore did not revert parameter value";
+}
+
 TEST_F(IntegrationTest, TimelineMidiClipPlaybackTiming) {
   auto plugin = std::make_unique<Vst3Plugin>();
   ASSERT_TRUE(plugin->load(GetDexedPath(), 0, kSampleRate));

@@ -1,19 +1,53 @@
-# Antigravity Assistant
+# Gemini API モデル別クォータとトークン制限レポート
 
-This document outlines the capabilities and workflow of Antigravity, your AI pairing partner for the Hibiki DAW project.
+Google Gemini API における、主要モデルごとのクォータ（トークン数制限、思考プロセスの消費量、レート制限など）に関するレポートです。
 
-## Capabilities
+## 1. モデルごとのトークン制限 (Context Window & Output)
 
-### 1. Codebase Exploration & Feature Implementation
-- **C++ Backend Development:** Extending VST3 host capabilities, ALSA playback engine (`alsa_out.cpp`), MIDI processing (`midi.cpp`), and Protobuf-based IPC & project files.
-- **Java Frontend Development:** Refining and building UI components in the Java Swing frontend (`src/main/java/hibiki`).
-- **Build System Configuration:** Managing and updating Bazel builds in `BUILD`, `MODULE.bazel`, or Protobuf schemas.
+各モデルが一度に処理できる最大トークン数は以下の通りです。
 
-### 2. Testing and Validation
-- Running builds and tests using Bazel (e.g., `bazel test //:all` or `bazel run -c opt //:hibiki-gui-java`).
-- Writing and executing unit tests across components.
+| モデルシリーズ | 入力制限 (Context Window) | 出力制限 (Max Output) | 特徴 |
+| :--- | :--- | :--- | :--- |
+| **Gemini 3.5 シリーズ** | 1,000,000 〜 2,000,000 tokens | 最大 64,000 tokens | 思考プロセスの最適化が施された最新世代。 |
+| **Gemini 2.5 シリーズ** | 1,000,000 〜 2,000,000 tokens | 最大 64,000 tokens | `thinking_budget` パラメータによる思考トークンの制御が可能。 |
+| **Gemini 2.0 シリーズ** | 1,000,000 tokens | 最大 8,192 tokens | 推論能力（Thinking）を初期導入した世代。 |
+| **Gemini 1.5 Pro** | 2,000,000 tokens | 最大 8,192 tokens | 非常に広いコンテキストウィンドウを持つプロ向けモデル。 |
+| **Gemini 1.5 Flash** | 1,000,000 tokens | 最大 8,192 tokens | 高速かつ軽量な処理に最適化されたモデル。 |
 
-### 3. Workflow Utilities
-- `/goal`: Command to run thorough, long-running tasks.
-- `/schedule`: Command to schedule recurring tasks or set timers.
-- `/grill-me`: Command to align on implementation design through interactive questions.
+---
+
+## 2. Thinking（思考プロセス）トークンの消費ルール
+
+推論能力を持つモデル（Gemini 2.5や3.xシリーズなど）では、最終的な回答を生成する前に「内部での思考（Thinking）」を行い、これにもトークンが消費されます。
+
+- **消費カウントの扱い**: 
+  思考プロセスで使われたトークン（`thoughts_token_count`）は、**出力トークン（Output Tokens）の一部としてカウント**され、課金対象（あるいはクォータ消費対象）となります。
+  - `合計トークン数` ＝ `入力トークン数` ＋ `出力トークン数`（`思考トークン数` ＋ `最終回答トークン数`）
+- **メタデータでの確認**:
+  APIレスポンスの `usage_metadata` 内にある `thoughts_token_count` フィールドから、思考のみに消費されたトークン数を正確に確認できます。
+- **思考量のコントロール**:
+  - **Gemini 3.x世代**: `thinking_level` 設定（`LOW` / `MEDIUM` / `HIGH`）を使用して思考の深さを抽象的に設定します（Proモデルなどではデフォルトで `HIGH` になり、思考の完全無効化はできない仕様です）。
+  - **Gemini 2.5世代**: `thinking_budget` パラメータで思考トークンの上限数（例: 最大 8,192 や 32,768 など）を設定できます。`0` に設定することで、思考プロセスをオフにして応答速度を優先することも可能です。
+
+> [!WARNING]
+> 出力制限（Max Output Tokens）に思考トークンの消費量も含まれるため、思考にトークンを多く使いすぎると、最終的な回答テキストが途中で途切れてしまう（出力制限の上限に達してしまう）ことがあります。
+
+---
+
+## 3. APIレート制限 (RPM / TPM / RPD)
+
+APIへのアクセス頻度やトークンの消費スピードに対する制限は、主に**利用プラン（Usage Tier）**によって決定されます。
+
+- **RPM (Requests Per Minute)**: 1分あたりの最大リクエスト数
+- **TPM (Tokens Per Minute)**: 1分あたりに処理できる最大トークン数（入力 ＋ 出力 ＋ 思考トークンの合算）
+- **RPD (Requests Per Day)**: 1日あたりの最大リクエスト数
+
+### 一般的なクォータ基準値
+
+| ティア (Usage Tier) | 制限の目安 (RPM / TPM) | 条件 |
+| :--- | :--- | :--- |
+| **Free Tier (無料枠)** | 約 2〜15 RPM / 32,000〜1,000,000 TPM | 標準の無料アカウント |
+| **Tier 1 (従量課金初期)** | 約 150〜300 RPM / 2,000,000〜4,000,000 TPM | クレジットカードを登録し課金を有効化 |
+| **Tier 2 / 3 (大口利用)** | 1,000〜4,000+ RPM / 10,000,000+ TPM | 過去の累積利用実績・支払実績に応じて自動スケール |
+
+※具体的な現在の残量や正確なクォータ値は、**Google AI Studio** または **Google Cloud Console (Vertex AI)** のクォータ管理画面からプロジェクトごとにリアルタイムで確認・申請できます。

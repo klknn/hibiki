@@ -96,7 +96,30 @@ public class BackendManager {
     return currentConfig;
   }
 
+  public interface RequestListener {
+    void onRequestSent(Request request);
+  }
+
+  private final List<RequestListener> requestListeners = new java.util.ArrayList<>();
+
+  public void addRequestListener(RequestListener l) {
+    synchronized (requestListeners) {
+      requestListeners.add(l);
+    }
+  }
+
+  public void removeRequestListener(RequestListener l) {
+    synchronized (requestListeners) {
+      requestListeners.remove(l);
+    }
+  }
+
   public synchronized void sendRequest(Request request) {
+    synchronized (requestListeners) {
+      for (RequestListener l : requestListeners) {
+        l.onRequestSent(request);
+      }
+    }
     ipcClient.sendRequest(request);
   }
 

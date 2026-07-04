@@ -188,7 +188,7 @@ public class TopBarTest {
   public void testSetReplToggleListener() {
     TopBar bar = createTopBar();
     final boolean[] called = {false};
-    bar.setReplToggleListener(() -> called[0] = true);
+    bar.setReplToggleListener(type -> called[0] = true);
     assertFalse(called[0]);
   }
 }

@@ -2,8 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include "engine/core/clip.hpp"
 #include "engine/core/track.hpp"
 #include "engine/ipc/ipc.hpp"
+#include "engine/test_utils.hpp"
 
 namespace hibiki {
 
@@ -417,6 +419,31 @@ TEST_F(CommandsTest, SendEditorInputInvalidTrack) {
   cmd.set_input_type(1);  // MOUSE_DOWN
 
   EXPECT_NO_FATAL_FAILURE(hibiki::handlePluginCmd(cmd, state, history));
+}
+
+TEST_F(CommandsTest, MidiClipDurationUpdate) {
+  auto track = hibiki::GetOrCreateTrack(state, 1);
+  track->LoadClip(1, hibiki::find_test_file("testdata/test.mid"));
+  ASSERT_EQ(track->clips.count(1), 1);
+  auto* clip = track->clips[1].get();
+  double initial_dur = clip->duration_beats;
+  EXPECT_GT(initial_dur, 100.0);
+
+  hibiki::pb::commands::MidiCmd cmd;
+  cmd.set_action(hibiki::pb::commands::MidiCmd::ACTION_UPDATE);
+  cmd.mutable_target()->set_track_index(1);
+  cmd.mutable_target()->set_session_slot(1);
+  cmd.set_resolution(480);
+
+  auto* ev = cmd.add_events();
+  ev->set_tick(0);
+  ev->set_pitch(36);
+  ev->set_duration_ticks(120);
+  ev->set_velocity(90);
+
+  hibiki::handleMidiCmd(cmd, state, history);
+
+  EXPECT_DOUBLE_EQ(clip->duration_beats, 4.0);
 }
 
 }  // namespace hibiki

@@ -12,9 +12,10 @@ import javax.swing.*;
 public class MainView extends JPanel implements Theme.ThemeListener {
   private PluginPane pluginPane;
   private ReplPanel replPanel;
+  private JsReplPanel jsReplPanel;
   private JSplitPane replSplit;
   private JPanel mainContent;
-  private boolean replVisible = false;
+  private TopBar.ReplType activeReplType = null;
   private TopBar topBar;
   private JPanel centerContainer;
   private boolean isTimelineView = false;
@@ -70,6 +71,9 @@ public class MainView extends JPanel implements Theme.ThemeListener {
     if (replPanel == null) {
       replPanel = new ReplPanel();
     }
+    if (jsReplPanel == null) {
+      jsReplPanel = new JsReplPanel();
+    }
     replSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
     replSplit.setBorder(null);
     replSplit.setDividerSize(3);
@@ -78,10 +82,11 @@ public class MainView extends JPanel implements Theme.ThemeListener {
     // Wire REPL toggle from TopBar
     topBar.setReplToggleListener(this::toggleRepl);
 
-    // Show either the mainContent alone or in a split with REPL
-    if (replVisible) {
+    // Show either the mainContent alone or in a split with active REPL
+    if (activeReplType != null) {
       replSplit.setLeftComponent(mainContent);
-      replSplit.setRightComponent(replPanel);
+      replSplit.setRightComponent(
+          activeReplType == TopBar.ReplType.CLOJURE ? replPanel : jsReplPanel);
       add(replSplit, BorderLayout.CENTER);
     } else {
       add(mainContent, BorderLayout.CENTER);
@@ -223,7 +228,15 @@ public class MainView extends JPanel implements Theme.ThemeListener {
   }
 
   public void toggleRepl() {
-    replVisible = !replVisible;
+    toggleRepl(TopBar.ReplType.CLOJURE);
+  }
+
+  public void toggleRepl(TopBar.ReplType type) {
+    if (activeReplType == type) {
+      activeReplType = null;
+    } else {
+      activeReplType = type;
+    }
     removeAll();
 
     // Footer is always at SOUTH of this panel
@@ -235,12 +248,19 @@ public class MainView extends JPanel implements Theme.ThemeListener {
     statusLabel.setFont(Theme.getInstance().FONT_UI.deriveFont(Theme.getInstance().scale(9.0f)));
     footer.add(statusLabel);
 
-    if (replVisible) {
+    if (activeReplType != null) {
       replSplit.setLeftComponent(mainContent);
-      replSplit.setRightComponent(replPanel);
-      replSplit.setDividerLocation(getWidth() - 400);
-      add(replSplit, BorderLayout.CENTER);
-      replPanel.focusInput();
+      if (activeReplType == TopBar.ReplType.CLOJURE) {
+        replSplit.setRightComponent(replPanel);
+        replSplit.setDividerLocation(getWidth() - 400);
+        add(replSplit, BorderLayout.CENTER);
+        replPanel.focusInput();
+      } else {
+        replSplit.setRightComponent(jsReplPanel);
+        replSplit.setDividerLocation(getWidth() - 400);
+        add(replSplit, BorderLayout.CENTER);
+        jsReplPanel.focusInput();
+      }
     } else {
       add(mainContent, BorderLayout.CENTER);
     }

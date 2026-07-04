@@ -22,7 +22,7 @@ absl::StatusOr<Clip> LoadClip(const std::string& path, bool is_loop,
     ext = path.substr(path.size() - 4);
     for (auto& c : ext) c = std::tolower(c);
   }
-  bool is_midi = (ext == ".mid" || ext == ".smf");
+  bool is_midi = (ext == ".mid" || ext == ".smf" || path.empty());
 
   if (!is_midi) {
     int out_sr = 0;

@@ -38,9 +38,23 @@ public class TopBar extends JPanel {
     return Math.max(1, 16 / beatDenominator);
   }
 
+  public enum ReplType {
+    CLOJURE,
+    JAVASCRIPT
+  }
+
+  public interface ViewToggleListener {
+    void onViewToggle(boolean isTimeline);
+  }
+
+  public interface ReplToggleListener {
+    void onReplToggle(ReplType type);
+  }
+
   private ViewToggleListener viewToggleListener;
   private ReplToggleListener replToggleListener;
   private JButton replBtn;
+  private JButton jsReplBtn;
   private boolean isLooping = false;
   private JButton loopBtn;
   private boolean isRecording = false;
@@ -48,14 +62,6 @@ public class TopBar extends JPanel {
   private final VirtualKeyboard virtualKeyboard = new VirtualKeyboard();
   private JButton pianoBtn;
   private JLabel octaveLabel;
-
-  public interface ViewToggleListener {
-    void onViewToggle(boolean isTimeline);
-  }
-
-  public interface ReplToggleListener {
-    void onReplToggle();
-  }
 
   public void setViewToggleListener(ViewToggleListener listener) {
     this.viewToggleListener = listener;
@@ -201,16 +207,26 @@ public class TopBar extends JPanel {
     rateLabel.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(10)));
 
     cpuLabel = createDisplayLabel("CPU: 0.0%", Theme.getInstance().scale(90));
-
     replBtn =
         Theme.getInstance()
             .createButton(
                 "λ REPL",
                 e -> {
-                  if (replToggleListener != null) replToggleListener.onReplToggle();
+                  if (replToggleListener != null) replToggleListener.onReplToggle(ReplType.CLOJURE);
                 });
     replBtn.setFont(new Font("SansSerif", Font.BOLD, Theme.getInstance().scale(11)));
-    replBtn.setToolTipText("Toggle REPL panel (Ctrl+R)");
+    replBtn.setToolTipText("Toggle Clojure REPL panel");
+
+    jsReplBtn =
+        Theme.getInstance()
+            .createButton(
+                "JS REPL",
+                e -> {
+                  if (replToggleListener != null)
+                    replToggleListener.onReplToggle(ReplType.JAVASCRIPT);
+                });
+    jsReplBtn.setFont(new Font("SansSerif", Font.BOLD, Theme.getInstance().scale(11)));
+    jsReplBtn.setToolTipText("Toggle JavaScript REPL panel");
 
     JButton settingsBtn = Theme.getInstance().createButton("⚙", e -> showSettings());
     settingsBtn.setFont(new Font("SansSerif", Font.PLAIN, Theme.getInstance().scale(14)));
@@ -293,6 +309,7 @@ public class TopBar extends JPanel {
     rightPanel.add(pianoBtn);
     rightPanel.add(octaveLabel);
     rightPanel.add(replBtn);
+    rightPanel.add(jsReplBtn);
     rightPanel.add(rebootBtn);
     rightPanel.add(panicBtn);
     rightPanel.add(settingsBtn);

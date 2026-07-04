@@ -32,6 +32,7 @@ java_library(
         "@clojure_spec_alpha_jar//jar",
         "@maven//:com_formdev_flatlaf",
         "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:org_mozilla_rhino",
     ],
 )
 
@@ -452,6 +453,24 @@ java_test(
         "//pb:notifications_java_proto",
         "@maven//:com_google_protobuf_protobuf_java",
         "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "js_repl_test",
+    srcs = ["src/test/java/hibiki/ui/JsReplTest.java"],
+    data = [
+        "//engine:hbk-play",
+        "//testdata",
+    ],
+    test_class = "hibiki.ui.JsReplTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "//pb:commands_java_proto",
+        "//pb:notifications_java_proto",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:junit_junit",
+        "@maven//:org_mozilla_rhino",
     ],
 )
 

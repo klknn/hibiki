@@ -42,9 +42,13 @@ cc_test(
     name = "commands_test",
     size = "small",
     srcs = ["commands_test.cc"],
+    data = [
+        "//testdata",
+    ],
     linkstatic = True,
     deps = [
         ":commands",
+        "//engine:test_utils",
         "//engine/core:track",
         "//engine/ipc",
         "//engine/vst3:vst3_host_stub",

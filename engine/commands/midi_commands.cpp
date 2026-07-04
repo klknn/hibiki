@@ -98,38 +98,43 @@ void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
                   [](const MidiEvent& a, const MidiEvent& b) {
                     return a.beats < b.beats;
                   });
+        // 1. Recalculate duration (minimum 4.0 beats)
+        double note_end = 4.0;
+        if (!clip->midi_events.empty()) {
+          note_end = std::max(4.0, clip->midi_events.back().beats + 0.1);
+        }
+        clip->duration_beats = note_end;
+
+        // 2. Rebuild waveform summary
+        clip->waveform_summary.clear();
+        double total_beats =
+            clip->duration_beats > 0 ? clip->duration_beats : 1.0;
+        for (size_t i = 0; i < clip->midi_events.size(); ++i) {
+          auto& ev = clip->midi_events[i];
+          if (isNoteOn(ev)) {
+            double duration = 0.1;
+            for (size_t j = i + 1; j < clip->midi_events.size(); ++j) {
+              auto& off_ev = clip->midi_events[j];
+              if (off_ev.note == ev.note && off_ev.channel == ev.channel &&
+                  isNoteOff(off_ev)) {
+                duration = off_ev.beats - ev.beats;
+                break;
+              }
+            }
+            clip->waveform_summary.push_back((float)(ev.beats / total_beats));
+            clip->waveform_summary.push_back((float)ev.note);
+            clip->waveform_summary.push_back((float)(duration / total_beats));
+          }
+        }
+
+        // 3. Notify GUI depending on target type
         if (cidx >= 0 && state.tracks.count(tidx)) {
           auto& track = state.tracks[tidx];
           if (cidx < (int)track->timeline_clips.size() &&
               track->timeline_clips[cidx]) {
             auto& tc = track->timeline_clips[cidx];
-            if (!clip->midi_events.empty()) {
-              double note_end = clip->midi_events.back().beats + 0.1;
-              clip->duration_beats = std::max(clip->duration_beats, note_end);
-            }
             tc->duration_beats = clip->duration_beats;
-            clip->waveform_summary.clear();
-            double total_beats =
-                clip->duration_beats > 0 ? clip->duration_beats : 1.0;
-            for (size_t i = 0; i < clip->midi_events.size(); ++i) {
-              auto& ev = clip->midi_events[i];
-              if (isNoteOn(ev)) {
-                double duration = 0.1;
-                for (size_t j = i + 1; j < clip->midi_events.size(); ++j) {
-                  auto& off_ev = clip->midi_events[j];
-                  if (off_ev.note == ev.note && off_ev.channel == ev.channel &&
-                      isNoteOff(off_ev)) {
-                    duration = off_ev.beats - ev.beats;
-                    break;
-                  }
-                }
-                clip->waveform_summary.push_back(
-                    (float)(ev.beats / total_beats));
-                clip->waveform_summary.push_back((float)ev.note);
-                clip->waveform_summary.push_back(
-                    (float)(duration / total_beats));
-              }
-            }
+
             CHECK_GT(state.bpm, 0);
             float duration_for_gui =
                 (tc->duration_sec > 0)
@@ -170,7 +175,11 @@ void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
               }
             }
           }
+        } else if (sidx >= 0 && state.tracks.count(tidx)) {
+          std::string clipname = pathBasename(clip->path);
+          sendClipInfo(tidx, sidx, clipname, clip->path);
         }
+
         sendAck("UPDATE_CLIP_MIDI", true);
       } else
         sendAck("UPDATE_CLIP_MIDI", false);

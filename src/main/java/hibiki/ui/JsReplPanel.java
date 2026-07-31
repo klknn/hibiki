@@ -209,6 +209,11 @@ public class JsReplPanel extends JPanel {
     new Thread(
             () -> {
               try {
+                String executableSource = expr;
+                if (TypeScriptCompiler.isTypeScript(expr)) {
+                  executableSource = TypeScriptCompiler.transpile(expr);
+                }
+
                 // Redirect stdout/stderr to capture output
                 PrintStream oldOut = System.out;
                 PrintStream oldErr = System.err;
@@ -244,7 +249,7 @@ public class JsReplPanel extends JPanel {
                   Context cx = Context.enter();
                   try {
                     // Evaluate in the global scope
-                    Object result = cx.evaluateString(scope, expr, "repl", 1, null);
+                    Object result = cx.evaluateString(scope, executableSource, "repl", 1, null);
                     captureStream.flush();
                     if (result != null
                         && result != Context.getUndefinedValue()

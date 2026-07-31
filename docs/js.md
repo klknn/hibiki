@@ -92,6 +92,60 @@ Change the theme preset instantly:
 ```javascript
 setTheme("solarized-dark");
 setTheme("win95");
+```
+
+### TypeScript REPL Snippets
+
+Hibiki can compile a marked TypeScript REPL snippet to ES5 JavaScript before evaluating it in Rhino. Put `// @ts` on the first non-whitespace line. The bundled declarations cover the current prelude API, including MIDI note and automation-point types.
+
+TypeScript compilation uses the `tsc` executable on `PATH`. Install it with your system's Node.js/TypeScript toolchain, or point Hibiki to it with `-Dhibiki.typescript.command=/absolute/path/to/tsc`.
+
+```typescript
+// @ts
+const PPQ: number = 480;
+const notes: MidiNote[] = [
+  { tick: 0, pitch: 60, dur: PPQ, vel: 100 },
+  { tick: PPQ, pitch: 64, dur: PPQ, vel: 100 },
+];
+
+writeMidi(0, 0, -1, PPQ, notes);
+play();
+```
+
+The TypeScript compiler only type-checks the submitted snippet. Runtime state remains the persistent Rhino scope, so use JavaScript-compatible ES5 output and do not rely on type checking to remember declarations from previous evaluations.
+
+Typed SDK examples live in `examples/sdk/`: `midi-arpeggiator.ts` generates a session-clip arpeggio and `acid-house.ts` builds and renders a short bassline. Once the project TypeScript dependency is installed, check them with `npm run check:sdk`.
+
+### Bazel TypeScript Build
+
+Bazel is the source of truth for TypeScript compilation and checking. The npm metadata is only a package description for the pinned TypeScript compiler; developers and CI should invoke Bazel targets rather than calling `tsc` or npm scripts directly.
+
+The current and planned targets are:
+
+```text
+//:sdk_typescript_check  # Current Bazel type-check for declarations and examples
+//sdk:prelude            # Planned: compile the typed SDK implementation to ES5 prelude.js
+//sdk:check              # Planned: strict SDK/public declaration check
+//examples/sdk:all       # Planned: dedicated example target
+//:js_repl_test      # Exercise the generated prelude through Rhino and IPC
+```
+
+The intended build pipeline is:
+
+```text
+src/main/typescript/hibiki-sdk.ts
+        ↓ Bazel + pinned TypeScript toolchain
+src/main/resources/prelude.js      # generated ES5 output
+        ↓ Rhino
+embedded JS/TypeScript REPL
+```
+
+`prelude.js` is a generated compatibility artifact and must not become the source of the public API again. Public interfaces, MIDI note types, track/clip/device handles, and SDK examples belong in TypeScript. Rhino receives the compiler's ES5 output because it does not parse TypeScript directly.
+
+The Bazel implementation should use a Bzlmod-managed TypeScript ruleset such as `aspect_rules_ts` and its `ts_project` rule. The compiler version, ruleset version, `tsconfig`, generated outputs, and example checks must be pinned and included in the Bazel dependency graph so local and CI builds are reproducible.
+
+The Bazel TypeScript toolchain is now wired into `MODULE.bazel`; run `bazel build -c opt //:sdk_typescript_check` to check the current declarations and examples. The existing `npm run check:sdk` command remains an interim convenience only and is not the release or CI build path.
+
 ### Generative Euclidean Rhythm & VST Rendering
 Load a synthesizer VST, add a timeline clip, write a classic Euclidean kick pattern to it, and render/bounce the output to a WAV file:
 ```javascript
@@ -174,3 +228,21 @@ The helper functions (`play()`, `stop()`, etc.) are bundled in a `/prelude.js` c
 
 ### Stdout & Stderr Capture
 Rhino's script execution is wrapped inside a custom thread redirection wrapper in `ReplPanel.doEval()`. Standard output prints (`print()`, `console.log()`) call `java.lang.System.out.println()`, which is intercepted by the panel's custom output print stream and written directly back into the REPL's output text area.
+
+---
+
+## 6. SDK Direction and Architecture Decisions
+
+The current prelude is intentionally a small command layer over protobuf IPC. It is useful for interactive scripting, but it is not yet a complete DAW SDK: most calls are fire-and-forget, scripts use positional indices, and engine notifications are not exposed as ergonomic JavaScript events.
+
+The next SDK work follows this order:
+
+1. **Harden the embedded runtime.** Serialize evaluations, make initialization readiness explicit, avoid process-global output capture, and provide structured errors and disposable listeners.
+2. **Add a JavaScript object facade over the existing engine API.** Prefer domain objects such as `hibiki.transport`, `track`, `clip`, and `device` over direct protobuf builders and positional helper arguments.
+3. **Expose existing engine capabilities.** Prioritize mixer/routing, recording and input selection, arrangement editing, modulation, plugin bypass/reorder/sidechain, and MIDI panic before introducing new engine commands.
+4. **Provide synchronized state and events.** Build a client-side state store from `FullSync`, `StateUpdate`, playhead, parameter, and metering notifications.
+5. **Design correlated asynchronous operations.** Add a request identifier to commands and their acknowledgements/results before promising `await` semantics. The existing IPC protocol does not yet correlate a request with a response.
+6. **Ship typed scripting ergonomics.** The embedded TypeScript path added above is the first step. It should evolve into a versioned declaration package generated from the public facade, not from protobuf internals.
+7. **Evaluate an external extension host later.** Node.js/TypeScript extensions, packaging, permissions, hot reload, and UI contributions should follow a proven object API; Rhino remains the interactive REPL and compatibility path during that transition.
+
+Stable entity IDs are a later persistence and protocol migration. Until then, SDK handles should clearly document that index-based references can become invalid after project-state changes. Likewise, direct Rhino `Packages` access remains an advanced, unsupported escape hatch rather than part of the future public SDK.

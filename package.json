@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "check:sdk": "tsc --project tsconfig.sdk.json"
+  }
+}

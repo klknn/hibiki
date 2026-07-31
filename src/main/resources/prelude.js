@@ -1,301 +1,121 @@
-// JavaScript Prelude for Hibiki DAW Scripting
-const BackendManager = Packages.hibiki.BackendManager;
-const Request = Packages.hibiki.pb.commands.Request;
-const TransportCmd = Packages.hibiki.pb.commands.TransportCmd;
-const TrackCmd = Packages.hibiki.pb.commands.TrackCmd;
-const PluginCmd = Packages.hibiki.pb.commands.PluginCmd;
-const AutomationCmd = Packages.hibiki.pb.commands.AutomationCmd;
-const MidiCmd = Packages.hibiki.pb.commands.MidiCmd;
-const ProjectCmd = Packages.hibiki.pb.commands.ProjectCmd;
-const EntityRef = Packages.hibiki.pb.core.EntityRef;
-const Clip = Packages.hibiki.pb.core.Clip;
-const MidiEvent = Packages.hibiki.pb.core.MidiEvent;
-const AutomationPoint = Packages.hibiki.pb.core.AutomationPoint;
-const Theme = Packages.hibiki.ui.Theme;
-const SessionView = Packages.hibiki.ui.SessionView;
-const TimelineView = Packages.hibiki.ui.TimelineView;
+// Hibiki's public scripting SDK. Java/Protobuf implementation details stay private here.
+const hibiki = (function () {
+  const BackendManager = Packages.hibiki.BackendManager;
+  const Request = Packages.hibiki.pb.commands.Request;
+  const TransportCmd = Packages.hibiki.pb.commands.TransportCmd;
+  const TrackCmd = Packages.hibiki.pb.commands.TrackCmd;
+  const PluginCmd = Packages.hibiki.pb.commands.PluginCmd;
+  const AutomationCmd = Packages.hibiki.pb.commands.AutomationCmd;
+  const MidiCmd = Packages.hibiki.pb.commands.MidiCmd;
+  const ProjectCmd = Packages.hibiki.pb.commands.ProjectCmd;
+  const EntityRef = Packages.hibiki.pb.core.EntityRef;
+  const Clip = Packages.hibiki.pb.core.Clip;
+  const MidiEvent = Packages.hibiki.pb.core.MidiEvent;
+  const AutomationPoint = Packages.hibiki.pb.core.AutomationPoint;
+  const Theme = Packages.hibiki.ui.Theme;
+  const backend = BackendManager.getInstance();
 
-// Global singletons
-const bm = BackendManager.getInstance();
-const theme = Theme.getInstance();
-const session = SessionView.getInstance();
-const timeline = TimelineView.getInstance();
-
-function _send(req) {
-    bm.sendRequest(req);
-}
-function _ref(track, plugin, slot, clip, lane) {
-    var builder = EntityRef.newBuilder().setTrackIndex(track || 0);
-    if (plugin !== undefined && plugin !== null && plugin >= 0) builder.setPluginIndex(plugin);
-    if (slot !== undefined && slot !== null && slot >= 0) builder.setSessionSlot(slot);
-    if (clip !== undefined && clip !== null && clip >= 0) builder.setTimelineClip(clip);
-    if (lane !== undefined && lane !== null && lane >= 0) builder.setLaneIndex(lane);
+  function send(request) { backend.sendRequest(request); }
+  function ref(track, plugin, slot, clip, lane) {
+    const builder = EntityRef.newBuilder().setTrackIndex(track);
+    if (plugin >= 0) builder.setPluginIndex(plugin);
+    if (slot >= 0) builder.setSessionSlot(slot);
+    if (clip >= 0) builder.setTimelineClip(clip);
+    if (lane >= 0) builder.setLaneIndex(lane);
     return builder.build();
-}
-// Transport
-function play() {
-    _send(Request.newBuilder()
-        .setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_PLAY))
-        .build());
-}
-
-// Alias for convenience
-const play_ = play;
-
-function stop() {
-    _send(Request.newBuilder()
-        .setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_STOP))
-        .build());
-}
-
-// Alias for convenience
-const stop_ = stop;
-
-function seek(pos) {
-    _send(Request.newBuilder()
-        .setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_SEEK).setSeekPos(pos))
-        .build());
-}
-
-// Track & Clips
-function loadClip(track, slot, path, loop) {
-    _send(Request.newBuilder()
-        .setTrack(TrackCmd.newBuilder()
-            .setAction(TrackCmd.Action.ACTION_LOAD_CLIP)
-            .setTarget(_ref(track, null, slot))
-            .setClipData(Clip.newBuilder().setPath(path).setIsLoop(!!loop)))
-        .build());
-}
-
-function playClip(track, slot) {
-    _send(Request.newBuilder()
-        .setTrack(TrackCmd.newBuilder()
-            .setAction(TrackCmd.Action.ACTION_PLAY_SLOT)
-            .setTarget(_ref(track, null, slot)))
-        .build());
-}
-
-// Alias for playClip
-const triggerClip = playClip;
-
-function stopTrack(track) {
-    _send(Request.newBuilder()
-        .setTrack(TrackCmd.newBuilder()
-            .setAction(TrackCmd.Action.ACTION_STOP)
-            .setTarget(_ref(track)))
-        .build());
-}
-
-function deleteClip(track, slot) {
-    _send(Request.newBuilder()
-        .setTrack(TrackCmd.newBuilder()
-            .setAction(TrackCmd.Action.ACTION_DELETE_CLIP)
-            .setTarget(_ref(track, null, slot)))
-        .build());
-}
-
-function setClipLoop(track, slot, loop) {
-    _send(Request.newBuilder()
-        .setTrack(TrackCmd.newBuilder()
-            .setAction(TrackCmd.Action.ACTION_SET_CLIP_LOOP)
-            .setTarget(_ref(track, null, slot))
-            .setFlag(!!loop))
-        .build());
-}
-
-function addTimelineClip(track, path, start, duration) {
-    _send(Request.newBuilder()
-        .setTrack(TrackCmd.newBuilder()
-            .setAction(TrackCmd.Action.ACTION_ADD_TIMELINE_CLIP)
-            .setTarget(_ref(track))
-            .setClipData(Clip.newBuilder().setPath(path).setDurationBeats(duration))
-            .setValue(start))
-        .build());
-}
-
-function removeTimelineClip(track, clip) {
-    _send(Request.newBuilder()
-        .setTrack(TrackCmd.newBuilder()
-            .setAction(TrackCmd.Action.ACTION_REMOVE_TIMELINE_CLIP)
-            .setTarget(_ref(track, null, null, clip)))
-        .build());
-}
-
-// Plugins
-function loadPlugin(track, path, pluginIdx) {
-    _send(Request.newBuilder()
-        .setPlugin(PluginCmd.newBuilder()
-            .setAction(PluginCmd.Action.ACTION_LOAD)
-            .setTarget(_ref(track, pluginIdx || 0))
-            .setPath(path))
-        .build());
-}
-
-function removePlugin(track, plugin) {
-    _send(Request.newBuilder()
-        .setPlugin(PluginCmd.newBuilder()
-            .setAction(PluginCmd.Action.ACTION_REMOVE)
-            .setTarget(_ref(track, plugin)))
-        .build());
-}
-
-function showPluginGui(track, plugin) {
-    _send(Request.newBuilder()
-        .setPlugin(PluginCmd.newBuilder()
-            .setAction(PluginCmd.Action.ACTION_SHOW_GUI)
-            .setTarget(_ref(track, plugin)))
-        .build());
-}
-
-function setParam(track, plugin, paramId, value) {
-    _send(Request.newBuilder()
-        .setPlugin(PluginCmd.newBuilder()
-            .setAction(PluginCmd.Action.ACTION_SET_PARAM)
-            .setTarget(_ref(track, plugin))
-            .setParamId(paramId)
-            .setParamValue(value))
-        .build());
-}
-
-function listPlugins(path) {
-    _send(Request.newBuilder()
-        .setPlugin(PluginCmd.newBuilder()
-            .setAction(PluginCmd.Action.ACTION_LIST)
-            .setPath(path))
-        .build());
-}
-
-// MIDI
-function writeMidi(track, slot, clip, resolution, notes) {
-    var builder = MidiCmd.newBuilder()
-        .setAction(MidiCmd.Action.ACTION_UPDATE)
-        .setTarget(_ref(track, null, slot, clip))
-        .setResolution(resolution);
+  }
+  function trackCommand(action, target, configure) {
+    const builder = TrackCmd.newBuilder().setAction(action).setTarget(target);
+    if (configure) configure(builder);
+    send(Request.newBuilder().setTrack(builder).build());
+  }
+  function writeMidi(target, resolution, notes) {
+    const builder = MidiCmd.newBuilder().setAction(MidiCmd.Action.ACTION_UPDATE)
+      .setTarget(target).setResolution(resolution);
     for (var i = 0; i < notes.length; i++) {
-        var n = notes[i];
-        builder.addEvents(MidiEvent.newBuilder()
-            .setTick(n.tick)
-            .setPitch(n.pitch)
-            .setDurationTicks(n.dur)
-            .setVelocity(n.vel));
+      const note = notes[i];
+      builder.addEvents(MidiEvent.newBuilder().setTick(note.tick).setPitch(note.pitch)
+        .setDurationTicks(note.dur).setVelocity(note.vel));
     }
-    _send(Request.newBuilder().setMidi(builder).build());
-}
-
-function getMidi(track, slot, clip) {
-    _send(Request.newBuilder()
-        .setMidi(MidiCmd.newBuilder()
-            .setAction(MidiCmd.Action.ACTION_GET)
-            .setTarget(_ref(track, null, slot, clip)))
-        .build());
-}
-
-// Automation
-function addAutomation(track, plugin, paramId) {
-    _send(Request.newBuilder()
-        .setAutomation(AutomationCmd.newBuilder()
-            .setAction(AutomationCmd.Action.ACTION_ADD_LANE)
-            .setTarget(_ref(track, plugin))
-            .setParamId(paramId))
-        .build());
-}
-
-// Alias for addAutomation
-const addAutomationLane = addAutomation;
-
-function removeAutomation(track, lane) {
-    _send(Request.newBuilder()
-        .setAutomation(AutomationCmd.newBuilder()
-            .setAction(AutomationCmd.Action.ACTION_REMOVE_LANE)
-            .setTarget(_ref(track, null, null, null, lane)))
-        .build());
-}
-
-function setAutomation(track, lane, points) {
-    var builder = AutomationCmd.newBuilder()
-        .setAction(AutomationCmd.Action.ACTION_UPDATE_POINTS)
-        .setTarget(_ref(track, null, null, null, lane));
-    for (var i = 0; i < points.length; i++) {
-        var p = points[i];
-        builder.addPoints(AutomationPoint.newBuilder()
-            .setTimeBeats(p[0])
-            .setValue(p[1])
-            .setTension(p[2] || 0));
-    }
-    _send(Request.newBuilder().setAutomation(builder).build());
-}
-
-function getAutomation(track) {
-    _send(Request.newBuilder()
-        .setAutomation(AutomationCmd.newBuilder()
-            .setAction(AutomationCmd.Action.ACTION_GET_LANES)
-            .setTarget(_ref(track)))
-        .build());
-}
-
-// Project & Theme
-function save(path) {
-    _send(Request.newBuilder()
-        .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_SAVE).setPath(path))
-        .build());
-}
-
-function load(path) {
-    _send(Request.newBuilder()
-        .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_LOAD).setPath(path))
-        .build());
-}
-
-function setBpm(bpm) {
-    _send(Request.newBuilder()
-        .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_SET_BPM).setBpm(bpm))
-        .build());
-}
-
-function undo() {
-    _send(Request.newBuilder()
-        .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_UNDO))
-        .build());
-}
-
-function redo() {
-    _send(Request.newBuilder()
-        .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_REDO))
-        .build());
-}
-
-function bounce(path) {
-    _send(Request.newBuilder()
-        .setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_BOUNCE).setPath(path))
-        .build());
-}
-
-function setTheme(presetName) {
-    var preset = Packages.hibiki.ui.Theme.Preset.ABLETON_DARK;
-    switch (presetName) {
-        case "ableton-dark": preset = Packages.hibiki.ui.Theme.Preset.ABLETON_DARK; break;
-        case "ableton-light": preset = Packages.hibiki.ui.Theme.Preset.ABLETON_LIGHT; break;
-        case "solarized-dark": preset = Packages.hibiki.ui.Theme.Preset.SOLARIZED_DARK; break;
-        case "solarized-light": preset = Packages.hibiki.ui.Theme.Preset.SOLARIZED_LIGHT; break;
-        case "win95": preset = Packages.hibiki.ui.Theme.Preset.WIN95; break;
-        case "winxp": preset = Packages.hibiki.ui.Theme.Preset.WINXP; break;
-        default: throw new Error("Unknown preset: " + presetName);
-    }
-    theme.update(preset, theme.getScaling(), theme.getBaseFontSize());
-}
-
-// Global print function
-function print(msg) {
-    java.lang.System.out.println(msg);
-}
-
-// Simple console object for compatibility
-const console = {
-    log: function(msg) {
-        java.lang.System.out.println(msg);
+    send(Request.newBuilder().setMidi(builder).build());
+  }
+  function midiApi(target) {
+    return {
+      replaceNotes: function (resolution, notes) { writeMidi(target, resolution, notes); },
+      get: function () { send(Request.newBuilder().setMidi(MidiCmd.newBuilder()
+        .setAction(MidiCmd.Action.ACTION_GET).setTarget(target)).build()); },
+    };
+  }
+  function sessionSlot(track, slot) {
+    const target = ref(track, -1, slot, -1, -1);
+    return {
+      load: function (path, loop) { trackCommand(TrackCmd.Action.ACTION_LOAD_CLIP, target,
+        function (b) { b.setClipData(Clip.newBuilder().setPath(path).setIsLoop(!!loop)); }); },
+      play: function () { trackCommand(TrackCmd.Action.ACTION_PLAY_SLOT, target); },
+      remove: function () { trackCommand(TrackCmd.Action.ACTION_DELETE_CLIP, target); },
+      setLoop: function (enabled) { trackCommand(TrackCmd.Action.ACTION_SET_CLIP_LOOP, target,
+        function (b) { b.setFlag(!!enabled); }); },
+      midi: midiApi(target),
+    };
+  }
+  function timelineClip(track, clip) {
+    const target = ref(track, -1, -1, clip, -1);
+    return {
+      remove: function () { trackCommand(TrackCmd.Action.ACTION_REMOVE_TIMELINE_CLIP, target); },
+      midi: midiApi(target),
+    };
+  }
+  function device(track, plugin) {
+    return {
+      remove: function () { send(Request.newBuilder().setPlugin(PluginCmd.newBuilder()
+        .setAction(PluginCmd.Action.ACTION_REMOVE).setTarget(ref(track, plugin, -1, -1, -1))).build()); },
+      showGui: function () { send(Request.newBuilder().setPlugin(PluginCmd.newBuilder()
+        .setAction(PluginCmd.Action.ACTION_SHOW_GUI).setTarget(ref(track, plugin, -1, -1, -1))).build()); },
+      parameter: function (id) { return { set: function (value) { send(Request.newBuilder()
+        .setPlugin(PluginCmd.newBuilder().setAction(PluginCmd.Action.ACTION_SET_PARAM)
+        .setTarget(ref(track, plugin, -1, -1, -1)).setParamId(id).setParamValue(value)).build()); } }; },
+    };
+  }
+  function track(track) {
+    return {
+      session: { slot: function (slot) { return sessionSlot(track, slot); } },
+      arrangement: {
+        addClip: function (path, start, duration) { trackCommand(TrackCmd.Action.ACTION_ADD_TIMELINE_CLIP,
+          ref(track, -1, -1, -1, -1), function (b) { b.setClipData(Clip.newBuilder().setPath(path)
+            .setDurationBeats(duration)); b.setValue(start); }); },
+        clip: function (clip) { return timelineClip(track, clip); },
+      },
+      devices: {
+        load: function (path, index) { send(Request.newBuilder().setPlugin(PluginCmd.newBuilder()
+          .setAction(PluginCmd.Action.ACTION_LOAD).setTarget(ref(track, index || 0, -1, -1, -1))
+          .setPath(path)).build()); },
+        at: function (index) { return device(track, index); },
+      },
+      mixer: {
+        setVolume: function (value) { trackCommand(TrackCmd.Action.ACTION_SET_VOLUME, ref(track, -1, -1, -1, -1), function (b) { b.setValue(value); }); },
+        setPan: function (value) { trackCommand(TrackCmd.Action.ACTION_SET_PAN, ref(track, -1, -1, -1, -1), function (b) { b.setValue(value); }); },
+        setMuted: function (value) { trackCommand(TrackCmd.Action.ACTION_SET_MUTE, ref(track, -1, -1, -1, -1), function (b) { b.setFlag(!!value); }); },
+      },
+    };
+  }
+  return {
+    transport: {
+      play: function () { send(Request.newBuilder().setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_PLAY)).build()); },
+      stop: function () { send(Request.newBuilder().setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_STOP)).build()); },
+      seek: function (position) { send(Request.newBuilder().setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_SEEK).setSeekPos(position)).build()); },
     },
-    error: function(msg) {
-        java.lang.System.err.println(msg);
-    }
-};
+    tracks: { at: track },
+    project: {
+      save: function (path) { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_SAVE).setPath(path)).build()); },
+      load: function (path) { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_LOAD).setPath(path)).build()); },
+      setBpm: function (bpm) { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_SET_BPM).setBpm(bpm)).build()); },
+      undo: function () { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_UNDO)).build()); },
+      redo: function () { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_REDO)).build()); },
+      bounce: function (path) { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_BOUNCE).setPath(path)).build()); },
+    },
+    theme: { set: function (name) { const preset = Theme.Preset.valueOf(name.toUpperCase().replace(/-/g, "_")); Theme.getInstance().update(preset, Theme.getInstance().getScaling(), Theme.getInstance().getBaseFontSize()); } },
+  };
+})();
 
+function print(message) { java.lang.System.out.println(message); }
+const console = { log: print, error: function (message) { java.lang.System.err.println(message); } };

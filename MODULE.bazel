@@ -12,6 +12,12 @@ bazel_dep(name = "googletest", version = "1.17.0.bcr.2")
 bazel_dep(name = "protobuf", version = "29.3")
 bazel_dep(name = "abseil-cpp", version = "20250814.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "aspect_rules_ts", version = "3.9.2")
+bazel_dep(name = "rules_nodejs", version = "6.7.3")
+
+rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
+rules_ts_ext.deps(ts_version = "5.9.3")
+use_repo(rules_ts_ext, "npm_typescript")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 maven.install(

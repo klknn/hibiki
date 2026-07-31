@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES5",
+    "module": "none",
+    "lib": ["ES5", "DOM"],
+    "strict": true,
+    "noEmit": true
+  },
+  "files": [
+    "src/main/resources/hibiki.d.ts",
+    "examples/sdk/midi-arpeggiator.ts",
+    "examples/sdk/acid-house.ts"
+  ]
+}

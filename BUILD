@@ -1,3 +1,5 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+
 # Root BUILD
 load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@protobuf//bazel:java_proto_library.bzl", "java_proto_library")
@@ -5,6 +7,19 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test", "objc_library")
 load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_test")
 load("@rules_jvm_external//:defs.bzl", "pom_file")
+
+ts_project(
+    name = "sdk_typescript_check",
+    srcs = [
+        "examples/sdk/acid-house.ts",
+        "examples/sdk/midi-arpeggiator.ts",
+        "src/main/resources/hibiki.d.ts",
+        "src/main/typescript/hibiki-sdk.ts",
+    ],
+    declaration = False,
+    no_emit = True,
+    tsconfig = "//:tsconfig.sdk.json",
+)
 
 pom_file(
     name = "pom",
@@ -471,6 +486,16 @@ java_test(
         "@maven//:com_google_protobuf_protobuf_java",
         "@maven//:junit_junit",
         "@maven//:org_mozilla_rhino",
+    ],
+)
+
+java_test(
+    name = "typescript_compiler_test",
+    srcs = ["src/test/java/hibiki/ui/TypeScriptCompilerTest.java"],
+    test_class = "hibiki.ui.TypeScriptCompilerTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "@maven//:junit_junit",
     ],
 )
 

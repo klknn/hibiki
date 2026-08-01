@@ -294,6 +294,19 @@ await project.transaction("Create acid bassline", async () => {
 });
 ```
 
+### Proposed backend/protobuf changes — design only, not approved
+
+**No backend or protobuf change is part of the current TypeScript SDK migration.** The shipped SDK continues to use the existing fire-and-forget request envelope and notifications. The following protocol work is deliberately deferred until the public SDK semantics, error model, and compatibility policy are reviewed and stable.
+
+1. Add an opaque `request_id` to the request envelope and return it in a structured command-result notification. This is required to associate a Promise with the specific engine operation that fulfilled or rejected it.
+2. Replace the current string-only generic acknowledgement with `CommandResult { request_id, success, error_code, message, revision }`. A queued request must not be reported as successful before the engine applies it.
+3. Add monotonically increasing project and entity revisions to snapshots and state-change notifications, so subscriptions can detect missed events and resynchronize safely.
+4. Define explicit query request/response messages for project, tracks, clips, devices, parameters, and MIDI data. Reads must return immutable snapshots rather than exposing Java or protobuf implementation objects to scripts.
+5. Introduce stable entity IDs in references and snapshots before public handles promise identity across reordering, deletion, undo, or project reload.
+6. Specify transaction begin/commit/rollback and undo-group semantics only after error and partial-failure behavior have been agreed.
+
+Before any protocol implementation, document and review: field numbering and backward compatibility, completion guarantees for each command, timeout/cancellation behavior, error-code taxonomy, event ordering, resynchronization, and migration of existing GUI clients. The TypeScript API and its tests should be proposed first; protobuf and backend changes follow only after that review.
+
 ## 8. Handover Notes
 
 This section records the implementation state as of 2026-08-01 so work can resume without repeating the repository review.

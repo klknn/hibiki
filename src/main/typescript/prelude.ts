@@ -5,7 +5,7 @@ declare const java: any;
 
 interface MidiApi {
   replaceNotes(resolution: number, notes: readonly MidiNote[]): void;
-  get(): void;
+  getNotes(): void;
 }
 
 const hibiki: HibikiSdk = (function (): HibikiSdk {
@@ -50,70 +50,71 @@ const hibiki: HibikiSdk = (function (): HibikiSdk {
   function midiApi(target: any): MidiApi {
     return {
       replaceNotes: function (resolution: number, notes: readonly MidiNote[]): void { writeMidi(target, resolution, notes); },
-      get: function (): void { send(Request.newBuilder().setMidi(MidiCmd.newBuilder()
+      getNotes: function (): void { send(Request.newBuilder().setMidi(MidiCmd.newBuilder()
         .setAction(MidiCmd.Action.ACTION_GET).setTarget(target)).build()); },
     };
   }
   function sessionSlot(track: number, slot: number): any {
     const target = ref(track, -1, slot, -1);
     return {
-      load: function (path: string, loop?: boolean): void { trackCommand(TrackCmd.Action.ACTION_LOAD_CLIP, target,
+      loadClip: function (path: string, loop?: boolean): void { trackCommand(TrackCmd.Action.ACTION_LOAD_CLIP, target,
         function (builder: any): void { builder.setClipData(Clip.newBuilder().setPath(path).setIsLoop(!!loop)); }); },
-      play: function (): void { trackCommand(TrackCmd.Action.ACTION_PLAY_SLOT, target); },
-      remove: function (): void { trackCommand(TrackCmd.Action.ACTION_DELETE_CLIP, target); },
-      setLoop: function (enabled: boolean): void { trackCommand(TrackCmd.Action.ACTION_SET_CLIP_LOOP, target,
+      fire: function (): void { trackCommand(TrackCmd.Action.ACTION_PLAY_SLOT, target); },
+      stop: function (): void { trackCommand(TrackCmd.Action.ACTION_STOP, target); },
+      deleteClip: function (): void { trackCommand(TrackCmd.Action.ACTION_DELETE_CLIP, target); },
+      setLooping: function (enabled: boolean): void { trackCommand(TrackCmd.Action.ACTION_SET_CLIP_LOOP, target,
         function (builder: any): void { builder.setFlag(enabled); }); },
-      midi: midiApi(target),
+      clip: { midi: midiApi(target) },
     };
   }
   function timelineClip(track: number, clip: number): any {
     const target = ref(track, -1, -1, clip);
-    return { remove: function (): void { trackCommand(TrackCmd.Action.ACTION_REMOVE_TIMELINE_CLIP, target); }, midi: midiApi(target) };
+    return { delete: function (): void { trackCommand(TrackCmd.Action.ACTION_REMOVE_TIMELINE_CLIP, target); }, midi: midiApi(target) };
   }
   function device(track: number, plugin: number): any {
     const target = ref(track, plugin, -1, -1);
     return {
-      remove: function (): void { send(Request.newBuilder().setPlugin(PluginCmd.newBuilder()
+      delete: function (): void { send(Request.newBuilder().setPlugin(PluginCmd.newBuilder()
         .setAction(PluginCmd.Action.ACTION_REMOVE).setTarget(target)).build()); },
       showGui: function (): void { send(Request.newBuilder().setPlugin(PluginCmd.newBuilder()
         .setAction(PluginCmd.Action.ACTION_SHOW_GUI).setTarget(target)).build()); },
-      parameter: function (id: number): any { return { set: function (value: number): void { send(Request.newBuilder()
+      parameters: { at: function (id: number): any { return { setNormalized: function (value: number): void { send(Request.newBuilder()
         .setPlugin(PluginCmd.newBuilder().setAction(PluginCmd.Action.ACTION_SET_PARAM)
-        .setTarget(target).setParamId(id).setParamValue(value)).build()); } }; },
+        .setTarget(target).setParamId(id).setParamValue(value)).build()); } }; } },
     };
   }
   function track(index: number): any {
     return {
-      session: { slot: function (slot: number): any { return sessionSlot(index, slot); } },
-      arrangement: {
-        addClip: function (path: string, start: number, duration: number): void { trackCommand(TrackCmd.Action.ACTION_ADD_TIMELINE_CLIP,
+      clipSlots: { at: function (slot: number): any { return sessionSlot(index, slot); } },
+      arrangementClips: {
+        createClip: function (path: string, options: any): void { trackCommand(TrackCmd.Action.ACTION_ADD_TIMELINE_CLIP,
           ref(index, -1, -1, -1), function (builder: any): void { builder.setClipData(Clip.newBuilder().setPath(path)
-            .setDurationBeats(duration)); builder.setValue(start); }); },
-        clip: function (clip: number): any { return timelineClip(index, clip); },
+            .setDurationBeats(options.lengthBeats)); builder.setValue(options.positionBeats); }); },
+        at: function (clip: number): any { return timelineClip(index, clip); },
       },
       devices: {
         load: function (path: string, plugin?: number): void { send(Request.newBuilder().setPlugin(PluginCmd.newBuilder()
           .setAction(PluginCmd.Action.ACTION_LOAD).setTarget(ref(index, plugin || 0, -1, -1)).setPath(path)).build()); },
         at: function (plugin: number): any { return device(index, plugin); },
       },
-      mixer: {
-        setVolume: function (value: number): void { trackCommand(TrackCmd.Action.ACTION_SET_VOLUME, ref(index, -1, -1, -1), function (builder: any): void { builder.setValue(value); }); },
-        setPan: function (value: number): void { trackCommand(TrackCmd.Action.ACTION_SET_PAN, ref(index, -1, -1, -1), function (builder: any): void { builder.setValue(value); }); },
-        setMuted: function (value: boolean): void { trackCommand(TrackCmd.Action.ACTION_SET_MUTE, ref(index, -1, -1, -1), function (builder: any): void { builder.setFlag(value); }); },
+      mixerDevice: {
+        volume: { setNormalized: function (value: number): void { trackCommand(TrackCmd.Action.ACTION_SET_VOLUME, ref(index, -1, -1, -1), function (builder: any): void { builder.setValue(value); }); } },
+        pan: { setNormalized: function (value: number): void { trackCommand(TrackCmd.Action.ACTION_SET_PAN, ref(index, -1, -1, -1), function (builder: any): void { builder.setValue(value); }); } },
+        muted: { set: function (value: boolean): void { trackCommand(TrackCmd.Action.ACTION_SET_MUTE, ref(index, -1, -1, -1), function (builder: any): void { builder.setFlag(value); }); } },
       },
     };
   }
   return {
-    transport: {
-      play: function (): void { send(Request.newBuilder().setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_PLAY)).build()); },
-      stop: function (): void { send(Request.newBuilder().setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_STOP)).build()); },
-      seek: function (position: number): void { send(Request.newBuilder().setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_SEEK).setSeekPos(position)).build()); },
-    },
-    tracks: { at: track },
-    project: {
+    liveSet: {
+      transport: {
+        start: function (): void { send(Request.newBuilder().setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_PLAY)).build()); },
+        stop: function (): void { send(Request.newBuilder().setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_STOP)).build()); },
+        seekBeats: function (positionBeats: number): void { send(Request.newBuilder().setTransport(TransportCmd.newBuilder().setAction(TransportCmd.Action.ACTION_SEEK).setSeekPos(positionBeats)).build()); },
+      },
+      tracks: { at: track },
+      tempo: { setBpm: function (bpm: number): void { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_SET_BPM).setBpm(bpm)).build()); } },
       save: function (path: string): void { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_SAVE).setPath(path)).build()); },
       load: function (path: string): void { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_LOAD).setPath(path)).build()); },
-      setBpm: function (bpm: number): void { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_SET_BPM).setBpm(bpm)).build()); },
       undo: function (): void { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_UNDO)).build()); },
       redo: function (): void { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_REDO)).build()); },
       bounce: function (path: string): void { send(Request.newBuilder().setProject(ProjectCmd.newBuilder().setAction(ProjectCmd.Action.ACTION_BOUNCE).setPath(path)).build()); },

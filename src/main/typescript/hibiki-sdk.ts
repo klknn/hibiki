@@ -10,70 +10,94 @@ interface MidiNote {
   readonly vel: number;
 }
 
+/** A MIDI clip's editable note content. */
 interface MidiClip {
   replaceNotes(resolution: number, notes: readonly MidiNote[]): void;
-  get(): void;
+  getNotes(): void;
 }
 
-interface SessionSlot {
+/** A clip addressed by a Session slot or the arrangement. */
+interface Clip {
   readonly midi: MidiClip;
-  load(path: string, loop?: boolean): void;
-  play(): void;
-  remove(): void;
-  setLoop(enabled: boolean): void;
 }
 
-interface ArrangementClip {
-  readonly midi: MidiClip;
-  remove(): void;
+/** A Session View slot on a track. */
+interface ClipSlot {
+  /** Valid only while the slot contains a compatible clip. */
+  readonly clip: Clip;
+  loadClip(path: string, loop?: boolean): void;
+  fire(): void;
+  stop(): void;
+  deleteClip(): void;
+  setLooping(enabled: boolean): void;
 }
 
-interface DeviceParameter {
-  set(value: number): void;
+/** An arrangement clip. Positions and lengths are expressed in beats. */
+interface ArrangementClip extends Clip {
+  delete(): void;
+}
+
+interface ArrangementClips {
+  createClip(
+      path: string,
+      options: { readonly positionBeats: number; readonly lengthBeats: number }): void;
+  at(index: number): ArrangementClip;
+}
+
+/** A continuous control represented by a normalized value in the 0..1 range. */
+interface NormalizedParameter {
+  setNormalized(value: number): void;
+}
+
+/** A boolean control. */
+interface BooleanParameter {
+  set(value: boolean): void;
 }
 
 interface Device {
-  remove(): void;
+  readonly parameters: { at(index: number): NormalizedParameter };
+  delete(): void;
   showGui(): void;
-  parameter(id: number): DeviceParameter;
 }
 
-interface DeviceChain {
+interface Devices {
   load(path: string, index?: number): void;
   at(index: number): Device;
 }
 
-interface Mixer {
-  setVolume(value: number): void;
-  setPan(value: number): void;
-  setMuted(value: boolean): void;
+interface MixerDevice {
+  readonly volume: NormalizedParameter;
+  readonly pan: NormalizedParameter;
+  readonly muted: BooleanParameter;
 }
 
 interface Track {
-  readonly session: { slot(index: number): SessionSlot };
-  readonly arrangement: {
-    addClip(path: string, start: number, duration: number): void;
-    clip(index: number): ArrangementClip;
-  };
-  readonly devices: DeviceChain;
-  readonly mixer: Mixer;
+  readonly clipSlots: { at(index: number): ClipSlot };
+  readonly arrangementClips: ArrangementClips;
+  readonly devices: Devices;
+  readonly mixerDevice: MixerDevice;
+}
+
+interface Transport {
+  start(): void;
+  stop(): void;
+  seekBeats(positionBeats: number): void;
+}
+
+/** Root of the Ableton-style scripting hierarchy. */
+interface LiveSet {
+  readonly transport: Transport;
+  readonly tracks: { at(index: number): Track };
+  readonly tempo: { setBpm(bpm: number): void };
+  save(path: string): void;
+  load(path: string): void;
+  undo(): void;
+  redo(): void;
+  bounce(path: string): void;
 }
 
 interface HibikiSdk {
-  readonly transport: {
-    play(): void;
-    stop(): void;
-    seek(position: number): void;
-  };
-  readonly tracks: { at(index: number): Track };
-  readonly project: {
-    save(path: string): void;
-    load(path: string): void;
-    setBpm(bpm: number): void;
-    undo(): void;
-    redo(): void;
-    bounce(path: string): void;
-  };
+  readonly liveSet: LiveSet;
   readonly theme: { set(name: string): void };
 }
 }

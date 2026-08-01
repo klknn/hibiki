@@ -77,11 +77,11 @@ public class TypeScriptCompilerTest {
   @Test
   public void rejectsMutationOfReadonlySdkNamespace() throws Exception {
     try {
-      TypeScriptCompiler.transpile("// @ts\nhibiki.transport = {};");
+      TypeScriptCompiler.transpile("// @ts\nhibiki.liveSet = {};");
       throw new AssertionError("The public SDK declaration must preserve readonly properties");
     } catch (java.io.IOException expected) {
       assertTrue(
-          "The compiler must reject assignment to the canonical readonly transport property",
+          "The compiler must reject assignment to the canonical readonly Live Set property",
           expected.getMessage().contains("read-only"));
     }
   }
@@ -95,10 +95,12 @@ public class TypeScriptCompilerTest {
       assertNotNull("The SDK prelude must be bundled as a resource", input);
       context.evaluateReader(
           scope, new BufferedReader(new InputStreamReader(input)), "prelude.js", 1, null);
-      assertNotNull("The prelude must expose hibiki.transport", scope.get("hibiki", scope));
+      assertNotNull("The prelude must expose hibiki.liveSet", scope.get("hibiki", scope));
       assertTrue(
-          "Legacy global play() must not be part of the public SDK",
-          scope.get("play", scope) == Scriptable.NOT_FOUND);
+          "The old flat SDK hierarchy must not remain public",
+          context
+              .evaluateString(scope, "typeof hibiki.tracks === 'undefined'", "test", 1, null)
+              .equals(Boolean.TRUE));
     } finally {
       Context.exit();
     }

@@ -47,7 +47,7 @@ public class JsReplTest {
         // 1. Load/create a MIDI clip at track 1, slot 1
         cx.evaluateString(
             scope,
-            "hibiki.tracks.at(1).session.slot(1).load(\"testdata/test.mid\", false);",
+            "hibiki.liveSet.tracks.at(1).clipSlots.at(1).loadClip(\"testdata/test.mid\", false);",
             "test",
             1,
             null);
@@ -69,7 +69,8 @@ public class JsReplTest {
                 + "        });\n"
                 + "    }\n"
                 + "}\n"
-                + "hibiki.tracks.at(1).session.slot(1).midi.replaceNotes(PPQ, notes);\n";
+                + "hibiki.liveSet.tracks.at(1).clipSlots.at(1).clip.midi.replaceNotes(PPQ,"
+                + " notes);\n";
 
         cx.evaluateString(scope, jsCode, "test", 1, null);
         Thread.sleep(500); // Wait for midi write to execute in backend
@@ -118,7 +119,7 @@ public class JsReplTest {
         // 1. Load Dexed plugin on track 1, plugin slot 0
         cx.evaluateString(
             scope,
-            "hibiki.tracks.at(1).devices.load(\"testdata/Dexed.vst3\", 0);",
+            "hibiki.liveSet.tracks.at(1).devices.load(\"testdata/Dexed.vst3\", 0);",
             "test",
             1,
             null);
@@ -127,7 +128,8 @@ public class JsReplTest {
         // 2. Add a timeline clip on track 1 at 0.0 seconds with duration 4.0 seconds
         cx.evaluateString(
             scope,
-            "hibiki.tracks.at(1).arrangement.addClip(\"testdata/test.mid\", 0.0, 4.0);",
+            "hibiki.liveSet.tracks.at(1).arrangementClips.createClip(\"testdata/test.mid\", {"
+                + " positionBeats: 0.0, lengthBeats: 4.0 });",
             "test",
             1,
             null);
@@ -149,13 +151,14 @@ public class JsReplTest {
                 + "        });\n"
                 + "    }\n"
                 + "}\n"
-                + "hibiki.tracks.at(1).arrangement.clip(0).midi.replaceNotes(PPQ, notes);\n";
+                + "hibiki.liveSet.tracks.at(1).arrangementClips.at(0).midi.replaceNotes(PPQ,"
+                + " notes);\n";
 
         cx.evaluateString(scope, jsCode, "test", 1, null);
         Thread.sleep(500);
 
         // 4. Trigger bounce/rendering to output_mix.wav
-        cx.evaluateString(scope, "hibiki.project.bounce(\"output_mix.wav\");", "test", 1, null);
+        cx.evaluateString(scope, "hibiki.liveSet.bounce(\"output_mix.wav\");", "test", 1, null);
 
         // 5. Wait for bounce finished notification
         String bouncedPath = bounceFinishedFuture.get(10, TimeUnit.SECONDS);

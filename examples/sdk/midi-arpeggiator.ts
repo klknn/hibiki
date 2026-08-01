@@ -14,6 +14,6 @@ for (let step = 0; step < 32; step++) {
   });
 }
 
-const clip = hibiki.tracks.at(0).session.slot(0);
-clip.midi.replaceNotes(ppq, notes);
-clip.play();
+const clipSlot = hibiki.liveSet.tracks.at(0).clipSlots.at(0);
+clipSlot.clip.midi.replaceNotes(ppq, notes);
+clipSlot.fire();

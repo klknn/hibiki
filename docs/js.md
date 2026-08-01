@@ -32,9 +32,60 @@ Hibiki features an embedded JavaScript console right in the GUI.
 
 Hibiki loads the `hibiki` SDK namespace automatically when the REPL starts. The public API is deliberately independent of Rhino's Java interop.
 
+### TypeScript SDK concepts and backend boundary
+
+The TypeScript declaration source, [`src/main/typescript/hibiki-sdk.ts`](../src/main/typescript/hibiki-sdk.ts), is the public SDK contract. Bazel generates its `.d.ts` form for the REPL and examples. [`src/main/typescript/prelude.ts`](../src/main/typescript/prelude.ts) is the private runtime adapter: Bazel compiles it to ES5 because Rhino evaluates JavaScript, not TypeScript.
+
+The target model follows Ableton Live's object hierarchy. The names use idiomatic TypeScript camelCase while retaining the same ownership model:
+
+```text
+hibiki
+└── liveSet                         # one open song/project
+    ├── transport                   # start, stop, seek
+    ├── tempo                       # project tempo
+    ├── tracks.at(index)            # temporary index lookup
+    │   └── track
+    │       ├── clipSlots.at(index) # Session View slots
+    │       │   └── clip            # MIDI/audio content in that slot
+    │       ├── arrangementClips    # timeline clips
+    │       ├── devices             # ordered instrument/effect chain
+    │       │   └── parameters      # normalized device parameters
+    │       └── mixerDevice         # volume, pan, mute
+    └── save/load/undo/redo/bounce
+```
+
+This hierarchy is the shipped public API. The earlier `hibiki.transport`, `hibiki.tracks`, and `hibiki.project` grouping has been removed from the façade and examples; no compatibility aliases are provided.
+
+The core interface families are:
+
+| Interface | Meaning | Key rule |
+|---|---|---|
+| `LiveSet` | Root project/song and global transport | Owns tracks, tempo, persistence, undo, and render operations. |
+| `Track` | One mixer/instrument track | Owns session slots, arrangement clips, devices, and its mixer device. |
+| `ClipSlot` / `Clip` | A Session View location and its content | Slot actions launch or delete; MIDI operations belong to the contained clip. |
+| `ArrangementClip` | A clip placed on the timeline | Position and length use explicitly named beat units. |
+| `Device` / `Parameter` | An instrument/effect and a controllable value | Continuous values use `setNormalized(0..1)`; boolean controls use `set(boolean)`. |
+| `MidiClip` | MIDI note content | `replaceNotes(ppq, notes)` replaces the complete note set and is therefore idempotent. |
+
+The public API never exposes `Packages`, Java classes, protobuf builders, Swing components, or `BackendManager`. They are implementation details of the adapter.
+
+```text
+TypeScript snippet/example
+        │  tsc: type-check and emit ES5
+        ▼
+generated prelude.js in Rhino
+        │  private Packages.hibiki bridge
+        ▼
+Java BackendManager → protobuf Request → hbk-play engine
+        │                                      │
+        └──── protobuf Notification ◀──────────┘
+```
+
+Today this bridge is command-oriented and fire-and-forget: a method call means the Java adapter sent a request, not that the engine completed it. Reads, Promise completion, request IDs, snapshots, subscriptions, stable entity IDs, and transaction semantics remain design work. They must be specified in TypeScript and tested before any backend/protobuf change is proposed.
+
 ### Public Namespace
 
-* `hibiki`: The supported scripting SDK. Use its transport, tracks, project, and theme members below.
+* `hibiki`: The supported scripting SDK. Use `hibiki.liveSet` for DAW operations and `hibiki.theme` for UI theme selection.
 * Rhino `Packages` access and Java UI/backend objects are implementation details, not a supported SDK surface.
 
 ### Console Output
@@ -43,33 +94,33 @@ Hibiki loads the `hibiki` SDK namespace automatically when the REPL starts. The 
 * `console.error(msg)`: Prints an error to the REPL output log.
 
 ### Transport Controls
-* `hibiki.transport.play()`: Starts playback.
-* `hibiki.transport.stop()`: Stops playback.
-* `hibiki.transport.seek(position)`: Seeks to the specified position.
+* `hibiki.liveSet.transport.start()`: Starts playback.
+* `hibiki.liveSet.transport.stop()`: Stops playback.
+* `hibiki.liveSet.transport.seekBeats(positionBeats)`: Seeks to the specified beat position.
 
 ### Track & Clip Management
-* `hibiki.tracks.at(track).session.slot(slot).load(path, loop)`: Loads a clip.
-* `hibiki.tracks.at(track).session.slot(slot).play()`: Triggers a session clip.
-* `hibiki.tracks.at(track).session.slot(slot).remove()`: Deletes a session clip.
-* `hibiki.tracks.at(track).arrangement.addClip(path, start, duration)`: Places an arrangement clip.
-* `hibiki.tracks.at(track).arrangement.clip(index).remove()`: Removes an arrangement clip.
+* `hibiki.liveSet.tracks.at(track).clipSlots.at(slot).loadClip(path, loop)`: Loads a clip.
+* `hibiki.liveSet.tracks.at(track).clipSlots.at(slot).fire()`: Launches a session clip.
+* `hibiki.liveSet.tracks.at(track).clipSlots.at(slot).deleteClip()`: Deletes a session clip.
+* `hibiki.liveSet.tracks.at(track).arrangementClips.createClip(path, { positionBeats, lengthBeats })`: Places an arrangement clip.
+* `hibiki.liveSet.tracks.at(track).arrangementClips.at(index).delete()`: Removes an arrangement clip.
 
 ### VST3 Plugins
-* `hibiki.tracks.at(track).devices.load(path, index)`: Loads a plugin.
-* `hibiki.tracks.at(track).devices.at(index).remove()`: Removes a device.
-* `hibiki.tracks.at(track).devices.at(index).showGui()`: Opens the native plugin UI.
-* `hibiki.tracks.at(track).devices.at(index).parameter(id).set(value)`: Sets a normalized parameter.
+* `hibiki.liveSet.tracks.at(track).devices.load(path, index)`: Loads a plugin.
+* `hibiki.liveSet.tracks.at(track).devices.at(index).delete()`: Removes a device.
+* `hibiki.liveSet.tracks.at(track).devices.at(index).showGui()`: Opens the native plugin UI.
+* `hibiki.liveSet.tracks.at(track).devices.at(index).parameters.at(id).setNormalized(value)`: Sets a normalized parameter.
 
 ### MIDI Programming
-* `hibiki.tracks.at(track).session.slot(slot).midi.replaceNotes(resolution, notes)`: Writes MIDI notes.
-* `hibiki.tracks.at(track).arrangement.clip(index).midi.get()`: Requests arrangement MIDI data.
+* `hibiki.liveSet.tracks.at(track).clipSlots.at(slot).clip.midi.replaceNotes(resolution, notes)`: Writes MIDI notes.
+* `hibiki.liveSet.tracks.at(track).arrangementClips.at(index).midi.getNotes()`: Requests arrangement MIDI data.
 
 ### Project & System
-* `hibiki.project.save(path)`: Saves the project to `.hbk` format.
-* `hibiki.project.load(path)`: Loads a project from `.hbk` format.
-* `hibiki.project.setBpm(bpm)`: Sets the project tempo.
-* `hibiki.project.undo()` / `hibiki.project.redo()`: Undo or redo changes.
-* `hibiki.project.bounce(path)`: Renders the project output to WAV.
+* `hibiki.liveSet.save(path)`: Saves the project to `.hbk` format.
+* `hibiki.liveSet.load(path)`: Loads a project from `.hbk` format.
+* `hibiki.liveSet.tempo.setBpm(bpm)`: Sets the project tempo.
+* `hibiki.liveSet.undo()` / `hibiki.liveSet.redo()`: Undo or redo changes.
+* `hibiki.liveSet.bounce(path)`: Renders the project output to WAV.
 * `hibiki.theme.set(presetName)`: Updates the GUI theme.
 
 ---
@@ -97,8 +148,9 @@ const notes: MidiNote[] = [
   { tick: PPQ, pitch: 64, dur: PPQ, vel: 100 },
 ];
 
-hibiki.tracks.at(0).session.slot(0).midi.replaceNotes(PPQ, notes);
-hibiki.transport.play();
+const clipSlot = hibiki.liveSet.tracks.at(0).clipSlots.at(0);
+clipSlot.clip.midi.replaceNotes(PPQ, notes);
+clipSlot.fire();
 ```
 
 The TypeScript compiler only type-checks the submitted snippet. Runtime state remains the persistent Rhino scope, so use JavaScript-compatible ES5 output and do not rely on type checking to remember declarations from previous evaluations.
@@ -115,10 +167,9 @@ The current and planned targets are:
 
 ```text
 //:sdk_typescript_check  # Current Bazel type-check for declarations and examples
-//sdk:prelude            # Planned: compile the typed SDK implementation to ES5 prelude.js
-//sdk:check              # Planned: strict SDK/public declaration check
-//examples/sdk:all       # Planned: dedicated example target
-//:js_repl_test      # Exercise the generated prelude through Rhino and IPC
+//:sdk_declarations       # Generate the public SDK declaration resource
+//:sdk_prelude            # Compile the typed SDK implementation to ES5 prelude.js
+//:js_repl_test           # Exercise the generated prelude through Rhino and IPC
 ```
 
 The current build pipeline is:
@@ -141,10 +192,10 @@ The Bazel TypeScript toolchain is now wired into `MODULE.bazel`; run `bazel buil
 Load a synthesizer VST, add a timeline clip, write a classic Euclidean kick pattern to it, and render/bounce the output to a WAV file:
 ```javascript
 // 1. Load Dexed synthesizer on Track 1, slot 0
-hibiki.tracks.at(1).devices.load("testdata/Dexed.vst3", 0);
+hibiki.liveSet.tracks.at(1).devices.load("testdata/Dexed.vst3", 0);
 
 // 2. Add a timeline clip on Track 1 at 0.0 seconds with duration 4.0 seconds
-hibiki.tracks.at(1).arrangement.addClip("testdata/test.mid", 0.0, 4.0);
+hibiki.liveSet.tracks.at(1).arrangementClips.createClip("testdata/test.mid", { positionBeats: 0.0, lengthBeats: 4.0 });
 
 // 3. Generate Bossa-like Euclidean kick rhythm
 var PPQ = 480; // ticks per quarter note
@@ -164,11 +215,11 @@ for (var i = 0; i < pattern.length; i++) {
 }
 
 // 4. Write notes to the timeline clip 0
-hibiki.tracks.at(1).arrangement.clip(0).midi.replaceNotes(PPQ, notes);
+hibiki.liveSet.tracks.at(1).arrangementClips.at(0).midi.replaceNotes(PPQ, notes);
 print("Generated rhythm with " + notes.length + " events.");
 
 // 5. Render/bounce the project outputs to output_mix.wav
-hibiki.project.bounce("output_mix.wav");
+hibiki.liveSet.bounce("output_mix.wav");
 ```
 
 ### Automatic Arpeggiator (Generative MIDI)
@@ -191,8 +242,9 @@ for (var bar = 0; bar < 4; bar++) {
     }
 }
 
-hibiki.tracks.at(0).session.slot(0).midi.replaceNotes(PPQ, notes);
-hibiki.transport.play();
+var clipSlot = hibiki.liveSet.tracks.at(0).clipSlots.at(0);
+clipSlot.clip.midi.replaceNotes(PPQ, notes);
+clipSlot.fire();
 ```
 
 ---
@@ -229,7 +281,7 @@ The current prelude is intentionally a small command layer over protobuf IPC. It
 The next SDK work follows this order:
 
 1. **Harden the embedded runtime.** Serialize evaluations, make initialization readiness explicit, avoid process-global output capture, and provide structured errors and disposable listeners.
-2. **Add a JavaScript object facade over the existing engine API.** Prefer domain objects such as `hibiki.transport`, `track`, `clip`, and `device` over direct protobuf builders and positional helper arguments.
+2. **Keep a JavaScript object facade over the existing engine API.** Prefer the `hibiki.liveSet` object hierarchy—tracks, clips, devices, and parameters—over direct protobuf builders and positional helper arguments.
 3. **Expose existing engine capabilities.** Prioritize mixer/routing, recording and input selection, arrangement editing, modulation, plugin bypass/reorder/sidechain, and MIDI panic before introducing new engine commands.
 4. **Provide synchronized state and events.** Build a client-side state store from `FullSync`, `StateUpdate`, playhead, parameter, and metering notifications.
 5. **Design correlated asynchronous operations.** Add a request identifier to commands and their acknowledgements/results before promising `await` semantics. The existing IPC protocol does not yet correlate a request with a response.
@@ -271,9 +323,9 @@ Feature coverage alone is not enough. The SDK should adopt these rules before ex
 2. **Queries return snapshots; subscriptions report change.** `await track.getState()` returns an immutable snapshot with a revision number. `track.onChange(listener)` reports subsequent changes. Do not expose mutable local caches as if they were engine truth.
 3. **Handles have stable identity and explicit validity.** Handles carry an engine ID and canonical path. After deletion or project reload, operations reject with a typed `StaleHandleError`; they must never silently target a new object at the old index.
 4. **Indexes are selection helpers, not identity.** `tracks.at(0)` and `clipSlots.at(0)` are convenient lookups only. APIs that create objects return their new handle directly.
-5. **Creation is explicit.** `session.slot(0).createMidiClip({ lengthBeats: 4 })` and `arrangement.createMidiClip(...)` make lifecycle visible. `replaceNotes` updates an existing MIDI clip and must reject an empty slot rather than creating hidden state.
+5. **Creation is explicit.** `track.clipSlots.at(0).createMidiClip({ lengthBeats: 4 })` and `track.arrangementClips.createMidiClip(...)` make lifecycle visible. `replaceNotes` updates an existing MIDI clip and must reject an empty slot rather than creating hidden state.
 6. **Mutations are idempotent where possible.** Methods such as `setVolume`, `setMuted`, and `replaceNotes` set a complete target state. Separate non-idempotent commands such as `launch`, `duplicate`, and `record` clearly use verbs.
-7. **Transactions define undo and failure semantics.** `project.transaction("Create acid bassline", async () => { ... })` creates one undo step. If a nested command fails, the transaction rejects and either rolls back or reports exactly which partial effects remain.
+7. **Transactions define undo and failure semantics.** `liveSet.transaction("Create acid bassline", async () => { ... })` creates one undo step. If a nested command fails, the transaction rejects and either rolls back or reports exactly which partial effects remain.
 8. **Errors are typed and actionable.** Use errors such as `NotFoundError`, `InvalidStateError`, `UnsupportedOperationError`, `TimeoutError`, and `EngineError`, each containing a stable error code, affected handle/path, and engine detail.
 9. **Events are ordered and recoverable.** Events include a monotonically increasing revision. Consumers can detect gaps and call a resynchronization query instead of operating on silently stale state.
 10. **Use units and normalized values consistently.** Name units in fields and arguments: `positionBeats`, `lengthBeats`, `tick`, `normalizedValue`, `db`, and `seconds`. Do not overload a bare `value` or mix beats and seconds without conversion APIs.
@@ -283,14 +335,14 @@ Feature coverage alone is not enough. The SDK should adopt these rules before ex
 Illustrative shape:
 
 ```typescript
-await project.transaction("Create acid bassline", async () => {
-  const track = await project.tracks.getOrCreateMidiTrack("Acid Bass");
+await hibiki.liveSet.transaction("Create acid bassline", async () => {
+  const track = await hibiki.liveSet.tracks.getOrCreateMidiTrack("Acid Bass");
   const device = await track.devices.load("builtin://3xosc");
-  const clip = await track.arrangement.createMidiClip({ positionBeats: 0, lengthBeats: 4 });
+  const clip = await track.arrangementClips.createMidiClip({ positionBeats: 0, lengthBeats: 4 });
   await clip.replaceNotes(notes);
   await device.ready;
-  await project.setTempo(128);
-  await project.bounce({ path: "acid-house.wav" });
+  await hibiki.liveSet.tempo.setBpm(128);
+  await hibiki.liveSet.bounce({ path: "acid-house.wav" });
 });
 ```
 
@@ -313,7 +365,7 @@ This section records the implementation state as of 2026-08-01 so work can resum
 
 ### Completed
 
-- Replaced the public global helper API in `prelude.js` with a `hibiki` namespace for transport, tracks, session slots, arrangement clips, MIDI, devices, mixer controls, projects, and themes.
+- Replaced the early flat `hibiki.transport` / `hibiki.tracks` / `hibiki.project` grouping with the Ableton-style `hibiki.liveSet` hierarchy: transport, tempo, tracks, clip slots, arrangement clips, devices, parameters, and mixer device controls.
 - Migrated the focused Rhino integration test to the new namespace and made its MIDI assertion deterministic by checking the emitted command.
 - Added the canonical TypeScript contract in `src/main/typescript/hibiki-sdk.ts`. Bazel generates the bundled `hibiki-sdk.d.ts` declaration and layers only the minimal REPL globals from `src/main/resources/hibiki-globals.d.ts`.
 - Added typed examples in `examples/sdk/midi-arpeggiator.ts` and `examples/sdk/acid-house.ts`.
@@ -366,7 +418,7 @@ When using Codex Desktop with Computer Use enabled, manually verify the Browser-
 4. Double-click `midi-arpeggiator.ts`.
 5. Confirm the complete TypeScript source appears in the JS REPL input editor and that it has not executed automatically.
 6. Press Ctrl+Enter (Cmd+Enter on macOS) to evaluate it.
-7. Confirm that the selected session clip receives MIDI notes and that playback can be started with `hibiki.transport.play()`.
+7. Confirm that the selected session clip receives MIDI notes and that playback can be started with `hibiki.liveSet.transport.start()`.
 8. Repeat with `acid-house.ts`; confirm the synth/device loads, the bassline is written, playback starts, and `acid-house.wav` is rendered.
 
 For debugging, edit the loaded source before executing it. Try changing the BPM, note pattern, or target track, then rerun the snippet and inspect the REPL output and DAW state. Do not use the GUI test to overwrite project files or render into an important user directory; use a temporary project/output path.

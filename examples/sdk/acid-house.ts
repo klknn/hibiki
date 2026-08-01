@@ -10,12 +10,12 @@ const notes: MidiNote[] = pattern.map((pitch, index) => ({
   vel: index % 4 === 0 ? 118 : 92,
 }));
 
-const bass = hibiki.tracks.at(0);
+const bass = hibiki.liveSet.tracks.at(0);
 bass.devices.load("builtin://3xosc", 0);
 // Bounce renders the arrangement, so create an in-memory MIDI clip there first.
-bass.arrangement.addClip("", 0, 4);
-bass.arrangement.clip(0).midi.replaceNotes(ppq, notes);
-bass.mixer.setVolume(0.82);
-hibiki.project.setBpm(128);
-hibiki.transport.play();
-hibiki.project.bounce("acid-house.wav");
+bass.arrangementClips.createClip("", { positionBeats: 0, lengthBeats: 4 });
+bass.arrangementClips.at(0).midi.replaceNotes(ppq, notes);
+bass.mixerDevice.volume.setNormalized(0.82);
+hibiki.liveSet.tempo.setBpm(128);
+hibiki.liveSet.transport.start();
+hibiki.liveSet.bounce("acid-house.wav");

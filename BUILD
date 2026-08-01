@@ -1,5 +1,3 @@
-load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
-
 # Root BUILD
 load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@protobuf//bazel:java_proto_library.bzl", "java_proto_library")
@@ -7,18 +5,42 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test", "objc_library")
 load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_test")
 load("@rules_jvm_external//:defs.bzl", "pom_file")
+load(
+    ":ts_check.bzl",
+    "ts_check",
+    "ts_emit_declarations",
+    "ts_emit_es5",
+    "typescript_repl_compiler",
+)
 
-ts_project(
+ts_check(
     name = "sdk_typescript_check",
     srcs = [
         "examples/sdk/acid-house.ts",
         "examples/sdk/midi-arpeggiator.ts",
-        "src/main/resources/hibiki.d.ts",
+        "src/main/resources/hibiki-globals.d.ts",
         "src/main/typescript/hibiki-sdk.ts",
     ],
-    declaration = False,
-    no_emit = True,
     tsconfig = "//:tsconfig.sdk.json",
+)
+
+typescript_repl_compiler(
+    name = "typescript_repl_compiler",
+)
+
+ts_emit_es5(
+    name = "sdk_prelude",
+    srcs = [
+        "src/main/typescript/prelude.ts",
+        ":sdk_declarations",
+    ],
+    out = "prelude.js",
+)
+
+ts_emit_declarations(
+    name = "sdk_declarations",
+    src = "src/main/typescript/hibiki-sdk.ts",
+    out = "hibiki-sdk.d.ts",
 )
 
 pom_file(
@@ -36,7 +58,18 @@ java_library(
             "src/main/java/hibiki/EchoMain.java",
         ],
     ),
-    resources = glob(["src/main/resources/**/*"]),
+    resources = glob(
+        [
+            "examples/sdk/*.ts",
+            "src/main/resources/**/*",
+        ],
+        exclude = [
+            "src/main/resources/prelude.js",
+        ],
+    ) + [
+        ":sdk_declarations",
+        ":sdk_prelude",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//pb:commands_java_proto",
@@ -54,6 +87,7 @@ java_library(
 java_binary(
     name = "hibiki-gui-java",
     data = [
+        ":typescript_repl_compiler",
         "//engine:hbk-play",
         "//testdata",
     ],
@@ -88,6 +122,7 @@ java_library(
 java_binary(
     name = "hibiki-gui-clj",
     data = [
+        ":typescript_repl_compiler",
         "//engine:hbk-play",
         "//testdata",
     ],
@@ -162,6 +197,7 @@ java_test(
     deps = [
         ":hibiki-gui-lib",
         "@maven//:junit_junit",
+        "@maven//:org_mozilla_rhino",
     ],
 )
 
@@ -492,9 +528,40 @@ java_test(
 java_test(
     name = "typescript_compiler_test",
     srcs = ["src/test/java/hibiki/ui/TypeScriptCompilerTest.java"],
+    data = [":typescript_repl_compiler"],
     test_class = "hibiki.ui.TypeScriptCompilerTest",
     deps = [
         ":hibiki-gui-lib",
+        "@maven//:junit_junit",
+        "@maven//:org_mozilla_rhino",
+    ],
+)
+
+java_test(
+    name = "typescript_cli_e2e_test",
+    srcs = ["src/test/java/hibiki/GuiTypeScriptE2eTest.java"],
+    data = [
+        ":hibiki-gui-java",
+        "//testdata",
+    ],
+    test_class = "hibiki.GuiTypeScriptE2eTest",
+    deps = ["@maven//:junit_junit"],
+)
+
+java_test(
+    name = "acid_house_sdk_e2e_test",
+    srcs = ["src/test/java/hibiki/ui/AcidHouseSdkE2eTest.java"],
+    data = [
+        ":typescript_repl_compiler",
+        "//:examples/sdk/acid-house.ts",
+        "//engine:hbk-play",
+        "//testdata",
+    ],
+    test_class = "hibiki.ui.AcidHouseSdkE2eTest",
+    deps = [
+        ":hibiki-gui-lib",
+        "//pb:notifications_java_proto",
+        "@maven//:com_google_protobuf_protobuf_java",
         "@maven//:junit_junit",
     ],
 )

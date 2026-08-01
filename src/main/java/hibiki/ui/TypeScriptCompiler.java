@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /** Compiles marked TypeScript REPL snippets to ES5 JavaScript for Rhino. */
@@ -30,7 +31,7 @@ final class TypeScriptCompiler {
       Files.writeString(sourceFile, source, StandardCharsets.UTF_8);
       writeDeclarations(declarationsFile);
 
-      String command = System.getProperty(COMMAND_PROPERTY, DEFAULT_COMMAND);
+      String command = compilerCommand();
       Process process;
       try {
         process =
@@ -73,12 +74,50 @@ final class TypeScriptCompiler {
     }
   }
 
-  private static void writeDeclarations(Path destination) throws IOException {
-    try (InputStream declarations = TypeScriptCompiler.class.getResourceAsStream("/hibiki.d.ts")) {
-      if (declarations == null) {
-        throw new IOException("Bundled TypeScript declarations are missing.");
+  private static String compilerCommand() {
+    return compilerCommand(System.getenv("RUNFILES_DIR"), System.getenv("JAVA_RUNFILES"));
+  }
+
+  /** Resolve the compiler for Bazel's shell and Java launcher runfiles conventions. */
+  static String compilerCommand(String runfilesDir, String javaRunfilesDir) {
+    String configured = System.getProperty(COMMAND_PROPERTY);
+    if (configured != null && !configured.isBlank()) {
+      return configured;
+    }
+    for (String candidate :
+        new String[] {javaRunfilesDir, runfilesDir, System.getenv("TEST_SRCDIR")}) {
+      if (candidate != null && !candidate.isBlank()) {
+        Optional<Path> bundledCompiler = findBundledCompiler(Path.of(candidate));
+        if (bundledCompiler.isPresent()) {
+          return bundledCompiler.get().toString();
+        }
       }
-      Files.copy(declarations, destination, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
+    return DEFAULT_COMMAND;
+  }
+
+  /** Locate the TypeScript launcher included in the Bazel runfiles tree. */
+  static Optional<Path> findBundledCompiler(Path runfilesDir) {
+    for (String workspace : List.of("hibiki", "_main")) {
+      Path compiler = runfilesDir.resolve(workspace).resolve("typescript_repl_compiler");
+      if (Files.isRegularFile(compiler)) {
+        return Optional.of(compiler);
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static void writeDeclarations(Path destination) throws IOException {
+    for (String resource : List.of("/hibiki-sdk.d.ts", "/hibiki-globals.d.ts")) {
+      try (InputStream declarations = TypeScriptCompiler.class.getResourceAsStream(resource)) {
+        if (declarations == null) {
+          throw new IOException("Bundled TypeScript declaration is missing: " + resource);
+        }
+        Files.writeString(
+            destination, "\n", StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.APPEND);
+        Files.write(
+            destination, declarations.readAllBytes(), java.nio.file.StandardOpenOption.APPEND);
+      }
     }
   }
 }

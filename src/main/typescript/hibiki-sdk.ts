@@ -1,18 +1,21 @@
 /** Canonical public TypeScript contract for the Hibiki scripting SDK. */
 
-export interface MidiNote {
+export {};
+
+declare global {
+interface MidiNote {
   readonly tick: number;
   readonly pitch: number;
   readonly dur: number;
   readonly vel: number;
 }
 
-export interface MidiClip {
+interface MidiClip {
   replaceNotes(resolution: number, notes: readonly MidiNote[]): void;
   get(): void;
 }
 
-export interface SessionSlot {
+interface SessionSlot {
   readonly midi: MidiClip;
   load(path: string, loop?: boolean): void;
   play(): void;
@@ -20,33 +23,33 @@ export interface SessionSlot {
   setLoop(enabled: boolean): void;
 }
 
-export interface ArrangementClip {
+interface ArrangementClip {
   readonly midi: MidiClip;
   remove(): void;
 }
 
-export interface DeviceParameter {
+interface DeviceParameter {
   set(value: number): void;
 }
 
-export interface Device {
+interface Device {
   remove(): void;
   showGui(): void;
   parameter(id: number): DeviceParameter;
 }
 
-export interface DeviceChain {
+interface DeviceChain {
   load(path: string, index?: number): void;
   at(index: number): Device;
 }
 
-export interface Mixer {
+interface Mixer {
   setVolume(value: number): void;
   setPan(value: number): void;
   setMuted(value: boolean): void;
 }
 
-export interface Track {
+interface Track {
   readonly session: { slot(index: number): SessionSlot };
   readonly arrangement: {
     addClip(path: string, start: number, duration: number): void;
@@ -56,7 +59,7 @@ export interface Track {
   readonly mixer: Mixer;
 }
 
-export interface HibikiSdk {
+interface HibikiSdk {
   readonly transport: {
     play(): void;
     stop(): void;
@@ -72,4 +75,5 @@ export interface HibikiSdk {
     bounce(path: string): void;
   };
   readonly theme: { set(name: string): void };
+}
 }

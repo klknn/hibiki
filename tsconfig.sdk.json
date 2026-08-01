@@ -1,13 +1,15 @@
 {
   "compilerOptions": {
     "target": "ES5",
-    "module": "none",
+    "module": "ESNext",
+    "moduleDetection": "force",
     "lib": ["ES5", "DOM"],
     "strict": true,
     "noEmit": true
   },
   "files": [
-    "src/main/resources/hibiki.d.ts",
+    "src/main/resources/hibiki-globals.d.ts",
+    "src/main/typescript/hibiki-sdk.ts",
     "examples/sdk/midi-arpeggiator.ts",
     "examples/sdk/acid-house.ts"
   ]

@@ -19,6 +19,7 @@ import javax.swing.tree.*;
 
 public class BrowserPane extends JPanel {
   private static final String PREFS_KEY = "customSearchPaths";
+  private static final String[] SDK_EXAMPLES = {"acid-house.ts", "midi-arpeggiator.ts"};
   private static final Preferences PREFS = Preferences.userNodeForPackage(BrowserPane.class);
 
   private JTree tree;
@@ -27,6 +28,7 @@ public class BrowserPane extends JPanel {
   private DefaultMutableTreeNode pluginsNode;
   private DefaultMutableTreeNode midiNode;
   private DefaultMutableTreeNode audioNode;
+  private DefaultMutableTreeNode sdkExamplesNode;
   private DefaultMutableTreeNode userNode;
   private DefaultMutableTreeNode projectNode;
 
@@ -36,6 +38,7 @@ public class BrowserPane extends JPanel {
   // Tree nodes for each remote host
   private Map<String, DefaultMutableTreeNode> remoteHostNodes = new ConcurrentHashMap<>();
   private javax.swing.Timer refreshDebounceTimer;
+  private final SdkExampleLoader sdkExampleLoader;
 
   private static BrowserPane instance;
 
@@ -74,7 +77,20 @@ public class BrowserPane extends JPanel {
     }
   }
 
+  /** Receives the resource name of an SDK example selected in the browser. */
+  @FunctionalInterface
+  public interface SdkExampleLoader {
+    void load(String resourceName);
+  }
+
+  /** Create a browser without SDK example loading integration. */
   public BrowserPane() {
+    this(null);
+  }
+
+  /** Create a browser that delegates SDK example loading to the enclosing view. */
+  public BrowserPane(SdkExampleLoader sdkExampleLoader) {
+    this.sdkExampleLoader = sdkExampleLoader;
     instance = this;
     setLayout(new BorderLayout());
     setBackground(Theme.getInstance().BG_DARK);
@@ -319,6 +335,11 @@ public class BrowserPane extends JPanel {
     pluginsNode = new DefaultMutableTreeNode("Plugins");
     midiNode = new DefaultMutableTreeNode("MIDI Files");
     audioNode = new DefaultMutableTreeNode("Audio Clips");
+    sdkExamplesNode = new DefaultMutableTreeNode("SDK Examples");
+    for (String example : SDK_EXAMPLES) {
+      sdkExamplesNode.add(
+          new DefaultMutableTreeNode(new FileItem(new File(example), "sdk-example", example)));
+    }
 
     // Built-in effects node (always at the top)
     DefaultMutableTreeNode builtinNode = new DefaultMutableTreeNode("Built-in");
@@ -470,6 +491,9 @@ public class BrowserPane extends JPanel {
     root.add(pluginsNode);
     root.add(midiNode);
     root.add(audioNode);
+    if (sdkExamplesNode.getChildCount() > 0) {
+      root.add(sdkExamplesNode);
+    }
 
     // Scan testdata directory
     File testData = new File("testdata");
@@ -737,6 +761,10 @@ public class BrowserPane extends JPanel {
           dmPanel.loadAudioSample(dmPanel.selectedPad, item.file.getAbsolutePath());
         } else {
           sendLoadClip(item.file.getAbsolutePath(), true);
+        }
+      } else if ("sdk-example".equals(item.type)) {
+        if (sdkExampleLoader != null) {
+          sdkExampleLoader.load(item.file.getName());
         }
       }
     }

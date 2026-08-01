@@ -44,7 +44,7 @@ public class MainView extends JPanel implements Theme.ThemeListener {
           cl.show(centerContainer, isTimeline ? "TIMELINE" : "SESSION");
         });
 
-    BrowserPane browserPane = new BrowserPane();
+    BrowserPane browserPane = new BrowserPane(this::loadSdkExample);
     pluginPane = new PluginPane();
 
     // Right side split: Center Content (Top) / Plugin Pane (Bottom)
@@ -267,6 +267,18 @@ public class MainView extends JPanel implements Theme.ThemeListener {
     add(footer, BorderLayout.SOUTH);
     revalidate();
     repaint();
+  }
+
+  /** Reveal the JavaScript REPL and load the selected bundled SDK example. */
+  private void loadSdkExample(String resourceName) {
+    if (activeReplType != TopBar.ReplType.JAVASCRIPT) {
+      toggleRepl(TopBar.ReplType.JAVASCRIPT);
+    }
+    try {
+      jsReplPanel.loadSdkExample(resourceName);
+    } catch (java.io.IOException e) {
+      JOptionPane.showMessageDialog(this, "Could not load SDK example: " + e.getMessage());
+    }
   }
 
   /** Switch between Session and Timeline views. */

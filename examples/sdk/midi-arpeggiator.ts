@@ -1,3 +1,4 @@
+// @ts
 /** Generate a C-major arpeggio in a session MIDI clip. */
 const ppq = 480;
 const sixteenth = ppq / 4;

@@ -1,12 +1,14 @@
 package hibiki;
 
 import com.formdev.flatlaf.FlatDarkLaf;
+import hibiki.ui.JsScriptRunner;
 import hibiki.ui.MainView;
 import hibiki.ui.MenuBarFactory;
 import hibiki.ui.SessionView;
 import hibiki.ui.TimelineView;
 import java.awt.*;
 import java.net.URL;
+import java.nio.file.Path;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -73,8 +75,22 @@ public class GuiMain {
     BackendManager backend = BackendManager.getInstance();
     backend.setEngineFlags(engineFlags);
 
+    Path scriptPath = scriptPath(args);
+
     // Start backend connection
     backend.start();
+
+    if (scriptPath != null) {
+      try {
+        JsScriptRunner.run(scriptPath);
+      } catch (Exception e) {
+        System.err.println("Script execution failed: " + e.getMessage());
+        backend.stop();
+        System.exit(1);
+      }
+      backend.stop();
+      return;
+    }
 
     SwingUtilities.invokeLater(
         () -> {
@@ -152,6 +168,20 @@ public class GuiMain {
           frame.setLocationRelativeTo(null);
           frame.setVisible(true);
         });
+  }
+
+  /** Return the script selected for non-interactive execution, or {@code null} for the GUI. */
+  private static Path scriptPath(String[] args) {
+    for (int i = 0; i < args.length; i++) {
+      if ("--run-typescript".equals(args[i])) {
+        if (i + 1 >= args.length) {
+          System.err.println("--run-typescript requires a source file path.");
+          System.exit(2);
+        }
+        return Path.of(args[i + 1]);
+      }
+    }
+    return null;
   }
 
   /**

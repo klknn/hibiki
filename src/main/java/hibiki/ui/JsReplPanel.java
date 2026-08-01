@@ -3,10 +3,12 @@ package hibiki.ui;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.*;
@@ -104,8 +106,8 @@ public class JsReplPanel extends JPanel {
                     appendOutput("Error: /prelude.js not found in resources.\n");
                   }
                   appendOutput(
-                      "Ready. Global singletons `bm`, `theme`, `session`, `timeline` and helper API"
-                          + " functions (play(), stop(), setTheme()) are available.\n\n");
+                      "Ready. Use the `hibiki` SDK namespace (for example,"
+                          + " hibiki.transport.play()).\n\n");
                 } finally {
                   Context.exit();
                 }
@@ -175,6 +177,19 @@ public class JsReplPanel extends JPanel {
   /** Focus the input area. */
   public void focusInput() {
     input.requestFocusInWindow();
+  }
+
+  /** Load a bundled SDK example into the REPL editor without executing it. */
+  public void loadSdkExample(String resourceName) throws IOException {
+    try (InputStream source = getClass().getResourceAsStream("/examples/sdk/" + resourceName)) {
+      if (source == null) {
+        throw new IOException("Bundled SDK example not found: " + resourceName);
+      }
+      input.setText(new String(source.readAllBytes(), StandardCharsets.UTF_8));
+      input.setCaretPosition(0);
+      focusInput();
+      appendOutput("Loaded SDK example: " + resourceName + "\n");
+    }
   }
 
   private void appendOutput(String text) {

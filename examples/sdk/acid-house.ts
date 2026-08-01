@@ -1,3 +1,4 @@
+// @ts
 /** Create a one-bar 303-style bassline and render the project. */
 const ppq = 480;
 const step = ppq / 4;
@@ -11,7 +12,9 @@ const notes: MidiNote[] = pattern.map((pitch, index) => ({
 
 const bass = hibiki.tracks.at(0);
 bass.devices.load("builtin://3xosc", 0);
-bass.session.slot(0).midi.replaceNotes(ppq, notes);
+// Bounce renders the arrangement, so create an in-memory MIDI clip there first.
+bass.arrangement.addClip("", 0, 4);
+bass.arrangement.clip(0).midi.replaceNotes(ppq, notes);
 bass.mixer.setVolume(0.82);
 hibiki.project.setBpm(128);
 hibiki.transport.play();

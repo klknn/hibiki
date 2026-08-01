@@ -246,3 +246,51 @@ The next SDK work follows this order:
 7. **Evaluate an external extension host later.** Node.js/TypeScript extensions, packaging, permissions, hot reload, and UI contributions should follow a proven object API; Rhino remains the interactive REPL and compatibility path during that transition.
 
 Stable entity IDs are a later persistence and protocol migration. Until then, SDK handles should clearly document that index-based references can become invalid after project-state changes. Likewise, direct Rhino `Packages` access remains an advanced, unsupported escape hatch rather than part of the future public SDK.
+
+---
+
+## 7. Handover Notes
+
+This section records the implementation state as of 2026-08-01 so work can resume without repeating the repository review.
+
+### Completed
+
+- Replaced the public global helper API in `prelude.js` with a `hibiki` namespace for transport, tracks, session slots, arrangement clips, MIDI, devices, mixer controls, projects, and themes.
+- Migrated the focused Rhino integration test to the new namespace and made its MIDI assertion deterministic by checking the emitted command.
+- Added the canonical TypeScript contract in `src/main/typescript/hibiki-sdk.ts` and declarations in `src/main/resources/hibiki.d.ts`.
+- Added typed examples in `examples/sdk/midi-arpeggiator.ts` and `examples/sdk/acid-house.ts`.
+- Added the Bazel TypeScript checking target:
+
+  ```bash
+  bazel build -c opt //:sdk_typescript_check
+  ```
+
+- The focused `//:js_repl_test` passed after the façade migration. Formatting and `git diff --check` also passed.
+
+### Incomplete
+
+- `src/main/resources/prelude.js` is still hand-authored JavaScript. Move the runtime bridge into TypeScript and make Bazel generate the ES5 prelude.
+- The current TypeScript target checks declarations and examples but does not generate `prelude.js`.
+- Earlier documentation snippets still use removed global functions and must be migrated to `hibiki.*` syntax.
+- The arpeggiator and acid-house examples are not yet automated audio-render E2E tests.
+- Async calls still use fire-and-forget notifications. Add request IDs and correlated acknowledgements before exposing Promise-based query methods.
+- Rhino evaluation still needs serialized execution, explicit initialization readiness, and non-global output capture.
+
+### Recommended next sequence
+
+1. Make the TypeScript contract the actual runtime implementation and keep protobuf/`Packages` access private.
+2. Change the Bazel target from type-check-only to emit ES5 JavaScript for the Java GUI resource path.
+3. Add a generated-prelude Rhino verification test.
+4. Migrate all documentation snippets to `hibiki.*` syntax.
+5. Add an acid-house E2E test that writes bass MIDI, loads a synth, renders WAV, and verifies non-silent output.
+6. Add request correlation, state caching, event subscriptions, and typed async results.
+
+### Verification commands
+
+```bash
+bazel build -c opt //:sdk_typescript_check
+bazel test -c opt //:js_repl_test --test_output=errors
+bazel test -c opt //:typescript_compiler_test --test_output=errors
+./tools/format.sh
+git diff --check
+```

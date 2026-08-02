@@ -17,6 +17,8 @@ ts_check(
     name = "sdk_typescript_check",
     srcs = [
         "examples/sdk/acid-house.ts",
+        "examples/sdk/arrangement-chord-progression.ts",
+        "examples/sdk/euclidean-session-groove.ts",
         "examples/sdk/midi-arpeggiator.ts",
         "src/main/resources/hibiki-globals.d.ts",
         "src/main/typescript/hibiki-sdk.ts",

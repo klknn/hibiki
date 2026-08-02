@@ -33,12 +33,20 @@ public class TypeScriptCompilerTest {
 
   @Test
   public void sdkExamplesAreBundledAndOptIntoTypeScriptCompilation() throws Exception {
-    InputStream input = getClass().getResourceAsStream("/examples/sdk/midi-arpeggiator.ts");
-    assertNotNull("SDK examples must be packaged with the GUI", input);
-    String source = new String(input.readAllBytes(), StandardCharsets.UTF_8);
-    assertTrue(
-        "Browser-loaded SDK TypeScript must start with the REPL compiler marker",
-        TypeScriptCompiler.isTypeScript(source));
+    for (String example :
+        new String[] {
+          "midi-arpeggiator.ts",
+          "acid-house.ts",
+          "euclidean-session-groove.ts",
+          "arrangement-chord-progression.ts"
+        }) {
+      InputStream input = getClass().getResourceAsStream("/examples/sdk/" + example);
+      assertNotNull("SDK example must be packaged with the GUI: " + example, input);
+      String source = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+      assertTrue(
+          "Browser-loaded SDK TypeScript must start with the REPL compiler marker: " + example,
+          TypeScriptCompiler.isTypeScript(source));
+    }
   }
 
   @Test

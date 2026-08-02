@@ -19,7 +19,12 @@ import javax.swing.tree.*;
 
 public class BrowserPane extends JPanel {
   private static final String PREFS_KEY = "customSearchPaths";
-  private static final String[] SDK_EXAMPLES = {"acid-house.ts", "midi-arpeggiator.ts"};
+  private static final String[] SDK_EXAMPLES = {
+    "acid-house.ts",
+    "arrangement-chord-progression.ts",
+    "euclidean-session-groove.ts",
+    "midi-arpeggiator.ts"
+  };
   private static final Preferences PREFS = Preferences.userNodeForPackage(BrowserPane.class);
 
   private JTree tree;

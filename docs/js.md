@@ -155,7 +155,14 @@ clipSlot.fire();
 
 The TypeScript compiler only type-checks the submitted snippet. Runtime state remains the persistent Rhino scope, so use JavaScript-compatible ES5 output and do not rely on type checking to remember declarations from previous evaluations.
 
-Typed SDK examples live in `examples/sdk/`: `midi-arpeggiator.ts` generates a session-clip arpeggio and `acid-house.ts` builds and renders a short bassline. Check them with `bazel build -c opt //:sdk_typescript_check`.
+Typed SDK examples live in `examples/sdk/` and are available in the Browser pane:
+
+* `midi-arpeggiator.ts` writes and launches a C-major Session View arpeggio.
+* `euclidean-session-groove.ts` creates and launches a five-pulse Euclidean groove.
+* `acid-house.ts` builds and renders a one-bar 303-style bassline.
+* `arrangement-chord-progression.ts` writes a four-bar progression to the arrangement and renders it.
+
+Check all examples with `bazel build -c opt //:sdk_typescript_check`.
 
 ### Bazel TypeScript Build
 
@@ -368,7 +375,7 @@ This section records the implementation state as of 2026-08-01 so work can resum
 - Replaced the early flat `hibiki.transport` / `hibiki.tracks` / `hibiki.project` grouping with the Ableton-style `hibiki.liveSet` hierarchy: transport, tempo, tracks, clip slots, arrangement clips, devices, parameters, and mixer device controls.
 - Migrated the focused Rhino integration test to the new namespace and made its MIDI assertion deterministic by checking the emitted command.
 - Added the canonical TypeScript contract in `src/main/typescript/hibiki-sdk.ts`. Bazel generates the bundled `hibiki-sdk.d.ts` declaration and layers only the minimal REPL globals from `src/main/resources/hibiki-globals.d.ts`.
-- Added typed examples in `examples/sdk/midi-arpeggiator.ts` and `examples/sdk/acid-house.ts`.
+- Added typed examples for arpeggiation, Euclidean Session View rhythm, acid bassline rendering, and arrangement chord progression in `examples/sdk/`.
 - Added an `SDK Examples` section to the Browser pane. Examples are bundled with the GUI; double-clicking one opens the JS REPL and loads it without executing it, making debugging and stepwise execution easier.
 - Bundled the pinned TypeScript compiler and hermetic Node runtime with Bazel-launched GUI runfiles, so the REPL no longer requires a global `tsc` installation.
 - Moved the Rhino façade to `src/main/typescript/prelude.ts`; Bazel compiles it to the GUI's `prelude.js` resource as ES5.
@@ -425,7 +432,7 @@ For debugging, edit the loaded source before executing it. Try changing the BPM,
 
 Expected behavior:
 
-- The Browser exposes both examples under `SDK Examples`.
+- The Browser exposes all four examples under `SDK Examples`.
 - Double-click loads source only; it does not send commands to the engine.
 - The REPL remains editable and preserves the loaded source.
 - Ctrl/Cmd+Enter executes the edited source.

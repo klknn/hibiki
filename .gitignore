@@ -19,6 +19,7 @@ local.properties
 *.aab
 *.dex
 *.hprof
+**/jniLibs/
 
 # Build output
 bin/

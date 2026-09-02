@@ -131,24 +131,40 @@ bazel test //engine/android:hibiki_jni_test -c opt --jobs=2 --local_cpu_resource
 
 ### Step 3: Testing via Command-Line Interface (CLI)
 
-#### 1. Build the Debug APK
+#### Option A: Build and Run via Bazel (Unified Workflow)
+
 ```bash
-cd android
-./gradlew assembleDebug
-# Output APK: android/app/build/outputs/apk/debug/app-debug.apk
+# Build the Android APK (automatically builds native libhibiki_jni.so and packages APK)
+bazel run //android/app:build
+
+# Launch Android Emulator and run Hibiki DAW app
+bazel run //android/app:run
 ```
 
-#### 2. Run on Android Emulator (Simulator)
+#### Option B: Build and Run via Helper Scripts
+
 ```bash
-# 1. List available virtual devices (AVDs)
-emulator -list-avds
+# 1. Start the Android Emulator
+./tools/start_android_emulator.sh
 
-# 2. Launch an emulator instance in the background (e.g. Pixel_7_API_34)
-emulator -avd Pixel_7_API_34 &
+# 2. Build and launch the DAW on the active emulator/device
+./tools/run_android_app.sh
+```
 
-# 3. Install and launch the application
+#### Option C: Build and Run via Gradle
+
+```bash
+# 1. Build Native JNI Engine first
+bazel build //engine/android:libhibiki_jni.so -c opt
+mkdir -p android/app/src/main/jniLibs/x86_64
+cp -f bazel-bin/engine/android/libhibiki_jni.so android/app/src/main/jniLibs/x86_64/
+
+# 2. Assemble Debug APK
 cd android
-./gradlew installDebug
+./gradlew assembleDebug
+
+# 3. Install & Launch
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n hibiki.android/.MainActivity
 ```
 

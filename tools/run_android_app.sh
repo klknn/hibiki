@@ -4,7 +4,11 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+if [[ -n "${BUILD_WORKING_DIRECTORY:-}" ]]; then
+  REPO_ROOT="$BUILD_WORKING_DIRECTORY"
+else
+  REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+fi
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 if [[ -f "$ANDROID_HOME/env.sh" ]]; then
   # shellcheck source=/dev/null
@@ -23,6 +27,12 @@ if ! adb devices | grep -E "(emulator-[0-9]+|[a-zA-Z0-9]+)\s+device" &>/dev/null
   echo "⚠️  No active Android device detected. Launching emulator..."
   "$REPO_ROOT/tools/start_android_emulator.sh"
 fi
+
+echo "🔨 Building Native C++ Audio Engine (libhibiki_jni.so)..."
+cd "$REPO_ROOT"
+bazel build //engine/android:libhibiki_jni.so -c opt --jobs=2
+mkdir -p "$REPO_ROOT/android/app/src/main/jniLibs/x86_64"
+cp -f "$REPO_ROOT/bazel-bin/engine/android/libhibiki_jni.so" "$REPO_ROOT/android/app/src/main/jniLibs/x86_64/"
 
 echo "🔨 Building Hibiki Android APK..."
 cd "$REPO_ROOT/android"

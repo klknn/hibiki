@@ -276,4 +276,13 @@ public class InstrumentView extends LinearLayout {
             }
         }
     }
+
+    public Button getBtnPadsTab() { return btnPadsTab; }
+    public Button getBtnKeysTab() { return btnKeysTab; }
+    public DrumPadsView getDrumPadsView() { return drumPadsView; }
+    public ScaleKeyboardView getScaleKeyboardView() { return scaleKeyboardView; }
+    public int getActiveTab() { return activeTab; }
+    public List<SynthMacro> getMacros() { return macros; }
+    public LinearLayout getMacrosLayout() { return macrosLayout; }
+    public void switchTabDirect(int tabIdx) { switchTab(tabIdx); }
 }

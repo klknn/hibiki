@@ -138,6 +138,26 @@ public class TrackerView extends LinearLayout {
         this.channelToggleListener = listener;
     }
 
+    public List<ChannelState> getChannels() {
+        return channels;
+    }
+
+    public int getCurrentStepIndex() {
+        return currentStepIndex;
+    }
+
+    public int getSelectedChannel() {
+        return selectedChannel;
+    }
+
+    public int getSelectedStep() {
+        return selectedStep;
+    }
+
+    public TextView getInfoText() {
+        return infoText;
+    }
+
     private void updateInfoText() {
         if (selectedChannel < channels.size()) {
             ChannelState ch = channels.get(selectedChannel);

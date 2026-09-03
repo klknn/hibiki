@@ -205,6 +205,26 @@ public class HeaderBarView extends LinearLayout {
         this.listener = listener;
     }
 
+    public TextView getLogoText() { return logoText; }
+    public TextView getTimeDisplay() { return timeDisplay; }
+    public Button getBtnPlayPause() { return btnPlayPause; }
+    public Button getBtnStop() { return btnStop; }
+    public Button getBtnRec() { return btnRec; }
+    public Button getBtnLoop() { return btnLoop; }
+    public TextView getBpmDisplay() { return bpmDisplay; }
+    public LinearLayout getTabsLayout() { return tabsLayout; }
+
+    public Button getTabButton(ViewMode mode) {
+        if (tabsLayout == null) return null;
+        for (int i = 0; i < tabsLayout.getChildCount(); i++) {
+            View child = tabsLayout.getChildAt(i);
+            if (child instanceof Button && mode == child.getTag()) {
+                return (Button) child;
+            }
+        }
+        return null;
+    }
+
     public void updateState(boolean isPlaying, boolean isRecording, boolean isLooping, double bpm, double playheadSec, ViewMode currentView) {
         this.isPlaying = isPlaying;
         this.isRecording = isRecording;

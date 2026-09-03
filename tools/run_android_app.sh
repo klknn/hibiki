@@ -23,7 +23,7 @@ if ! command -v adb &>/dev/null; then
 fi
 
 # Ensure device/emulator is connected
-if ! adb devices | grep -E "(emulator-[0-9]+|[a-zA-Z0-9]+)\s+device" &>/dev/null; then
+if [[ -z "$(adb devices | awk 'NR>1 && $2=="device" {print $1}')" ]]; then
   echo "⚠️  No active Android device detected. Launching emulator..."
   "$REPO_ROOT/tools/start_android_emulator.sh"
 fi

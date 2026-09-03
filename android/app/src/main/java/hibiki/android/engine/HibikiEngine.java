@@ -137,6 +137,17 @@ public final class HibikiEngine {
     }
 
     /**
+     * Polls a serialized protobuf notification directly from the engine queue.
+     */
+    public static byte[] pollNotification() {
+        try {
+            return nativePollNotification();
+        } catch (UnsatisfiedLinkError e) {
+            return new byte[0];
+        }
+    }
+
+    /**
      * Adds a listener for serialized protobuf Notifications emitted by the engine.
      */
     public static void addNotificationListener(Consumer<byte[]> listener) {

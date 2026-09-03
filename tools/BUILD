@@ -5,5 +5,6 @@ exports_files([
     "run_android_app.sh",
     "start_android_emulator.sh",
     "setup_android_sdk.sh",
+    "test_android_e2e.sh",
     "format.sh",
 ])

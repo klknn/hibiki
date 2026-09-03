@@ -397,4 +397,27 @@ public class MainActivity extends Activity {
             projectView.setProjectInfo("New Beat 01", bpm, 50);
         }
     }
+
+    public HeaderBarView getHeaderBar() { return headerBar; }
+    public FrameLayout getContentContainer() { return contentContainer; }
+    public TrackerView getTrackerView() { return trackerView; }
+    public ArrangerView getArrangerView() { return arrangerView; }
+    public InstrumentView getInstrumentView() { return instrumentView; }
+    public MixerView getMixerView() { return mixerView; }
+    public ProjectView getProjectView() { return projectView; }
+    public ViewMode getCurrentView() { return currentView; }
+    public boolean isPlaying() { return isPlaying; }
+    public boolean isRecording() { return isRecording; }
+    public boolean isLooping() { return isLooping; }
+    public double getBpm() { return bpm; }
+    public double getPlayheadSec() { return playheadSec; }
+    public int getCurrentStepIndex() { return currentStepIndex; }
+    public List<ChannelState> getChannels() { return channels; }
+    public List<ArrangerPattern> getPatterns() { return patterns; }
+    public List<DrumPadItem> getDrumPads() { return drumPads; }
+    public List<SynthMacro> getMacros() { return macros; }
+    public int getRootNoteIdx() { return rootNoteIdx; }
+    public ScaleType getScaleType() { return scaleType; }
+    public int getOctave() { return octave; }
+    public void performSwitchView(ViewMode mode) { switchView(mode); }
 }

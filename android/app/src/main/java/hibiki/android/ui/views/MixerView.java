@@ -162,4 +162,12 @@ public class MixerView extends HorizontalScrollView {
             container.addView(strip);
         }
     }
+
+    public List<ChannelState> getChannels() {
+        return channels;
+    }
+
+    public LinearLayout getContainer() {
+        return container;
+    }
 }

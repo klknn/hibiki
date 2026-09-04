@@ -59,8 +59,23 @@ static void ensureSenderThread() {
   }
 }
 
+static NotificationHandler g_custom_handler = nullptr;
+static std::mutex g_handler_mutex;
+
+void setNotificationHandler(NotificationHandler handler) {
+  std::lock_guard<std::mutex> lock(g_handler_mutex);
+  g_custom_handler = std::move(handler);
+}
+
 void sendNotification(const uint8_t* buf, size_t size) {
   if (!g_ipc_enabled) return;
+  {
+    std::lock_guard<std::mutex> lock(g_handler_mutex);
+    if (g_custom_handler) {
+      g_custom_handler(buf, size);
+      return;
+    }
+  }
   ensureSenderThread();
   {
     std::lock_guard<std::mutex> lock(g_queue_mutex);

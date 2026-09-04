@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -12,7 +13,11 @@
 
 namespace hibiki {
 
+using NotificationHandler =
+    std::function<void(const uint8_t* buf, size_t size)>;
+
 extern bool g_ipc_enabled;
+void setNotificationHandler(NotificationHandler handler);
 void sendNotification(const uint8_t* buf, size_t size);
 void sendAck(const char* cmd_type, bool success);
 void sendParamList(int track_idx, int plugin_idx,

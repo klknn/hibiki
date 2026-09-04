@@ -13,6 +13,10 @@ cc_library(
             "midi_input_coremidi.cpp",
             "sound_coreaudio.cpp",
         ],
+        "@platforms//os:android": [
+            "midi_input_android.cpp",
+            "sound_aaudio.cpp",
+        ],
         "//conditions:default": [
             "midi_input_alsa.cpp",
             "sound_alsa.cpp",
@@ -32,6 +36,11 @@ cc_library(
             "-framework AudioUnit",
             "-framework AudioToolbox",
             "-framework CoreMIDI",
+        ],
+        "@platforms//os:android": [
+            "-laaudio",
+            "-landroid",
+            "-llog",
         ],
         "//conditions:default": ["-lasound"],
     }),

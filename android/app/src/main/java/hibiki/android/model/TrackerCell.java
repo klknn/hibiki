@@ -51,6 +51,50 @@ public final class TrackerCell {
         return isActive;
     }
 
+    /**
+     * Calculates MIDI note number for this tracker cell.
+     * Returns -1 if cell is inactive, note-off, or unparsed.
+     */
+    public int getMidiNote() {
+        if (!isActive || "---".equals(note) || "OFF".equals(note) || "===".equals(note)) {
+            return -1;
+        }
+
+        // Drum pad instrument mapping (Kick=36, Snare=38, ClpHat=42, OpnHat=46, etc.)
+        if (octave == 3 && instrumentId >= 0 && instrumentId <= 7) {
+            switch (instrumentId) {
+                case 0: return 36; // Kick
+                case 1: return 38; // Snare
+                case 2: return 42; // Clp-Hat
+                case 3: return 46; // Opn-Hat
+                case 4: return 39; // Clap
+                case 5: return 45; // Tom
+                case 6: return 56; // Perc
+                case 7: return 49; // FX Hit
+                default: break;
+            }
+        }
+
+        int base = -1;
+        String n = note.toUpperCase(Locale.US);
+        if (n.startsWith("C#") || n.startsWith("DB")) base = 1;
+        else if (n.startsWith("C")) base = 0;
+        else if (n.startsWith("D#") || n.startsWith("EB")) base = 3;
+        else if (n.startsWith("D")) base = 2;
+        else if (n.startsWith("E")) base = 4;
+        else if (n.startsWith("F#") || n.startsWith("GB")) base = 6;
+        else if (n.startsWith("F")) base = 5;
+        else if (n.startsWith("G#") || n.startsWith("AB")) base = 8;
+        else if (n.startsWith("G")) base = 7;
+        else if (n.startsWith("A#") || n.startsWith("BB")) base = 10;
+        else if (n.startsWith("A")) base = 9;
+        else if (n.startsWith("B")) base = 11;
+
+        if (base < 0) return -1;
+        int result = (octave + 1) * 12 + base;
+        return Math.max(0, Math.min(127, result));
+    }
+
     public String getDisplayNote() {
         if ("---".equals(note)) {
             return "···";

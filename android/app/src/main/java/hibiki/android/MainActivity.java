@@ -13,6 +13,7 @@ import hibiki.android.model.ArrangerPattern;
 import hibiki.android.model.ChannelState;
 import hibiki.android.model.DrumPadItem;
 import hibiki.android.model.ScaleType;
+import hibiki.android.model.StepSequencer;
 import hibiki.android.model.SynthMacro;
 import hibiki.android.model.TrackerCell;
 import hibiki.android.model.ViewMode;
@@ -56,6 +57,9 @@ public class MainActivity extends Activity {
     private ScaleType scaleType = ScaleType.PENTATONIC_MINOR;
     private int octave = 4;
 
+    private final StepSequencer stepSequencer = new StepSequencer();
+    private int lastProcessedStepIndex = -1;
+
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private final Runnable syncRunnable = new Runnable() {
         @Override
@@ -65,6 +69,14 @@ public class MainActivity extends Activity {
                 double beats = (playheadSec * (bpm / 60.0));
                 currentStepIndex = ((int) (beats * 4)) % 16;
                 float playheadBar = (float) (beats / 4.0);
+
+                // When step index advances, dispatch real-time notes for that step to HibikiEngine
+                if (currentStepIndex != lastProcessedStepIndex) {
+                    lastProcessedStepIndex = currentStepIndex;
+                    stepSequencer.processStep(currentStepIndex, channels, (chIdx, note, vel, on) -> {
+                        HibikiEngine.sendMidiNote(chIdx, note, vel, on);
+                    });
+                }
 
                 headerBar.updateState(isPlaying, isRecording, isLooping, bpm, playheadSec, currentView);
                 trackerView.setCurrentStepIndex(currentStepIndex);
@@ -82,6 +94,9 @@ public class MainActivity extends Activity {
         HibikiEngine.initEngine(44100, 50);
 
         initInitialState();
+        HibikiEngine.setBpm(bpm);
+        HibikiEngine.setLooping(isLooping);
+        HibikiEngine.setLoopBars(calculateArrangementBars());
         buildUI();
 
         uiHandler.post(syncRunnable);
@@ -91,6 +106,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         uiHandler.removeCallbacks(syncRunnable);
+        stepSequencer.reset((chIdx, note, vel, on) -> HibikiEngine.sendMidiNote(chIdx, note, vel, on));
         HibikiEngine.destroyEngine();
     }
 
@@ -175,6 +191,10 @@ public class MainActivity extends Activity {
             public void onTogglePlay() {
                 isPlaying = !isPlaying;
                 HibikiEngine.setPlayback(isPlaying);
+                if (!isPlaying) {
+                    stepSequencer.reset((chIdx, note, vel, on) -> HibikiEngine.sendMidiNote(chIdx, note, vel, on));
+                    lastProcessedStepIndex = -1;
+                }
                 headerBar.updateState(isPlaying, isRecording, isLooping, bpm, playheadSec, currentView);
             }
 
@@ -182,6 +202,9 @@ public class MainActivity extends Activity {
             public void onStop() {
                 isPlaying = false;
                 HibikiEngine.setPlayback(false);
+                HibikiEngine.resetPlaybackPosition();
+                stepSequencer.reset((chIdx, note, vel, on) -> HibikiEngine.sendMidiNote(chIdx, note, vel, on));
+                lastProcessedStepIndex = -1;
                 playheadSec = 0.0;
                 currentStepIndex = 0;
                 headerBar.updateState(isPlaying, isRecording, isLooping, bpm, playheadSec, currentView);
@@ -198,6 +221,7 @@ public class MainActivity extends Activity {
             @Override
             public void onToggleLoop() {
                 isLooping = !isLooping;
+                HibikiEngine.setLooping(isLooping);
                 headerBar.updateState(isPlaying, isRecording, isLooping, bpm, playheadSec, currentView);
             }
 
@@ -235,8 +259,10 @@ public class MainActivity extends Activity {
             @Override
             public void onToggleMute(int channelIdx) {
                 if (channelIdx < channels.size()) {
-                    ChannelState updated = channels.get(channelIdx).withMuted(!channels.get(channelIdx).isMuted());
+                    boolean newMute = !channels.get(channelIdx).isMuted();
+                    ChannelState updated = channels.get(channelIdx).withMuted(newMute);
                     channels.set(channelIdx, updated);
+                    HibikiEngine.setTrackMute(channelIdx, newMute);
                     trackerView.setChannels(channels, currentStepIndex);
                     mixerView.setChannels(channels);
                 }
@@ -245,8 +271,10 @@ public class MainActivity extends Activity {
             @Override
             public void onToggleSolo(int channelIdx) {
                 if (channelIdx < channels.size()) {
-                    ChannelState updated = channels.get(channelIdx).withSoloed(!channels.get(channelIdx).isSoloed());
+                    boolean newSolo = !channels.get(channelIdx).isSoloed();
+                    ChannelState updated = channels.get(channelIdx).withSoloed(newSolo);
                     channels.set(channelIdx, updated);
+                    HibikiEngine.setTrackSolo(channelIdx, newSolo);
                     trackerView.setChannels(channels, currentStepIndex);
                     mixerView.setChannels(channels);
                 }
@@ -262,20 +290,24 @@ public class MainActivity extends Activity {
                 String id = "pat_" + System.currentTimeMillis();
                 int color = (trackIndex < channels.size()) ? channels.get(trackIndex).getColor() : ThemeColors.ACCENT_CYAN;
                 patterns.add(new ArrangerPattern(id, trackIndex, startBar, 4.0f, "Pattern " + (patterns.size() + 1), color));
+                HibikiEngine.setLoopBars(calculateArrangementBars());
                 arrangerView.setArrangement(channels, patterns, (float) (playheadSec * (bpm / 60.0) / 4.0));
             }
 
             @Override
             public void onRemovePattern(String patternId) {
                 patterns.removeIf(p -> p.getId().equals(patternId));
+                HibikiEngine.setLoopBars(calculateArrangementBars());
                 arrangerView.setArrangement(channels, patterns, (float) (playheadSec * (bpm / 60.0) / 4.0));
             }
 
             @Override
             public void onToggleMute(int trackIndex) {
                 if (trackIndex < channels.size()) {
-                    ChannelState updated = channels.get(trackIndex).withMuted(!channels.get(trackIndex).isMuted());
+                    boolean newMute = !channels.get(trackIndex).isMuted();
+                    ChannelState updated = channels.get(trackIndex).withMuted(newMute);
                     channels.set(trackIndex, updated);
+                    HibikiEngine.setTrackMute(trackIndex, newMute);
                     arrangerView.setArrangement(channels, patterns, (float) (playheadSec * (bpm / 60.0) / 4.0));
                     trackerView.setChannels(channels, currentStepIndex);
                     mixerView.setChannels(channels);
@@ -289,12 +321,18 @@ public class MainActivity extends Activity {
         instrumentView.setOnInstrumentActionListener(new InstrumentView.OnInstrumentActionListener() {
             @Override
             public void onTriggerPad(DrumPadItem pad) {
-                // Future: Send drum trigger to JNI
+                HibikiEngine.triggerDrumPad(pad.getIndex(), pad.getMidiNote(), 110);
             }
 
             @Override
             public void onTriggerNote(int midiNote, String noteName) {
-                // Future: Send note trigger to JNI
+                HibikiEngine.sendMidiNote(2, midiNote, 100, true);
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(150);
+                    } catch (InterruptedException ignored) {}
+                    HibikiEngine.sendMidiNote(2, midiNote, 0, false);
+                }).start();
             }
 
             @Override
@@ -323,6 +361,7 @@ public class MainActivity extends Activity {
             public void onVolumeChange(int channelIdx, float newVolume) {
                 if (channelIdx < channels.size()) {
                     channels.set(channelIdx, channels.get(channelIdx).withVolume(newVolume));
+                    HibikiEngine.setTrackVolume(channelIdx, newVolume);
                 }
             }
 
@@ -330,14 +369,17 @@ public class MainActivity extends Activity {
             public void onPanChange(int channelIdx, float newPan) {
                 if (channelIdx < channels.size()) {
                     channels.set(channelIdx, channels.get(channelIdx).withPan(newPan));
+                    HibikiEngine.setTrackPan(channelIdx, newPan);
                 }
             }
 
             @Override
             public void onToggleMute(int channelIdx) {
                 if (channelIdx < channels.size()) {
-                    ChannelState updated = channels.get(channelIdx).withMuted(!channels.get(channelIdx).isMuted());
+                    boolean newMute = !channels.get(channelIdx).isMuted();
+                    ChannelState updated = channels.get(channelIdx).withMuted(newMute);
                     channels.set(channelIdx, updated);
+                    HibikiEngine.setTrackMute(channelIdx, newMute);
                     mixerView.setChannels(channels);
                     trackerView.setChannels(channels, currentStepIndex);
                 }
@@ -346,8 +388,10 @@ public class MainActivity extends Activity {
             @Override
             public void onToggleSolo(int channelIdx) {
                 if (channelIdx < channels.size()) {
-                    ChannelState updated = channels.get(channelIdx).withSoloed(!channels.get(channelIdx).isSoloed());
+                    boolean newSolo = !channels.get(channelIdx).isSoloed();
+                    ChannelState updated = channels.get(channelIdx).withSoloed(newSolo);
                     channels.set(channelIdx, updated);
+                    HibikiEngine.setTrackSolo(channelIdx, newSolo);
                     mixerView.setChannels(channels);
                     trackerView.setChannels(channels, currentStepIndex);
                 }
@@ -396,6 +440,17 @@ public class MainActivity extends Activity {
         } else if (mode == ViewMode.PROJECT) {
             projectView.setProjectInfo("New Beat 01", bpm, 50);
         }
+    }
+
+    private double calculateArrangementBars() {
+        float maxBar = 4.0f;
+        for (ArrangerPattern p : patterns) {
+            float end = p.getStartBar() + p.getLengthBars();
+            if (end > maxBar) {
+                maxBar = end;
+            }
+        }
+        return Math.max(4.0, Math.ceil(maxBar));
     }
 
     public HeaderBarView getHeaderBar() { return headerBar; }

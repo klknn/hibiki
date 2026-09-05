@@ -1,5 +1,6 @@
 #include "engine/android/hibiki_jni.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <memory>
@@ -7,6 +8,7 @@
 
 #include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "engine/audio/sound.hpp"
 #include "engine/builtin_registry.hpp"
 #include "engine/commands/commands.hpp"
@@ -40,6 +42,33 @@ absl::Status AndroidEngineContext::init(int sample_rate, int latency_ms) {
   // Route IPC notifications into our in-memory queue
   setNotificationHandler(
       [this](const uint8_t* buf, size_t size) { onNotification(buf, size); });
+
+  // Initialize 4 default groovebox tracks matching the mobile frontend
+  {
+    std::lock_guard<std::mutex> lock(state_->tracks_mutex);
+    struct DefaultTrackConfig {
+      int id;
+      const char* name;
+      float vol;
+      float pan;
+      const char* plugin_path;
+    };
+    const DefaultTrackConfig defaults[] = {
+        {0, "DRUMS", 0.85f, 0.0f, "builtin://drum_machine"},
+        {1, "BASS", 0.80f, -0.1f, "builtin://acid_bass"},
+        {2, "LEAD", 0.75f, 0.2f, "builtin://3xosc"},
+        {3, "PLUCK", 0.70f, -0.2f, "builtin://epiano"},
+    };
+    for (const auto& d : defaults) {
+      auto track = std::make_unique<Track>(d.id);
+      track->name = d.name;
+      track->volume = d.vol;
+      track->pan = d.pan;
+      track->LoadPlugin(d.plugin_path, 0, state_->sample_rate,
+                        PluginHostMode::IN_PROCESS);
+      state_->tracks[d.id] = std::move(track);
+    }
+  }
 
   running_ = true;
   audio_thread_ = std::thread(&AndroidEngineContext::audioThreadLoop, this);
@@ -191,16 +220,31 @@ void AndroidEngineContext::audioThreadLoop() {
 
   while (!state_->quit) {
     std::fill(out_buffer.begin(), out_buffer.end(), 0.0f);
+    bool is_playing = state_->is_playing;
 
-    if (state_->is_playing) {
+    {
       std::lock_guard<std::mutex> lock(state_->tracks_mutex);
 
       // Mix active tracks into stereo output buffer
       for (auto& [track_idx, track] : state_->tracks) {
         if (!track || track->muted) continue;
 
-        // Process audio rendering for track if clips are active
-        // Track processing and mixdown
+        std::vector<MidiNoteEvent> trackEvents;
+        {
+          std::lock_guard<std::mutex> mlock(track->virtual_midi_mutex);
+          if (!track->virtual_midi_queue.empty()) {
+            trackEvents.insert(trackEvents.end(),
+                               track->virtual_midi_queue.begin(),
+                               track->virtual_midi_queue.end());
+            track->virtual_midi_queue.clear();
+          }
+        }
+
+        // Only process if engine is playing or live notes were received
+        if (!is_playing && trackEvents.empty()) {
+          continue;
+        }
+
         float vol = track->volume;
         float pan = track->pan;
         float left_gain = vol * (pan <= 0.0f ? 1.0f : (1.0f - pan));
@@ -219,7 +263,7 @@ void AndroidEngineContext::audioThreadLoop() {
           ctx.projectTimeMusic =
               state_->playhead_pos_sec * (state_->bpm / 60.0);
 
-          plugin->process(nullptr, plugOut, block_size, ctx, empty_events,
+          plugin->process(nullptr, plugOut, block_size, ctx, trackEvents,
                           nullptr);
 
           for (int i = 0; i < block_size; ++i) {
@@ -229,10 +273,12 @@ void AndroidEngineContext::audioThreadLoop() {
         }
       }
 
-      state_->playhead_pos_sec += dt;
-      if (state_->loop_enabled &&
-          state_->playhead_pos_sec >= state_->loop_end_sec) {
-        state_->playhead_pos_sec = state_->loop_start_sec;
+      if (is_playing) {
+        state_->playhead_pos_sec += dt;
+        if (state_->loop_enabled &&
+            state_->playhead_pos_sec >= state_->loop_end_sec) {
+          state_->playhead_pos_sec = state_->loop_start_sec;
+        }
       }
     }
 
@@ -243,6 +289,89 @@ void AndroidEngineContext::audioThreadLoop() {
           std::chrono::microseconds(static_cast<int64_t>(dt * 1000000)));
     }
   }
+}
+
+absl::Status AndroidEngineContext::sendMidiNote(int track_index, int note,
+                                                int velocity, bool note_on) {
+  if (!running_ || !state_) {
+    return absl::FailedPreconditionError("Engine is not running");
+  }
+  std::lock_guard<std::mutex> lock(state_->tracks_mutex);
+  auto it = state_->tracks.find(track_index);
+  if (it == state_->tracks.end() || !it->second) {
+    return absl::NotFoundError(
+        absl::StrCat("Track index ", track_index, " not found"));
+  }
+
+  MidiNoteEvent ev;
+  ev.sampleOffset = 0;
+  ev.channel = 0;
+  ev.pitch = static_cast<uint8_t>(note);
+  ev.velocity = note_on ? std::clamp(velocity, 0, 127) / 127.0f : 0.0f;
+  ev.isNoteOn = note_on;
+
+  {
+    std::lock_guard<std::mutex> mlock(it->second->virtual_midi_mutex);
+    it->second->virtual_midi_queue.push_back(ev);
+  }
+  return absl::OkStatus();
+}
+
+absl::Status AndroidEngineContext::setTrackVolume(int track_index,
+                                                  float volume) {
+  if (!running_ || !state_) {
+    return absl::FailedPreconditionError("Engine is not running");
+  }
+  std::lock_guard<std::mutex> lock(state_->tracks_mutex);
+  auto it = state_->tracks.find(track_index);
+  if (it == state_->tracks.end() || !it->second) {
+    return absl::NotFoundError(
+        absl::StrCat("Track index ", track_index, " not found"));
+  }
+  it->second->volume = volume;
+  return absl::OkStatus();
+}
+
+absl::Status AndroidEngineContext::setTrackPan(int track_index, float pan) {
+  if (!running_ || !state_) {
+    return absl::FailedPreconditionError("Engine is not running");
+  }
+  std::lock_guard<std::mutex> lock(state_->tracks_mutex);
+  auto it = state_->tracks.find(track_index);
+  if (it == state_->tracks.end() || !it->second) {
+    return absl::NotFoundError(
+        absl::StrCat("Track index ", track_index, " not found"));
+  }
+  it->second->pan = pan;
+  return absl::OkStatus();
+}
+
+absl::Status AndroidEngineContext::setTrackMute(int track_index, bool muted) {
+  if (!running_ || !state_) {
+    return absl::FailedPreconditionError("Engine is not running");
+  }
+  std::lock_guard<std::mutex> lock(state_->tracks_mutex);
+  auto it = state_->tracks.find(track_index);
+  if (it == state_->tracks.end() || !it->second) {
+    return absl::NotFoundError(
+        absl::StrCat("Track index ", track_index, " not found"));
+  }
+  it->second->muted = muted;
+  return absl::OkStatus();
+}
+
+absl::Status AndroidEngineContext::setTrackSolo(int track_index, bool soloed) {
+  if (!running_ || !state_) {
+    return absl::FailedPreconditionError("Engine is not running");
+  }
+  std::lock_guard<std::mutex> lock(state_->tracks_mutex);
+  auto it = state_->tracks.find(track_index);
+  if (it == state_->tracks.end() || !it->second) {
+    return absl::NotFoundError(
+        absl::StrCat("Track index ", track_index, " not found"));
+  }
+  it->second->soloed = soloed;
+  return absl::OkStatus();
 }
 
 }  // namespace hibiki
@@ -353,6 +482,65 @@ JNIEXPORT jdouble JNICALL Java_hibiki_android_engine_HibikiEngine_nativeGetBpm(
     return hibiki::g_engine_instance->getBpm();
   }
   return 120.0;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_hibiki_android_engine_HibikiEngine_nativeSendMidiNote(
+    JNIEnv* env, jobject thiz, jint track_index, jint note, jint velocity,
+    jboolean note_on) {
+  std::lock_guard<std::mutex> lock(hibiki::g_engine_mutex);
+  if (!hibiki::g_engine_instance) {
+    return JNI_FALSE;
+  }
+  auto status = hibiki::g_engine_instance->sendMidiNote(
+      track_index, note, velocity, note_on == JNI_TRUE);
+  return status.ok() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_hibiki_android_engine_HibikiEngine_nativeSetTrackVolume(JNIEnv* env,
+                                                             jobject thiz,
+                                                             jint track_index,
+                                                             jfloat volume) {
+  std::lock_guard<std::mutex> lock(hibiki::g_engine_mutex);
+  if (hibiki::g_engine_instance) {
+    (void)hibiki::g_engine_instance->setTrackVolume(track_index, volume);
+  }
+}
+
+JNIEXPORT void JNICALL
+Java_hibiki_android_engine_HibikiEngine_nativeSetTrackPan(JNIEnv* env,
+                                                          jobject thiz,
+                                                          jint track_index,
+                                                          jfloat pan) {
+  std::lock_guard<std::mutex> lock(hibiki::g_engine_mutex);
+  if (hibiki::g_engine_instance) {
+    (void)hibiki::g_engine_instance->setTrackPan(track_index, pan);
+  }
+}
+
+JNIEXPORT void JNICALL
+Java_hibiki_android_engine_HibikiEngine_nativeSetTrackMute(JNIEnv* env,
+                                                           jobject thiz,
+                                                           jint track_index,
+                                                           jboolean muted) {
+  std::lock_guard<std::mutex> lock(hibiki::g_engine_mutex);
+  if (hibiki::g_engine_instance) {
+    (void)hibiki::g_engine_instance->setTrackMute(track_index,
+                                                  muted == JNI_TRUE);
+  }
+}
+
+JNIEXPORT void JNICALL
+Java_hibiki_android_engine_HibikiEngine_nativeSetTrackSolo(JNIEnv* env,
+                                                           jobject thiz,
+                                                           jint track_index,
+                                                           jboolean soloed) {
+  std::lock_guard<std::mutex> lock(hibiki::g_engine_mutex);
+  if (hibiki::g_engine_instance) {
+    (void)hibiki::g_engine_instance->setTrackSolo(track_index,
+                                                  soloed == JNI_TRUE);
+  }
 }
 
 }  // extern "C"

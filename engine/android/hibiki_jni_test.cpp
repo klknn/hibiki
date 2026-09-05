@@ -106,5 +106,82 @@ TEST_F(AndroidEngineContextTest, RejectInvalidProtobufPayload) {
   EXPECT_FALSE(status.ok()) << "Malformed protobuf should return error status";
 }
 
+TEST_F(AndroidEngineContextTest, DefaultTracksAndTrackControls) {
+  ASSERT_TRUE(engine_->init(44100, 50).ok());
+
+  auto* state = engine_->getState();
+  ASSERT_NE(state, nullptr);
+
+  // Verify 4 default tracks exist for mobile groovebox
+  {
+    std::lock_guard<std::mutex> lock(state->tracks_mutex);
+    EXPECT_GE(state->tracks.size(), 4u)
+        << "Expected at least 4 default tracks on mobile init";
+    EXPECT_TRUE(state->tracks.count(0));
+    EXPECT_EQ(state->tracks[0]->name, "DRUMS");
+    EXPECT_TRUE(state->tracks.count(1));
+    EXPECT_EQ(state->tracks[1]->name, "BASS");
+    EXPECT_TRUE(state->tracks.count(2));
+    EXPECT_EQ(state->tracks[2]->name, "LEAD");
+    EXPECT_TRUE(state->tracks.count(3));
+    EXPECT_EQ(state->tracks[3]->name, "PLUCK");
+  }
+
+  // Test direct track controls
+  EXPECT_TRUE(engine_->setTrackVolume(0, 0.65f).ok());
+  {
+    std::lock_guard<std::mutex> lock(state->tracks_mutex);
+    EXPECT_FLOAT_EQ(state->tracks[0]->volume, 0.65f);
+  }
+
+  EXPECT_TRUE(engine_->setTrackPan(1, 0.3f).ok());
+  {
+    std::lock_guard<std::mutex> lock(state->tracks_mutex);
+    EXPECT_FLOAT_EQ(state->tracks[1]->pan, 0.3f);
+  }
+
+  EXPECT_TRUE(engine_->setTrackMute(2, true).ok());
+  {
+    std::lock_guard<std::mutex> lock(state->tracks_mutex);
+    EXPECT_TRUE(state->tracks[2]->muted);
+  }
+
+  EXPECT_TRUE(engine_->setTrackSolo(3, true).ok());
+  {
+    std::lock_guard<std::mutex> lock(state->tracks_mutex);
+    EXPECT_TRUE(state->tracks[3]->soloed);
+  }
+
+  // Invalid track index should fail gracefully
+  EXPECT_FALSE(engine_->setTrackVolume(99, 0.5f).ok());
+}
+
+TEST_F(AndroidEngineContextTest, SendMidiNoteEvent) {
+  ASSERT_TRUE(engine_->init(44100, 50).ok());
+
+  auto* state = engine_->getState();
+  ASSERT_NE(state, nullptr);
+
+  // Send Note On to Track 0 (Drums / Kick 36)
+  EXPECT_TRUE(engine_->sendMidiNote(0, 36, 120, true).ok());
+
+  {
+    auto& track = state->tracks[0];
+    std::lock_guard<std::mutex> mlock(track->virtual_midi_mutex);
+    ASSERT_FALSE(track->virtual_midi_queue.empty())
+        << "MIDI event should be queued in virtual_midi_queue";
+    auto ev = track->virtual_midi_queue.front();
+    EXPECT_EQ(ev.pitch, 36);
+    EXPECT_FLOAT_EQ(ev.velocity, 120.0f / 127.0f);
+    EXPECT_TRUE(ev.isNoteOn);
+  }
+
+  // Send Note Off
+  EXPECT_TRUE(engine_->sendMidiNote(0, 36, 0, false).ok());
+
+  // Test non-existent track
+  EXPECT_FALSE(engine_->sendMidiNote(999, 60, 100, true).ok());
+}
+
 }  // namespace
 }  // namespace hibiki

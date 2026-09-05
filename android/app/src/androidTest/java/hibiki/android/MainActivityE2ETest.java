@@ -215,5 +215,13 @@ public class MainActivityE2ETest {
         // Test pollNotification does not crash
         byte[] notif = HibikiEngine.pollNotification();
         assertNotNull("pollNotification should return a byte array (possibly empty)", notif);
+
+        // Test direct track controls and live MIDI note dispatch
+        HibikiEngine.setTrackVolume(0, 0.75f);
+        HibikiEngine.setTrackPan(0, 0.2f);
+        HibikiEngine.setTrackMute(0, true);
+        HibikiEngine.setTrackSolo(0, true);
+        HibikiEngine.sendMidiNote(0, 36, 100, true);
+        HibikiEngine.sendMidiNote(0, 36, 0, false);
     }
 }

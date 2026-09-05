@@ -75,6 +75,33 @@ class AndroidEngineContext {
   double getBpm() const;
 
   /**
+   * Dispatches a live MIDI note event (e.g. from touch drum pad or scale
+   * keyboard) directly to the target track.
+   */
+  absl::Status sendMidiNote(int track_index, int note, int velocity,
+                            bool note_on);
+
+  /**
+   * Updates volume for a specific track [0.0, 2.0].
+   */
+  absl::Status setTrackVolume(int track_index, float volume);
+
+  /**
+   * Updates panning for a specific track [-1.0, 1.0].
+   */
+  absl::Status setTrackPan(int track_index, float pan);
+
+  /**
+   * Mutes or unmutes a specific track.
+   */
+  absl::Status setTrackMute(int track_index, bool muted);
+
+  /**
+   * Solos or unsolos a specific track.
+   */
+  absl::Status setTrackSolo(int track_index, bool soloed);
+
+  /**
    * Access underlying project state.
    */
   ProjectState* getState() { return state_.get(); }
@@ -130,6 +157,35 @@ JNIEXPORT void JNICALL Java_hibiki_android_engine_HibikiEngine_nativeSetBpm(
 
 JNIEXPORT jdouble JNICALL
 Java_hibiki_android_engine_HibikiEngine_nativeGetBpm(JNIEnv* env, jobject thiz);
+
+JNIEXPORT jboolean JNICALL
+Java_hibiki_android_engine_HibikiEngine_nativeSendMidiNote(
+    JNIEnv* env, jobject thiz, jint track_index, jint note, jint velocity,
+    jboolean note_on);
+
+JNIEXPORT void JNICALL
+Java_hibiki_android_engine_HibikiEngine_nativeSetTrackVolume(JNIEnv* env,
+                                                             jobject thiz,
+                                                             jint track_index,
+                                                             jfloat volume);
+
+JNIEXPORT void JNICALL
+Java_hibiki_android_engine_HibikiEngine_nativeSetTrackPan(JNIEnv* env,
+                                                          jobject thiz,
+                                                          jint track_index,
+                                                          jfloat pan);
+
+JNIEXPORT void JNICALL
+Java_hibiki_android_engine_HibikiEngine_nativeSetTrackMute(JNIEnv* env,
+                                                           jobject thiz,
+                                                           jint track_index,
+                                                           jboolean muted);
+
+JNIEXPORT void JNICALL
+Java_hibiki_android_engine_HibikiEngine_nativeSetTrackSolo(JNIEnv* env,
+                                                           jobject thiz,
+                                                           jint track_index,
+                                                           jboolean soloed);
 
 #ifdef __cplusplus
 }

@@ -62,7 +62,7 @@ if [[ -n "$SO_SRC" ]]; then
   cp -f "$SO_SRC" "$REPO_ROOT/android/app/src/main/jniLibs/x86_64/"
 elif command -v bazel &>/dev/null; then
   cd "$REPO_ROOT"
-  bazel build //engine/android:libhibiki_jni.so -c opt --jobs=2
+  bazel build //engine/android:libhibiki_jni.so -c opt --jobs=8
   mkdir -p "$REPO_ROOT/android/app/src/main/jniLibs/x86_64"
   cp -f "$REPO_ROOT/bazel-bin/engine/android/libhibiki_jni.so" "$REPO_ROOT/android/app/src/main/jniLibs/x86_64/"
 fi

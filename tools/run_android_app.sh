@@ -30,21 +30,33 @@ fi
 
 echo "🔨 Building Native C++ Audio Engine (libhibiki_jni.so)..."
 cd "$REPO_ROOT"
-bazel build //engine/android:libhibiki_jni.so -c opt --jobs=2
-mkdir -p "$REPO_ROOT/android/app/src/main/jniLibs/x86_64"
-cp -f "$REPO_ROOT/bazel-bin/engine/android/libhibiki_jni.so" "$REPO_ROOT/android/app/src/main/jniLibs/x86_64/"
+bazel build //engine/android:libhibiki_jni.so -c opt --jobs=8
+TARGET_ABI="$(adb shell getprop ro.product.cpu.abi 2>/dev/null || echo "x86_64")"
+echo "📱 Target device architecture: $TARGET_ABI"
 
-echo "🔨 Building Hibiki Android APK..."
-cd "$REPO_ROOT/android"
-./gradlew assembleDebug
+if [[ "$TARGET_ABI" == *"x86_64"* ]]; then
+  echo "🔨 Packaging Native C++ Audio Engine for x86_64..."
+  mkdir -p "$REPO_ROOT/android/app/src/main/jniLibs/x86_64"
+  cp -f "$REPO_ROOT/bazel-bin/engine/android/libhibiki_jni.so" "$REPO_ROOT/android/app/src/main/jniLibs/x86_64/"
+else
+  # On ARM physical devices without cross-compiled ARM64 .so, avoid packaging x86_64 .so
+  # so that Android package manager does not reject installation with NO_MATCHING_ABIS.
+  rm -rf "$REPO_ROOT/android/app/src/main/jniLibs/x86_64"
+  echo "ℹ️  Physical ARM device detected ($TARGET_ABI); running in simulated engine mode."
+fi
 
+echo "🔨 Building Hibiki Android APK via Bazel..."
+cd "$REPO_ROOT"
+bazel build //android/app:app -c opt --jobs=8
+
+APK_PATH="$REPO_ROOT/bazel-bin/android/app/app.apk"
 echo "📦 Installing APK to target device..."
-adb install -r "$REPO_ROOT/android/app/build/outputs/apk/debug/app-debug.apk"
+adb install -r "$APK_PATH"
 
 echo "🚀 Launching Hibiki DAW (hibiki.android/.MainActivity)..."
 adb shell am start -n hibiki.android/.MainActivity
 
 if [[ "${1:-}" != "--no-logs" ]]; then
   echo "📋 Streaming real-time audio and engine logs (Ctrl+C to stop)..."
-  adb logcat -s HibikiEngine AAudio AudioTrack
+  adb logcat -s HibikiEngine AAudio AudioTrack AndroidRuntime System.err
 fi

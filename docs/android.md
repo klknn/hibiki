@@ -101,74 +101,49 @@ The mobile UI is designed from the ground up for handheld touchscreens and table
 
 ```mermaid
 flowchart LR
-    A["1. C++ JNI Unit Tests<br/>(Fast verification on PC)"] --> B["2. Build Debug APK<br/>(Gradle / Android Studio)"]
+    A["1. C++ JNI & Java Unit Tests<br/>(Fast verification on PC)"] --> B["2. Build Debug APK<br/>(Bazel rules_android)"]
     B --> C1["3a. Android Emulator<br/>(Virtual Device UI testing)"]
     B --> C2["3b. Physical Device<br/>(AAudio latency & touch feel)"]
     C1 & C2 --> D["4. Audio & Log Verification<br/>(adb logcat)"]
 ```
 
-### Step 1: Fast Local C++ JNI Verification (on PC)
+### Step 1: Fast Local C++ JNI & Java Unit Verification (on PC)
 
-Before launching an emulator or connecting a physical device, verify the C++ audio engine, JNI bridge, and Protobuf command handling locally on your development machine.
-
-To keep host CPU usage minimal, throttle Bazel resources with `--jobs=2`:
+Before launching an emulator or connecting a physical device, verify the C++ audio engine, JNI bridge, Protobuf command handling, and Android Java UI/synthesizer logic locally on your development machine.
 
 ```bash
-bazel test //engine/android:hibiki_jni_test -c opt --jobs=2 --local_cpu_resources=2 --test_output=all
+# Run Android Java and C++ unit tests
+bazel test //android/app:... //engine/android:hibiki_jni_test -c opt
 ```
 
 ---
 
-### Step 2: Testing via Android Studio (Recommended GUI)
+### Step 2: Build and Run via Bazel
 
-1. Open **Android Studio**.
-2. Select **Open** and choose the `android/` directory inside the repository.
-3. Select your target **Android Emulator (AVD)** or **connected physical device** from the device dropdown.
-4. Click **Run 'app'** (`Shift + F10` or the green ▶ button).
-5. Android Studio compiles the APK, installs it on the target device, and attaches the debugger automatically.
+The repository is built entirely with Bazel (no Gradle needed).
 
----
-
-### Step 3: Testing via Command-Line Interface (CLI)
-
-#### Option A: Build and Run via Bazel (Unified Workflow)
+#### Option A: Unified Bazel Targets
 
 ```bash
 # Build the Android APK (automatically builds native libhibiki_jni.so and packages APK)
 bazel run //android/app:build
 
-# Launch Android Emulator and run Hibiki DAW app
+# Launch on connected device/emulator and run Hibiki DAW app
 bazel run //android/app:run
 ```
 
 #### Option B: Build and Run via Helper Scripts
 
 ```bash
-# 1. Start the Android Emulator
+# 1. Start the Android Emulator (if not using physical device)
 ./tools/start_android_emulator.sh
 
 # 2. Build and launch the DAW on the active emulator/device
 ./tools/run_android_app.sh
 ```
 
-#### Option C: Build and Run via Gradle
+#### Option C: Run on a Physical Android Device (USB / Wi-Fi)
 
-```bash
-# 1. Build Native JNI Engine first
-bazel build //engine/android:libhibiki_jni.so -c opt
-mkdir -p android/app/src/main/jniLibs/x86_64
-cp -f bazel-bin/engine/android/libhibiki_jni.so android/app/src/main/jniLibs/x86_64/
-
-# 2. Assemble Debug APK
-cd android
-./gradlew assembleDebug
-
-# 3. Install & Launch
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n hibiki.android/.MainActivity
-```
-
-#### 3. Run on a Physical Android Device (USB / Wi-Fi)
 1. **Enable Developer Options & USB Debugging on your device**:
    - Go to **Settings** → **About Phone** → Tap **Build Number** 7 times.
    - Go to **Settings** → **System** → **Developer Options** → Enable **USB Debugging**.
@@ -177,11 +152,9 @@ adb shell am start -n hibiki.android/.MainActivity
    adb devices
    # Accept the "Allow USB debugging?" prompt on your device screen
    ```
-3. **Install and launch**:
+3. **Build, install and launch**:
    ```bash
-   cd android
-   ./gradlew installDebug
-   adb shell am start -n hibiki.android/.MainActivity
+   ./tools/run_android_app.sh
    ```
 
 ---

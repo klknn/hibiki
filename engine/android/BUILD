@@ -17,13 +17,16 @@ cc_library(
         "//engine/core:project",
         "//engine/core:track",
         "//engine/ipc",
+        "//engine/vst3:vst3_host_stub",
         "//pb:commands_cc_proto",
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/status",
-        "@bazel_tools//tools/jdk:jni",
-    ],
+    ] + select({
+        "@platforms//os:android": [],
+        "//conditions:default": ["@bazel_tools//tools/jdk:jni"],
+    }),
 )
 
 cc_binary(

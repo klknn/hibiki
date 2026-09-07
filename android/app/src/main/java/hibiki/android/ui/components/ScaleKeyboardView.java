@@ -88,7 +88,7 @@ public class ScaleKeyboardView extends View {
         for (int oct = octave; oct <= octave + 1; oct++) {
             for (int interval : intervals) {
                 int noteVal = (rootNoteIndex + interval) % 12;
-                int midiNum = (oct * 12) + noteVal;
+                int midiNum = ((oct + 1) * 12) + noteVal;
                 String noteName = NOTE_NAMES[noteVal] + oct;
                 boolean isRoot = noteVal == (rootNoteIndex % 12);
                 scaleNotes.add(new KeyNote(midiNum, noteName, isRoot));

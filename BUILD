@@ -595,3 +595,19 @@ java_test(
         "@maven//:com_google_protobuf_protobuf_java",
     ],
 )
+
+platform(
+    name = "android_arm64",
+    constraint_values = [
+        "@platforms//os:android",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+platform(
+    name = "arm64-v8a",
+    constraint_values = [
+        "@platforms//os:android",
+        "@platforms//cpu:aarch64",
+    ],
+)

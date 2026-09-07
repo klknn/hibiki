@@ -12,6 +12,8 @@ import hibiki.android.engine.HibikiEngine;
 import hibiki.android.model.ArrangerPattern;
 import hibiki.android.model.ChannelState;
 import hibiki.android.model.DrumPadItem;
+import hibiki.android.model.MelodySequence;
+import hibiki.android.model.MelodyStep;
 import hibiki.android.model.ScaleType;
 import hibiki.android.model.StepSequencer;
 import hibiki.android.model.SynthMacro;
@@ -21,6 +23,7 @@ import hibiki.android.ui.components.HeaderBarView;
 import hibiki.android.ui.theme.ThemeColors;
 import hibiki.android.ui.views.ArrangerView;
 import hibiki.android.ui.views.InstrumentView;
+import hibiki.android.ui.views.MelodySequencerView;
 import hibiki.android.ui.views.MixerView;
 import hibiki.android.ui.views.ProjectView;
 import hibiki.android.ui.views.TrackerView;
@@ -34,13 +37,14 @@ public class MainActivity extends Activity {
     private HeaderBarView headerBar;
     private FrameLayout contentContainer;
 
+    private MelodySequencerView melodySequencerView;
     private TrackerView trackerView;
     private ArrangerView arrangerView;
     private InstrumentView instrumentView;
     private MixerView mixerView;
     private ProjectView projectView;
 
-    private ViewMode currentView = ViewMode.TRACKER;
+    private ViewMode currentView = ViewMode.MELODY;
     private boolean isPlaying = false;
     private boolean isRecording = false;
     private boolean isLooping = true;
@@ -66,19 +70,38 @@ public class MainActivity extends Activity {
         public void run() {
             if (isPlaying) {
                 playheadSec = HibikiEngine.getPlaybackPosition();
+                currentStepIndex = HibikiEngine.getMelodyCurrentStep();
                 double beats = (playheadSec * (bpm / 60.0));
-                currentStepIndex = ((int) (beats * 4)) % 16;
                 float playheadBar = (float) (beats / 4.0);
 
-                // When step index advances, dispatch real-time notes for that step to HibikiEngine
-                if (currentStepIndex != lastProcessedStepIndex) {
-                    lastProcessedStepIndex = currentStepIndex;
-                    stepSequencer.processStep(currentStepIndex, channels, (chIdx, note, vel, on) -> {
-                        HibikiEngine.sendMidiNote(chIdx, note, vel, on);
-                    });
+                // When in tracker view, dispatch step sequencer notes to engine
+                if (currentView == ViewMode.TRACKER) {
+                    if (currentStepIndex != lastProcessedStepIndex) {
+                        lastProcessedStepIndex = currentStepIndex;
+                        stepSequencer.processStep(currentStepIndex, channels, (chIdx, note, vel, on) -> {
+                            HibikiEngine.sendMidiNote(chIdx, note, vel, on);
+                        });
+                    }
+                } else if (currentView == ViewMode.MELODY && HibikiEngine.isNativeLoaded()) {
+                    if (currentStepIndex != lastProcessedStepIndex) {
+                        lastProcessedStepIndex = currentStepIndex;
+                        MelodySequence seq = HibikiEngine.getMelodySequence();
+                        if (seq != null && currentStepIndex < seq.getLengthSteps()) {
+                            MelodyStep step = seq.getStep(currentStepIndex);
+                            if (step.isActive()) {
+                                int vel = Math.max(1, (int) (step.getVelocity() * 127.0f));
+                                HibikiEngine.sendMidiNote(2, step.getPitch(), vel, true);
+                                long gateMs = (long) (step.getGate() * (60000.0 / bpm / 4.0));
+                                uiHandler.postDelayed(() -> HibikiEngine.sendMidiNote(2, step.getPitch(), 0, false), Math.max(20, gateMs));
+                            }
+                        }
+                    }
                 }
 
                 headerBar.updateState(isPlaying, isRecording, isLooping, bpm, playheadSec, currentView);
+                if (melodySequencerView != null) {
+                    melodySequencerView.setCurrentStepIndex(currentStepIndex);
+                }
                 trackerView.setCurrentStepIndex(currentStepIndex);
                 arrangerView.setPlayheadBar(playheadBar);
             }
@@ -204,9 +227,13 @@ public class MainActivity extends Activity {
                 HibikiEngine.setPlayback(false);
                 HibikiEngine.resetPlaybackPosition();
                 stepSequencer.reset((chIdx, note, vel, on) -> HibikiEngine.sendMidiNote(chIdx, note, vel, on));
+                HibikiEngine.sendMidiNote(2, 0, 0, false);
                 lastProcessedStepIndex = -1;
                 playheadSec = 0.0;
                 currentStepIndex = 0;
+                if (melodySequencerView != null) {
+                    melodySequencerView.setCurrentStepIndex(-1);
+                }
                 headerBar.updateState(isPlaying, isRecording, isLooping, bpm, playheadSec, currentView);
                 trackerView.setCurrentStepIndex(0);
                 arrangerView.setPlayheadBar(0.0f);
@@ -246,6 +273,9 @@ public class MainActivity extends Activity {
         contentContainer.setLayoutParams(containerParams);
 
         // Create Views
+        melodySequencerView = new MelodySequencerView(this);
+        contentContainer.addView(melodySequencerView);
+
         trackerView = new TrackerView(this);
         trackerView.setChannels(channels, currentStepIndex);
         trackerView.setOnTrackerCellEditedListener((chIdx, stepIdx, newCell) -> {
@@ -418,13 +448,14 @@ public class MainActivity extends Activity {
         root.addView(contentContainer);
         setContentView(root);
 
-        switchView(ViewMode.TRACKER);
+        switchView(ViewMode.MELODY);
     }
 
     private void switchView(ViewMode mode) {
         currentView = mode;
         headerBar.updateState(isPlaying, isRecording, isLooping, bpm, playheadSec, currentView);
 
+        melodySequencerView.setVisibility(mode == ViewMode.MELODY ? View.VISIBLE : View.GONE);
         trackerView.setVisibility(mode == ViewMode.TRACKER ? View.VISIBLE : View.GONE);
         arrangerView.setVisibility(mode == ViewMode.ARRANGER ? View.VISIBLE : View.GONE);
         instrumentView.setVisibility(mode == ViewMode.INSTRUMENT ? View.VISIBLE : View.GONE);

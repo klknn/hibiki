@@ -32,12 +32,12 @@ class MidiInputAndroid : public MidiInput {
     events_.clear();
   }
 
-  bool is_open() const override {
+  bool is_open() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return opened_;
   }
 
-  std::string get_device_id() const override {
+  std::string get_device_id() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return device_id_;
   }
@@ -70,10 +70,10 @@ std::unique_ptr<MidiInput> MidiInput::create() {
   return std::make_unique<MidiInputAndroid>();
 }
 
-std::vector<MidiDeviceInfo> MidiInput::listDevices() {
-  std::vector<MidiDeviceInfo> devices;
-  devices.push_back({MIDI_GLOBAL_ID, "All Android MIDI Inputs"});
-  devices.push_back({"virtual", "Virtual Touch Keyboard / Pads"});
+std::vector<MidiInputInfo> MidiInput::listDevices() {
+  std::vector<MidiInputInfo> devices;
+  devices.push_back({MIDI_GLOBAL_ID, "All Android MIDI Inputs", 1});
+  devices.push_back({"virtual", "Virtual Touch Keyboard / Pads", 1});
   return devices;
 }
 

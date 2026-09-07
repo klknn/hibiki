@@ -11,6 +11,7 @@ cc_library(
     ],
     linkopts = select({
         "@platforms//os:windows": [],
+        "@platforms//os:android": ["-ldl"],
         "//conditions:default": [
             "-lpthread",
             "-ldl",
@@ -67,7 +68,6 @@ objc_library(
 
 cc_library(
     name = "vst3_host_stub",
-    testonly = True,
     srcs = ["vst3_host_stub.cpp"],
     deps = [":vst3_host"],
     alwayslink = True,

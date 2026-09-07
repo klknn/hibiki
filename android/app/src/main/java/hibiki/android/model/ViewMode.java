@@ -4,6 +4,7 @@ package hibiki.android.model;
  * Navigation views for the mobile DAW UI.
  */
 public enum ViewMode {
+    MELODY("MELODY"),
     TRACKER("TRACKER"),
     ARRANGER("ARRANGER"),
     INSTRUMENT("INSTRUMENT"),

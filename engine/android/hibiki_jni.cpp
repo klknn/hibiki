@@ -207,7 +207,12 @@ double AndroidEngineContext::getBpm() const {
 void AndroidEngineContext::audioThreadLoop() {
   auto audio =
       SoundDevice::create(state_->sample_rate, 2, state_->buffer_latency_ms);
-  if (!audio || !audio->is_ready()) {
+  if (audio && audio->is_ready()) {
+    int actual_sr = audio->get_sample_rate();
+    if (actual_sr > 0) {
+      state_->sample_rate = actual_sr;
+    }
+  } else {
     LOG(WARNING)
         << "Audio output device not ready; running in simulated audio clock";
   }
@@ -238,11 +243,6 @@ void AndroidEngineContext::audioThreadLoop() {
                                track->virtual_midi_queue.end());
             track->virtual_midi_queue.clear();
           }
-        }
-
-        // Only process if engine is playing or live notes were received
-        if (!is_playing && trackEvents.empty()) {
-          continue;
         }
 
         float vol = track->volume;

@@ -183,5 +183,30 @@ TEST_F(AndroidEngineContextTest, SendMidiNoteEvent) {
   EXPECT_FALSE(engine_->sendMidiNote(999, 60, 100, true).ok());
 }
 
+TEST_F(AndroidEngineContextTest, LiveNoteAuditionOnTrack2) {
+  ASSERT_TRUE(engine_->init(44100, 50).ok());
+
+  // Trigger A4 (69) note on Track 2 (LEAD / 3xOsc)
+  EXPECT_TRUE(engine_->sendMidiNote(2, 69, 110, true).ok());
+
+  auto* state = engine_->getState();
+  ASSERT_NE(state, nullptr);
+
+  // Give audio thread a few milliseconds to process
+  std::this_thread::sleep_for(std::chrono::milliseconds(30));
+
+  // The virtual_midi_queue should be consumed by audio thread
+  {
+    auto& track = state->tracks[2];
+    std::lock_guard<std::mutex> mlock(track->virtual_midi_mutex);
+    EXPECT_TRUE(track->virtual_midi_queue.empty())
+        << "Virtual MIDI queue should be processed by audio thread";
+  }
+
+  // Release note
+  EXPECT_TRUE(engine_->sendMidiNote(2, 69, 0, false).ok());
+  std::this_thread::sleep_for(std::chrono::milliseconds(30));
+}
+
 }  // namespace
 }  // namespace hibiki

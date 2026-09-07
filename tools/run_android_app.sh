@@ -28,26 +28,32 @@ if [[ -z "$(adb devices | awk 'NR>1 && $2=="device" {print $1}')" ]]; then
   "$REPO_ROOT/tools/start_android_emulator.sh"
 fi
 
-echo "🔨 Building Native C++ Audio Engine (libhibiki_jni.so)..."
-cd "$REPO_ROOT"
-bazel build //engine/android:libhibiki_jni.so -c opt --jobs=8
-TARGET_ABI="$(adb shell getprop ro.product.cpu.abi 2>/dev/null || echo "x86_64")"
+TARGET_ABI="$(adb shell getprop ro.product.cpu.abi 2>/dev/null || echo "arm64-v8a")"
 echo "📱 Target device architecture: $TARGET_ABI"
 
-if [[ "$TARGET_ABI" == *"x86_64"* ]]; then
-  echo "🔨 Packaging Native C++ Audio Engine for x86_64..."
+cd "$REPO_ROOT"
+if [[ "$TARGET_ABI" == *"arm64"* || "$TARGET_ABI" == *"aarch64"* ]]; then
+  echo "🔨 Building Native C++ Audio Engine for ARM64 (libhibiki_jni.so)..."
+  bazel build //engine/android:libhibiki_jni.so --platforms=//:android_arm64 -c opt --jobs=8
+  rm -rf "$REPO_ROOT/android/app/src/main/jniLibs"
+  mkdir -p "$REPO_ROOT/android/app/src/main/jniLibs/arm64-v8a"
+  cp -f "$REPO_ROOT/bazel-bin/engine/android/libhibiki_jni.so" "$REPO_ROOT/android/app/src/main/jniLibs/arm64-v8a/"
+  BAZEL_PLATFORM_FLAG="--android_platforms=//:arm64-v8a"
+elif [[ "$TARGET_ABI" == *"x86_64"* ]]; then
+  echo "🔨 Building Native C++ Audio Engine for x86_64 (libhibiki_jni.so)..."
+  bazel build //engine/android:libhibiki_jni.so -c opt --jobs=8
+  rm -rf "$REPO_ROOT/android/app/src/main/jniLibs"
   mkdir -p "$REPO_ROOT/android/app/src/main/jniLibs/x86_64"
   cp -f "$REPO_ROOT/bazel-bin/engine/android/libhibiki_jni.so" "$REPO_ROOT/android/app/src/main/jniLibs/x86_64/"
+  BAZEL_PLATFORM_FLAG=""
 else
-  # On ARM physical devices without cross-compiled ARM64 .so, avoid packaging x86_64 .so
-  # so that Android package manager does not reject installation with NO_MATCHING_ABIS.
-  rm -rf "$REPO_ROOT/android/app/src/main/jniLibs/x86_64"
-  echo "ℹ️  Physical ARM device detected ($TARGET_ABI); running in simulated engine mode."
+  echo "⚠️ Unknown ABI: $TARGET_ABI; building default..."
+  BAZEL_PLATFORM_FLAG=""
 fi
 
 echo "🔨 Building Hibiki Android APK via Bazel..."
 cd "$REPO_ROOT"
-bazel build //android/app:app -c opt --jobs=8
+bazel build //android/app:app ${BAZEL_PLATFORM_FLAG} -c opt --jobs=8
 
 APK_PATH="$REPO_ROOT/bazel-bin/android/app/app.apk"
 echo "📦 Installing APK to target device..."

@@ -73,6 +73,7 @@ cc_library(
     defines = ["RELEASE"],
     linkopts = select({
         "@platforms//os:windows": ["ole32.lib"],  # For COM in funknown.h.
+        "@platforms//os:android": ["-ldl"],
         "//conditions:default": [
             "-lpthread",
             "-ldl",
@@ -80,6 +81,7 @@ cc_library(
     }),
     copts = select({
         "@platforms//os:windows": ["/EHsc", "/W0", "/std:c++17"],
+        "@platforms//os:android": ["-fexceptions", "-w", "-include", "exception"],
         "//conditions:default": ["-fexceptions", "-w"],
     }),
     deps = select({

@@ -1,6 +1,7 @@
 package hibiki.android.engine;
 
 import android.util.Log;
+import hibiki.android.model.MelodySequence;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -22,6 +23,11 @@ public final class HibikiEngine {
     }
     private static final CopyOnWriteArrayList<MidiEventListener> midiListeners =
             new CopyOnWriteArrayList<>();
+
+    private static final SineMelodySynthesizer melodySynth = new SineMelodySynthesizer(44100.0, 120.0);
+    private static volatile boolean isStreamingActive = false;
+    private static Thread audioStreamThread = null;
+    private static android.media.AudioTrack audioStreamTrack = null;
 
     private static volatile boolean isNativeLoaded = false;
     private static volatile boolean simulatedPlaying = false;
@@ -87,7 +93,7 @@ public final class HibikiEngine {
         if (ok) {
             isInitialized.set(true);
             if (!isNativeLoaded) {
-                FallbackSynth.init();
+                startAudioStream();
             }
             startNotificationPoller();
             logInfo("Native audio engine initialized (" + sampleRate + " Hz, " + bufferLatencyMs + "ms)");
@@ -109,7 +115,7 @@ public final class HibikiEngine {
         isInitialized.set(false);
         simulatedPlaying = false;
         simulatedPlayheadSec = 0.0;
-        FallbackSynth.destroy();
+        stopAudioStream();
         if (notificationThread != null) {
             notificationThread.interrupt();
             notificationThread = null;
@@ -137,6 +143,7 @@ public final class HibikiEngine {
      * Starts or stops audio playback.
      */
     public static void setPlayback(boolean playing) {
+        melodySynth.setPlaying(playing);
         if (isNativeLoaded) {
             try {
                 nativeSetPlayback(playing);
@@ -236,6 +243,7 @@ public final class HibikiEngine {
     public static synchronized void resetPlaybackPosition() {
         simulatedPlayheadSec = 0.0;
         lastNanoTime = System.nanoTime();
+        melodySynth.resetPlayback();
     }
 
     /**
@@ -244,6 +252,7 @@ public final class HibikiEngine {
     public static void setBpm(double bpm) {
         if (bpm > 20.0 && bpm < 999.0) {
             simulatedBpm = bpm;
+            melodySynth.setBpm(bpm);
         }
         if (isNativeLoaded) {
             try {
@@ -369,9 +378,13 @@ public final class HibikiEngine {
             ok = true;
         }
 
-        // Fallback acoustic tone synthesis when running without native C++ engine
-        if (!isNativeLoaded && noteOn && velocity > 0) {
-            FallbackSynth.playTone(note, velocity, trackIndex == 0 ? 65 : 110);
+        // Fallback tone synthesis via sample-accurate SineMelodySynthesizer
+        if (!isNativeLoaded) {
+            if (noteOn && velocity > 0) {
+                melodySynth.triggerAudition(note, Math.max(0.1f, velocity / 127.0f));
+            } else {
+                melodySynth.releaseAudition();
+            }
         }
 
         // Notify active MIDI listeners (e.g. visual feedback, sound synthesizers)
@@ -433,57 +446,163 @@ public final class HibikiEngine {
     }
 
     /**
-     * Lightweight acoustic synthesizer fallback using Android AudioTrack when native
-     * libhibiki_jni.so is unavailable.
+     * Starts continuous background AudioTrack rendering thread.
      */
-    private static class FallbackSynth {
-        private static android.media.AudioTrack audioTrack;
-        private static final int SAMPLE_RATE = 22050;
-
-        static synchronized void init() {
-            try {
-                int minBuf = android.media.AudioTrack.getMinBufferSize(
-                        SAMPLE_RATE,
-                        android.media.AudioFormat.CHANNEL_OUT_MONO,
-                        android.media.AudioFormat.ENCODING_PCM_16BIT);
-                audioTrack = new android.media.AudioTrack(
-                        android.media.AudioManager.STREAM_MUSIC,
-                        SAMPLE_RATE,
-                        android.media.AudioFormat.CHANNEL_OUT_MONO,
-                        android.media.AudioFormat.ENCODING_PCM_16BIT,
-                        Math.max(minBuf, 4096),
-                        android.media.AudioTrack.MODE_STREAM);
-                audioTrack.play();
-            } catch (Throwable ignored) {}
+    public static synchronized void startAudioStream() {
+        if (isStreamingActive && audioStreamThread != null && audioStreamThread.isAlive()) {
+            return;
         }
+        isStreamingActive = true;
+        audioStreamThread = new Thread(() -> {
+            try {
+                try {
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO);
+                } catch (Throwable ignored) {}
 
-        static synchronized void playTone(int midiNote, int velocity, int durationMs) {
-            if (audioTrack == null || audioTrack.getState() != android.media.AudioTrack.STATE_INITIALIZED) {
+                final int sampleRate = 44100;
+                final int channelConfig = android.media.AudioFormat.CHANNEL_OUT_STEREO;
+                final int audioFormat = android.media.AudioFormat.ENCODING_PCM_16BIT;
+                int minBufSize = android.media.AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat);
+                int bufferSize = Math.max(minBufSize, 4096);
+
+                audioStreamTrack = new android.media.AudioTrack(
+                        android.media.AudioManager.STREAM_MUSIC,
+                        sampleRate,
+                        channelConfig,
+                        audioFormat,
+                        bufferSize,
+                        android.media.AudioTrack.MODE_STREAM);
+                audioStreamTrack.play();
+            } catch (Throwable t) {
+                logWarn("AudioTrack stream initialization skipped/failed: " + t.getMessage());
+                audioStreamTrack = null;
                 return;
             }
-            try {
-                double freq = 440.0 * Math.pow(2.0, (midiNote - 69) / 12.0);
-                int numSamples = (SAMPLE_RATE * durationMs) / 1000;
-                short[] pcm = new short[numSamples];
-                float vol = Math.min(1.0f, Math.max(0.1f, velocity / 127.0f));
-                for (int i = 0; i < numSamples; i++) {
-                    double t = (double) i / SAMPLE_RATE;
-                    double env = 1.0 - ((double) i / numSamples);
-                    double sample = Math.sin(2.0 * Math.PI * freq * t) * env * vol;
-                    pcm[i] = (short) (sample * 24000);
-                }
-                audioTrack.write(pcm, 0, numSamples);
-            } catch (Throwable ignored) {}
-        }
 
-        static synchronized void destroy() {
+            final int blockSize = 512;
+            float[] left = new float[blockSize];
+            float[] right = new float[blockSize];
+            short[] pcm = new short[blockSize * 2];
+
+            while (isStreamingActive) {
+                melodySynth.render(left, right, blockSize);
+                for (int i = 0; i < blockSize; i++) {
+                    float l = Math.max(-1.0f, Math.min(1.0f, left[i]));
+                    float r = Math.max(-1.0f, Math.min(1.0f, right[i]));
+                    pcm[2 * i] = (short) (l * 32767.0f);
+                    pcm[2 * i + 1] = (short) (r * 32767.0f);
+                }
+                try {
+                    if (audioStreamTrack != null && audioStreamTrack.getState() == android.media.AudioTrack.STATE_INITIALIZED) {
+                        int written = audioStreamTrack.write(pcm, 0, blockSize * 2);
+                        if (written < 0) {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                } catch (Throwable t) {
+                    break;
+                }
+            }
+
             try {
-                if (audioTrack != null) {
-                    audioTrack.stop();
-                    audioTrack.release();
-                    audioTrack = null;
+                if (audioStreamTrack != null) {
+                    audioStreamTrack.stop();
+                    audioStreamTrack.release();
+                    audioStreamTrack = null;
                 }
             } catch (Throwable ignored) {}
+        }, "Hibiki-AudioStreamThread");
+        audioStreamThread.setDaemon(true);
+        audioStreamThread.start();
+    }
+
+    /**
+     * Stops continuous background AudioTrack rendering thread.
+     */
+    public static synchronized void stopAudioStream() {
+        isStreamingActive = false;
+        if (audioStreamThread != null) {
+            audioStreamThread.interrupt();
+            audioStreamThread = null;
+        }
+    }
+
+    // High-level Melody Synthesizer API
+    public static SineMelodySynthesizer getMelodySynthesizer() {
+        return melodySynth;
+    }
+
+    public static void setMelodySequence(MelodySequence seq) {
+        melodySynth.setSequence(seq);
+    }
+
+    public static MelodySequence getMelodySequence() {
+        return melodySynth.getSequence();
+    }
+
+    public static void setMelodyPlaying(boolean playing) {
+        setPlayback(playing);
+    }
+
+    public static boolean isMelodyPlaying() {
+        return melodySynth.isPlaying();
+    }
+
+    public static boolean isNativeLoaded() {
+        return isNativeLoaded;
+    }
+
+    public static void setMelodyBpm(double bpm) {
+        setBpm(bpm);
+    }
+
+    public static int getMelodyCurrentStep() {
+        if (isNativeLoaded) {
+            double bpm = getBpm();
+            if (bpm <= 0.0) bpm = 120.0;
+            double stepDurationSec = (60.0 / bpm) / 4.0;
+            double playheadSec = getPlaybackPosition();
+            return (int) (playheadSec / stepDurationSec) % 16;
+        }
+        return melodySynth.getCurrentStepIndex();
+    }
+
+    private static volatile int activeAuditionPitch = -1;
+
+    public static void triggerAudition(int pitch, float velocity) {
+        activeAuditionPitch = pitch;
+        if (isNativeLoaded) {
+            sendMidiNote(2, pitch, Math.max(1, (int) (velocity * 127.0f)), true);
+        } else {
+            melodySynth.triggerAudition(pitch, velocity);
+        }
+    }
+
+    public static void releaseAudition(int pitch) {
+        if (isNativeLoaded) {
+            if (pitch >= 0 && pitch <= 127) {
+                sendMidiNote(2, pitch, 0, false);
+            }
+        } else {
+            melodySynth.releaseAudition();
+        }
+        if (activeAuditionPitch == pitch) {
+            activeAuditionPitch = -1;
+        }
+    }
+
+    public static void releaseAudition() {
+        int pitch = activeAuditionPitch;
+        if (pitch >= 0) {
+            releaseAudition(pitch);
+        } else {
+            if (isNativeLoaded) {
+                sendMidiNote(2, 255, 0, false);
+            } else {
+                melodySynth.releaseAudition();
+            }
         }
     }
 }

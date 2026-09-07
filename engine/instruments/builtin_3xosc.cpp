@@ -83,13 +83,14 @@ void Builtin3xOsc::process(float** /*inputs*/, float** outputs, int num_samples,
         mixR += sample * osc_vol * panR;
       }
 
+      voice.filterL.setParams(filt_type, base_cutoff, filt_q, 0.0f,
+                              (float)sample_rate_);
+      voice.filterR.setParams(filt_type, base_cutoff, filt_q, 0.0f,
+                              (float)sample_rate_);
       voice.filterL.setModulatedCutoff(base_cutoff, filt_depth, filt_val,
                                        filt_q, 0.0f, (float)sample_rate_);
       voice.filterR.setModulatedCutoff(base_cutoff, filt_depth, filt_val,
                                        filt_q, 0.0f, (float)sample_rate_);
-      voice.filterL.setParams(filt_type,
-                              voice.filterL.process(0) * 0 + base_cutoff,
-                              filt_q, 0.0f, (float)sample_rate_);
       float filtL = voice.filterL.process(mixL);
       float filtR = voice.filterR.process(mixR);
 
@@ -221,7 +222,8 @@ void Builtin3xOsc::noteOn(int pitch, float velocity) {
 
 void Builtin3xOsc::noteOff(int pitch) {
   for (int i = 0; i < kMaxVoices; ++i) {
-    if (voices_[i].active && voices_[i].note == pitch) {
+    if (voices_[i].active &&
+        (pitch < 0 || pitch > 127 || voices_[i].note == pitch)) {
       voices_[i].gain_env.noteOff();
       voices_[i].filter_env.noteOff();
     }

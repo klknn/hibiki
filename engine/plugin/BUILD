@@ -17,6 +17,7 @@ cc_library(
     hdrs = ["plugin_proxy.hpp"],
     linkopts = select({
         "@platforms//os:windows": [],
+        "@platforms//os:android": [],
         "//conditions:default": ["-lpthread"],
     }),
     deps = [

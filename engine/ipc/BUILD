@@ -19,6 +19,7 @@ cc_library(
     name = "worker_channel",
     srcs = select({
         "@platforms//os:windows": ["worker_channel_win32.cpp"],
+        "@platforms//os:android": ["worker_channel_android.cpp"],
         "//conditions:default": ["worker_channel_posix.cpp"],
     }),
     hdrs = [
@@ -28,6 +29,7 @@ cc_library(
     linkopts = select({
         "@platforms//os:windows": [],
         "@platforms//os:macos": [],
+        "@platforms//os:android": [],
         "//conditions:default": ["-lrt"],
     }),
     deps = ["@abseil-cpp//absl/log"],

@@ -1,6 +1,26 @@
 # Bazel
 bazel-*
 
+# Java / Kotlin
+*.class
+*.kotlin_module
+
+# Gradle / Android
+.gradle/
+.kotlin/
+build/
+**/build/
+.cxx/
+.externalNativeBuild/
+captures/
+local.properties
+*.apk
+*.ap_
+*.aab
+*.dex
+*.hprof
+**/jniLibs/
+
 # Build output
 bin/
 target/
@@ -12,6 +32,7 @@ genhtml
 .vscode/
 .idea/
 .antigravitycli/
+*.iml
 
 # OS generated files
 .DS_Store

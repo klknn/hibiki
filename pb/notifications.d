@@ -1,0 +1,312 @@
+module pb.notifications;
+
+import dproto.proto : ProtoField, ProtoOptional;
+import pb.commands : HibikiConfig;
+import pb.core : AuxSend, EntityRef, MidiEvent, PadEffectState, CoreParamInfo = ParamInfo, Project, TimelineClip, Track, TrackType, TransportState;
+
+struct StateUpdate {
+    @ProtoField(1) Track[] tracks;
+    @ProtoField(2) float bpm = 0.0f;
+    @ProtoField(3) float playhead_sec = 0.0f;
+    @ProtoField(4) TransportState transport_state = TransportState.TRANSPORT_STATE_UNSPECIFIED;
+}
+
+struct EntityRemoved {
+    @ProtoField(1) EntityRef entity_ref;
+}
+
+struct PlayheadInfo {
+    @ProtoField(1) float position_sec = 0.0f;
+    @ProtoField(2) float bpm = 0.0f;
+    @ProtoField(3) TransportState transport_state = TransportState.TRANSPORT_STATE_UNSPECIFIED;
+    @ProtoField(4) bool loop_enabled = false;
+    @ProtoField(5) float loop_start = 0.0f;
+    @ProtoField(6) float loop_end = 0.0f;
+}
+
+struct PluginDescription {
+    @ProtoField(1) int index = 0;
+    @ProtoField(2) string name;
+    @ProtoField(3) string vendor;
+    @ProtoField(4) string path;
+    @ProtoField(5) bool is_instrument = false;
+}
+
+struct PluginListResponse {
+    @ProtoField(1) string path;
+    @ProtoField(2) PluginDescription[] plugins;
+    @ProtoField(3) string remote_host;
+}
+
+struct ParamInfo {
+    @ProtoField(1) uint id = 0;
+    @ProtoField(2) string name;
+    @ProtoField(3) float default_value = 0.0f;
+}
+
+struct ParamList {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int plugin_index = 0;
+    @ProtoField(3) string plugin_name;
+    @ProtoField(4) bool is_instrument = false;
+    @ProtoField(5) ParamInfo[] params;
+}
+
+struct ClipInfo {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int slot_index = 0;
+    @ProtoField(3) string name;
+    @ProtoField(4) string path;
+}
+
+struct TrackLevel {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) float peak_l = 0.0f;
+    @ProtoField(3) float peak_r = 0.0f;
+}
+
+struct TrackLevels {
+    @ProtoField(1) TrackLevel[] levels;
+}
+
+struct ClipWaveform {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int slot_index = 0;
+    @ProtoField(3) float[] waveform;
+}
+
+struct TimelineClipInfo {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int clip_index = 0;
+    @ProtoField(3) string name;
+    @ProtoField(4) string path;
+    @ProtoField(5) float start_time = 0.0f;
+    @ProtoField(6) float duration = 0.0f;
+    @ProtoField(7) float[] waveform;
+    @ProtoField(8) bool is_looped = false;
+    @ProtoField(9) int alias_source = 0;
+    @ProtoField(10) float loop_interval = 0.0f;
+    @ProtoField(11) float fade_in_sec = 0.0f;
+    @ProtoField(12) float fade_out_sec = 0.0f;
+    @ProtoField(13) bool muted = false;
+}
+
+struct TrackInfo {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) string name;
+    @ProtoField(3) TrackType track_type = TrackType.TRACK_NORMAL;
+    @ProtoField(4) int output_track_index = 0;
+    @ProtoField(5) AuxSend[] aux_sends;
+    @ProtoField(6) int group_parent_index = 0;
+}
+
+struct ClipMidiData {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int slot_index = 0;
+    @ProtoField(3) int clip_index = 0;
+    @ProtoField(4) int resolution = 0;
+    @ProtoField(5) MidiEvent[] events;
+}
+
+struct AutomationLaneInfo {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int lane_index = 0;
+    @ProtoField(3) int plugin_index = 0;
+    @ProtoField(4) uint param_id = 0;
+    @ProtoField(5) string param_name;
+    @ProtoField(6) TimelineClip[] clips;
+}
+
+struct AutomationLanesData {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) AutomationLaneInfo[] lanes;
+}
+
+struct ParamValueChange {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int plugin_index = 0;
+    @ProtoField(3) uint param_id = 0;
+    @ProtoField(4) float value = 0.0f;
+}
+
+struct RecordingFinished {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) string path;
+    @ProtoField(3) int clip_index = 0;
+}
+
+struct AudioInputDevice {
+    @ProtoField(1) string id;
+    @ProtoField(2) string name;
+    @ProtoField(3) int channel_count = 0;
+}
+
+struct AudioInputList {
+    @ProtoField(1) AudioInputDevice[] devices;
+}
+
+struct MidiInputDevice {
+    @ProtoField(1) string id;
+    @ProtoField(2) string name;
+    @ProtoField(3) int port_count = 0;
+}
+
+struct MidiInputList {
+    @ProtoField(1) MidiInputDevice[] devices;
+}
+
+struct ClearProject {}
+
+struct BounceFinished {
+    @ProtoField(1) string path;
+    @ProtoField(2) bool success = false;
+}
+
+struct Log {
+    @ProtoField(1) string message;
+}
+
+struct Acknowledge {
+    @ProtoField(1) string command_type;
+    @ProtoField(2) bool success = false;
+}
+
+struct EditorFrameData {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int plugin_index = 0;
+    @ProtoField(3) int width = 0;
+    @ProtoField(4) int height = 0;
+    @ProtoField(5) ubyte[] image_data;
+}
+
+struct PluginSpectrumData {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int plugin_index = 0;
+    @ProtoField(3) float[] input_magnitudes;
+    @ProtoField(4) float[] output_magnitudes;
+}
+
+struct PluginMeteringData {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int plugin_index = 0;
+    @ProtoField(3) float input_db = 0.0f;
+    @ProtoField(4) float output_db = 0.0f;
+    @ProtoField(5) float gain_reduction_db = 0.0f;
+    @ProtoField(6) float sidechain_db = 0.0f;
+    @ProtoField(7) float low_gr_db = 0.0f;
+    @ProtoField(8) float mid_gr_db = 0.0f;
+    @ProtoField(9) float high_gr_db = 0.0f;
+    @ProtoField(10) float master_gr_db = 0.0f;
+    @ProtoField(11) float low_in_db = 0.0f;
+    @ProtoField(12) float low_out_db = 0.0f;
+    @ProtoField(13) float mid_in_db = 0.0f;
+    @ProtoField(14) float mid_out_db = 0.0f;
+    @ProtoField(15) float high_in_db = 0.0f;
+    @ProtoField(16) float high_out_db = 0.0f;
+}
+
+struct PluginScopeData {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int plugin_index = 0;
+    @ProtoField(3) float[] left_samples;
+    @ProtoField(4) float[] right_samples;
+}
+
+struct DrumPadNotification {
+    enum Type : int {
+        TYPE_UNSPECIFIED = 0,
+        TYPE_PAD_STATE = 1,
+        TYPE_PAD_TRIGGER = 2,
+    }
+
+    @ProtoField(1) Type type = Type.TYPE_UNSPECIFIED;
+    @ProtoField(2) uint track_index = 0;
+    @ProtoField(3) uint plugin_index = 0;
+    @ProtoField(4) uint pad_index = 0;
+    @ProtoField(5) string plugin_path;
+    @ProtoField(6) float volume = 0.0f;
+    @ProtoField(7) float pan = 0.0f;
+    @ProtoField(8) bool mute = false;
+    @ProtoField(9) bool solo = false;
+    @ProtoField(10) CoreParamInfo[] params;
+    @ProtoField(11) string sample_name;
+    @ProtoField(12) float[] sample_waveform;
+    @ProtoField(13) ProtoOptional!uint trigger_note;
+    @ProtoField(14) string effect_path;
+    @ProtoField(15) CoreParamInfo[] effect_params;
+    @ProtoField(16) PadEffectState[] effects;
+}
+
+struct PluginSampleData {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int plugin_index = 0;
+    @ProtoField(3) float[] waveform;
+    @ProtoField(4) string sample_name;
+    @ProtoField(5) double sample_duration_sec = 0.0;
+}
+
+struct ModulationSlotInfo {
+    @ProtoField(1) int slot_index = 0;
+    @ProtoField(2) int waveform = 0;
+    @ProtoField(3) float rate_hz = 0.0f;
+    @ProtoField(4) float depth = 0.0f;
+    @ProtoField(5) uint target_param_id = 0;
+    @ProtoField(6) string target_param_name;
+    @ProtoField(7) bool assigned = false;
+    @ProtoField(8) bool sync_to_tempo = false;
+}
+
+struct ModulationInfo {
+    @ProtoField(1) int track_index = 0;
+    @ProtoField(2) int plugin_index = 0;
+    @ProtoField(3) ModulationSlotInfo[] slots;
+}
+
+struct AudioEditorData {
+    @ProtoField(1) float[] waveform;
+    @ProtoField(2) float[] spectrogram;
+    @ProtoField(3) int spectrogram_width = 0;
+    @ProtoField(4) int spectrogram_height = 0;
+    @ProtoField(5) float duration_sec = 0.0f;
+    @ProtoField(6) int sample_rate = 0;
+    @ProtoField(7) int num_channels = 0;
+    @ProtoField(8) string file_name;
+}
+
+struct ProjectInfo {
+    @ProtoField(1) string project_dir;
+}
+
+struct Notification {
+    @ProtoField(1, true, "response") ProtoOptional!StateUpdate state_update;
+    @ProtoField(2, true, "response") ProtoOptional!EntityRemoved entity_removed;
+    @ProtoField(3, true, "response") ProtoOptional!PlayheadInfo playhead_info;
+    @ProtoField(4, true, "response") ProtoOptional!PluginListResponse plugin_list;
+    @ProtoField(5, true, "response") ProtoOptional!ParamList param_list;
+    @ProtoField(6, true, "response") ProtoOptional!ClipInfo clip_info;
+    @ProtoField(7, true, "response") ProtoOptional!TrackLevels track_levels;
+    @ProtoField(8, true, "response") ProtoOptional!ClipWaveform clip_waveform;
+    @ProtoField(9, true, "response") ProtoOptional!TimelineClipInfo timeline_clip_info;
+    @ProtoField(10, true, "response") ProtoOptional!TrackInfo track_info;
+    @ProtoField(11, true, "response") ProtoOptional!ClipMidiData clip_midi_data;
+    @ProtoField(12, true, "response") ProtoOptional!AutomationLanesData automation_lanes_data;
+    @ProtoField(13, true, "response") ProtoOptional!ClearProject clear_project;
+    @ProtoField(14, true, "response") ProtoOptional!BounceFinished bounce_finished;
+    @ProtoField(15, true, "response") ProtoOptional!Project full_sync;
+    @ProtoField(16, true, "response") ProtoOptional!Log log;
+    @ProtoField(17, true, "response") ProtoOptional!Acknowledge acknowledge;
+    @ProtoField(18, true, "response") ProtoOptional!ParamValueChange param_value_change;
+    @ProtoField(19, true, "response") ProtoOptional!EditorFrameData editor_frame_data;
+    @ProtoField(20, true, "response") ProtoOptional!HibikiConfig config;
+    @ProtoField(21, true, "response") ProtoOptional!RecordingFinished recording_finished;
+    @ProtoField(22, true, "response") ProtoOptional!AudioInputList audio_input_list;
+    @ProtoField(23, true, "response") ProtoOptional!MidiInputList midi_input_list;
+    @ProtoField(24, true, "response") ProtoOptional!PluginSpectrumData plugin_spectrum;
+    @ProtoField(25, true, "response") ProtoOptional!PluginMeteringData plugin_metering;
+    @ProtoField(26, true, "response") ProtoOptional!PluginSampleData plugin_sample_data;
+    @ProtoField(27, true, "response") ProtoOptional!ModulationInfo modulation_info;
+    @ProtoField(28, true, "response") ProtoOptional!PluginScopeData plugin_scope_data;
+    @ProtoField(29, true, "response") ProtoOptional!AudioEditorData audio_editor_data;
+    @ProtoField(30, true, "response") ProtoOptional!ProjectInfo project_info;
+    @ProtoField(32, true, "response") ProtoOptional!DrumPadNotification drum_pad;
+}

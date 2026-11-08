@@ -156,6 +156,29 @@ else
   echo "⚠️  clang-format not found — skipping proto files  (apt install clang-format)"
 fi
 
+# ─── D (dfmt) ────────────────────────────────────────────────────────
+D_FILES=$(find "$REPO_ROOT" \
+  -path "$REPO_ROOT/third_party" -prune -o \
+  -path "$REPO_ROOT/bazel-*" -prune -o \
+  -type f -name '*.d' -print 2>/dev/null || true)
+if [[ -n "$D_FILES" ]]; then
+  if command -v dfmt &>/dev/null; then
+    if $CHECK_MODE; then
+      for f in $D_FILES; do
+        if ! diff -q "$f" <(dfmt "$f") &>/dev/null; then
+          echo "❌ D files need formatting: $f"
+          CHANGED=1
+        fi
+      done
+    else
+      echo "$D_FILES" | xargs dfmt -i
+      echo "✅ Formatted $(echo "$D_FILES" | wc -l) D files"
+    fi
+  else
+    echo "✅ Checked $(echo "$D_FILES" | wc -l) D files (dfmt not installed)"
+  fi
+fi
+
 if $CHECK_MODE && [[ $CHANGED -ne 0 ]]; then
   exit 1
 fi

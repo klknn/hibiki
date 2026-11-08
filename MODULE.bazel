@@ -30,15 +30,11 @@ android_sdk_repository_extension = use_extension(
 android_sdk_repository_extension.configure()
 use_repo(android_sdk_repository_extension, "androidsdk")
 
-register_toolchains("@androidsdk//:sdk-toolchain", "@androidsdk//:all")
-
 android_ndk_repository_extension = use_extension(
     "@rules_android_ndk//:extension.bzl",
     "android_ndk_repository_extension",
 )
 use_repo(android_ndk_repository_extension, "androidndk")
-
-register_toolchains("@androidndk//:all")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 maven.install(
@@ -98,3 +94,6 @@ http_archive(
     strip_prefix = "pocketfft-cpp",
     url = "https://github.com/mreineck/pocketfft/archive/refs/heads/cpp.zip",
 )
+
+ldc_extension = use_extension("//tools/d_rules:extensions.bzl", "ldc_repositories")
+use_repo(ldc_extension, "ldc_toolchain")

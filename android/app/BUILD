@@ -8,7 +8,11 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "hibiki_jni_so",
-    srcs = glob(["src/main/jniLibs/**/*.so"]),
+    srcs = glob(
+        ["src/main/jniLibs/**/*.so"],
+        allow_empty = True,
+    ),
+    target_compatible_with = ["@platforms//os:android"],
 )
 
 android_library(
@@ -16,6 +20,7 @@ android_library(
     srcs = glob(["src/main/java/**/*.java"]),
     custom_package = "hibiki.android",
     manifest = "src/main/AndroidManifest.xml",
+    target_compatible_with = ["@platforms//os:android"],
 )
 
 android_binary(
@@ -23,6 +28,7 @@ android_binary(
     custom_package = "hibiki.android",
     debug_key = "debug.keystore",
     manifest = "src/main/AndroidManifest.xml",
+    target_compatible_with = ["@platforms//os:android"],
     deps = [
         ":hibiki_app_lib",
         ":hibiki_jni_so",
@@ -110,6 +116,7 @@ android_local_test(
     srcs = ["src/test/java/hibiki/android/engine/HibikiEnginePlaybackTest.java"],
     custom_package = "hibiki.android",
     manifest = "src/main/AndroidManifest.xml",
+    target_compatible_with = ["@platforms//os:android"],
     test_class = "hibiki.android.engine.HibikiEnginePlaybackTest",
     deps = [
         ":hibiki_app_lib",
@@ -122,6 +129,7 @@ android_local_test(
     srcs = ["src/test/java/hibiki/android/engine/MelodySequencerIntegrationTest.java"],
     custom_package = "hibiki.android",
     manifest = "src/main/AndroidManifest.xml",
+    target_compatible_with = ["@platforms//os:android"],
     test_class = "hibiki.android.engine.MelodySequencerIntegrationTest",
     deps = [
         ":hibiki_app_lib",
@@ -136,6 +144,7 @@ sh_binary(
     data = [
         ":app",
     ],
+    target_compatible_with = ["@platforms//os:android"],
 )
 
 # Run target: bazel run //android/app:run
@@ -147,4 +156,5 @@ sh_binary(
         "//engine/android:libhibiki_jni.so",
         "//tools:start_android_emulator.sh",
     ],
+    target_compatible_with = ["@platforms//os:android"],
 )

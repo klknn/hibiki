@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/d_rules:defs.bzl", "d_library", "d_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -11,9 +12,16 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "math_d",
+    srcs = ["math.d"],
+    betterc = True,
+)
+
 cc_library(
     name = "math",
     hdrs = ["math.hpp"],
+    deps = [":math_d"],
 )
 
 cc_library(
@@ -26,16 +34,45 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "biquad_filter_d",
+    srcs = ["biquad_filter.d"],
+    betterc = True,
+    deps = [":math_d"],
+)
+
 cc_library(
     name = "biquad_filter",
-    srcs = ["biquad_filter.cpp"],
     hdrs = ["biquad_filter.hpp"],
+    deps = [":biquad_filter_d"],
+)
+
+d_library(
+    name = "modulator_d",
+    srcs = ["modulator.d"],
+    betterc = True,
+    deps = [":math_d"],
+)
+
+d_library(
+    name = "resample_d",
+    srcs = ["resample.d"],
+    betterc = True,
+    deps = [":math_d"],
 )
 
 cc_library(
     name = "resample",
     srcs = ["resample.cpp"],
     hdrs = ["resample.hpp"],
+    deps = [":resample_d"],
+)
+
+d_library(
+    name = "audio_file_d",
+    srcs = ["audio_file.d"],
+    betterc = True,
+    deps = [":math_d"],
 )
 
 cc_library(
@@ -44,6 +81,7 @@ cc_library(
     hdrs = ["audio_file.hpp"],
     includes = ["."],
     deps = [
+        ":audio_file_d",
         ":resample",
         ":status",
         "@abseil-cpp//absl/log",
@@ -52,16 +90,44 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "history_d",
+    srcs = ["history.d"],
+)
+
 cc_library(
     name = "history",
     srcs = ["history.cpp"],
     hdrs = ["history.hpp"],
 )
 
+d_library(
+    name = "midi_d",
+    srcs = ["midi.d"],
+    betterc = True,
+)
+
 cc_library(
     name = "midi",
     srcs = ["midi.cpp"],
     hdrs = ["midi.hpp"],
+    deps = [":midi_d"],
+)
+
+d_test(
+    name = "core_d_test",
+    srcs = ["core_d_test.d"],
+    deps = [
+        ":audio_file_d",
+        ":biquad_filter_d",
+        ":history_d",
+        ":math_d",
+        ":midi_d",
+        ":modulator_d",
+        ":resample_d",
+        "//engine/instruments:adsr_d",
+        "//engine/instruments:multi_point_envelope_d",
+    ],
 )
 
 cc_library(

@@ -1,21 +1,33 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/d_rules:defs.bzl", "d_library")
 
 package(default_visibility = ["//visibility:public"])
 
+d_library(
+    name = "adsr_d",
+    srcs = ["adsr.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
+)
+
 cc_library(
     name = "adsr",
-    srcs = [
-        "adsr.cpp",
-    ],
-    hdrs = [
-        "adsr.hpp",
-    ],
+    hdrs = ["adsr.hpp"],
+    deps = [":adsr_d"],
+)
+
+d_library(
+    name = "multi_point_envelope_d",
+    srcs = ["multi_point_envelope.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
 )
 
 cc_library(
     name = "multi_point_envelope",
     srcs = ["multi_point_envelope.cpp"],
     hdrs = ["multi_point_envelope.hpp"],
+    deps = [":multi_point_envelope_d"],
 )
 
 cc_library(

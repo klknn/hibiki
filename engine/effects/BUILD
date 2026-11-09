@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/d_rules:defs.bzl", "d_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -52,11 +53,27 @@ cc_library(
     deps = ["//engine/plugin:iplugin"],
 )
 
+d_library(
+    name = "builtin_bitcrusher_d",
+    srcs = ["builtin_bitcrusher.d"],
+    betterc = True,
+)
+
 cc_library(
     name = "builtin_bitcrusher",
     srcs = ["builtin_bitcrusher.cpp"],
     hdrs = ["builtin_bitcrusher.hpp"],
-    deps = ["//engine/plugin:iplugin"],
+    deps = [
+        ":builtin_bitcrusher_d",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+d_library(
+    name = "builtin_chorus_d",
+    srcs = ["builtin_chorus.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
 )
 
 cc_library(
@@ -64,9 +81,17 @@ cc_library(
     srcs = ["builtin_chorus.cpp"],
     hdrs = ["builtin_chorus.hpp"],
     deps = [
+        ":builtin_chorus_d",
         "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
+)
+
+d_library(
+    name = "builtin_stereo_width_d",
+    srcs = ["builtin_stereo_width.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
 )
 
 cc_library(
@@ -74,6 +99,7 @@ cc_library(
     srcs = ["builtin_stereo_width.cpp"],
     hdrs = ["builtin_stereo_width.hpp"],
     deps = [
+        ":builtin_stereo_width_d",
         "//engine/core:math",
         "//engine/plugin:iplugin",
     ],

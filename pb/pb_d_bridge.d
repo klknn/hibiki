@@ -1,8 +1,7 @@
 module pb.pb_d_bridge;
 
 import core.runtime : rt_init, rt_term;
-import core.stdc.string : memcpy;
-import dproto.proto : decodeProto, encodeProto;
+import dproto.proto : Arena, computeProtoSize, decodeProto, encodeProto;
 import dproto.wire : RealtimeAudioPacket, encodeRealtimeProcessAudio;
 import pb.commands : Request;
 import pb.core : Project;
@@ -16,80 +15,77 @@ extern (C++) int hibiki_d_rt_term() {
     return rt_term();
 }
 
-/// Decodes a C++-serialized Project in D, verifies key invariants, and re-encodes it into outBuf.
+/// Decodes a C++-serialized Project in D using Arena, verifies invariants, and re-encodes it directly into outBuf without GC.
 /// Returns the encoded byte length, or -1 on failure.
 extern (C++) int d_roundtrip_project(
     const(ubyte)* inData,
     int inLen,
     ubyte* outBuf,
     int outCapacity
-) nothrow {
+) @nogc nothrow {
     if (inData is null || inLen < 0 || outBuf is null || outCapacity <= 0) {
         return -1;
     }
     const(ubyte)[] slice = inData[0 .. inLen];
     Project proj;
-    if (!decodeProto(slice, proj)) {
+    ubyte[65536] scratch;
+    Arena arena = Arena(scratch[]);
+    if (!decodeProto(slice, proj, arena)) {
         return -1;
     }
-    ubyte[] encoded = encodeProto(proj);
-    if (encoded.length > cast(size_t)outCapacity) {
+    size_t written = encodeProto(proj, outBuf[0 .. outCapacity]);
+    if (written == 0 && computeProtoSize(proj) > 0) {
         return -1;
     }
-    if (encoded.length > 0) {
-        memcpy(outBuf, encoded.ptr, encoded.length);
-    }
-    return cast(int)encoded.length;
+    return cast(int)written;
 }
 
-/// Decodes a C++-serialized Request in D and re-encodes it into outBuf.
+/// Decodes a C++-serialized Request in D using Arena and re-encodes it directly into outBuf without GC.
 extern (C++) int d_roundtrip_request(
     const(ubyte)* inData,
     int inLen,
     ubyte* outBuf,
     int outCapacity
-) nothrow {
+) @nogc nothrow {
     if (inData is null || inLen < 0 || outBuf is null || outCapacity <= 0) {
         return -1;
     }
     const(ubyte)[] slice = inData[0 .. inLen];
     Request req;
-    if (!decodeProto(slice, req)) {
+    ubyte[65536] scratch;
+    Arena arena = Arena(scratch[]);
+    if (!decodeProto(slice, req, arena)) {
         return -1;
     }
-    ubyte[] encoded = encodeProto(req);
-    if (encoded.length > cast(size_t)outCapacity) {
+    size_t written = encodeProto(req, outBuf[0 .. outCapacity]);
+    if (written == 0 && computeProtoSize(req) > 0) {
         return -1;
     }
-    if (encoded.length > 0) {
-        memcpy(outBuf, encoded.ptr, encoded.length);
-    }
-    return cast(int)encoded.length;
+    return cast(int)written;
 }
 
-/// Decodes a C++-serialized Notification in D and re-encodes it into outBuf.
+/// Decodes a C++-serialized Notification in D using Arena and re-encodes it directly into outBuf without GC.
 extern (C++) int d_roundtrip_notification(
     const(ubyte)* inData,
     int inLen,
     ubyte* outBuf,
     int outCapacity
-) nothrow {
+) @nogc nothrow {
     if (inData is null || inLen < 0 || outBuf is null || outCapacity <= 0) {
         return -1;
     }
     const(ubyte)[] slice = inData[0 .. inLen];
     Notification notif;
-    if (!decodeProto(slice, notif)) {
+    ubyte[65536] scratch;
+    Arena arena = Arena(scratch[]);
+    if (!decodeProto(slice, notif, arena)) {
         return -1;
     }
-    ubyte[] encoded = encodeProto(notif);
-    if (encoded.length > cast(size_t)outCapacity) {
+    size_t written = encodeProto(notif, outBuf[0 .. outCapacity]);
+    if (written == 0 && computeProtoSize(notif) > 0) {
         return -1;
     }
-    if (encoded.length > 0) {
-        memcpy(outBuf, encoded.ptr, encoded.length);
-    }
-    return cast(int)encoded.length;
+    return cast(int)written;
 }
 
 /// Encodes a ProcessAudio message using the @nogc real-time serializer in D.

@@ -79,6 +79,12 @@ cc_proto_library(
 
 # D zero-dependency proto libraries
 d_library(
+    name = "dproto",
+    srcs = ["dproto.d"],
+    visibility = ["//visibility:public"],
+)
+
+d_library(
     name = "core_d_proto",
     srcs = ["core.d"],
     visibility = ["//visibility:public"],

@@ -162,3 +162,25 @@ import pb.plugin_worker;
     ubyte[4] tinyBuf;
     assert(encodeRealtimeProcessAudio(pkt, samples[], tinyBuf[]) == 0);
 }
+
+@nogc nothrow @safe unittest {
+    // 6. Zero-Phobos, @nogc Arena-based encoding and decoding
+    ubyte[16384] arenaMem;
+    Arena arena = Arena(arenaMem[]);
+
+    Project proj;
+    proj.bpm = 140.0f;
+    proj.playhead_sec = 8.0f;
+    proj.transport_state = TransportState.TRANSPORT_STATE_PLAYING;
+
+    ubyte[4096] destBuf;
+    size_t written = encodeProto(proj, destBuf[]);
+    assert(written > 0);
+
+    Project decoded;
+    bool ok = decodeProto(destBuf[0 .. written], decoded, arena);
+    assert(ok);
+    assert(decoded.bpm == 140.0f);
+    assert(decoded.playhead_sec == 8.0f);
+    assert(decoded.transport_state == TransportState.TRANSPORT_STATE_PLAYING);
+}

@@ -6,6 +6,7 @@ d_library(
     name = "wire",
     srcs = ["wire.d"],
     betterc = True,
+    deps = ["//pb:dproto"],
 )
 
 d_library(
@@ -14,6 +15,7 @@ d_library(
         "proto.d",
         "wire.d",
     ],
+    deps = ["//pb:dproto"],
 )
 
 d_test(
@@ -23,6 +25,7 @@ d_test(
         ":dproto",
         "//pb:commands_d_proto",
         "//pb:core_d_proto",
+        "//pb:dproto",
         "//pb:notifications_d_proto",
         "//pb:plugin_worker_d_proto",
     ],

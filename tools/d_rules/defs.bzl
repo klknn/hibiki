@@ -147,7 +147,9 @@ def _link_d_executable(ctx, is_test):
                     lib_inputs.append(lib.static_library)
                     args.add(lib.static_library.path)
             for flag in linker_input.user_link_flags:
-                args.add("-L=" + flag)
+                for subflag in flag.split(" "):
+                    if subflag:
+                        args.add("-L=" + subflag)
 
     if _is_macos(ctx):
         args.add("-L=-lc++")

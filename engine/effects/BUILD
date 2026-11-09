@@ -10,18 +10,38 @@ cc_library(
     deps = ["//engine/plugin:iplugin"],
 )
 
+d_library(
+    name = "builtin_compressor_d",
+    srcs = ["builtin_compressor.d"],
+    betterc = True,
+)
+
 cc_library(
     name = "builtin_compressor",
     srcs = ["builtin_compressor.cpp"],
     hdrs = ["builtin_compressor.hpp"],
-    deps = ["//engine/plugin:iplugin"],
+    deps = [
+        ":builtin_compressor_d",
+        "//engine/plugin:iplugin",
+    ],
+)
+
+d_library(
+    name = "builtin_delay_d",
+    srcs = ["builtin_delay.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
 )
 
 cc_library(
     name = "builtin_delay",
     srcs = ["builtin_delay.cpp"],
     hdrs = ["builtin_delay.hpp"],
-    deps = ["//engine/plugin:iplugin"],
+    deps = [
+        ":builtin_delay_d",
+        "//engine/core:math",
+        "//engine/plugin:iplugin",
+    ],
 )
 
 cc_library(
@@ -46,11 +66,20 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "builtin_limiter_d",
+    srcs = ["builtin_limiter.d"],
+    betterc = True,
+)
+
 cc_library(
     name = "builtin_limiter",
     srcs = ["builtin_limiter.cpp"],
     hdrs = ["builtin_limiter.hpp"],
-    deps = ["//engine/plugin:iplugin"],
+    deps = [
+        ":builtin_limiter_d",
+        "//engine/plugin:iplugin",
+    ],
 )
 
 d_library(

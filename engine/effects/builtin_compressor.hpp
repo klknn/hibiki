@@ -8,6 +8,38 @@
 
 namespace hibiki {
 
+struct CompressorDspState {
+  float envelope_db;
+  float gain_reduction_db;
+  float input_db;
+  float output_db;
+  float sidechain_db;
+  float rms_buf_l[128];
+  float rms_buf_r[128];
+  float rms_sum_l;
+  float rms_sum_r;
+  int rms_index;
+  void reset();
+};
+
+float d_compressor_norm_to_threshold(double norm);
+float d_compressor_norm_to_ratio(double norm);
+float d_compressor_norm_to_attack(double norm);
+float d_compressor_norm_to_release(double norm);
+float d_compressor_norm_to_up_threshold(double norm);
+float d_compressor_compute_gain_reduction(float input_db, float threshold,
+                                          float ratio, float knee_db,
+                                          float up_threshold, float up_ratio);
+void d_compressor_process(CompressorDspState& state, const float* in_l,
+                          const float* in_r, float* out_l, float* out_r,
+                          int num_samples, double sample_rate,
+                          double threshold_norm, double ratio_norm,
+                          double attack_norm, double release_norm,
+                          double knee_norm, double makeup_norm,
+                          double up_threshold_norm, double up_ratio_norm,
+                          bool use_rms, bool enabled, const float* sc_l,
+                          const float* sc_r);
+
 // Stereo compressor with hard/soft knee, implemented as an IPlugin.
 // Features: adjustable threshold, ratio, attack, release, knee width,
 // makeup gain. Provides gain reduction metering for UI.
@@ -70,25 +102,10 @@ class BuiltinCompressor : public IPlugin {
   double params_[kTotalParams] = {};
   double sample_rate_ = 44100.0;
   bool enabled_ = true;
-  float envelope_db_ = 0.0f;
-  float gain_reduction_db_ = 0.0f;
-  std::atomic<float> input_db_{-200.0f};
-  std::atomic<float> output_db_{-200.0f};
-  std::atomic<float> sidechain_db_{-200.0f};
 
-  // RMS detection ring buffer (~3ms window at 44.1kHz ≈ 128 samples)
-  static constexpr int kRmsWindowSize = 128;
-  float rms_buf_L_[kRmsWindowSize] = {};
-  float rms_buf_R_[kRmsWindowSize] = {};
-  float rms_sum_L_ = 0.0f;
-  float rms_sum_R_ = 0.0f;
-  int rms_index_ = 0;
-  int64_t last_time_samples_ = -1;  // For transport discontinuity detection
+  CompressorDspState dsp_state_{};
 
   void reset();
-  static float computeGainReduction(float input_db, float threshold,
-                                    float ratio, float knee_db,
-                                    float up_threshold, float up_ratio);
 };
 
 }  // namespace hibiki

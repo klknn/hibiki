@@ -1,7 +1,6 @@
 #include "engine/effects/builtin_compressor.hpp"
 
 #include <cmath>
-#include <cstring>
 
 namespace hibiki {
 
@@ -23,97 +22,19 @@ void BuiltinCompressor::process(float** inputs, float** outputs,
     sample_rate_ = context.sampleRate;
   }
 
+  const float* inL = inputs ? inputs[0] : nullptr;
+  const float* inR = inputs ? inputs[1] : nullptr;
   float* outL = outputs[0];
   float* outR = outputs[1];
-  if (inputs && inputs != outputs) {
-    for (int i = 0; i < num_samples; ++i) {
-      outL[i] = inputs[0][i];
-      outR[i] = inputs[1][i];
-    }
-  }
+  const float* scL = (sidechain && sidechain[0]) ? sidechain[0] : nullptr;
+  const float* scR = (sidechain && sidechain[1]) ? sidechain[1] : nullptr;
 
-  if (!enabled_) {
-    gain_reduction_db_ = 0.0f;
-    return;
-  }
-
-  float threshold = normToThreshold(params_[PARAM_THRESHOLD]);
-  float ratio = normToRatio(params_[PARAM_RATIO]);
-  float attack_ms = normToAttack(params_[PARAM_ATTACK]);
-  float release_ms = normToRelease(params_[PARAM_RELEASE]);
-  float knee_db = (float)(params_[PARAM_KNEE] * 30.0);
-  float makeup_lin = (float)std::pow(10.0, params_[PARAM_MAKEUP] * 30.0 / 20.0);
-  float up_threshold = normToUpThreshold(params_[PARAM_UP_THRESHOLD]);
-  float up_ratio = normToRatio(params_[PARAM_UP_RATIO]);
-
-  float attack_coeff =
-      (float)std::exp(-1.0 / (attack_ms * 0.001 * sample_rate_));
-  float release_coeff =
-      (float)std::exp(-1.0 / (release_ms * 0.001 * sample_rate_));
-
-  float peak_gr = 0.0f;
-  float peak_input_db = -200.0f;
-  float peak_output_db = -200.0f;
-
-  bool use_rms = params_[PARAM_RMS_MODE] >= 0.5;
-
-  // Use sidechain signal for detection if available, else main signal
-  float* detL = (sidechain && sidechain[0]) ? sidechain[0] : outL;
-  float* detR = (sidechain && sidechain[1]) ? sidechain[1] : outR;
-  bool has_sidechain = (sidechain && sidechain[0] && sidechain[1]);
-  float peak_sidechain_db = -200.0f;
-
-  for (int i = 0; i < num_samples; ++i) {
-    float input_abs;
-    if (use_rms) {
-      // Sliding-window RMS detection
-      float sL = detL[i] * detL[i];
-      float sR = detR[i] * detR[i];
-      rms_sum_L_ -= rms_buf_L_[rms_index_];
-      rms_sum_R_ -= rms_buf_R_[rms_index_];
-      rms_buf_L_[rms_index_] = sL;
-      rms_buf_R_[rms_index_] = sR;
-      rms_sum_L_ += sL;
-      rms_sum_R_ += sR;
-      rms_index_ = (rms_index_ + 1) % kRmsWindowSize;
-      float rms_L = std::sqrt(std::max(0.0f, rms_sum_L_ / kRmsWindowSize));
-      float rms_R = std::sqrt(std::max(0.0f, rms_sum_R_ / kRmsWindowSize));
-      input_abs = std::max(rms_L, rms_R);
-    } else {
-      input_abs = std::max(std::abs(detL[i]), std::abs(detR[i]));
-    }
-    float input_db =
-        (input_abs > 1e-10f) ? 20.0f * std::log10(input_abs) : -200.0f;
-    if (input_db > peak_input_db) peak_input_db = input_db;
-    if (has_sidechain && input_db > peak_sidechain_db)
-      peak_sidechain_db = input_db;
-
-    float gr_db = computeGainReduction(input_db, threshold, ratio, knee_db,
-                                       up_threshold, up_ratio);
-
-    if (gr_db < envelope_db_) {
-      envelope_db_ = attack_coeff * envelope_db_ + (1 - attack_coeff) * gr_db;
-    } else {
-      envelope_db_ = release_coeff * envelope_db_ + (1 - release_coeff) * gr_db;
-    }
-
-    float gain = (float)std::pow(10.0, envelope_db_ / 20.0) * makeup_lin;
-    outL[i] *= gain;
-    outR[i] *= gain;
-
-    float output_abs = std::max(std::abs(outL[i]), std::abs(outR[i]));
-    float output_db =
-        (output_abs > 1e-10f) ? 20.0f * std::log10(output_abs) : -200.0f;
-    if (output_db > peak_output_db) peak_output_db = output_db;
-
-    if (envelope_db_ < peak_gr) peak_gr = envelope_db_;
-  }
-
-  gain_reduction_db_ = peak_gr;
-  input_db_.store(peak_input_db, std::memory_order_relaxed);
-  output_db_.store(peak_output_db, std::memory_order_relaxed);
-  sidechain_db_.store(has_sidechain ? peak_sidechain_db : -200.0f,
-                      std::memory_order_relaxed);
+  d_compressor_process(
+      dsp_state_, inL, inR, outL, outR, num_samples, sample_rate_,
+      params_[PARAM_THRESHOLD], params_[PARAM_RATIO], params_[PARAM_ATTACK],
+      params_[PARAM_RELEASE], params_[PARAM_KNEE], params_[PARAM_MAKEUP],
+      params_[PARAM_UP_THRESHOLD], params_[PARAM_UP_RATIO],
+      params_[PARAM_RMS_MODE] >= 0.5, enabled_, scL, scR);
 }
 
 int BuiltinCompressor::getParameterCount() const { return kTotalParams; }
@@ -156,19 +77,15 @@ int BuiltinCompressor::getPluginIndex() const { return 0; }
 bool BuiltinCompressor::isInstrument() const { return false; }
 
 float BuiltinCompressor::getGainReductionDb() const {
-  return gain_reduction_db_;
+  return dsp_state_.gain_reduction_db;
 }
 
-float BuiltinCompressor::getInputDb() const {
-  return input_db_.load(std::memory_order_relaxed);
-}
+float BuiltinCompressor::getInputDb() const { return dsp_state_.input_db; }
 
-float BuiltinCompressor::getOutputDb() const {
-  return output_db_.load(std::memory_order_relaxed);
-}
+float BuiltinCompressor::getOutputDb() const { return dsp_state_.output_db; }
 
 float BuiltinCompressor::getSidechainDb() const {
-  return sidechain_db_.load(std::memory_order_relaxed);
+  return dsp_state_.sidechain_db;
 }
 
 float BuiltinCompressor::computeOutputDb(float input_db) const {
@@ -177,8 +94,8 @@ float BuiltinCompressor::computeOutputDb(float input_db) const {
   float knee_db = (float)(params_[PARAM_KNEE] * 30.0);
   float up_threshold = normToUpThreshold(params_[PARAM_UP_THRESHOLD]);
   float up_ratio = normToRatio(params_[PARAM_UP_RATIO]);
-  float gr = computeGainReduction(input_db, threshold, ratio, knee_db,
-                                  up_threshold, up_ratio);
+  float gr = d_compressor_compute_gain_reduction(
+      input_db, threshold, ratio, knee_db, up_threshold, up_ratio);
   return input_db + gr;
 }
 
@@ -196,71 +113,27 @@ void BuiltinCompressor::reset() {
   params_[PARAM_UP_RATIO] = 0.0;      // 1:1 (no upward comp)
   params_[PARAM_RMS_MODE] = 0.0;      // Peak detection by default
   enabled_ = true;
-  envelope_db_ = 0.0f;
-  gain_reduction_db_ = 0.0f;
-  // Clear RMS state
-  std::memset(rms_buf_L_, 0, sizeof(rms_buf_L_));
-  std::memset(rms_buf_R_, 0, sizeof(rms_buf_R_));
-  rms_sum_L_ = rms_sum_R_ = 0.0f;
-  rms_index_ = 0;
-  last_time_samples_ = -1;
-}
-
-float BuiltinCompressor::computeGainReduction(float input_db, float threshold,
-                                              float ratio, float knee_db,
-                                              float up_threshold,
-                                              float up_ratio) {
-  float half_knee = knee_db / 2.0f;
-  float gr_db = 0.0f;
-
-  // Downward compression: reduce signals above threshold
-  if (knee_db <= 0.01f) {
-    if (input_db > threshold) {
-      gr_db = (threshold - input_db) * (1.0f - 1.0f / ratio);
-    }
-  } else {
-    float lower = threshold - half_knee;
-    float upper = threshold + half_knee;
-    if (input_db <= lower) {
-      // no downward reduction
-    } else if (input_db >= upper) {
-      gr_db = (threshold - input_db) * (1.0f - 1.0f / ratio);
-    } else {
-      float x = input_db - lower;
-      gr_db = -(1.0f - 1.0f / ratio) * x * x / (2.0f * knee_db);
-    }
-  }
-
-  // Upward compression: boost signals below up_threshold
-  if (up_ratio > 1.001f && input_db < up_threshold && input_db > -100.0f) {
-    float under = up_threshold - input_db;
-    float target = up_threshold - under / up_ratio;
-    gr_db += (target - input_db);  // positive = boost
-  }
-
-  return gr_db;
+  dsp_state_.reset();
 }
 
 float BuiltinCompressor::normToThreshold(double norm) {
-  return (float)(norm * 60.0 - 60.0);
+  return d_compressor_norm_to_threshold(norm);
 }
 
 float BuiltinCompressor::normToRatio(double norm) {
-  if (norm >= 0.999) return 1000.0f;
-  return 1.0f / (1.0f - (float)norm);
+  return d_compressor_norm_to_ratio(norm);
 }
 
 float BuiltinCompressor::normToAttack(double norm) {
-  return (float)(0.1 * std::pow(1000.0, norm));
+  return d_compressor_norm_to_attack(norm);
 }
 
 float BuiltinCompressor::normToRelease(double norm) {
-  return (float)(10.0 * std::pow(100.0, norm));
+  return d_compressor_norm_to_release(norm);
 }
 
 float BuiltinCompressor::normToUpThreshold(double norm) {
-  // 0..1 -> -60..+12 dB (wider than downward to support OTT-style upward)
-  return (float)(norm * 72.0 - 60.0);
+  return d_compressor_norm_to_up_threshold(norm);
 }
 
 }  // namespace hibiki

@@ -7,6 +7,32 @@
 
 namespace hibiki {
 
+struct DelayDspState {
+  int write_pos = 0;
+  float hp_state_l = 0.0f;
+  float hp_state_r = 0.0f;
+  float lp_state_l = 0.0f;
+  float lp_state_r = 0.0f;
+  float input_rms = 0.0f;
+  float output_rms = 0.0f;
+
+  void reset();
+};
+
+float d_delay_norm_to_time_ms(double norm);
+float d_delay_norm_to_hp_freq(double norm);
+float d_delay_norm_to_lp_freq(double norm);
+float d_delay_norm_to_division_beats(double norm);
+const char* d_delay_norm_to_division_label(double norm);
+
+void d_delay_process(DelayDspState& state, float* buf_l, float* buf_r,
+                     int buf_size, const float* in_l, const float* in_r,
+                     float* out_l, float* out_r, int num_samples,
+                     double sample_rate, double tempo, double time_l_norm,
+                     double time_r_norm, double feedback_norm, double mix_norm,
+                     double hp_norm, double lp_norm, double ping_pong_norm,
+                     bool sync, bool enabled);
+
 // Stereo delay with ping-pong mode, feedback filters, and tempo-sync option.
 class BuiltinDelay : public IPlugin {
  public:
@@ -71,15 +97,8 @@ class BuiltinDelay : public IPlugin {
   // Delay buffers
   std::vector<float> buffer_l_;
   std::vector<float> buffer_r_;
-  int write_pos_ = 0;
 
-  // 1-pole feedback filters
-  float hp_state_l_ = 0, hp_state_r_ = 0;
-  float lp_state_l_ = 0, lp_state_r_ = 0;
-
-  // Metering state
-  float input_rms_ = 0;
-  float output_rms_ = 0;
+  DelayDspState dsp_state_{};
 
   void reset();
 };

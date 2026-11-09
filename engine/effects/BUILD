@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/d_rules:defs.bzl", "d_library")
+load("//tools/d_rules:defs.bzl", "d_library", "d_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -375,5 +375,18 @@ cc_test(
         ":builtin_vocodey",
         "//engine/core:math",
         "@googletest//:gtest_main",
+    ],
+)
+
+d_test(
+    name = "effects_d_test",
+    srcs = ["effects_d_test.d"],
+    deps = [
+        ":builtin_bitcrusher_d",
+        ":builtin_chorus_d",
+        ":builtin_compressor_d",
+        ":builtin_delay_d",
+        ":builtin_limiter_d",
+        ":builtin_stereo_width_d",
     ],
 )

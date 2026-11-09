@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/d_rules:defs.bzl", "d_library")
+load("//tools/d_rules:defs.bzl", "d_library", "d_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -448,5 +448,14 @@ cc_test(
     deps = [
         ":builtin_epiano",
         "@googletest//:gtest_main",
+    ],
+)
+
+d_test(
+    name = "instruments_d_test",
+    srcs = ["instruments_d_test.d"],
+    deps = [
+        ":builtin_acid_bass_d",
+        ":builtin_dr8_kick_d",
     ],
 )

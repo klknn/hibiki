@@ -6,6 +6,7 @@ cc_library(
         "audio_editor_commands.cpp",
         "automation_commands.cpp",
         "commands.cpp",
+        "dispatcher.cpp",
         "midi_commands.cpp",
         "modulation_commands.cpp",
         "plugin_commands.cpp",
@@ -13,7 +14,10 @@ cc_library(
         "track_commands.cpp",
         "transport_commands.cpp",
     ],
-    hdrs = ["commands.hpp"],
+    hdrs = [
+        "commands.hpp",
+        "dispatcher.hpp",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//engine/audio:sound",

@@ -101,6 +101,7 @@ def _d_library_impl(ctx):
         feature_configuration = feature_configuration,
         cc_toolchain = cc_toolchain,
         static_library = out_lib,
+        pic_static_library = out_lib,
     )
     linker_input = cc_common.create_linker_input(
         owner = ctx.label,
@@ -142,13 +143,19 @@ def _link_d_executable(ctx, is_test):
     for cc_info in dep_cc_infos:
         for linker_input in cc_info.linking_context.linker_inputs.to_list():
             for lib in linker_input.libraries:
-                if lib.static_library and lib.static_library.path not in seen_libs:
-                    seen_libs[lib.static_library.path] = True
-                    lib_inputs.append(lib.static_library)
-                    args.add(lib.static_library.path)
+                static_lib = lib.static_library if lib.static_library else lib.pic_static_library
+                if static_lib and static_lib.path not in seen_libs:
+                    seen_libs[static_lib.path] = True
+                    lib_inputs.append(static_lib)
+                    if static_lib.path.endswith(".a") or static_lib.path.endswith(".o") or static_lib.path.endswith(".obj"):
+                        args.add(static_lib.path)
+                    else:
+                        args.add("-L=" + static_lib.path)
             for flag in linker_input.user_link_flags:
                 for subflag in flag.split(" "):
                     if subflag:
+                        if _is_macos(ctx) and subflag == "-pthread":
+                            continue
                         args.add("-L=" + subflag)
 
     if _is_macos(ctx):

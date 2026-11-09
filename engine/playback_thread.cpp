@@ -1,33 +1,23 @@
+#include "engine/playback_thread.hpp"
+
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include "absl/flags/flag.h"
-#include "absl/flags/parse.h"
 #include "absl/log/check.h"
-#include "absl/log/flags.h"
-#include "absl/log/globals.h"
-#include "absl/log/initialize.h"
 #include "absl/log/log.h"
-
-#ifdef _WIN32
-#include <fcntl.h>
-#include <io.h>
-#endif
-
 #include "engine/audio/sound.hpp"
-#include "engine/commands/commands.hpp"
-#include "engine/core/audio_editor.hpp"
 #include "engine/core/audio_file.hpp"
 #include "engine/core/clip.hpp"
-#include "engine/core/history.hpp"
 #include "engine/core/midi.hpp"
 #include "engine/core/project.hpp"
 #include "engine/core/track.hpp"
@@ -44,10 +34,227 @@
 #include "pb/commands.pb.h"
 #include "pb/notifications.pb.h"
 
-ABSL_FLAG(std::string, list, "",
-          "List plugins in the given .vst3 bundle path and exit.");
-
 namespace hibiki {
+
+ProjectState* createProjectState() {
+  auto* state = new ProjectState();
+  state->bpm = 140.0;
+  state->sample_rate = 44100.0;
+  return state;
+}
+
+void destroyProjectState(ProjectState* state) { delete state; }
+
+HistoryManager* createHistoryManager() { return new HistoryManager(); }
+
+void destroyHistoryManager(HistoryManager* history) { delete history; }
+
+bool isStateQuit(const ProjectState* state) {
+  return state ? state->quit : true;
+}
+
+void setStateQuit(ProjectState* state, bool quit) {
+  if (state) state->quit = quit;
+}
+
+void listVst3Plugins(const char* path_ptr, size_t path_len) {
+  std::string path(path_ptr, path_len);
+  auto plugins = Vst3Plugin::listPlugins(path);
+  for (const auto& p : plugins) {
+    std::cout << p.index << ":" << p.name << ":" << p.vendor << ":"
+              << (p.is_instrument ? "1" : "0") << "\n";
+  }
+}
+
+void runVst3MainLoop() {
+#if defined(__APPLE__)
+  Vst3Plugin::runMainLoop();
+#endif
+}
+
+void sendInitialConfig(const ProjectState& state) {
+  pb::commands::HibikiConfig config;
+  config.set_plugin_host_mode(
+      (state.plugin_host_mode == PluginHostMode::LOCAL_SANDBOX)
+          ? pb::commands::PLUGIN_HOST_LOCAL_SANDBOX
+          : pb::commands::PLUGIN_HOST_IN_PROCESS);
+  for (const auto& host : state.remote_hosts) {
+    config.add_remote_hosts(host);
+  }
+  config.set_buffer_latency_ms(state.buffer_latency_ms);
+  pb::notifications::Notification notif;
+  *notif.mutable_config() = config;
+  std::string data;
+  notif.SerializeToString(&data);
+  sendNotification(reinterpret_cast<const uint8_t*>(data.data()), data.size());
+}
+
+void sendNotificationTick(ProjectState& state) {
+  hibiki::sendPlayheadInfo((float)state.playhead_pos_sec, (float)state.bpm,
+                           state.is_timeline_playing, state.loop_enabled,
+                           (float)state.loop_start_sec,
+                           (float)state.loop_end_sec);
+
+  hibiki::pb::notifications::Notification notification;
+  auto* tl = notification.mutable_track_levels();
+  {
+    std::lock_guard<std::mutex> llock(state.levels_mutex);
+    for (auto& pair : state.track_levels) {
+      auto* level = tl->add_levels();
+      level->set_track_index(pair.first);
+      level->set_peak_l(pair.second.first);
+      level->set_peak_r(pair.second.second);
+    }
+  }
+  std::string data;
+  notification.SerializeToString(&data);
+  sendNotification(reinterpret_cast<const uint8_t*>(data.data()), data.size());
+
+  // Send builtin plugin metering data (~30Hz)
+  {
+    std::lock_guard<std::mutex> lock(state.tracks_mutex);
+    for (auto& pair : state.tracks) {
+      auto& track = pair.second;
+      int track_idx = pair.first;
+      for (size_t p = 0; p < track->plugins.size(); ++p) {
+        auto& plugin = track->plugins[p];
+        if (!plugin) continue;
+        if (auto* eq = dynamic_cast<BuiltinEq*>(plugin.get())) {
+          auto spec = eq->getSpectrumData();
+          sendPluginSpectrumData(track_idx, (int)p, spec.input_db,
+                                 spec.output_db, BuiltinEq::kSpectrumBins);
+        } else if (auto* comp =
+                       dynamic_cast<BuiltinCompressor*>(plugin.get())) {
+          hibiki::pb::notifications::PluginMeteringData meter;
+          meter.set_track_index(track_idx);
+          meter.set_plugin_index((int)p);
+          meter.set_input_db(comp->getInputDb());
+          meter.set_output_db(comp->getOutputDb());
+          meter.set_gain_reduction_db(comp->getGainReductionDb());
+          meter.set_sidechain_db(comp->getSidechainDb());
+          sendPluginMeteringData(meter);
+        } else if (auto* maxim = dynamic_cast<BuiltinMaxim*>(plugin.get())) {
+          hibiki::pb::notifications::PluginMeteringData meter;
+          meter.set_track_index(track_idx);
+          meter.set_plugin_index((int)p);
+          meter.set_input_db(maxim->getBandInputDb(3));
+          meter.set_output_db(maxim->getBandOutputDb(3));
+          meter.set_gain_reduction_db(maxim->getBandGainReductionDb(3));
+          meter.set_sidechain_db(-200.0f);
+          meter.set_low_gr_db(maxim->getBandGainReductionDb(0));
+          meter.set_mid_gr_db(maxim->getBandGainReductionDb(1));
+          meter.set_high_gr_db(maxim->getBandGainReductionDb(2));
+          meter.set_master_gr_db(maxim->getBandGainReductionDb(3));
+          meter.set_low_in_db(maxim->getBandInputDb(0));
+          meter.set_low_out_db(maxim->getBandOutputDb(0));
+          meter.set_mid_in_db(maxim->getBandInputDb(1));
+          meter.set_mid_out_db(maxim->getBandOutputDb(1));
+          meter.set_high_in_db(maxim->getBandInputDb(2));
+          meter.set_high_out_db(maxim->getBandOutputDb(2));
+          sendPluginMeteringData(meter);
+        } else if (auto* hott = dynamic_cast<BuiltinHott*>(plugin.get())) {
+          hibiki::pb::notifications::PluginMeteringData meter;
+          meter.set_track_index(track_idx);
+          meter.set_plugin_index((int)p);
+          meter.set_input_db(hott->getInputDb());
+          meter.set_output_db(hott->getOutputDb());
+          meter.set_gain_reduction_db(hott->getBandGainReduction(0));
+          meter.set_sidechain_db(-200.0f);
+          sendPluginMeteringData(meter);
+        } else if (auto* delay = dynamic_cast<BuiltinDelay*>(plugin.get())) {
+          hibiki::pb::notifications::PluginMeteringData meter;
+          meter.set_track_index(track_idx);
+          meter.set_plugin_index((int)p);
+          meter.set_input_db(delay->getInputDb());
+          meter.set_output_db(delay->getOutputDb());
+          meter.set_gain_reduction_db(0.0f);
+          meter.set_sidechain_db(-200.0f);
+          sendPluginMeteringData(meter);
+        } else if (auto* reverb = dynamic_cast<BuiltinReverb*>(plugin.get())) {
+          hibiki::pb::notifications::PluginMeteringData meter;
+          meter.set_track_index(track_idx);
+          meter.set_plugin_index((int)p);
+          meter.set_input_db(reverb->getInputDb());
+          meter.set_output_db(reverb->getOutputDb());
+          meter.set_gain_reduction_db(0.0f);
+          meter.set_sidechain_db(-200.0f);
+          sendPluginMeteringData(meter);
+        } else if (auto* envs =
+                       dynamic_cast<BuiltinEnvelopeShaper*>(plugin.get())) {
+          hibiki::pb::notifications::PluginMeteringData meter;
+          meter.set_track_index(track_idx);
+          meter.set_plugin_index((int)p);
+          meter.set_input_db(envs->getInputDb());
+          meter.set_output_db(envs->getOutputDb());
+          meter.set_gain_reduction_db(0.0f);
+          meter.set_sidechain_db(-200.0f);
+          sendPluginMeteringData(meter);
+        } else if (auto* phaser = dynamic_cast<BuiltinPhaser*>(plugin.get())) {
+          hibiki::pb::notifications::PluginMeteringData meter;
+          meter.set_track_index(track_idx);
+          meter.set_plugin_index((int)p);
+          meter.set_input_db(phaser->getInputDb());
+          meter.set_output_db(phaser->getOutputDb());
+          meter.set_gain_reduction_db(0.0f);
+          meter.set_sidechain_db(-200.0f);
+          sendPluginMeteringData(meter);
+          // Send scope data for Lissajous visualization
+          {
+            hibiki::pb::notifications::Notification notif;
+            auto* scope = notif.mutable_plugin_scope_data();
+            scope->set_track_index(track_idx);
+            scope->set_plugin_index((int)p);
+            float scope_l[256], scope_r[256];
+            phaser->getScopeData(scope_l, scope_r, 256);
+            for (int si = 0; si < 256; ++si) {
+              scope->add_left_samples(scope_l[si]);
+              scope->add_right_samples(scope_r[si]);
+            }
+            std::string data;
+            notif.SerializeToString(&data);
+            sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
+                             data.size());
+          }
+        }
+      }
+    }
+  }
+
+  // Live waveform updates during recording (~5Hz)
+  static int wf_counter = 0;
+  if (state.is_recording && ++wf_counter >= 6) {
+    wf_counter = 0;
+    std::lock_guard<std::mutex> lock(state.tracks_mutex);
+    for (auto& pair : state.tracks) {
+      auto& track = pair.second;
+      if (!track->record_armed || track->record_buffer.empty()) continue;
+      int rec_ch = track->input_stereo ? 2 : 1;
+      int total_samples = (int)track->record_buffer.size();
+      double duration_sec =
+          (double)total_samples / (rec_ch * state.sample_rate);
+
+      int summary_size = 200;
+      std::vector<float> waveform(summary_size, 0.0f);
+      int samples_per_bucket = total_samples / (rec_ch * summary_size);
+      if (samples_per_bucket < 1) samples_per_bucket = 1;
+      for (int b = 0; b < summary_size; ++b) {
+        float peak = 0.0f;
+        for (int s = 0; s < samples_per_bucket; ++s) {
+          int idx = (b * samples_per_bucket + s) * rec_ch;
+          if (idx < total_samples) {
+            peak = std::max(peak, std::abs(track->record_buffer[idx]));
+          }
+        }
+        waveform[b] = peak;
+      }
+
+      int live_clip_idx = (int)track->timeline_clips.size();
+      sendTimelineClipInfo(pair.first, live_clip_idx, "Recording...", "",
+                           (float)state.record_start_sec, (float)duration_sec,
+                           waveform);
+    }
+  }
+}
 
 void playback_thread(ProjectState& state) {
   auto audio = SoundDevice::create(44100, 2, state.buffer_latency_ms);
@@ -86,8 +293,6 @@ void playback_thread(ProjectState& state) {
     std::vector<double> mixBufferL(block_size, 0.0);
     std::vector<double> mixBufferR(block_size, 0.0);
 
-    // Sidechain buffer capture: stores post-effects output per track
-    // so downstream tracks can use it as sidechain input.
     std::map<int, std::pair<std::array<float, 512>, std::array<float, 512>>>
         sc_buffers;
 
@@ -96,7 +301,6 @@ void playback_thread(ProjectState& state) {
     {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
 
-      // Check if any track is soloed (once, outside per-track loop)
       bool any_soloed = false;
       for (const auto& sp : state.tracks) {
         if (sp.second->soloed) {
@@ -105,8 +309,6 @@ void playback_thread(ProjectState& state) {
         }
       }
 
-      // Intermediate input buffers for group/aux tracks
-      // Key = track index, value = {L, R} accumulation buffers
       std::map<int, std::pair<std::vector<double>, std::vector<double>>>
           bus_input_buffers;
       for (const auto& p : state.tracks) {
@@ -117,9 +319,6 @@ void playback_thread(ProjectState& state) {
         }
       }
 
-      // Helper lambda: render a track's content into bufferL/bufferR,
-      // apply effects chain, capture sidechain buffers, apply volume/pan,
-      // and route the output to the appropriate destination.
       auto renderTrack = [&](Track* track, int track_idx, bool render_content) {
         std::fill(bufferL, bufferL + block_size, 0.0);
         std::fill(bufferR, bufferR + block_size, 0.0);
@@ -573,7 +772,6 @@ void playback_thread(ProjectState& state) {
       }
 
       // ---- Pass 2: Render group and aux tracks ----
-      // Group tracks first (they may route to other groups), then aux
       for (auto& pair : state.tracks) {
         if (pair.second->track_type == Track::TrackType::GROUP) {
           renderTrack(pair.second.get(), pair.first, /*render_content=*/false);
@@ -609,347 +807,4 @@ void playback_thread(ProjectState& state) {
   }
 }
 
-// Separate thread for sending GUI notifications (playhead, levels).
-// Runs at ~30Hz, completely independent of the audio thread.
-void notification_thread(ProjectState& state) {
-  while (!state.quit) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(33));  // ~30Hz
-
-    hibiki::sendPlayheadInfo((float)state.playhead_pos_sec, (float)state.bpm,
-                             state.is_timeline_playing, state.loop_enabled,
-                             (float)state.loop_start_sec,
-                             (float)state.loop_end_sec);
-
-    hibiki::pb::notifications::Notification notification;
-    auto* tl = notification.mutable_track_levels();
-    {
-      std::lock_guard<std::mutex> llock(state.levels_mutex);
-      for (auto& pair : state.track_levels) {
-        auto* level = tl->add_levels();
-        level->set_track_index(pair.first);
-        level->set_peak_l(pair.second.first);
-        level->set_peak_r(pair.second.second);
-      }
-    }
-    std::string data;
-    notification.SerializeToString(&data);
-    sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
-                     data.size());
-
-    // Send builtin plugin metering data (~30Hz)
-    {
-      std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      for (auto& pair : state.tracks) {
-        auto& track = pair.second;
-        int track_idx = pair.first;
-        for (size_t p = 0; p < track->plugins.size(); ++p) {
-          auto& plugin = track->plugins[p];
-          if (!plugin) continue;
-          if (auto* eq = dynamic_cast<BuiltinEq*>(plugin.get())) {
-            auto spec = eq->getSpectrumData();
-            sendPluginSpectrumData(track_idx, (int)p, spec.input_db,
-                                   spec.output_db, BuiltinEq::kSpectrumBins);
-          } else if (auto* comp =
-                         dynamic_cast<BuiltinCompressor*>(plugin.get())) {
-            hibiki::pb::notifications::PluginMeteringData meter;
-            meter.set_track_index(track_idx);
-            meter.set_plugin_index((int)p);
-            meter.set_input_db(comp->getInputDb());
-            meter.set_output_db(comp->getOutputDb());
-            meter.set_gain_reduction_db(comp->getGainReductionDb());
-            meter.set_sidechain_db(comp->getSidechainDb());
-            sendPluginMeteringData(meter);
-          } else if (auto* maxim = dynamic_cast<BuiltinMaxim*>(plugin.get())) {
-            hibiki::pb::notifications::PluginMeteringData meter;
-            meter.set_track_index(track_idx);
-            meter.set_plugin_index((int)p);
-            meter.set_input_db(maxim->getBandInputDb(3));
-            meter.set_output_db(maxim->getBandOutputDb(3));
-            meter.set_gain_reduction_db(maxim->getBandGainReductionDb(3));
-            meter.set_sidechain_db(-200.0f);
-            meter.set_low_gr_db(maxim->getBandGainReductionDb(0));
-            meter.set_mid_gr_db(maxim->getBandGainReductionDb(1));
-            meter.set_high_gr_db(maxim->getBandGainReductionDb(2));
-            meter.set_master_gr_db(maxim->getBandGainReductionDb(3));
-            meter.set_low_in_db(maxim->getBandInputDb(0));
-            meter.set_low_out_db(maxim->getBandOutputDb(0));
-            meter.set_mid_in_db(maxim->getBandInputDb(1));
-            meter.set_mid_out_db(maxim->getBandOutputDb(1));
-            meter.set_high_in_db(maxim->getBandInputDb(2));
-            meter.set_high_out_db(maxim->getBandOutputDb(2));
-            sendPluginMeteringData(meter);
-          } else if (auto* hott = dynamic_cast<BuiltinHott*>(plugin.get())) {
-            hibiki::pb::notifications::PluginMeteringData meter;
-            meter.set_track_index(track_idx);
-            meter.set_plugin_index((int)p);
-            meter.set_input_db(hott->getInputDb());
-            meter.set_output_db(hott->getOutputDb());
-            meter.set_gain_reduction_db(hott->getBandGainReduction(0));
-            meter.set_sidechain_db(-200.0f);
-            sendPluginMeteringData(meter);
-          } else if (auto* delay = dynamic_cast<BuiltinDelay*>(plugin.get())) {
-            hibiki::pb::notifications::PluginMeteringData meter;
-            meter.set_track_index(track_idx);
-            meter.set_plugin_index((int)p);
-            meter.set_input_db(delay->getInputDb());
-            meter.set_output_db(delay->getOutputDb());
-            meter.set_gain_reduction_db(0.0f);
-            meter.set_sidechain_db(-200.0f);
-            sendPluginMeteringData(meter);
-          } else if (auto* reverb =
-                         dynamic_cast<BuiltinReverb*>(plugin.get())) {
-            hibiki::pb::notifications::PluginMeteringData meter;
-            meter.set_track_index(track_idx);
-            meter.set_plugin_index((int)p);
-            meter.set_input_db(reverb->getInputDb());
-            meter.set_output_db(reverb->getOutputDb());
-            meter.set_gain_reduction_db(0.0f);
-            meter.set_sidechain_db(-200.0f);
-            sendPluginMeteringData(meter);
-          } else if (auto* envs =
-                         dynamic_cast<BuiltinEnvelopeShaper*>(plugin.get())) {
-            hibiki::pb::notifications::PluginMeteringData meter;
-            meter.set_track_index(track_idx);
-            meter.set_plugin_index((int)p);
-            meter.set_input_db(envs->getInputDb());
-            meter.set_output_db(envs->getOutputDb());
-            meter.set_gain_reduction_db(0.0f);
-            meter.set_sidechain_db(-200.0f);
-            sendPluginMeteringData(meter);
-          } else if (auto* phaser =
-                         dynamic_cast<BuiltinPhaser*>(plugin.get())) {
-            hibiki::pb::notifications::PluginMeteringData meter;
-            meter.set_track_index(track_idx);
-            meter.set_plugin_index((int)p);
-            meter.set_input_db(phaser->getInputDb());
-            meter.set_output_db(phaser->getOutputDb());
-            meter.set_gain_reduction_db(0.0f);
-            meter.set_sidechain_db(-200.0f);
-            sendPluginMeteringData(meter);
-            // Send scope data for Lissajous visualization
-            {
-              hibiki::pb::notifications::Notification notif;
-              auto* scope = notif.mutable_plugin_scope_data();
-              scope->set_track_index(track_idx);
-              scope->set_plugin_index((int)p);
-              float scope_l[256], scope_r[256];
-              phaser->getScopeData(scope_l, scope_r, 256);
-              for (int si = 0; si < 256; ++si) {
-                scope->add_left_samples(scope_l[si]);
-                scope->add_right_samples(scope_r[si]);
-              }
-              std::string data;
-              notif.SerializeToString(&data);
-              sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
-                               data.size());
-            }
-          }
-        }
-      }
-    }
-
-    // Live waveform updates during recording (~5Hz)
-    static int wf_counter = 0;
-    if (state.is_recording && ++wf_counter >= 6) {
-      wf_counter = 0;
-      std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      for (auto& pair : state.tracks) {
-        auto& track = pair.second;
-        if (!track->record_armed || track->record_buffer.empty()) continue;
-        int rec_ch = track->input_stereo ? 2 : 1;
-        int total_samples = (int)track->record_buffer.size();
-        double duration_sec =
-            (double)total_samples / (rec_ch * state.sample_rate);
-
-        // Generate quick 200-point peak summary
-        int summary_size = 200;
-        std::vector<float> waveform(summary_size, 0.0f);
-        int samples_per_bucket = total_samples / (rec_ch * summary_size);
-        if (samples_per_bucket < 1) samples_per_bucket = 1;
-        for (int b = 0; b < summary_size; ++b) {
-          float peak = 0.0f;
-          for (int s = 0; s < samples_per_bucket; ++s) {
-            int idx = (b * samples_per_bucket + s) * rec_ch;
-            if (idx < total_samples) {
-              peak = std::max(peak, std::abs(track->record_buffer[idx]));
-            }
-          }
-          waveform[b] = peak;
-        }
-
-        // Use next available clip index (matches final clip on stop)
-        int live_clip_idx = (int)track->timeline_clips.size();
-        sendTimelineClipInfo(pair.first, live_clip_idx, "Recording...", "",
-                             (float)state.record_start_sec, (float)duration_sec,
-                             waveform);
-      }
-    }
-  }
-}
-
-void run_ipc_loop(ProjectState& state) {
-  HistoryManager history;
-
-  // Push current config to GUI on startup
-  {
-    pb::commands::HibikiConfig config;
-    config.set_plugin_host_mode(
-        (state.plugin_host_mode == PluginHostMode::LOCAL_SANDBOX)
-            ? pb::commands::PLUGIN_HOST_LOCAL_SANDBOX
-            : pb::commands::PLUGIN_HOST_IN_PROCESS);
-    for (const auto& host : state.remote_hosts) {
-      config.add_remote_hosts(host);
-    }
-    config.set_buffer_latency_ms(state.buffer_latency_ms);
-    pb::notifications::Notification notif;
-    *notif.mutable_config() = config;
-    std::string data;
-    notif.SerializeToString(&data);
-    sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
-                     data.size());
-  }
-
-  while (true) {
-    uint32_t msg_size = 0;
-    std::cin.read(reinterpret_cast<char*>(&msg_size), sizeof(msg_size));
-    if (std::cin.eof()) break;
-    if (std::cin.fail()) {
-      LOG(ERROR) << "BACKEND ERROR: Failed to read message size from stdin";
-      break;
-    }
-
-    if (msg_size > 1024 * 1024) {  // 1MB limit for safety
-      LOG(ERROR) << "BACKEND ERROR: Message size too large: " << msg_size;
-      break;
-    }
-
-    std::unique_ptr<uint8_t[]> buffer(new uint8_t[msg_size]);
-    std::cin.read(reinterpret_cast<char*>(buffer.get()), msg_size);
-    if (std::cin.fail()) {
-      LOG(ERROR) << "BACKEND ERROR: Failed to read message payload from stdin";
-      break;
-    }
-
-    hibiki::pb::commands::Request request;
-    if (!request.ParseFromArray(buffer.get(), msg_size)) {
-      LOG(ERROR) << "BACKEND ERROR: Failed to parse protobuf request";
-      continue;
-    }
-
-    switch (request.command_case()) {
-      case hibiki::pb::commands::Request::kProject:
-        handleProjectCmd(request.project(), state, history);
-        break;
-      case hibiki::pb::commands::Request::kTransport:
-        handleTransportCmd(request.transport(), state);
-        break;
-      case hibiki::pb::commands::Request::kTrack:
-        handleTrackCmd(request.track(), state, history);
-        break;
-      case hibiki::pb::commands::Request::kPlugin:
-        handlePluginCmd(request.plugin(), state, history);
-        break;
-      case hibiki::pb::commands::Request::kAutomation:
-        handleAutomationCmd(request.automation(), state, history);
-        break;
-      case hibiki::pb::commands::Request::kMidi:
-        handleMidiCmd(request.midi(), state, history);
-        break;
-      case hibiki::pb::commands::Request::kSetPluginHostMode:
-        handleSetPluginHostMode(request.set_plugin_host_mode(), state);
-        break;
-      case hibiki::pb::commands::Request::kScanRemotePlugins:
-        handleScanRemotePlugins(request.scan_remote_plugins());
-        break;
-      case hibiki::pb::commands::Request::kSetAudioBufferSize:
-        handleSetAudioBufferSize(request.set_audio_buffer_size(), state);
-        break;
-      case hibiki::pb::commands::Request::kListAudioInputs:
-        handleListAudioInputs();
-        break;
-      case hibiki::pb::commands::Request::kListMidiInputs:
-        handleListMidiInputs();
-        break;
-      case hibiki::pb::commands::Request::kSendVirtualMidi:
-        handleSendVirtualMidi(request.send_virtual_midi(), state);
-        break;
-      case hibiki::pb::commands::Request::kModulation:
-        handleModulationCmd(request.modulation(), state);
-        break;
-      case hibiki::pb::commands::Request::kRestartWorkers: {
-        LOG(INFO) << "Restarting plugin workers...";
-        int count = 0;
-        for (auto& [idx, track] : state.tracks) {
-          for (auto& plugin : track->plugins) {
-            if (plugin) {
-              // Reload the plugin from its path to reset internal state
-              std::string path = plugin->getPath();
-              int pidx = plugin->getPluginIndex();
-              plugin->load(path, pidx, state.sample_rate);
-              count++;
-            }
-          }
-        }
-        LOG(INFO) << "Reloaded " << count << " plugins";
-        break;
-      }
-      case hibiki::pb::commands::Request::kSetProcessingPrecision:
-        handleSetProcessingPrecision(request.set_processing_precision(), state);
-        break;
-      case hibiki::pb::commands::Request::kAudioEditor:
-        handleAudioEditorCmd(request.audio_editor(), state);
-        break;
-      case hibiki::pb::commands::Request::kDrumPad:
-        handleDrumPadCmd(request.drum_pad(), state);
-        break;
-    }
-    if (state.quit) break;
-  }
-}
-
 }  // namespace hibiki
-
-int main(int argc, char** argv) {
-  using namespace hibiki;
-  absl::ParseCommandLine(argc, argv);
-  absl::InitializeLog();
-
-  // --list mode: used by listPluginsIsolated subprocess
-  std::string list_path = absl::GetFlag(FLAGS_list);
-  if (!list_path.empty()) {
-    auto plugins = Vst3Plugin::listPlugins(list_path);
-    for (const auto& p : plugins) {
-      std::cout << p.index << ":" << p.name << ":" << p.vendor << ":"
-                << (p.is_instrument ? "1" : "0") << "\n";
-    }
-    return 0;
-  }
-
-#ifdef _WIN32
-  // Ensure binary mode for IPC on Windows
-  _setmode(_fileno(stdin), _O_BINARY);
-  _setmode(_fileno(stdout), _O_BINARY);
-#endif
-
-  hibiki::ProjectState state;
-  state.bpm = 140.0;            // Explicitly set default BPM
-  state.sample_rate = 44100.0;  // Explicitly set default sample rate
-  CHECK(!std::isnan(state.bpm));
-  CHECK(!std::isnan(state.sample_rate));
-  hibiki::loadConfig(
-      state);  // Load persisted settings from .hibikirc.textproto
-  std::thread audio_thread(hibiki::playback_thread, std::ref(state));
-  std::thread notif_thread(hibiki::notification_thread, std::ref(state));
-
-#if defined(__APPLE__)
-  std::thread ipc_thread(hibiki::run_ipc_loop, std::ref(state));
-  Vst3Plugin::runMainLoop();
-  if (ipc_thread.joinable()) ipc_thread.join();
-#else
-  hibiki::run_ipc_loop(state);
-#endif
-
-  if (notif_thread.joinable()) notif_thread.join();
-  if (audio_thread.joinable()) audio_thread.join();
-  return 0;
-}

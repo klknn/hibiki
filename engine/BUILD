@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("//tools/d_rules:defs.bzl", "d_binary", "d_library")
 
 cc_library(
     name = "test_utils",
@@ -38,33 +39,68 @@ cc_library(
     ],
 )
 
-cc_binary(
-    name = "hbk-play",
-    srcs = ["main.cpp"],
-    copts = ["-fexceptions"],
-    linkstatic = True,
-    visibility = ["//visibility:public"],
+cc_library(
+    name = "playback_backend",
+    srcs = ["playback_thread.cpp"],
+    hdrs = ["playback_thread.hpp"],
     deps = [
         "//engine/audio:sound",
         "//engine/commands",
+        "//engine/core:audio_file",
         "//engine/core:clip",
-        "//engine/core:history",
         "//engine/core:midi",
         "//engine/core:project",
         "//engine/core:track",
+        "//engine/effects:builtin_compressor",
+        "//engine/effects:builtin_delay",
+        "//engine/effects:builtin_envelope_shaper",
+        "//engine/effects:builtin_eq",
+        "//engine/effects:builtin_hott",
+        "//engine/effects:builtin_maxim",
+        "//engine/effects:builtin_phaser",
+        "//engine/effects:builtin_reverb",
         "//engine/ipc",
-        "@abseil-cpp//absl/flags:parse",
+        "//pb:commands_cc_proto",
+        "//pb:notifications_cc_proto",
         "@abseil-cpp//absl/log",
-        "@abseil-cpp//absl/log:absl_log",
         "@abseil-cpp//absl/log:check",
-        "@abseil-cpp//absl/log:flags",
-        "@abseil-cpp//absl/log:globals",
-        "@abseil-cpp//absl/log:initialize",
     ] + select({
         "@platforms//os:windows": ["//engine/vst3:vst3_host_win32"],
         "@platforms//os:macos": ["//engine/vst3:vst3_host_mac"],
         "//conditions:default": ["//engine/vst3:vst3_host_x11"],
     }),
+)
+
+d_binary(
+    name = "hbk-play",
+    srcs = ["main.d"],
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-framework",
+            "Cocoa",
+            "-framework",
+            "CoreAudio",
+            "-framework",
+            "AudioUnit",
+            "-framework",
+            "AudioToolbox",
+            "-framework",
+            "CoreMIDI",
+        ],
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "-lasound",
+            "-lpthread",
+            "-ldl",
+        ],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":playback_backend",
+        "//dproto",
+        "//pb:commands_d_proto",
+        "//pb:notifications_d_proto",
+    ],
 )
 
 cc_binary(

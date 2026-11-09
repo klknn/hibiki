@@ -8,55 +8,7 @@ enum WireType : ubyte {
     fixed32 = 5,
 }
 
-// -----------------------------------------------------------------------------
-// D type traits implemented without Phobos (zero-std dependency)
-// -----------------------------------------------------------------------------
-
-template Unqual(T) {
-    static if (is(T U == const U)) {
-        alias Unqual = Unqual!U;
-    } else static if (is(T U == immutable U)) {
-        alias Unqual = Unqual!U;
-    } else static if (is(T U == inout U)) {
-        alias Unqual = Unqual!U;
-    } else static if (is(T U == shared U)) {
-        alias Unqual = Unqual!U;
-    } else {
-        alias Unqual = T;
-    }
-}
-
-template isIntegral(T) {
-    alias U = Unqual!T;
-    enum isIntegral = is(U == byte) || is(U == ubyte) ||
-                      is(U == short) || is(U == ushort) ||
-                      is(U == int) || is(U == uint) ||
-                      is(U == long) || is(U == ulong);
-}
-
-template isFloatingPoint(T) {
-    alias U = Unqual!T;
-    enum isFloatingPoint = is(U == float) || is(U == double) || is(U == real);
-}
-
-template isBoolean(T) {
-    alias U = Unqual!T;
-    enum isBoolean = is(U == bool);
-}
-
-template isDynamicArray(T) {
-    alias U = Unqual!T;
-    static if (is(U : E[], E) && !is(U : E[N], E, size_t N)) {
-        enum isDynamicArray = true;
-    } else {
-        enum isDynamicArray = false;
-    }
-}
-
-template isArray(T) {
-    alias U = Unqual!T;
-    enum isArray = is(U : E[], E);
-}
+import std.traits : isArray, isBoolean, isDynamicArray, isFloatingPoint, isIntegral, Unqual;
 
 // -----------------------------------------------------------------------------
 // Attribute and Optional type

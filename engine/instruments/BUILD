@@ -42,14 +42,29 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "builtin_acid_bass_d",
+    srcs = ["builtin_acid_bass.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
+)
+
 cc_library(
     name = "builtin_acid_bass",
     srcs = ["builtin_acid_bass.cpp"],
     hdrs = ["builtin_acid_bass.hpp"],
     deps = [
+        ":builtin_acid_bass_d",
         "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
+)
+
+d_library(
+    name = "builtin_dr8_kick_d",
+    srcs = ["builtin_dr8_kick.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
 )
 
 cc_library(
@@ -57,6 +72,7 @@ cc_library(
     srcs = ["builtin_dr8_kick.cpp"],
     hdrs = ["builtin_dr8_kick.hpp"],
     deps = [
+        ":builtin_dr8_kick_d",
         "//engine/core:math",
         "//engine/plugin:iplugin",
     ],

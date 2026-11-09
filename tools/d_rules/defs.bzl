@@ -36,7 +36,9 @@ def _common_ldc_flags(ctx, import_dirs):
 def _collect_deps(ctx):
     transitive_srcs = []
     pkg_dir = ctx.label.package
-    direct_imports = [pkg_dir] if pkg_dir else ["."]
+    direct_imports = ["."]
+    if pkg_dir:
+        direct_imports.append(pkg_dir)
     for inc in ctx.attr.includes:
         if pkg_dir:
             direct_imports.append(pkg_dir + "/" + inc if inc != "." else pkg_dir)

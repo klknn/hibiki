@@ -2,6 +2,8 @@ module engine.main;
 
 import core.stdc.stdio : feof, fread, stdin, stdout;
 import core.thread : Thread, dur, msecs, thread_detachThis;
+import dproto.proto : decodeProto;
+import pb.commands : Request;
 import std.stdio : stderr, writefln, writeln;
 import std.string : startsWith;
 
@@ -62,6 +64,12 @@ void runIpcLoop(hibiki.ProjectState* state) {
         size_t payload_read = fread(buffer.ptr, 1, msg_size, stdin);
         if (payload_read != msg_size) {
             break;
+        }
+
+        Request req;
+        bool ok = decodeProto(buffer, req);
+        if (!ok) {
+            stderr.writeln("Failed to decode protobuf request in D");
         }
 
         hibiki.dispatchIpcCommand(buffer.ptr, msg_size, *state, *history);

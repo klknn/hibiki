@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/d_rules:defs.bzl", "d_test")
 
 cc_library(
     name = "commands",
@@ -57,5 +58,16 @@ cc_test(
         "//engine/ipc",
         "//engine/vst3:vst3_host_stub",
         "@googletest//:gtest_main",
+    ],
+)
+
+d_test(
+    name = "commands_d_test",
+    srcs = ["commands_d_test.d"],
+    deps = [
+        "//dproto",
+        "//pb:commands_d_proto",
+        "//pb:core_d_proto",
+        "//pb:notifications_d_proto",
     ],
 )

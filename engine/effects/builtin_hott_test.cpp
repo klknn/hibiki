@@ -4,6 +4,7 @@
 #include <numbers>
 #include <vector>
 
+#include "engine/effects/builtin_compressor.hpp"
 #include "gtest/gtest.h"
 
 namespace hibiki {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,7 @@ class BuiltinAux : public IPlugin {
   };
 
   BuiltinAux();
+  ~BuiltinAux() override;
 
   // IPlugin interface
   bool load(const std::string& path, int plugin_index = 0,
@@ -42,8 +44,8 @@ class BuiltinAux : public IPlugin {
   bool isInstrument() const override;
 
  private:
-  double params_[kTotalParams] = {};
-  double sample_rate_ = 44100.0;
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace hibiki

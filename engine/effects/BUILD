@@ -3,11 +3,21 @@ load("//tools/d_rules:defs.bzl", "d_library", "d_test")
 
 package(default_visibility = ["//visibility:public"])
 
+d_library(
+    name = "builtin_aux_d",
+    srcs = ["builtin_aux.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
+)
+
 cc_library(
     name = "builtin_aux",
     srcs = ["builtin_aux.cpp"],
     hdrs = ["builtin_aux.hpp"],
-    deps = ["//engine/plugin:iplugin"],
+    deps = [
+        ":builtin_aux_d",
+        "//engine/plugin:iplugin",
+    ],
 )
 
 d_library(
@@ -65,13 +75,23 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "builtin_hott_d",
+    srcs = ["builtin_hott.d"],
+    betterc = True,
+    deps = [
+        ":builtin_compressor_d",
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
+    ],
+)
+
 cc_library(
     name = "builtin_hott",
     srcs = ["builtin_hott.cpp"],
     hdrs = ["builtin_hott.hpp"],
     deps = [
-        ":builtin_compressor",
-        "//engine/core:biquad_filter",
+        ":builtin_hott_d",
         "//engine/plugin:iplugin",
     ],
 )
@@ -319,6 +339,7 @@ cc_test(
     srcs = ["builtin_hott_test.cpp"],
     linkstatic = True,
     deps = [
+        ":builtin_compressor",
         ":builtin_hott",
         "@googletest//:gtest_main",
     ],
@@ -412,12 +433,14 @@ d_test(
     name = "effects_d_test",
     srcs = ["effects_d_test.d"],
     deps = [
+        ":builtin_aux_d",
         ":builtin_bitcrusher_d",
         ":builtin_chorus_d",
         ":builtin_compressor_d",
         ":builtin_delay_d",
         ":builtin_envelope_shaper_d",
         ":builtin_eq_d",
+        ":builtin_hott_d",
         ":builtin_limiter_d",
         ":builtin_phaser_d",
         ":builtin_stereo_width_d",

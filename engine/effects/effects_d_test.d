@@ -1,12 +1,14 @@
 module engine.effects.effects_d_test;
 
 import core.math : fabs;
+import engine.effects.builtin_aux;
 import engine.effects.builtin_bitcrusher;
 import engine.effects.builtin_chorus;
 import engine.effects.builtin_compressor;
 import engine.effects.builtin_delay;
 import engine.effects.builtin_envelope_shaper;
 import engine.effects.builtin_eq;
+import engine.effects.builtin_hott;
 import engine.effects.builtin_limiter;
 import engine.effects.builtin_phaser;
 import engine.effects.builtin_stereo_width;
@@ -123,4 +125,34 @@ import engine.effects.builtin_stereo_width;
     float[64] ph_out_l, ph_out_r;
     d_phaser_process(&phaser, ph_in_l.ptr, ph_in_r.ptr, ph_out_l.ptr, ph_out_r.ptr, 64, 48000.0, 120.0);
     assert(ph_out_l[0] != 0.0f);
+
+    // 9. Aux
+    AuxDspState aux;
+    aux.reset();
+    assert(d_aux_get_parameter(&aux, AuxParamId.PARAM_GAIN) == 0.7);
+    assert(d_aux_get_parameter(&aux, AuxParamId.PARAM_PAN) == 0.5);
+
+    float[32] aux_in_l = 1.0f;
+    float[32] aux_in_r = 1.0f;
+    float[32] aux_out_l, aux_out_r;
+    d_aux_process(&aux, aux_in_l.ptr, aux_in_r.ptr, aux_out_l.ptr, aux_out_r.ptr, 32);
+    assert(aux_out_l[0] > 0.5f);
+    assert(aux_out_r[0] > 0.5f);
+
+    // 10. Hott (OTT)
+    assert(d_hott_norm_to_freq(0.0, 20.0f, 500.0f) == 20.0f);
+    assert(fabs(d_hott_norm_to_freq(1.0, 20.0f, 500.0f) - 500.0f) < 0.1f);
+    assert(d_hott_norm_to_db24(0.5) == 0.0f);
+
+    HottDspState hott;
+    hott.reset();
+    assert(hott.enabled);
+    assert(d_hott_get_parameter(&hott, HottParamId.PARAM_AMOUNT) == 1.0);
+    assert(d_hott_get_parameter(&hott, HottParamId.PARAM_TIME) == 1.0);
+
+    float[128] hott_in_l = 0.3f;
+    float[128] hott_in_r = 0.3f;
+    float[128] hott_out_l, hott_out_r;
+    d_hott_process(&hott, hott_in_l.ptr, hott_in_r.ptr, hott_out_l.ptr, hott_out_r.ptr, 128, 44100.0, 0);
+    assert(hott_out_l[0] != 0.0f);
 }

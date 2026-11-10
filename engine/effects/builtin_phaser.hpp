@@ -1,13 +1,30 @@
 #pragma once
 
-#include <array>
-#include <atomic>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "engine/plugin/iplugin.hpp"
 
 namespace hibiki {
+
+struct PhaserDspState;
+
+PhaserDspState* d_phaser_create();
+void d_phaser_destroy(PhaserDspState* state);
+void d_phaser_reset(PhaserDspState* state);
+void d_phaser_set_parameter(PhaserDspState* state, uint32_t id, double value);
+double d_phaser_get_parameter(const PhaserDspState* state, uint32_t id);
+float d_phaser_get_input_db(const PhaserDspState* state);
+float d_phaser_get_output_db(const PhaserDspState* state);
+void d_phaser_get_scope_data(const PhaserDspState* state, float* left,
+                             float* right, int size);
+void d_phaser_process(PhaserDspState* state, const float* in_l,
+                      const float* in_r, float* out_l, float* out_r,
+                      int num_samples, double sample_rate, double tempo);
+float d_phaser_norm_to_rate(double norm);
+int d_phaser_norm_to_stages(double norm);
+int d_phaser_norm_to_mode(double norm);
 
 // Multi-mode allpass-based phase effect (Phaser / Chorus / Flanger /
 // Ring-Mod / Disperser) with Lissajous scope output.
@@ -17,12 +34,8 @@ class BuiltinPhaser : public IPlugin {
   static constexpr int kTotalParams = 12;
   static constexpr const char* kPath = "builtin://phaser";
   static constexpr const char* kName = "Phaser";
-
-  // Maximum allpass stages per channel
   static constexpr int kMaxStages = 12;
-  // Scope buffer size for Lissajous display
   static constexpr int kScopeSize = 256;
-  // Max comb delay for chorus/flanger modes (samples at 44.1kHz)
   static constexpr int kMaxCombDelay = 4096;
 
   enum ParamId {
@@ -31,12 +44,12 @@ class BuiltinPhaser : public IPlugin {
     PARAM_FEEDBACK = 2,
     PARAM_STAGES = 3,
     PARAM_MIX = 4,
-    PARAM_STEREO = 5,     // LFO phase offset between L/R
-    PARAM_MODE = 6,       // 0–4: phaser/chorus/flanger/ringmod/disperser
-    PARAM_LFO_SHAPE = 7,  // sin/tri/saw/square
-    PARAM_CENTER = 8,     // Center freq (allpass tuning)
-    PARAM_SPREAD = 9,     // Allpass freq spread
-    PARAM_SYNC = 10,      // Tempo sync LFO
+    PARAM_STEREO = 5,
+    PARAM_MODE = 6,
+    PARAM_LFO_SHAPE = 7,
+    PARAM_CENTER = 8,
+    PARAM_SPREAD = 9,
+    PARAM_SYNC = 10,
     PARAM_ENABLE = 11,
   };
 
@@ -49,8 +62,8 @@ class BuiltinPhaser : public IPlugin {
   };
 
   BuiltinPhaser();
+  ~BuiltinPhaser() override;
 
-  // IPlugin interface
   bool load(const std::string& path, int plugin_index = 0,
             double sample_rate = 44100.0) override;
   void showEditor() override {}
@@ -76,47 +89,15 @@ class BuiltinPhaser : public IPlugin {
   void getScopeData(float* left, float* right, int size) const;
 
   // Parameter mapping
-  static float normToRate(double norm);  // Hz
+  static float normToRate(double norm);
   static int normToStages(double norm);
   static int normToMode(double norm);
 
  private:
-  double params_[kTotalParams] = {};
-  double sample_rate_ = 44100.0;
-  bool enabled_ = true;
-
-  // LFO state
-  double lfo_phase_ = 0.0;
-
-  // Allpass filter states (per channel, per stage)
-  float ap_state_l_[kMaxStages] = {};
-  float ap_state_r_[kMaxStages] = {};
-
-  // Feedback state
-  float feedback_l_ = 0.0f;
-  float feedback_r_ = 0.0f;
-
-  // Comb delay buffers for chorus/flanger modes
-  std::vector<float> comb_buf_l_;
-  std::vector<float> comb_buf_r_;
-  int comb_write_ = 0;
-
-  // Scope ring buffer
-  mutable std::array<float, kScopeSize> scope_l_ = {};
-  mutable std::array<float, kScopeSize> scope_r_ = {};
-  int scope_write_ = 0;
-
-  // Metering
-  std::atomic<float> input_rms_{0.0f};
-  std::atomic<float> output_rms_{0.0f};
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 
   void reset();
-
-  // LFO generator
-  float lfo(double phase, int shape) const;
-
-  // First-order allpass: y[n] = a * x[n] + x[n-1] - a * y[n-1]
-  static float allpass(float input, float coeff, float& state);
 };
 
 }  // namespace hibiki

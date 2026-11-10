@@ -168,11 +168,21 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "builtin_phaser_d",
+    srcs = ["builtin_phaser.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
+)
+
 cc_library(
     name = "builtin_phaser",
     srcs = ["builtin_phaser.cpp"],
     hdrs = ["builtin_phaser.hpp"],
-    deps = ["//engine/plugin:iplugin"],
+    deps = [
+        ":builtin_phaser_d",
+        "//engine/plugin:iplugin",
+    ],
 )
 
 cc_library(
@@ -409,6 +419,7 @@ d_test(
         ":builtin_envelope_shaper_d",
         ":builtin_eq_d",
         ":builtin_limiter_d",
+        ":builtin_phaser_d",
         ":builtin_stereo_width_d",
     ],
 )

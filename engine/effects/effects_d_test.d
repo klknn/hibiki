@@ -8,6 +8,7 @@ import engine.effects.builtin_delay;
 import engine.effects.builtin_envelope_shaper;
 import engine.effects.builtin_eq;
 import engine.effects.builtin_limiter;
+import engine.effects.builtin_phaser;
 import engine.effects.builtin_stereo_width;
 
 @nogc nothrow unittest {
@@ -107,4 +108,19 @@ import engine.effects.builtin_stereo_width;
     float[64] es_out_l, es_out_r;
     d_env_shaper_process(&env_s, es_in_l.ptr, es_in_r.ptr, es_out_l.ptr, es_out_r.ptr, 64, 48000.0, 120.0, 0.0);
     assert(es_out_l[0] > 0.5f);
+
+    // 8. Phaser
+    assert(d_phaser_norm_to_stages(0.0) == 2);
+    assert(d_phaser_norm_to_stages(1.0) == 12);
+    assert(d_phaser_norm_to_mode(0.0) == 0); // PHASER
+
+    PhaserDspState phaser;
+    phaser.reset();
+    assert(phaser.enabled);
+
+    float[64] ph_in_l = 0.5f;
+    float[64] ph_in_r = 0.5f;
+    float[64] ph_out_l, ph_out_r;
+    d_phaser_process(&phaser, ph_in_l.ptr, ph_in_r.ptr, ph_out_l.ptr, ph_out_r.ptr, 64, 48000.0, 120.0);
+    assert(ph_out_l[0] != 0.0f);
 }

@@ -1,10 +1,27 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
-load("//tools/d_rules:defs.bzl", "d_binary", "d_library")
+load("//tools/d_rules:defs.bzl", "d_binary", "d_library", "d_test")
 
 d_library(
     name = "bridge_d",
     srcs = ["bridge.d"],
     visibility = ["//visibility:public"],
+)
+
+d_library(
+    name = "playback_mixer_d",
+    srcs = ["playback_mixer.d"],
+    betterc = True,
+    visibility = ["//visibility:public"],
+    deps = ["//engine/core:math_d"],
+)
+
+d_test(
+    name = "playback_d_test",
+    srcs = ["playback_d_test.d"],
+    deps = [
+        ":playback_mixer_d",
+        "//engine/core:math_d",
+    ],
 )
 
 cc_library(
@@ -50,6 +67,7 @@ cc_library(
     srcs = ["playback_thread.cpp"],
     hdrs = ["playback_thread.hpp"],
     deps = [
+        ":playback_mixer_d",
         "//engine/audio:sound",
         "//engine/commands",
         "//engine/core:audio_file",

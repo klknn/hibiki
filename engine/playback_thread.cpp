@@ -34,6 +34,20 @@
 #include "pb/commands.pb.h"
 #include "pb/notifications.pb.h"
 
+extern void d_advance_playhead(double currentPos, double timePerBlock,
+                               bool loopEnabled, double loopStart,
+                               double loopEnd, double* outPos);
+extern void d_apply_track_gain_and_pan(double* bufferL, double* bufferR,
+                                       int blockSize, float volume, float pan,
+                                       bool audible, float* outPeakL,
+                                       float* outPeakR);
+extern void d_accumulate_mix(const double* trackL, const double* trackR,
+                             double* masterL, double* masterR, int blockSize);
+extern void d_process_master_output(const double* masterL,
+                                    const double* masterR,
+                                    float* outInterleaved, int blockSize,
+                                    float* outPeakL, float* outPeakR);
+
 namespace hibiki {
 
 ProjectState* createProjectState() {
@@ -764,13 +778,11 @@ void playback_thread(ProjectState& state) {
           }
         }
 
-        // 5. Apply volume and pan, route to destination
+        // 5. Apply volume and pan (via @nogc D DSP kernel)
         bool is_silenced = track->muted || (any_soloed && !track->soloed);
-        double vol = is_silenced ? 0.0 : (double)track->volume;
-        double pan_angle = (track->pan + 1.0) * 0.25 * 3.14159265358979;
-        double panL = std::cos(pan_angle);
-        double panR = std::sin(pan_angle);
         float peakL = 0.0f, peakR = 0.0f;
+        d_apply_track_gain_and_pan(bufferL, bufferR, block_size, track->volume,
+                                   track->pan, !is_silenced, &peakL, &peakR);
 
         // Determine output destination
         int out_idx = track->output_track_index;
@@ -788,14 +800,8 @@ void playback_thread(ProjectState& state) {
           }
         }
 
-        for (int i = 0; i < block_size; ++i) {
-          double l = bufferL[i] * vol * panL;
-          double r = bufferR[i] * vol * panR;
-          (*dest_l)[i] += l;
-          (*dest_r)[i] += r;
-          peakL = std::max(peakL, (float)std::abs(l));
-          peakR = std::max(peakR, (float)std::abs(r));
-        }
+        d_accumulate_mix(bufferL, bufferR, dest_l->data(), dest_r->data(),
+                         block_size);
         {
           std::lock_guard<std::mutex> llock(state.levels_mutex);
           state.track_levels[track_idx] = {peakL, peakR};
@@ -822,22 +828,21 @@ void playback_thread(ProjectState& state) {
       }
     }
 
-    // Mix to output
+    // Mix to output (via @nogc D DSP kernel)
     std::vector<float> interleaved(block_size * actual_channels, 0.0f);
-    for (int i = 0; i < block_size; ++i) {
-      interleaved[i * actual_channels] = (float)mixBufferL[i];
-      interleaved[i * actual_channels + 1] = (float)mixBufferR[i];
-    }
+    float masterPeakL = 0.0f, masterPeakR = 0.0f;
+    d_process_master_output(mixBufferL.data(), mixBufferR.data(),
+                            interleaved.data(), block_size, &masterPeakL,
+                            &masterPeakR);
     CHECK_GE((int)interleaved.size(), block_size * actual_channels);
     audio->write(interleaved, block_size);
 
     if (state.is_timeline_playing) {
-      state.playhead_pos_sec += time_per_block;
-      // Loop wrapping
-      if (state.loop_enabled && state.loop_end_sec > state.loop_start_sec &&
-          state.playhead_pos_sec >= state.loop_end_sec) {
-        state.playhead_pos_sec = state.loop_start_sec;
-      }
+      double next_pos = state.playhead_pos_sec;
+      d_advance_playhead(state.playhead_pos_sec, time_per_block,
+                         state.loop_enabled, state.loop_start_sec,
+                         state.loop_end_sec, &next_pos);
+      state.playhead_pos_sec = next_pos;
     }
     context.continuousTimeSamples =
         (int64_t)(state.playhead_pos_sec * context.sampleRate);

@@ -1,11 +1,9 @@
 #pragma once
 
-#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "engine/core/biquad_filter.hpp"
 #include "engine/plugin/iplugin.hpp"
 
 namespace hibiki {
@@ -73,8 +71,6 @@ class BuiltinMaxim : public IPlugin {
     PARAM_MASTER_CEILING = 43,
   };
 
-  struct BandProcessor;
-
   BuiltinMaxim();
   ~BuiltinMaxim() override;
 
@@ -115,28 +111,8 @@ class BuiltinMaxim : public IPlugin {
   float getBandOutputDb(int band) const;
 
  private:
-  double params_[kTotalParams] = {};
-  double sample_rate_ = 44100.0;
-  bool enabled_ = true;
-
-  // LR4 Crossover Filters (2 cascaded biquads per split per channel)
-  BiquadFilter lp1_L_[2], lp1_R_[2];  // Low-pass for Low/Mid split
-  BiquadFilter hp1_L_[2], hp1_R_[2];  // High-pass for Low/Mid split
-  BiquadFilter lp2_L_[2],
-      lp2_R_[2];  // Low-pass for Mid/High split (on hp1 output)
-  BiquadFilter hp2_L_[2],
-      hp2_R_[2];  // High-pass for Mid/High split (on hp1 output)
-  BiquadFilter lp2_low_L_[2],
-      lp2_low_R_[2];  // Low-pass for Low band phase-alignment
-  BiquadFilter hp2_low_L_[2],
-      hp2_low_R_[2];  // High-pass for Low band phase-alignment
-
-  std::unique_ptr<BandProcessor> bands_[4];  // 0=Low, 1=Mid, 2=High, 3=Master
-
-  int64_t last_time_samples_ = -1;  // For transport reset
-
-  void reset();
-  void updateCrossoverCoeffs();
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace hibiki

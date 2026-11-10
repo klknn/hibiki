@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,7 @@ class BuiltinReverb : public IPlugin {
   };
 
   BuiltinReverb();
+  ~BuiltinReverb() override;
 
   // IPlugin interface
   bool load(const std::string& path, int plugin_index = 0,
@@ -54,52 +56,8 @@ class BuiltinReverb : public IPlugin {
   float getOutputDb() const;
 
  private:
-  static constexpr int kNumCombs = 8;
-  static constexpr int kNumAllpasses = 4;
-  static constexpr int kMaxPreDelay = 19200;  // 100ms @ 192kHz
-
-  struct CombFilter {
-    std::vector<float> buffer;
-    int size = 0;
-    int pos = 0;
-    float feedback = 0;
-    float damp1 = 0, damp2 = 0;
-    float filter_store = 0;
-  };
-
-  struct AllpassFilter {
-    std::vector<float> buffer;
-    int size = 0;
-    int pos = 0;
-  };
-
-  double params_[kTotalParams] = {};
-  double sample_rate_ = 44100.0;
-  bool enabled_ = true;
-
-  CombFilter combs_l_[kNumCombs];
-  CombFilter combs_r_[kNumCombs];
-  AllpassFilter allpasses_l_[kNumAllpasses];
-  AllpassFilter allpasses_r_[kNumAllpasses];
-
-  // Pre-delay buffer
-  std::vector<float> predelay_l_, predelay_r_;
-  int predelay_pos_ = 0;
-
-  // Output filters
-  float hp_state_l_ = 0, hp_state_r_ = 0;
-  float lp_state_l_ = 0, lp_state_r_ = 0;
-
-  // Metering state
-  float input_rms_ = 0;
-  float output_rms_ = 0;
-
-  void reset();
-  void initBuffers();
-  void updateParams();
-
-  static float processComb(CombFilter& c, float input);
-  static float processAllpass(AllpassFilter& a, float input);
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace hibiki

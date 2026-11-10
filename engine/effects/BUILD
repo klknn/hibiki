@@ -164,11 +164,21 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "builtin_reverb_d",
+    srcs = ["builtin_reverb.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
+)
+
 cc_library(
     name = "builtin_reverb",
     srcs = ["builtin_reverb.cpp"],
     hdrs = ["builtin_reverb.hpp"],
-    deps = ["//engine/plugin:iplugin"],
+    deps = [
+        ":builtin_reverb_d",
+        "//engine/plugin:iplugin",
+    ],
 )
 
 d_library(
@@ -217,13 +227,33 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "builtin_maxim_d",
+    srcs = ["builtin_maxim.d"],
+    betterc = True,
+    deps = [
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
+    ],
+)
+
 cc_library(
     name = "builtin_maxim",
     srcs = ["builtin_maxim.cpp"],
     hdrs = ["builtin_maxim.hpp"],
     deps = [
-        "//engine/core:biquad_filter",
+        ":builtin_maxim_d",
         "//engine/plugin:iplugin",
+    ],
+)
+
+d_library(
+    name = "builtin_vocodey_d",
+    srcs = ["builtin_vocodey.d"],
+    betterc = True,
+    deps = [
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
     ],
 )
 
@@ -232,8 +262,7 @@ cc_library(
     srcs = ["builtin_vocodey.cpp"],
     hdrs = ["builtin_vocodey.hpp"],
     deps = [
-        "//engine/core:biquad_filter",
-        "//engine/core:math",
+        ":builtin_vocodey_d",
         "//engine/plugin:iplugin",
     ],
 )
@@ -442,7 +471,10 @@ d_test(
         ":builtin_eq_d",
         ":builtin_hott_d",
         ":builtin_limiter_d",
+        ":builtin_maxim_d",
         ":builtin_phaser_d",
+        ":builtin_reverb_d",
         ":builtin_stereo_width_d",
+        ":builtin_vocodey_d",
     ],
 )

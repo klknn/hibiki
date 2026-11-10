@@ -10,8 +10,11 @@ import engine.effects.builtin_envelope_shaper;
 import engine.effects.builtin_eq;
 import engine.effects.builtin_hott;
 import engine.effects.builtin_limiter;
+import engine.effects.builtin_maxim;
 import engine.effects.builtin_phaser;
+import engine.effects.builtin_reverb;
 import engine.effects.builtin_stereo_width;
+import engine.effects.builtin_vocodey;
 
 @nogc nothrow unittest {
     // 1. Bitcrusher
@@ -155,4 +158,57 @@ import engine.effects.builtin_stereo_width;
     float[128] hott_out_l, hott_out_r;
     d_hott_process(&hott, hott_in_l.ptr, hott_in_r.ptr, hott_out_l.ptr, hott_out_r.ptr, 128, 44100.0, 0);
     assert(hott_out_l[0] != 0.0f);
+
+    // 11. Reverb
+    assert(d_reverb_norm_to_predelay_ms(0.5) == 50.0f);
+    auto rev = d_reverb_create(44100.0);
+    assert(rev !is null);
+    assert(d_reverb_get_parameter(rev, ReverbParamId.PARAM_ROOM_SIZE) == 0.5);
+
+    float[128] rev_in_l = 0.5f;
+    float[128] rev_in_r = 0.5f;
+    float[128] rev_out_l, rev_out_r;
+    d_reverb_process(rev, rev_in_l.ptr, rev_in_r.ptr, rev_out_l.ptr, rev_out_r.ptr, 128);
+    assert(rev_out_l[0] != 0.0f);
+    d_reverb_destroy(rev);
+
+    // 12. Maxim
+    assert(d_maxim_norm_to_freq(0.0, 20.0f, 500.0f) == 20.0f);
+    assert(d_maxim_norm_to_gain_db(0.5) == 0.0f);
+    auto maxim = d_maxim_create(44100.0);
+    assert(maxim !is null);
+    assert(d_maxim_get_parameter(maxim, MaximParamId.PARAM_LOOKAHEAD) == 0.2);
+
+    float[256] max_in_l = 0.5f;
+    float[256] max_in_r = 0.5f;
+    float[256] max_out_l, max_out_r;
+    d_maxim_process(maxim, max_in_l.ptr, max_in_r.ptr, max_out_l.ptr, max_out_r.ptr, 256, 44100.0, 0);
+    float max_peak = 0.0f;
+    foreach (s; max_out_l) {
+        float a = s >= 0 ? s : -s;
+        if (a > max_peak) max_peak = a;
+    }
+    assert(max_peak > 0.01f);
+    d_maxim_destroy(maxim);
+
+    // 13. Vocodey
+    assert(d_vocodey_norm_to_attack_s(0.0) == 0.001f);
+    assert(d_vocodey_norm_to_bandwidth_q(0.0) == 0.5f);
+    auto voc = d_vocodey_create();
+    assert(voc !is null);
+    assert(d_vocodey_get_parameter(voc, VocodeyParamId.PARAM_DRY) == 0.0);
+    assert(d_vocodey_get_parameter(voc, VocodeyParamId.PARAM_WET) == 1.0);
+
+    float[128] voc_in_l = 0.5f;
+    float[128] voc_in_r = 0.5f;
+    float[128] voc_out_l, voc_out_r;
+    VocodeyMidiEvent[1] voc_ev = [VocodeyMidiEvent(60, 0.9f, true)];
+    d_vocodey_process(voc, voc_in_l.ptr, voc_in_r.ptr, voc_out_l.ptr, voc_out_r.ptr, 128, 44100.0, voc_ev.ptr, 1, null, null);
+    float voc_peak = 0.0f;
+    foreach (s; voc_out_l) {
+        float a = s >= 0 ? s : -s;
+        if (a > voc_peak) voc_peak = a;
+    }
+    assert(voc_peak > 0.001f);
+    d_vocodey_destroy(voc);
 }

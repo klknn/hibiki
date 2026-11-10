@@ -1,6 +1,12 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("//tools/d_rules:defs.bzl", "d_binary", "d_library")
 
+d_library(
+    name = "bridge_d",
+    srcs = ["bridge.d"],
+    visibility = ["//visibility:public"],
+)
+
 cc_library(
     name = "test_utils",
     testonly = True,
@@ -96,8 +102,10 @@ d_binary(
     }),
     visibility = ["//visibility:public"],
     deps = [
+        ":bridge_d",
         ":playback_backend",
         "//dproto",
+        "//engine/commands:commands_d",
         "//pb:commands_d_proto",
         "//pb:notifications_d_proto",
     ],

@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/d_rules:defs.bzl", "d_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -45,6 +46,18 @@ cc_library(
     deps = [
         ":tcp",
         "@abseil-cpp//absl/log",
+    ],
+)
+
+d_library(
+    name = "ipc_d",
+    srcs = ["ipc.d"],
+    deps = [
+        ":ipc",
+        "//dproto",
+        "//engine:bridge_d",
+        "//pb:core_d_proto",
+        "//pb:notifications_d_proto",
     ],
 )
 

@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/d_rules:defs.bzl", "d_test")
+load("//tools/d_rules:defs.bzl", "d_library", "d_test")
 
 cc_library(
     name = "commands",
@@ -61,10 +61,26 @@ cc_test(
     ],
 )
 
+d_library(
+    name = "commands_d",
+    srcs = ["dispatcher.d"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dproto",
+        "//engine:bridge_d",
+        "//engine/core:history_d",
+        "//engine/core:project_d",
+        "//engine/ipc:ipc_d",
+        "//pb:commands_d_proto",
+        "//pb:notifications_d_proto",
+    ],
+)
+
 d_test(
     name = "commands_d_test",
     srcs = ["commands_d_test.d"],
     deps = [
+        ":commands_d",
         "//dproto",
         "//pb:commands_d_proto",
         "//pb:core_d_proto",

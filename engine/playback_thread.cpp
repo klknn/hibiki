@@ -57,6 +57,44 @@ void setStateQuit(ProjectState* state, bool quit) {
   if (state) state->quit = quit;
 }
 
+void setTimelinePlaying(ProjectState* state, bool playing) {
+  if (state) state->is_timeline_playing = playing;
+}
+
+bool isTimelinePlaying(const ProjectState* state) {
+  return state ? state->is_timeline_playing : false;
+}
+
+void setPlayheadPos(ProjectState* state, double pos) {
+  if (state) state->playhead_pos_sec = pos;
+}
+
+double getPlayheadPos(const ProjectState* state) {
+  return state ? state->playhead_pos_sec : 0.0;
+}
+
+void setBpm(ProjectState* state, double bpm) {
+  if (state && bpm > 0) state->bpm = bpm;
+}
+
+double getBpm(const ProjectState* state) { return state ? state->bpm : 120.0; }
+
+void setLoop(ProjectState* state, bool enabled, double start_sec,
+             double end_sec) {
+  if (!state) return;
+  state->loop_enabled = enabled;
+  state->loop_start_sec = start_sec;
+  state->loop_end_sec = end_sec;
+}
+
+void stopPlaybackTracks(ProjectState* state) {
+  if (!state) return;
+  std::lock_guard<std::mutex> lock(state->tracks_mutex);
+  for (auto& pair : state->tracks) {
+    if (pair.second) pair.second->Stop();
+  }
+}
+
 void listVst3Plugins(const char* path_ptr, size_t path_len) {
   std::string path(path_ptr, path_len);
   auto plugins = Vst3Plugin::listPlugins(path);

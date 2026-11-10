@@ -3,6 +3,7 @@ module engine.main;
 import core.stdc.stdio : feof, fread, stdin, stdout;
 import core.thread : Thread, dur, msecs, thread_detachThis;
 import dproto.proto : decodeProto;
+import engine.commands.dispatcher : dispatchCommandWithFallback;
 import pb.commands : Request;
 import std.stdio : stderr, writefln, writeln;
 import std.string : startsWith;
@@ -13,34 +14,7 @@ version (Windows) {
     import core.stdc.stdio : _fileno;
 }
 
-extern (C++, hibiki) {
-    struct ProjectState;
-    struct HistoryManager;
-
-    ProjectState* createProjectState();
-    void destroyProjectState(ProjectState* state);
-
-    HistoryManager* createHistoryManager();
-    void destroyHistoryManager(HistoryManager* history);
-
-    bool isStateQuit(const(ProjectState)* state);
-    void setStateQuit(ProjectState* state, bool quit);
-
-    void listVst3Plugins(const(char)* path_ptr, size_t path_len);
-    void runVst3MainLoop();
-
-    void loadConfig(ref ProjectState state);
-    void playback_thread(ref ProjectState state);
-    void sendNotificationTick(ref ProjectState state);
-    void sendInitialConfig(ref const(ProjectState) state);
-
-    bool dispatchIpcCommand(
-        const(ubyte)* data,
-        size_t size,
-        ref ProjectState state,
-        ref HistoryManager history
-    );
-}
+import engine.bridge : hibiki;
 
 void runIpcLoop(hibiki.ProjectState* state) {
     auto history = hibiki.createHistoryManager();
@@ -72,7 +46,7 @@ void runIpcLoop(hibiki.ProjectState* state) {
             stderr.writeln("Failed to decode protobuf request in D");
         }
 
-        hibiki.dispatchIpcCommand(buffer.ptr, msg_size, *state, *history);
+        dispatchCommandWithFallback(buffer, state, history);
     }
 
     hibiki.setStateQuit(state, true);

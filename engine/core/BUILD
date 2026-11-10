@@ -104,7 +104,6 @@ cc_library(
 d_library(
     name = "midi_d",
     srcs = ["midi.d"],
-    betterc = True,
 )
 
 cc_library(
@@ -112,6 +111,16 @@ cc_library(
     srcs = ["midi.cpp"],
     hdrs = ["midi.hpp"],
     deps = [":midi_d"],
+)
+
+d_library(
+    name = "project_d",
+    srcs = ["project.d"],
+    deps = [
+        ":midi_d",
+        "//dproto",
+        "//pb:core_d_proto",
+    ],
 )
 
 d_test(
@@ -124,6 +133,7 @@ d_test(
         ":math_d",
         ":midi_d",
         ":modulator_d",
+        ":project_d",
         ":resample_d",
         "//engine/instruments:adsr_d",
         "//engine/instruments:multi_point_envelope_d",

@@ -22,6 +22,16 @@ void destroyHistoryManager(HistoryManager* history);
 bool isStateQuit(const ProjectState* state);
 void setStateQuit(ProjectState* state, bool quit);
 
+void setTimelinePlaying(ProjectState* state, bool playing);
+bool isTimelinePlaying(const ProjectState* state);
+void setPlayheadPos(ProjectState* state, double pos);
+double getPlayheadPos(const ProjectState* state);
+void setBpm(ProjectState* state, double bpm);
+double getBpm(const ProjectState* state);
+void setLoop(ProjectState* state, bool enabled, double start_sec,
+             double end_sec);
+void stopPlaybackTracks(ProjectState* state);
+
 void sendNotificationTick(ProjectState& state);
 void sendInitialConfig(const ProjectState& state);
 

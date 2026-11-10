@@ -19,7 +19,7 @@ public:
         BELL = 5,
     }
 
-    void setParams(Type type, float cutoff_hz, float q, float gain_db, float sample_rate) @nogc nothrow {
+    void setParams(Type type, float cutoff_hz, float q, float gain_db, float sample_rate) @nogc nothrow @trusted {
         if (cutoff_hz == cutoff_ && q == q_ && type == type_ && sample_rate == sr_ && gain_db == gain_db_) {
             return;
         }
@@ -31,7 +31,7 @@ public:
         recalc();
     }
 
-    void setModulatedCutoff(float base_hz, float depth, float env_value, float q, float gain_db, float sample_rate) @nogc nothrow {
+    void setModulatedCutoff(float base_hz, float depth, float env_value, float q, float gain_db, float sample_rate) @nogc nothrow @trusted {
         float mod_oct = depth * env_value * 4.0f;
         float mod_hz = base_hz * powf(2.0f, mod_oct);
         mod_hz = clampVal(mod_hz, 20.0f, 20000.0f);
@@ -94,7 +94,7 @@ public:
     }
 
 private:
-    void recalc() @nogc nothrow {
+    void recalc() @nogc nothrow @trusted {
         float w0 = 2.0f * cast(float)pi * cutoff_ / sr_;
         float cw = cosf(w0);
         float sw = sinf(w0);

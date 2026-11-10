@@ -1,10 +1,28 @@
 module engine.instruments.instruments_d_test;
 
 import core.math : fabs;
+import engine.instruments.builtin_3xosc;
 import engine.instruments.builtin_acid_bass;
 import engine.instruments.builtin_dr8_kick;
 
 @nogc nothrow unittest {
+    // 0. 3xOsc
+    ThreeXOscDspState osc;
+    osc.reset();
+    assert(osc.enabled);
+    assert(d_3xosc_get_default_value(ThreeXOscParamId.P_VOL) == 1.0);
+
+    float[128] osc_out_l, osc_out_r;
+    ThreeXOscMidiEvent[1] osc_ev = [ThreeXOscMidiEvent(69, 1.0f, true)];
+    d_3xosc_process(osc, osc_out_l.ptr, osc_out_r.ptr, 128, 48000.0, osc_ev.ptr, 1);
+    assert(osc.voices[0].active);
+    float osc_max = 0.0f;
+    foreach (s; osc_out_l) {
+        float a = s >= 0 ? s : -s;
+        if (a > osc_max) osc_max = a;
+    }
+    assert(osc_max > 0.01f);
+
     // 1. Acid Bass
     AcidBassDspState acid;
     acid.reset();

@@ -1,14 +1,30 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "engine/core/biquad_filter.hpp"
 #include "engine/core/fft.hpp"
 #include "engine/plugin/iplugin.hpp"
 
 namespace hibiki {
+
+struct EqDspState;
+
+EqDspState* d_eq_create();
+void d_eq_destroy(EqDspState* state);
+void d_eq_reset(EqDspState* state);
+void d_eq_set_parameter(EqDspState* state, uint32_t id, double value);
+double d_eq_get_parameter(const EqDspState* state, uint32_t id);
+bool d_eq_is_enabled(const EqDspState* state);
+float d_eq_get_magnitude_db(const EqDspState* state, float freq);
+void d_eq_process(EqDspState* state, float* out_l, float* out_r,
+                  int num_samples, double sample_rate);
+float d_eq_norm_to_freq(double norm);
+double d_eq_freq_to_norm(float freq);
+float d_eq_norm_to_q(double norm);
+double d_eq_q_to_norm(float q);
 
 // 8-band parametric EQ implemented as an IPlugin.
 // Filter types: Off, LPF, HPF, Low Shelf, High Shelf, Bell (peaking).
@@ -24,6 +40,7 @@ class BuiltinEq : public IPlugin {
   static constexpr const char* kName = "EQ Eight";
 
   BuiltinEq();
+  ~BuiltinEq() override;
 
   // IPlugin interface
   bool load(const std::string& path, int plugin_index = 0,
@@ -60,25 +77,10 @@ class BuiltinEq : public IPlugin {
   static double qToNorm(float q);
 
  private:
-  struct BandParams {
-    BiquadFilter::Type type = BiquadFilter::Type::OFF;
-    float freq = 1000.0f;
-    float gain_db = 0.0f;
-    float q = 0.707f;
-  };
-
-  BandParams bands_[kNumBands];
-  BiquadFilter filters_[kNumBands][2];  // [band][channel]
-  double params_[kTotalParams] = {};
-  double sample_rate_ = 44100.0;
-  bool enabled_ = true;
-
-  static constexpr float defaultFreqs_[kNumBands] = {
-      30.0f, 80.0f, 250.0f, 700.0f, 2000.0f, 5000.0f, 10000.0f, 16000.0f};
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 
   void reset();
-  void updateBand(int b);
-  void recalcAllCoeffs();
 
   // --- FFT-based spectrum analysis ---
   static constexpr int kFftSize = SpectrumAnalyzer::kFftSize;

@@ -5,6 +5,7 @@ import engine.effects.builtin_bitcrusher;
 import engine.effects.builtin_chorus;
 import engine.effects.builtin_compressor;
 import engine.effects.builtin_delay;
+import engine.effects.builtin_eq;
 import engine.effects.builtin_limiter;
 import engine.effects.builtin_stereo_width;
 
@@ -64,4 +65,26 @@ import engine.effects.builtin_stereo_width;
     // 5. Delay sync lookup table
     assert(d_delay_norm_to_division_beats(0.0) == 0.08333f);
     assert(d_delay_norm_to_division_beats(1.0) == 4.0f);
+
+    // 6. EQ Eight
+    assert(fabs(d_eq_norm_to_freq(0.0) - 20.0f) < 0.1f);
+    assert(fabs(d_eq_norm_to_freq(1.0) - 20000.0f) < 10.0f);
+    float test_freq = 440.0f;
+    assert(fabs(d_eq_norm_to_freq(d_eq_freq_to_norm(test_freq)) - test_freq) < 0.1f);
+
+    EqDspState eq;
+    eq.reset();
+    assert(eq.enabled);
+    assert(fabs(d_eq_get_magnitude_db(&eq, 1000.0f)) < 0.01f);
+
+    // Boost band 1 with Bell (type=5, norm=5/5.0=1.0) at 1kHz
+    d_eq_set_parameter(&eq, 0, 1.0); // Bell
+    d_eq_set_parameter(&eq, 8, d_eq_freq_to_norm(1000.0f));
+    d_eq_set_parameter(&eq, 16, 0.75); // +12dB
+    d_eq_set_parameter(&eq, 24, d_eq_q_to_norm(1.0f));
+    assert(d_eq_get_magnitude_db(&eq, 1000.0f) > 6.0f);
+
+    float[32] eq_in_l = 0.5f;
+    float[32] eq_in_r = 0.5f;
+    d_eq_process(&eq, eq_in_l.ptr, eq_in_r.ptr, 32, 48000.0);
 }

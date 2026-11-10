@@ -30,15 +30,24 @@ cc_library(
     deps = [":multi_point_envelope_d"],
 )
 
+d_library(
+    name = "builtin_3xosc_d",
+    srcs = ["builtin_3xosc.d"],
+    betterc = True,
+    deps = [
+        ":adsr_d",
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
+    ],
+)
+
 cc_library(
     name = "builtin_3xosc",
     srcs = ["builtin_3xosc.cpp"],
     hdrs = ["builtin_3xosc.hpp"],
     deps = [
-        ":adsr",
-        "//engine/core:biquad_filter",
+        ":builtin_3xosc_d",
         "//engine/plugin:iplugin",
-        "@abseil-cpp//absl/base",
     ],
 )
 
@@ -455,6 +464,7 @@ d_test(
     name = "instruments_d_test",
     srcs = ["instruments_d_test.d"],
     deps = [
+        ":builtin_3xosc_d",
         ":builtin_acid_bass_d",
         ":builtin_dr8_kick_d",
     ],

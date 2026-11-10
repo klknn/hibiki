@@ -44,12 +44,22 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "builtin_eq_d",
+    srcs = ["builtin_eq.d"],
+    betterc = True,
+    deps = [
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
+    ],
+)
+
 cc_library(
     name = "builtin_eq",
     srcs = ["builtin_eq.cpp"],
     hdrs = ["builtin_eq.hpp"],
     deps = [
-        "//engine/core:biquad_filter",
+        ":builtin_eq_d",
         "//engine/core:fft",
         "//engine/plugin:iplugin",
     ],
@@ -386,6 +396,7 @@ d_test(
         ":builtin_chorus_d",
         ":builtin_compressor_d",
         ":builtin_delay_d",
+        ":builtin_eq_d",
         ":builtin_limiter_d",
         ":builtin_stereo_width_d",
     ],

@@ -3,7 +3,7 @@ module engine.instruments.adsr;
 import core.stdc.math : powf;
 import engine.core.math : clampVal;
 
-private float normToTime(float norm, float max_s) @nogc nothrow {
+private float normToTime(float norm, float max_s) @nogc nothrow @trusted {
     return 0.001f * powf(max_s / 0.001f, norm);
 }
 
@@ -27,7 +27,7 @@ public:
         release_ = (release_s > 0.001f) ? release_s : 0.001f;
     }
 
-    void setNormalized(float a, float d, float s, float r) @nogc nothrow {
+    void setNormalized(float a, float d, float s, float r) @nogc nothrow @safe {
         setParams(normToTime(a, 5.0f), normToTime(d, 5.0f), s, normToTime(r, 10.0f));
     }
 

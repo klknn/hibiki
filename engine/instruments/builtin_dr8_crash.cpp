@@ -1,52 +1,42 @@
 #include "engine/instruments/builtin_dr8_crash.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstdlib>
-
-#include "engine/core/biquad_filter.hpp"
+#include <vector>
 
 namespace hibiki {
 
 static const std::string kDr8CrashName = "DR8 Crash";
 static const std::string kDr8CrashPath = "builtin://dr8_crash";
 
-// TR-808 cymbal frequency ratios relative to base freq
-static constexpr double kCymbalOscRatios[6] = {1.0,  1.8,  1.48,
-                                               2.54, 3.89, 4.15};
+struct Dr8CrashDspState;
+
+struct Dr8CrashMidiEvent {
+  int pitch;
+  float velocity;
+  bool is_note_on;
+};
+
+Dr8CrashDspState* d_dr8_crash_create();
+void d_dr8_crash_destroy(Dr8CrashDspState* state);
+void d_dr8_crash_reset(Dr8CrashDspState* state);
+void d_dr8_crash_set_parameter(Dr8CrashDspState* state, uint32_t id,
+                               double value);
+double d_dr8_crash_get_parameter(const Dr8CrashDspState* state, uint32_t id);
+void d_dr8_crash_process(Dr8CrashDspState* state, float* out_l, float* out_r,
+                         int num_samples, double sample_rate,
+                         const Dr8CrashMidiEvent* events, int num_events);
+
+float d_dr8_crash_norm_to_decay_s(double norm);
 
 struct BuiltinDr8Crash::Impl {
-  double params[kTotalParams] = {};
+  Dr8CrashDspState* state = nullptr;
   double sample_rate = 44100.0;
 
-  // Synthesizer state
-  bool active = false;
-  double osc_phase[6] = {};
-  double env_amp = 0.0;
-  float velocity = 0.0f;
-
-  // Filters
-  BiquadFilter sizzle_hpf;
-  BiquadFilter bpf1;
-  BiquadFilter bpf2;
-
-  void reset() {
-    active = false;
-    for (int i = 0; i < 6; ++i) osc_phase[i] = 0.0;
-    env_amp = 0.0;
-    velocity = 0.0f;
-    sizzle_hpf.reset();
-    bpf1.reset();
-    bpf2.reset();
-  }
+  Impl() : state(d_dr8_crash_create()) {}
+  ~Impl() { d_dr8_crash_destroy(state); }
+  void reset() { d_dr8_crash_reset(state); }
 };
 
 BuiltinDr8Crash::BuiltinDr8Crash() : impl_(std::make_unique<Impl>()) {
-  impl_->params[PARAM_DECAY] = 0.4;    // moderate decay default
-  impl_->params[PARAM_TONE] = 0.4;     // blend of metal/sizzle default
-  impl_->params[PARAM_TENSION] = 0.3;  // base tension default
-  impl_->params[PARAM_VOLUME] = 0.7;   // master volume
-
   impl_->reset();
 }
 
@@ -60,8 +50,7 @@ bool BuiltinDr8Crash::load(const std::string& /*path*/, int /*plugin_index*/,
 }
 
 float BuiltinDr8Crash::normToDecayS(double norm) {
-  // Exponential mapping: 0.2 seconds to 3.0 seconds
-  return (float)(0.2 * std::pow(15.0, norm));
+  return d_dr8_crash_norm_to_decay_s(norm);
 }
 
 void BuiltinDr8Crash::process(float** /*inputs*/, float** outputs,
@@ -71,88 +60,19 @@ void BuiltinDr8Crash::process(float** /*inputs*/, float** outputs,
                               float** /*sidechain*/) {
   impl_->sample_rate = context.sampleRate;
 
-  // Process MIDI events
+  std::vector<Dr8CrashMidiEvent> d_events;
+  d_events.reserve(events.size());
   for (const auto& ev : events) {
-    if (ev.isNoteOn && ev.velocity > 0) {
-      impl_->active = true;
-      for (int i = 0; i < 6; ++i) impl_->osc_phase[i] = 0.0;
-      impl_->env_amp = 1.0;
-      impl_->velocity = ev.velocity;
-    }
+    Dr8CrashMidiEvent dev;
+    dev.pitch = ev.pitch;
+    dev.velocity = ev.velocity;
+    dev.is_note_on = ev.isNoteOn;
+    d_events.push_back(dev);
   }
 
-  float* out_l = outputs[0];
-  float* out_r = outputs[1];
-
-  for (int i = 0; i < num_samples; ++i) {
-    out_l[i] = 0.0f;
-    out_r[i] = 0.0f;
-  }
-
-  if (!impl_->active) return;
-
-  double decay_s = normToDecayS(impl_->params[PARAM_DECAY]);
-  double tone = impl_->params[PARAM_TONE];
-  double tension = impl_->params[PARAM_TENSION];
-  double volume = impl_->params[PARAM_VOLUME];
-
-  // Base frequency scale: 150 Hz to 400 Hz
-  double base_freq = 150.0 + tension * 250.0;
-
-  double decay_coeff = std::exp(-1.0 / (decay_s * impl_->sample_rate));
-
-  // Configure filters
-  // Noise sizzle highpass filter (Q=0.707, tuned around 7 kHz)
-  impl_->sizzle_hpf.setParams(BiquadFilter::Type::HIGHPASS, 7000.0f, 0.707f,
-                              0.0f, (float)impl_->sample_rate);
-  // Parallel bandpass filters centered around 800 Hz and 1.2 kHz
-  impl_->bpf1.setParams(BiquadFilter::Type::BANDPASS, 800.0f, 1.0f, 0.0f,
-                        (float)impl_->sample_rate);
-  impl_->bpf2.setParams(BiquadFilter::Type::BANDPASS, 1200.0f, 1.2f, 0.0f,
-                        (float)impl_->sample_rate);
-
-  // Pre-calculate step increments
-  double dt[6];
-  for (int d = 0; d < 6; ++d) {
-    dt[d] = (base_freq * kCymbalOscRatios[d]) / impl_->sample_rate;
-  }
-
-  for (int i = 0; i < num_samples; ++i) {
-    if (impl_->env_amp < 0.0001) {
-      impl_->active = false;
-      impl_->reset();
-      break;
-    }
-
-    // Accumulate the 6 detuned square waves
-    double osc_sum = 0.0;
-    for (int d = 0; d < 6; ++d) {
-      impl_->osc_phase[d] += dt[d];
-      if (impl_->osc_phase[d] >= 1.0) impl_->osc_phase[d] -= 1.0;
-      osc_sum += (impl_->osc_phase[d] < 0.5 ? 1.0 : -1.0);
-    }
-    double metallic = osc_sum / 6.0;
-
-    // Generate white noise sizzle
-    double noise = (((double)std::rand() / RAND_MAX) * 2.0 - 1.0);
-    float sizzle = impl_->sizzle_hpf.process((float)noise);
-
-    // Blend metallic oscillators and high-pass noise
-    double raw = (1.0 - tone) * metallic + tone * sizzle;
-
-    // Pass through parallel bandpass filters
-    float f1 = impl_->bpf1.process((float)raw);
-    float f2 = impl_->bpf2.process((float)raw);
-    float filtered = 0.5f * (f1 + f2);
-
-    float out_val =
-        (float)(filtered * impl_->env_amp * impl_->velocity * volume);
-    out_l[i] = out_val;
-    out_r[i] = out_val;
-
-    // Decay the envelope
-    impl_->env_amp *= decay_coeff;
-  }
+  d_dr8_crash_process(impl_->state, outputs[0], outputs[1], num_samples,
+                      context.sampleRate, d_events.data(),
+                      static_cast<int>(d_events.size()));
 }
 
 int BuiltinDr8Crash::getParameterCount() const { return kTotalParams; }
@@ -168,16 +88,11 @@ bool BuiltinDr8Crash::getParameterInfo(int index, VstParamInfo& info) const {
 }
 
 void BuiltinDr8Crash::setParameterValue(uint32_t id, double value) {
-  if (id < kTotalParams) {
-    impl_->params[id] = std::clamp(value, 0.0, 1.0);
-  }
+  d_dr8_crash_set_parameter(impl_->state, id, value);
 }
 
 double BuiltinDr8Crash::getParameterValue(uint32_t id) const {
-  if (id < kTotalParams) {
-    return impl_->params[id];
-  }
-  return 0.0;
+  return d_dr8_crash_get_parameter(impl_->state, id);
 }
 
 const std::string& BuiltinDr8Crash::getName() const { return kDr8CrashName; }

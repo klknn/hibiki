@@ -4,9 +4,14 @@ import core.math : fabs;
 import engine.instruments.builtin_3xosc;
 import engine.instruments.builtin_acid_bass;
 import engine.instruments.builtin_dr8_clap;
+import engine.instruments.builtin_dr8_conga;
+import engine.instruments.builtin_dr8_cowbell;
+import engine.instruments.builtin_dr8_crash;
 import engine.instruments.builtin_dr8_hat;
 import engine.instruments.builtin_dr8_kick;
+import engine.instruments.builtin_dr8_rim;
 import engine.instruments.builtin_dr8_snare;
+import engine.instruments.builtin_dr8_tom;
 
 @nogc nothrow unittest {
     // 0. 3xOsc
@@ -129,4 +134,88 @@ import engine.instruments.builtin_dr8_snare;
         if (a > c_max) c_max = a;
     }
     assert(c_max > 0.001f);
+
+    // 6. DR8 Rimshot
+    Dr8RimDspState rim;
+    rim.reset();
+    assert(d_dr8_rim_norm_to_pitch_hz(0.0) == 200.0f);
+    assert(d_dr8_rim_norm_to_decay_s(0.0) == 0.01f);
+
+    float[256] rim_out_l, rim_out_r;
+    Dr8RimMidiEvent[1] rim_ev = [Dr8RimMidiEvent(37, 0.9f, true)];
+    d_dr8_rim_process(&rim, rim_out_l.ptr, rim_out_r.ptr, 256, 48000.0, rim_ev.ptr, 1);
+    assert(rim.active);
+    float rim_max = 0.0f;
+    foreach (s; rim_out_l) {
+        float a = s >= 0 ? s : -s;
+        if (a > rim_max) rim_max = a;
+    }
+    assert(rim_max > 0.001f);
+
+    // 7. DR8 Tom
+    Dr8TomDspState tom;
+    tom.reset();
+    assert(d_dr8_tom_norm_to_pitch_hz(0.0) == 70.0f);
+    assert(fabs(d_dr8_tom_norm_to_decay_s(0.0) - 0.1f) < 0.001f);
+
+    float[256] tom_out_l, tom_out_r;
+    Dr8TomMidiEvent[1] tom_ev = [Dr8TomMidiEvent(45, 0.9f, true)];
+    d_dr8_tom_process(&tom, tom_out_l.ptr, tom_out_r.ptr, 256, 48000.0, tom_ev.ptr, 1);
+    assert(tom.active);
+    float tom_max = 0.0f;
+    foreach (s; tom_out_l) {
+        float a = s >= 0 ? s : -s;
+        if (a > tom_max) tom_max = a;
+    }
+    assert(tom_max > 0.001f);
+
+    // 8. DR8 Conga
+    Dr8CongaDspState conga;
+    conga.reset();
+    assert(d_dr8_conga_norm_to_pitch_hz(0.0) == 150.0f);
+    assert(fabs(d_dr8_conga_norm_to_decay_s(0.0) - 0.05f) < 0.001f);
+
+    float[256] conga_out_l, conga_out_r;
+    Dr8CongaMidiEvent[1] conga_ev = [Dr8CongaMidiEvent(64, 0.9f, true)];
+    d_dr8_conga_process(&conga, conga_out_l.ptr, conga_out_r.ptr, 256, 48000.0, conga_ev.ptr, 1);
+    assert(conga.active);
+    float conga_max = 0.0f;
+    foreach (s; conga_out_l) {
+        float a = s >= 0 ? s : -s;
+        if (a > conga_max) conga_max = a;
+    }
+    assert(conga_max > 0.001f);
+
+    // 9. DR8 Cowbell
+    Dr8CowbellDspState cowbell;
+    cowbell.reset();
+    assert(d_dr8_cowbell_norm_to_pitch_hz(0.0) == 400.0f);
+    assert(fabs(d_dr8_cowbell_norm_to_detune_ratio(0.0) - 1.40f) < 0.001f);
+
+    float[256] cowbell_out_l, cowbell_out_r;
+    Dr8CowbellMidiEvent[1] cowbell_ev = [Dr8CowbellMidiEvent(56, 0.9f, true)];
+    d_dr8_cowbell_process(&cowbell, cowbell_out_l.ptr, cowbell_out_r.ptr, 256, 48000.0, cowbell_ev.ptr, 1);
+    assert(cowbell.active);
+    float cowbell_max = 0.0f;
+    foreach (s; cowbell_out_l) {
+        float a = s >= 0 ? s : -s;
+        if (a > cowbell_max) cowbell_max = a;
+    }
+    assert(cowbell_max > 0.001f);
+
+    // 10. DR8 Crash
+    Dr8CrashDspState crash;
+    crash.reset();
+    assert(fabs(d_dr8_crash_norm_to_decay_s(0.0) - 0.2f) < 0.001f);
+
+    float[256] crash_out_l, crash_out_r;
+    Dr8CrashMidiEvent[1] crash_ev = [Dr8CrashMidiEvent(49, 0.9f, true)];
+    d_dr8_crash_process(&crash, crash_out_l.ptr, crash_out_r.ptr, 256, 48000.0, crash_ev.ptr, 1);
+    assert(crash.active);
+    float crash_max = 0.0f;
+    foreach (s; crash_out_l) {
+        float a = s >= 0 ? s : -s;
+        if (a > crash_max) crash_max = a;
+    }
+    assert(crash_max > 0.001f);
 }

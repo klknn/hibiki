@@ -5,6 +5,7 @@ import engine.effects.builtin_bitcrusher;
 import engine.effects.builtin_chorus;
 import engine.effects.builtin_compressor;
 import engine.effects.builtin_delay;
+import engine.effects.builtin_envelope_shaper;
 import engine.effects.builtin_eq;
 import engine.effects.builtin_limiter;
 import engine.effects.builtin_stereo_width;
@@ -87,4 +88,23 @@ import engine.effects.builtin_stereo_width;
     float[32] eq_in_l = 0.5f;
     float[32] eq_in_r = 0.5f;
     d_eq_process(&eq, eq_in_l.ptr, eq_in_r.ptr, 32, 48000.0);
+
+    // 7. Envelope Shaper
+    assert(d_env_shaper_norm_to_rate_beats(0.0) == 0.25f);
+    assert(d_env_shaper_norm_to_rate_beats(1.0) == 16.0f);
+
+    EnvShaperDspState env_s;
+    env_s.reset();
+    assert(env_s.enabled);
+    assert(env_s.getNumPoints() >= 2);
+
+    // Test ducking curve evaluation: start at full (1.0), quick dip at 0.1
+    float c0 = d_env_shaper_evaluate_curve(&env_s, 0.0f);
+    assert(fabs(c0 - 1.0f) < 0.05f);
+
+    float[64] es_in_l = 1.0f;
+    float[64] es_in_r = 1.0f;
+    float[64] es_out_l, es_out_r;
+    d_env_shaper_process(&env_s, es_in_l.ptr, es_in_r.ptr, es_out_l.ptr, es_out_r.ptr, 64, 48000.0, 120.0, 0.0);
+    assert(es_out_l[0] > 0.5f);
 }

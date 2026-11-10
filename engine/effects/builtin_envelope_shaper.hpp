@@ -1,12 +1,30 @@
 #pragma once
 
-#include <atomic>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "engine/plugin/iplugin.hpp"
 
 namespace hibiki {
+
+struct EnvShaperDspState;
+
+EnvShaperDspState* d_env_shaper_create();
+void d_env_shaper_destroy(EnvShaperDspState* state);
+void d_env_shaper_reset(EnvShaperDspState* state);
+void d_env_shaper_set_parameter(EnvShaperDspState* state, uint32_t id,
+                                double value);
+double d_env_shaper_get_parameter(const EnvShaperDspState* state, uint32_t id);
+void d_env_shaper_process(EnvShaperDspState* state, const float* in_l,
+                          const float* in_r, float* out_l, float* out_r,
+                          int num_samples, double sample_rate, double tempo,
+                          double project_time_music);
+float d_env_shaper_norm_to_rate_beats(double norm);
+const char* d_env_shaper_norm_to_rate_label(double norm);
+float d_env_shaper_get_input_db(const EnvShaperDspState* state);
+float d_env_shaper_get_output_db(const EnvShaperDspState* state);
+float d_env_shaper_get_current_phase(const EnvShaperDspState* state);
 
 // Tempo-synced envelope shaper (Kickstart / LFOTool style).
 // Users define a gain or filter envelope curve with up to 16 breakpoints
@@ -32,6 +50,7 @@ class BuiltinEnvelopeShaper : public IPlugin {
   };
 
   BuiltinEnvelopeShaper();
+  ~BuiltinEnvelopeShaper() override;
 
   // IPlugin interface
   bool load(const std::string& path, int plugin_index = 0,
@@ -62,31 +81,8 @@ class BuiltinEnvelopeShaper : public IPlugin {
   static const char* normToRateLabel(double norm);
 
  private:
-  double params_[kTotalParams] = {};
-  double sample_rate_ = 44100.0;
-  bool enabled_ = true;
-
-  // Envelope state
-  double phase_ = 0.0;  // 0–1 within current cycle
-
-  // LP filter state for cutoff mode
-  float lp_state_l_ = 0.0f;
-  float lp_state_r_ = 0.0f;
-  // HP filter state
-  float hp_state_l_ = 0.0f;
-  float hp_state_r_ = 0.0f;
-
-  // Metering
-  std::atomic<float> input_rms_{0.0f};
-  std::atomic<float> output_rms_{0.0f};
-  std::atomic<float> current_phase_{0.0f};
-
-  // Get the number of active points (2–16)
-  int getNumPoints() const;
-  // Evaluate the envelope at phase t (0–1)
-  float evaluateCurve(float t) const;
-  // Catmull-rom interpolation
-  static float catmullRom(float p0, float p1, float p2, float p3, float t);
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 
   void reset();
 };

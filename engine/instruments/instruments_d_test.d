@@ -3,7 +3,10 @@ module engine.instruments.instruments_d_test;
 import core.math : fabs;
 import engine.instruments.builtin_3xosc;
 import engine.instruments.builtin_acid_bass;
+import engine.instruments.builtin_dr8_clap;
+import engine.instruments.builtin_dr8_hat;
 import engine.instruments.builtin_dr8_kick;
+import engine.instruments.builtin_dr8_snare;
 
 @nogc nothrow unittest {
     // 0. 3xOsc
@@ -75,4 +78,55 @@ import engine.instruments.builtin_dr8_kick;
         if (a > k_max) k_max = a;
     }
     assert(k_max > 0.01f);
+
+    // 3. DR8 Snare
+    Dr8SnareDspState snare;
+    snare.reset();
+    assert(d_dr8_snare_norm_to_pitch_hz(0.0) == 100.0f);
+    assert(d_dr8_snare_norm_to_pitch_hz(1.0) == 250.0f);
+
+    float[256] sout_l, sout_r;
+    Dr8SnareMidiEvent[1] sev_on = [Dr8SnareMidiEvent(38, 0.9f, true)];
+    d_dr8_snare_process(&snare, sout_l.ptr, sout_r.ptr, 256, 48000.0, sev_on.ptr, 1);
+    assert(snare.active);
+    float s_max = 0.0f;
+    foreach (s; sout_l) {
+        float a = s >= 0 ? s : -s;
+        if (a > s_max) s_max = a;
+    }
+    assert(s_max > 0.01f);
+
+    // 4. DR8 Hat
+    Dr8HatDspState hat;
+    hat.reset();
+    assert(fabs(d_dr8_hat_norm_to_hpf_hz(0.0) - 3000.0f) < 0.1f);
+    assert(fabs(d_dr8_hat_norm_to_bpf_hz(0.0) - 6000.0f) < 0.1f);
+
+    float[256] hout_l, hout_r;
+    Dr8HatMidiEvent[1] hev_on = [Dr8HatMidiEvent(42, 0.9f, true)];
+    d_dr8_hat_process(&hat, hout_l.ptr, hout_r.ptr, 256, 48000.0, hev_on.ptr, 1);
+    assert(hat.active);
+    float h_max = 0.0f;
+    foreach (s; hout_l) {
+        float a = s >= 0 ? s : -s;
+        if (a > h_max) h_max = a;
+    }
+    assert(h_max > 0.001f);
+
+    // 5. DR8 Clap
+    Dr8ClapDspState clap;
+    clap.reset();
+    assert(fabs(d_dr8_clap_norm_to_decay_s(0.0) - 0.05f) < 0.001f);
+    assert(fabs(d_dr8_clap_norm_to_cutoff_hz(0.0) - 500.0f) < 0.1f);
+
+    float[256] cout_l, cout_r;
+    Dr8ClapMidiEvent[1] cev_on = [Dr8ClapMidiEvent(39, 0.9f, true)];
+    d_dr8_clap_process(&clap, cout_l.ptr, cout_r.ptr, 256, 48000.0, cev_on.ptr, 1);
+    assert(clap.active);
+    float c_max = 0.0f;
+    foreach (s; cout_l) {
+        float a = s >= 0 ? s : -s;
+        if (a > c_max) c_max = a;
+    }
+    assert(c_max > 0.001f);
 }

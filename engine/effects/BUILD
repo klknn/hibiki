@@ -151,11 +151,21 @@ cc_library(
     deps = ["//engine/plugin:iplugin"],
 )
 
+d_library(
+    name = "builtin_envelope_shaper_d",
+    srcs = ["builtin_envelope_shaper.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
+)
+
 cc_library(
     name = "builtin_envelope_shaper",
     srcs = ["builtin_envelope_shaper.cpp"],
     hdrs = ["builtin_envelope_shaper.hpp"],
-    deps = ["//engine/plugin:iplugin"],
+    deps = [
+        ":builtin_envelope_shaper_d",
+        "//engine/plugin:iplugin",
+    ],
 )
 
 cc_library(
@@ -396,6 +406,7 @@ d_test(
         ":builtin_chorus_d",
         ":builtin_compressor_d",
         ":builtin_delay_d",
+        ":builtin_envelope_shaper_d",
         ":builtin_eq_d",
         ":builtin_limiter_d",
         ":builtin_stereo_width_d",

@@ -24,6 +24,8 @@ def _common_ldc_flags(ctx, import_dirs):
     ]
     if _is_macos(ctx):
         flags.append("-mtriple=arm64-apple-macos11.0")
+    if ctx.var.get("COMPILATION_MODE", "") == "opt":
+        flags.extend(["-O3", "-release", "-enable-inlining", "-boundscheck=safeonly"])
     if ctx.attr.betterc:
         flags.append("-betterC")
     for imp in import_dirs:

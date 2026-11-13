@@ -4,8 +4,11 @@ module engine.core.history;
 struct HistoryManagerD {
     private ubyte[][] undoStack_;
     private ubyte[][] redoStack_;
+
+    /// Maximum number of undo snapshots retained.
     size_t maxHistory = 50;
 
+    /// Pushes a snapshot onto the undo stack and clears the redo stack.
     void pushState(const(ubyte)[] state) pure nothrow @safe {
         if (maxHistory == 0) return;
         if (undoStack_.length >= maxHistory) {
@@ -22,6 +25,7 @@ struct HistoryManagerD {
         redoStack_.length = 0;
     }
 
+    /// Pops the latest undo snapshot into `outState` and records `currentState` for redo.
     bool undo(const(ubyte)[] currentState, out ubyte[] outState) pure nothrow @safe {
         if (undoStack_.length == 0) {
             return false;
@@ -32,6 +36,7 @@ struct HistoryManagerD {
         return true;
     }
 
+    /// Pops the latest redo snapshot into `outState` and pushes `currentState` to undo.
     bool redo(const(ubyte)[] currentState, out ubyte[] outState) pure nothrow @safe {
         if (redoStack_.length == 0) {
             return false;
@@ -42,10 +47,12 @@ struct HistoryManagerD {
         return true;
     }
 
+    /// Returns the number of available undo steps.
     size_t undoCount() const pure nothrow @nogc @safe {
         return undoStack_.length;
     }
 
+    /// Returns the number of available redo steps.
     size_t redoCount() const pure nothrow @nogc @safe {
         return redoStack_.length;
     }

@@ -1,25 +1,26 @@
 module engine.ipc.ipc;
 
 import dproto.proto : encodeProto;
+import engine.bridge : hibiki;
 import pb.core : TransportState;
 import pb.notifications : Acknowledge, Notification, PlayheadInfo;
+import std.string : toStringz;
 
-enum uint IPC_MAGIC = 0x48424B49; // "HBKI"
+/// Magic header ("HBKI") prefixing framed IPC packets.
+enum uint IPC_MAGIC = 0x48424B49;
+
+private void writeLE32(ubyte[] dst, uint value) pure nothrow @nogc @safe {
+    dst[0] = cast(ubyte)(value & 0xFF);
+    dst[1] = cast(ubyte)((value >> 8) & 0xFF);
+    dst[2] = cast(ubyte)((value >> 16) & 0xFF);
+    dst[3] = cast(ubyte)((value >> 24) & 0xFF);
+}
 
 /// Writes an IPC packet with the HBKI magic header and payload length.
 ubyte[] frameIpcPacket(const(ubyte)[] payload) pure @safe {
     ubyte[] packet = new ubyte[8 + payload.length];
-    // Little-endian IPC_MAGIC
-    packet[0] = cast(ubyte)(IPC_MAGIC & 0xFF);
-    packet[1] = cast(ubyte)((IPC_MAGIC >> 8) & 0xFF);
-    packet[2] = cast(ubyte)((IPC_MAGIC >> 16) & 0xFF);
-    packet[3] = cast(ubyte)((IPC_MAGIC >> 24) & 0xFF);
-    // Little-endian length
-    uint len = cast(uint)payload.length;
-    packet[4] = cast(ubyte)(len & 0xFF);
-    packet[5] = cast(ubyte)((len >> 8) & 0xFF);
-    packet[6] = cast(ubyte)((len >> 16) & 0xFF);
-    packet[7] = cast(ubyte)((len >> 24) & 0xFF);
+    writeLE32(packet[0 .. 4], IPC_MAGIC);
+    writeLE32(packet[4 .. 8], cast(uint)payload.length);
     packet[8 .. $] = payload[];
     return packet;
 }
@@ -47,7 +48,9 @@ ubyte[] buildPlayheadNotification(
     PlayheadInfo phi;
     phi.position_sec = posSec;
     phi.bpm = bpm;
-    phi.transport_state = isPlaying ? TransportState.TRANSPORT_STATE_PLAYING : TransportState.TRANSPORT_STATE_STOPPED;
+    phi.transport_state = isPlaying
+        ? TransportState.TRANSPORT_STATE_PLAYING
+        : TransportState.TRANSPORT_STATE_STOPPED;
     phi.loop_enabled = loopEnabled;
     phi.loop_start = loopStart;
     phi.loop_end = loopEnd;
@@ -55,15 +58,14 @@ ubyte[] buildPlayheadNotification(
     return encodeProto(notif);
 }
 
-import engine.bridge : hibiki;
-
+/// Sends a serialized notification buffer through the C++ IPC bridge.
 void sendNotificationD(const(ubyte)[] data) @trusted {
     if (data.length > 0) {
         hibiki.sendNotification(data.ptr, data.length);
     }
 }
 
+/// Sends an acknowledgment message through the C++ IPC bridge.
 void sendAckD(string cmdType, bool success) @trusted {
-    import std.string : toStringz;
     hibiki.sendAck(cmdType.toStringz(), success);
 }

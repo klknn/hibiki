@@ -1,69 +1,65 @@
 module engine.main;
 
-import core.stdc.stdio : feof, fread, stdin, stdout;
-import core.thread : Thread, dur, msecs, thread_detachThis;
-import dproto.proto : decodeProto;
+import core.stdc.stdio : fread, stdin;
+import core.thread : Thread, msecs, thread_detachThis;
+import engine.bridge : hibiki;
 import engine.commands.dispatcher : dispatchCommandWithFallback;
-import pb.commands : Request;
-import std.stdio : stderr, writefln, writeln;
+import std.stdio : stderr, writeln;
 import std.string : startsWith;
 
 version (Windows) {
+    import core.stdc.stdio : _fileno;
     import core.sys.windows.fcntl : _O_BINARY;
     import core.sys.windows.io : _setmode;
-    import core.stdc.stdio : _fileno;
 }
 
-import engine.bridge : hibiki;
-
+/// Reads length-prefixed Protobuf requests from stdin until EOF or quit.
 void runIpcLoop(hibiki.ProjectState* state) {
     auto history = hibiki.createHistoryManager();
     scope (exit) hibiki.destroyHistoryManager(history);
 
     hibiki.sendInitialConfig(*state);
 
+    enum uint maxMessageBytes = 1024 * 1024;
     while (!hibiki.isStateQuit(state)) {
-        uint msg_size = 0;
-        size_t nread = fread(&msg_size, 4, 1, stdin);
-        if (nread != 1) {
-            if (feof(stdin)) break;
+        uint msgSize = 0;
+        if (fread(&msgSize, 4, 1, stdin) != 1 || msgSize > maxMessageBytes) {
             break;
         }
 
-        if (msg_size > 1024 * 1024) { // 1MB safety limit
+        auto buffer = new ubyte[msgSize];
+        if (fread(buffer.ptr, 1, msgSize, stdin) != msgSize) {
             break;
         }
 
-        auto buffer = new ubyte[msg_size];
-        size_t payload_read = fread(buffer.ptr, 1, msg_size, stdin);
-        if (payload_read != msg_size) {
-            break;
+        if (!dispatchCommandWithFallback(buffer, state, history)) {
+            stderr.writeln("Failed to dispatch IPC request");
         }
-
-        Request req;
-        bool ok = decodeProto(buffer, req);
-        if (!ok) {
-            stderr.writeln("Failed to decode protobuf request in D");
-        }
-
-        dispatchCommandWithFallback(buffer, state, history);
     }
 
     hibiki.setStateQuit(state, true);
 }
 
-int main(string[] args) {
-    // Check for --list flag
+private bool tryHandleListFlag(string[] args) {
     foreach (i, arg; args) {
+        string listPath;
         if (arg == "--list" && i + 1 < args.length) {
-            string listPath = args[i + 1];
-            hibiki.listVst3Plugins(listPath.ptr, listPath.length);
-            return 0;
+            listPath = args[i + 1];
         } else if (arg.startsWith("--list=")) {
-            string listPath = arg[7 .. $];
-            hibiki.listVst3Plugins(listPath.ptr, listPath.length);
-            return 0;
+            listPath = arg[7 .. $];
+        } else {
+            continue;
         }
+        hibiki.listVst3Plugins(listPath.ptr, listPath.length);
+        return true;
+    }
+    return false;
+}
+
+/// Entry point for the Hibiki audio engine process (`hbk-play`).
+int main(string[] args) {
+    if (tryHandleListFlag(args)) {
+        return 0;
     }
 
     version (Windows) {
@@ -76,14 +72,13 @@ int main(string[] args) {
 
     hibiki.loadConfig(*state);
 
-    // Audio thread: runs at high priority, detached from GC
+    // Detach audio thread from the D GC so real-time callbacks never pause.
     auto audioThread = new Thread({
         thread_detachThis();
         hibiki.playback_thread(*state);
     });
     audioThread.start();
 
-    // Notification thread: sends playhead, levels, and plugin metering at ~30Hz
     auto notifThread = new Thread({
         while (!hibiki.isStateQuit(state)) {
             Thread.sleep(33.msecs);
@@ -93,9 +88,7 @@ int main(string[] args) {
     notifThread.start();
 
     version (OSX) {
-        auto ipcThread = new Thread({
-            runIpcLoop(state);
-        });
+        auto ipcThread = new Thread({ runIpcLoop(state); });
         ipcThread.start();
         hibiki.runVst3MainLoop();
         ipcThread.join();

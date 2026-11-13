@@ -69,7 +69,10 @@ void accumulateMix(
     double[] masterL,
     double[] masterR
 ) @nogc nothrow pure @safe {
-    const size_t len = trackL.length < masterL.length ? trackL.length : masterL.length;
+    size_t len = trackL.length;
+    if (trackR.length < len) len = trackR.length;
+    if (masterL.length < len) len = masterL.length;
+    if (masterR.length < len) len = masterR.length;
     foreach (i; 0 .. len) {
         masterL[i] += trackL[i];
         masterR[i] += trackR[i];
@@ -86,7 +89,10 @@ void processMasterOutput(
 ) @nogc nothrow @trusted {
     float pL = 0.0f;
     float pR = 0.0f;
-    const size_t numFrames = masterL.length < masterR.length ? masterL.length : masterR.length;
+    size_t numFrames = masterL.length < masterR.length ? masterL.length : masterR.length;
+    if (outInterleaved.length / 2 < numFrames) {
+        numFrames = outInterleaved.length / 2;
+    }
 
     foreach (i; 0 .. numFrames) {
         float l = cast(float)masterL[i];

@@ -7,9 +7,17 @@ struct HistoryManagerD {
     size_t maxHistory = 50;
 
     void pushState(const(ubyte)[] state) pure nothrow @safe {
-        undoStack_ ~= state.dup;
-        if (undoStack_.length > maxHistory) {
-            undoStack_ = undoStack_[1 .. $];
+        if (maxHistory == 0) return;
+        if (undoStack_.length >= maxHistory) {
+            const size_t keep = maxHistory - 1;
+            const size_t shift = undoStack_.length - keep;
+            foreach (i; 0 .. keep) {
+                undoStack_[i] = undoStack_[i + shift];
+            }
+            undoStack_.length = maxHistory;
+            undoStack_[keep] = state.dup;
+        } else {
+            undoStack_ ~= state.dup;
         }
         redoStack_.length = 0;
     }

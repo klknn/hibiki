@@ -35,6 +35,7 @@ float midiNoteToHz(float note) nothrow @nogc @trusted {
 }
 
 /// Computes constant-power stereo pan gains (left, right) for pan in [-1, 1].
+pragma(inline, true)
 void constantPowerPan(float pan, out float gainL, out float gainR) nothrow @nogc @trusted {
     float p = clampVal(pan, -1.0f, 1.0f);
     float angle = (p + 1.0f) * 0.25f * cast(float)pi;

@@ -7,9 +7,64 @@ import engine.core.history : HistoryManagerD;
 import engine.core.math : constantPowerPan, dbToLinear;
 import engine.effects.builtin_compressor : CompressorDspState, d_compressor_process;
 import engine.playback_mixer : accumulateMix, applyTrackGainAndPan, processMasterOutput, TrackMixStrip;
-import pb.commands : AutomationCmd, Request, TrackCmd, TransportCmd;
+import pb.commands : Request, TransportCmd;
 import pb.core : Clip, ClipType, MidiEvent, Project, TimelineClip, Track;
-import pb.notifications : Acknowledge, Notification, PlayheadInfo;
+import pb.notifications : Notification, PlayheadInfo;
+
+private Request makeSampleRequest() @nogc nothrow pure @safe {
+    Request req;
+    TransportCmd t;
+    t.action = TransportCmd.Action.ACTION_PLAY;
+    req.transport.set(t);
+    return req;
+}
+
+private Notification makeSampleNotification() @nogc nothrow pure @safe {
+    Notification notif;
+    PlayheadInfo phi;
+    phi.position_sec = 12.5f;
+    phi.bpm = 128.0f;
+    phi.loop_enabled = true;
+    phi.loop_start = 1.0f;
+    phi.loop_end = 5.0f;
+    notif.playhead_info.set(phi);
+    return notif;
+}
+
+private Project makeSampleProject() @safe {
+    Project proj;
+    proj.bpm = 128.0f;
+    proj.playhead_sec = 16.0f;
+    proj.tracks = new Track[](8);
+    foreach (t; 0 .. 8) {
+        Track track;
+        track.track_index = cast(uint)t;
+        track.name = "Track";
+        track.timeline_clips = new TimelineClip[](4);
+        foreach (c; 0 .. 4) {
+            TimelineClip tc;
+            tc.clip_index = cast(uint)c;
+            tc.start_time_sec = c * 4.0f;
+            tc.duration_beats = 4.0f;
+            Clip clip;
+            clip.type = ClipType.CLIP_TYPE_MIDI;
+            clip.name = "Midi Clip";
+            clip.midi_events = new MidiEvent[](16);
+            foreach (m; 0 .. 16) {
+                MidiEvent ev;
+                ev.tick = m * 120;
+                ev.pitch = cast(uint)(60 + (m % 12));
+                ev.duration_ticks = 100;
+                ev.velocity = 100;
+                clip.midi_events[m] = ev;
+            }
+            tc.clip = clip;
+            track.timeline_clips[c] = tc;
+        }
+        proj.tracks[t] = track;
+    }
+    return proj;
+}
 
 extern (C) {
     int d_bench_init() {
@@ -20,62 +75,115 @@ extern (C) {
         return rt_term();
     }
 
-    // 1. Protobuf Request encode / decode in D
-    int d_bench_encode_request(ubyte* outBuf, int capacity) @nogc nothrow {
-        Request req;
-        TransportCmd t;
-        t.action = TransportCmd.Action.ACTION_PLAY;
-        req.transport.set(t);
-
-        ubyte[4096] scratch;
-        Arena arena = Arena(scratch[]);
-        size_t written = encodeProto(req, outBuf[0 .. capacity]);
-        return cast(int)written;
+    // 1. Protobuf Request encode / decode (loop in D, pre-built message, reused Arena)
+    int d_bench_encode_request_once(ubyte* outBuf, int capacity) @nogc nothrow {
+        Request req = makeSampleRequest();
+        return cast(int)encodeProto(req, outBuf[0 .. capacity]);
     }
 
-    int d_bench_decode_request(const(ubyte)* inData, int len) @nogc nothrow {
+    ulong d_bench_encode_request_loop(ubyte* outBuf, int capacity, int iterations) @nogc nothrow {
+        Request req = makeSampleRequest();
+        ubyte[] buf = outBuf[0 .. capacity];
+        ulong checksum = 0;
+        foreach (_; 0 .. iterations) {
+            size_t written = encodeProto(req, buf);
+            checksum += written + buf[0];
+        }
+        return checksum;
+    }
+
+    ulong d_bench_decode_request_loop(const(ubyte)* inData, int len, int iterations) @nogc nothrow {
         if (!inData || len <= 0) return 0;
-        Request req;
-        ubyte[4096] scratch;
+        const(ubyte)[] slice = inData[0 .. len];
+        ubyte[4096] scratch = void;
         Arena arena = Arena(scratch[]);
-        bool ok = decodeProto(inData[0 .. len], req, arena);
-        return ok ? 1 : 0;
+        ulong checksum = 0;
+        foreach (_; 0 .. iterations) {
+            arena.reset();
+            Request req;
+            if (decodeProto(slice, req, arena)) {
+                checksum += cast(ulong)req.transport.value.action;
+            }
+        }
+        return checksum;
     }
 
-    // 2. Protobuf Notification encode / decode in D
-    int d_bench_encode_notification(ubyte* outBuf, int capacity) @nogc nothrow {
-        Notification notif;
-        PlayheadInfo phi;
-        phi.position_sec = 12.5f;
-        phi.bpm = 128.0f;
-        phi.loop_enabled = true;
-        phi.loop_start = 1.0f;
-        phi.loop_end = 5.0f;
-        notif.playhead_info.set(phi);
-
-        size_t written = encodeProto(notif, outBuf[0 .. capacity]);
-        return cast(int)written;
+    // 2. Protobuf Notification encode / decode
+    int d_bench_encode_notification_once(ubyte* outBuf, int capacity) @nogc nothrow {
+        Notification notif = makeSampleNotification();
+        return cast(int)encodeProto(notif, outBuf[0 .. capacity]);
     }
 
-    int d_bench_decode_notification(const(ubyte)* inData, int len) @nogc nothrow {
+    ulong d_bench_encode_notification_loop(ubyte* outBuf, int capacity, int iterations) @nogc nothrow {
+        Notification notif = makeSampleNotification();
+        ubyte[] buf = outBuf[0 .. capacity];
+        ulong checksum = 0;
+        foreach (_; 0 .. iterations) {
+            size_t written = encodeProto(notif, buf);
+            checksum += written + buf[0];
+        }
+        return checksum;
+    }
+
+    ulong d_bench_decode_notification_loop(const(ubyte)* inData, int len, int iterations) @nogc nothrow {
         if (!inData || len <= 0) return 0;
-        Notification notif;
-        ubyte[4096] scratch;
+        const(ubyte)[] slice = inData[0 .. len];
+        ubyte[4096] scratch = void;
         Arena arena = Arena(scratch[]);
-        bool ok = decodeProto(inData[0 .. len], notif, arena);
-        return ok ? 1 : 0;
+        ulong checksum = 0;
+        foreach (_; 0 .. iterations) {
+            arena.reset();
+            Notification notif;
+            if (decodeProto(slice, notif, arena)) {
+                checksum += cast(ulong)notif.playhead_info.value.bpm;
+            }
+        }
+        return checksum;
     }
 
-    // 3. DSP Biquad Filter in D
-    void d_bench_biquad(float* inOut, int numSamples) @nogc nothrow {
+    // 3. Protobuf Full Project Session (pre-built Project outside loop, reused Arena for decode)
+    int d_bench_encode_project_once(ubyte* outBuf, int capacity) {
+        Project proj = makeSampleProject();
+        return cast(int)encodeProto(proj, outBuf[0 .. capacity]);
+    }
+
+    ulong d_bench_encode_project_loop(ubyte* outBuf, int capacity, int iterations) {
+        Project proj = makeSampleProject();
+        ubyte[] buf = outBuf[0 .. capacity];
+        ulong checksum = 0;
+        foreach (_; 0 .. iterations) {
+            size_t written = encodeProto(proj, buf);
+            checksum += written + buf[0];
+        }
+        return checksum;
+    }
+
+    ulong d_bench_decode_project_loop(const(ubyte)* inData, int len, int iterations) @nogc nothrow {
+        if (!inData || len <= 0) return 0;
+        const(ubyte)[] slice = inData[0 .. len];
+        ubyte[65536] scratch = void;
+        Arena arena = Arena(scratch[]);
+        ulong checksum = 0;
+        foreach (_; 0 .. iterations) {
+            arena.reset();
+            Project proj;
+            if (decodeProto(slice, proj, arena)) {
+                checksum += proj.tracks.length + cast(ulong)proj.bpm;
+            }
+        }
+        return checksum;
+    }
+
+    // 4. DSP Biquad Filter (reads from immutable src, writes to dst)
+    void d_bench_biquad(const(float)* src, float* dst, int numSamples) @nogc nothrow {
         BiquadFilter filter;
         filter.setParams(BiquadFilter.Type.LOWPASS, 1000.0f, 0.707f, 0.0f, 44100.0f);
         foreach (i; 0 .. numSamples) {
-            inOut[i] = filter.process(inOut[i]);
+            dst[i] = filter.process(src[i]);
         }
     }
 
-    // 4. DSP Compressor in D
+    // 5. DSP Compressor (full production d_compressor_process)
     void d_bench_compressor(
         const(float)* inL,
         const(float)* inR,
@@ -91,30 +199,30 @@ extern (C) {
             int offset = b * blockSize;
             d_compressor_process(
                 state,
-                inL ? inL + offset : null,
-                inR ? inR + offset : null,
+                inL + offset,
+                inR + offset,
                 outL + offset,
                 outR + offset,
                 blockSize,
                 44100.0,
-                0.7, // threshold (-18 dB)
+                0.7,  // threshold (-18 dB)
                 0.75, // ratio (4:1)
-                0.2, // attack
-                0.3, // release
-                0.0, // knee
-                0.2, // makeup
-                0.0, // up_threshold
-                0.0, // up_ratio
-                false, // rms_mode
-                true, // enabled
-                null, // scL
-                null  // scR
+                0.2,  // attack
+                0.3,  // release
+                0.2,  // knee (6 dB soft knee)
+                0.2,  // makeup
+                0.0,  // up_threshold
+                0.0,  // up_ratio
+                false,
+                true,
+                null,
+                null
             );
         }
     }
 
-    // 5. 512-sample Block Mixer in D
-    void d_bench_mixer(
+    // 6. 512-sample Block Mixer in D
+    double d_bench_mixer(
         double* trackBufL,
         double* trackBufR,
         double* masterL,
@@ -124,9 +232,16 @@ extern (C) {
         int numBlocks,
         int blockSize
     ) @nogc nothrow {
+        double peakAccum = 0.0;
+        double[] mL = masterL[0 .. blockSize];
+        double[] mR = masterR[0 .. blockSize];
+        double[] tL = trackBufL[0 .. blockSize];
+        double[] tR = trackBufR[0 .. blockSize];
+        float[] outBuf = outInterleaved[0 .. blockSize * 2];
+
         foreach (b; 0 .. numBlocks) {
-            masterL[0 .. blockSize] = 0.0;
-            masterR[0 .. blockSize] = 0.0;
+            mL[] = 0.0;
+            mR[] = 0.0;
 
             foreach (t; 0 .. numTracks) {
                 TrackMixStrip strip;
@@ -134,39 +249,51 @@ extern (C) {
                 strip.pan = (t % 2 == 0) ? -0.25f : 0.25f;
                 strip.audible = true;
 
-                // Fill synthetic signal
-                trackBufL[0 .. blockSize] = 0.1;
-                trackBufR[0 .. blockSize] = 0.1;
+                tL[] = 0.1;
+                tR[] = 0.1;
 
-                applyTrackGainAndPan(trackBufL[0 .. blockSize], trackBufR[0 .. blockSize], strip);
-                accumulateMix(trackBufL[0 .. blockSize], trackBufR[0 .. blockSize], masterL[0 .. blockSize], masterR[0 .. blockSize]);
+                applyTrackGainAndPan(tL, tR, strip);
+                accumulateMix(tL, tR, mL, mR);
             }
 
             float pL = 0.0f, pR = 0.0f;
-            processMasterOutput(masterL[0 .. blockSize], masterR[0 .. blockSize], outInterleaved[0 .. blockSize * 2], pL, pR);
+            processMasterOutput(mL, mR, outBuf, pL, pR);
+            peakAccum += pL + pR;
         }
+        return peakAccum;
     }
 
-    // 6. History Manager in D
-    void d_bench_history(int iterations) @safe {
+    // 7. Undo/Redo History Manager in D (64-byte state snapshot)
+    ulong d_bench_history(int iterations) @safe {
         HistoryManagerD hist;
         hist.maxHistory = 50;
 
-        ubyte[] stateBytes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        ubyte[64] initData;
+        foreach (k; 0 .. 64) {
+            initData[k] = cast(ubyte)(k + 1);
+        }
+        ubyte[] stateBytes = initData.dup;
         ubyte[] temp;
+        ulong checksum = 0;
 
         foreach (i; 0 .. iterations) {
+            stateBytes[0] = cast(ubyte)(i & 0xFF);
             hist.pushState(stateBytes);
             if (i % 4 == 0) {
-                hist.undo(stateBytes, temp);
-                hist.redo(temp, stateBytes);
+                if (hist.undo(stateBytes, temp)) {
+                    checksum += temp[0];
+                    if (hist.redo(temp, stateBytes)) {
+                        checksum += stateBytes[0];
+                    }
+                }
             }
         }
+        return checksum;
     }
 
-    // 7. Fast Math Primitives in D
-    float d_bench_math(int iterations) @nogc nothrow {
-        float sum = 0.0f;
+    // 8. Fast Math Primitives in D
+    double d_bench_math(int iterations) @nogc nothrow {
+        double sum = 0.0;
         foreach (i; 0 .. iterations) {
             float pan = cast(float)(i % 200 - 100) / 100.0f;
             float gL = 0.0f, gR = 0.0f;
@@ -174,53 +301,8 @@ extern (C) {
 
             float db = cast(float)(i % 120 - 60);
             float lin = dbToLinear(db);
-            sum += gL + gR + lin;
+            sum += cast(double)(gL + gR + lin);
         }
         return sum;
-    }
-
-    // 8. Protobuf Full Project Session (8 tracks, 32 clips, 512 MIDI events)
-    int d_bench_encode_project(ubyte* outBuf, int capacity) {
-        Project proj;
-        proj.bpm = 128.0f;
-        proj.playhead_sec = 16.0f;
-        proj.tracks = new Track[](8);
-        foreach (t; 0 .. 8) {
-            Track track;
-            track.track_index = cast(uint)t;
-            track.name = "Track";
-            track.timeline_clips = new TimelineClip[](4);
-            foreach (c; 0 .. 4) {
-                TimelineClip tc;
-                tc.clip_index = cast(uint)c;
-                tc.start_time_sec = c * 4.0f;
-                tc.duration_beats = 4.0f;
-                Clip clip;
-                clip.type = ClipType.CLIP_TYPE_MIDI;
-                clip.name = "Midi Clip";
-                clip.midi_events = new MidiEvent[](16);
-                foreach (m; 0 .. 16) {
-                    MidiEvent ev;
-                    ev.tick = m * 120;
-                    ev.pitch = cast(uint)(60 + (m % 12));
-                    ev.duration_ticks = 100;
-                    ev.velocity = 100;
-                    clip.midi_events[m] = ev;
-                }
-                tc.clip = clip;
-                track.timeline_clips[c] = tc;
-            }
-            proj.tracks[t] = track;
-        }
-
-        size_t written = encodeProto(proj, outBuf[0 .. capacity]);
-        return cast(int)written;
-    }
-
-    int d_bench_decode_project(const(ubyte)* inData, int len) nothrow {
-        if (!inData || len <= 0) return 0;
-        Project proj;
-        bool ok = decodeProto(inData[0 .. len], proj);
-        return ok ? 1 : 0;
     }
 }

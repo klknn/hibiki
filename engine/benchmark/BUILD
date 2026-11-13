@@ -34,6 +34,7 @@ cc_binary(
     deps = [
         ":benchmark_d",
         "//engine/core:history",
+        "//engine/core:math",
         "//pb:commands_cc_proto",
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",

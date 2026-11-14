@@ -119,20 +119,37 @@ Request makeTrackSoloRequest(int trackIdx, bool soloed) @safe {
     return req;
 }
 
+Request makeTrackVolumeRequest(int trackIdx, float volume) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_SET_VOLUME;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    cmd.value = volume;
+    req.track.set(cmd);
+    return req;
+}
+
 /// Manages the `hbk-play` child process and its binary Protobuf IPC pipes.
 class EngineProcessClient {
+    import core.atomic : atomicLoad, atomicStore;
     import core.sync.mutex : Mutex;
     import core.thread : Thread;
 
     private ProcessPipes pipes_;
     private Mutex writeMutex_;
     private Thread readerThread_;
-    private bool running_ = false;
+    private shared bool running_ = false;
     private void delegate(Notification) onNotification_;
 
     this(void delegate(Notification) onNotification) {
         writeMutex_ = new Mutex();
         onNotification_ = onNotification;
+    }
+
+    bool isRunning() const {
+        return atomicLoad(running_);
     }
 
     bool start(string engineBinaryPath) {
@@ -142,7 +159,7 @@ class EngineProcessClient {
             stderr.writeln("Failed to start engine ", engineBinaryPath, ": ", e.msg);
             return false;
         }
-        running_ = true;
+        atomicStore(running_, true);
         readerThread_ = new Thread(&readLoop);
         readerThread_.isDaemon = true;
         readerThread_.start();
@@ -150,18 +167,23 @@ class EngineProcessClient {
     }
 
     void sendRequest(Request req) {
-        if (!running_) return;
+        if (!atomicLoad(running_)) return;
         ubyte[] framed = encodeLengthPrefixedRequest(req);
         synchronized (writeMutex_) {
-            pipes_.stdin.rawWrite(framed);
-            pipes_.stdin.flush();
+            if (!atomicLoad(running_)) return;
+            try {
+                pipes_.stdin.rawWrite(framed);
+                pipes_.stdin.flush();
+            } catch (Exception) {
+                atomicStore(running_, false);
+            }
         }
     }
 
     void stop() {
-        if (!running_) return;
+        if (!atomicLoad(running_)) return;
         sendRequest(makeQuitRequest());
-        running_ = false;
+        atomicStore(running_, false);
         try {
             pipes_.stdin.close();
         } catch (Exception) {}
@@ -173,7 +195,7 @@ class EngineProcessClient {
     private void readLoop() {
         ubyte[4096] chunk;
         ubyte[] rxBuf;
-        while (running_) {
+        while (atomicLoad(running_)) {
             ubyte[] readSlice;
             try {
                 readSlice = pipes_.stdout.rawRead(chunk[]);
@@ -184,14 +206,14 @@ class EngineProcessClient {
             rxBuf ~= readSlice;
 
             ubyte[] payload;
-            while (extractNextFrame(rxBuf, payload)) {
+            while (atomicLoad(running_) && extractNextFrame(rxBuf, payload)) {
                 Notification notif;
-                if (decodeProto(payload, notif) && onNotification_ !is null) {
+                if (decodeProto(payload, notif) && onNotification_ !is null && atomicLoad(running_)) {
                     onNotification_(notif);
                 }
             }
         }
-        running_ = false;
+        atomicStore(running_, false);
     }
 }
 

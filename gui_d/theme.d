@@ -4,25 +4,26 @@ import core.math : fabs;
 import std.format : format;
 
 /// Y2K Workstation (FL Studio 8 / Logic 5 / Pro Tools 5) color palette.
+/// Note: `dlangui` uses `0xAARRGGBB` where `AA = 0x00` is fully opaque and `0xFF` is transparent.
 enum Y2kColor : uint {
-    BG_WORKSPACE   = 0xFF282C32,
-    BG_PANEL       = 0xFF333840,
-    BG_PANEL_DARK  = 0xFF20242A,
-    BG_LCD         = 0xFF0E1612,
-    FG_LCD_AMBER   = 0xFFFFB020,
-    FG_LCD_CYAN    = 0xFF44E0D0,
-    FG_TEXT        = 0xFFE2E6EC,
-    FG_MUTED       = 0xFF969EA8,
-    BEVEL_LIGHT    = 0xFF525864,
-    BEVEL_DARK     = 0xFF14171C,
-    LED_GREEN      = 0xFF32D74B,
-    LED_AMBER      = 0xFFFFCC00,
-    LED_RED        = 0xFFFF3B30,
-    LED_OFF        = 0xFF1A1E24,
-    ACCENT_PLAY    = 0xFF34C759,
-    ACCENT_REC     = 0xFFFF3B30,
-    ACCENT_SOLO    = 0xFFFFD60A,
-    ACCENT_MUTE    = 0xFFFF9F0A,
+    BG_WORKSPACE   = 0x00282C32,
+    BG_PANEL       = 0x00333840,
+    BG_PANEL_DARK  = 0x0020242A,
+    BG_LCD         = 0x000E1612,
+    FG_LCD_AMBER   = 0x00FFB020,
+    FG_LCD_CYAN    = 0x0044E0D0,
+    FG_TEXT        = 0x00E2E6EC,
+    FG_MUTED       = 0x00969EA8,
+    BEVEL_LIGHT    = 0x00525864,
+    BEVEL_DARK     = 0x0014171C,
+    LED_GREEN      = 0x0032D74B,
+    LED_AMBER      = 0x00FFCC00,
+    LED_RED        = 0x00FF3B30,
+    LED_OFF        = 0x001A1E24,
+    ACCENT_PLAY    = 0x0034C759,
+    ACCENT_REC     = 0x00FF3B30,
+    ACCENT_SOLO    = 0x00FFD60A,
+    ACCENT_MUTE    = 0x00FF9F0A,
 }
 
 /// Formats seconds as `MM:SS.mmm` for the LCD transport readout.

@@ -128,7 +128,12 @@ extern (C) int UIAppMain(string[] args) {
     };
     btnLoop.click = delegate(Widget src) {
         model.loopEnabled = !model.loopEnabled;
-        client.sendRequest(makeSetLoopRequest(model.loopEnabled, 0.0, 8.0));
+        if (model.loopEndSec <= model.loopStartSec) {
+            model.loopStartSec = 0.0;
+            model.loopEndSec = 8.0;
+        }
+        client.sendRequest(makeSetLoopRequest(model.loopEnabled, model.loopStartSec, model.loopEndSec));
+        refreshUi();
         return true;
     };
     btnBpmDown.click = delegate(Widget src) {
@@ -142,6 +147,16 @@ extern (C) int UIAppMain(string[] args) {
         client.sendRequest(makeSetBpmRequest(cast(float)model.bpm));
         refreshUi();
         return true;
+    };
+
+    mixerCanvas.onVolumeChange = (int trackIdx, float vol) {
+        client.sendRequest(makeTrackVolumeRequest(trackIdx, vol));
+    };
+    mixerCanvas.onMuteToggle = (int trackIdx, bool muted) {
+        client.sendRequest(makeTrackMuteRequest(trackIdx, muted));
+    };
+    mixerCanvas.onSoloToggle = (int trackIdx, bool soloed) {
+        client.sendRequest(makeTrackSoloRequest(trackIdx, soloed));
     };
 
     window.mainWidget = root;

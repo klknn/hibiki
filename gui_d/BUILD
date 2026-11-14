@@ -23,12 +23,14 @@ d_test(
         "ipc_client.d",
         "theme.d",
         "transport_model.d",
+        "widgets.d",
     ],
     deps = [
         "//dproto",
         "//pb:commands_d_proto",
         "//pb:core_d_proto",
         "//pb:notifications_d_proto",
+        "@dlangui",
     ],
 )
 

@@ -95,5 +95,82 @@ http_archive(
     url = "https://github.com/mreineck/pocketfft/archive/refs/heads/cpp.zip",
 )
 
+http_archive(
+    name = "bindbc_loader",
+    build_file = "//third_party:bindbc_loader.BUILD",
+    strip_prefix = "bindbc-loader-1.1.5",
+    url = "https://github.com/BindBC/bindbc-loader/archive/refs/tags/v1.1.5.tar.gz",
+)
+
+http_archive(
+    name = "bindbc_common",
+    build_file = "//third_party:bindbc_common.BUILD",
+    strip_prefix = "bindbc-common-1.0.5",
+    url = "https://github.com/BindBC/bindbc-common/archive/refs/tags/v1.0.5.tar.gz",
+)
+
+http_archive(
+    name = "bindbc_sdl",
+    build_file = "//third_party:bindbc_sdl.BUILD",
+    strip_prefix = "bindbc-sdl-1.4.8",
+    url = "https://github.com/BindBC/bindbc-sdl/archive/refs/tags/v1.4.8.tar.gz",
+)
+
+http_archive(
+    name = "bindbc_freetype",
+    build_file = "//third_party:bindbc_freetype.BUILD",
+    strip_prefix = "bindbc-freetype-1.1.1",
+    url = "https://github.com/BindBC/bindbc-freetype/archive/refs/tags/v1.1.1.tar.gz",
+)
+
+http_archive(
+    name = "bindbc_opengl",
+    build_file = "//third_party:bindbc_opengl.BUILD",
+    strip_prefix = "bindbc-opengl-1.1.1",
+    url = "https://github.com/BindBC/bindbc-opengl/archive/refs/tags/v1.1.1.tar.gz",
+)
+
+http_archive(
+    name = "inilike",
+    build_file = "//third_party:inilike.BUILD",
+    strip_prefix = "inilike-1.2.2",
+    url = "https://github.com/FreeSlave/inilike/archive/refs/tags/v1.2.2.tar.gz",
+)
+
+http_archive(
+    name = "isfreedesktop",
+    build_file = "//third_party:isfreedesktop.BUILD",
+    strip_prefix = "isfreedesktop-master",
+    url = "https://github.com/FreeSlave/isfreedesktop/archive/refs/heads/master.tar.gz",
+)
+
+http_archive(
+    name = "xdgpaths",
+    build_file = "//third_party:xdgpaths.BUILD",
+    strip_prefix = "xdgpaths-master",
+    url = "https://github.com/FreeSlave/xdgpaths/archive/refs/heads/master.tar.gz",
+)
+
+http_archive(
+    name = "icontheme",
+    build_file = "//third_party:icontheme.BUILD",
+    strip_prefix = "icontheme-1.2.3",
+    url = "https://github.com/FreeSlave/icontheme/archive/refs/tags/v1.2.3.tar.gz",
+)
+
+http_archive(
+    name = "arsd_official",
+    build_file = "//third_party:arsd.BUILD",
+    strip_prefix = "arsd-12.1.0",
+    url = "https://github.com/adamdruppe/arsd/archive/refs/tags/v12.1.0.tar.gz",
+)
+
+http_archive(
+    name = "dlangui",
+    build_file = "//third_party:dlangui.BUILD",
+    strip_prefix = "dlangui-master",
+    url = "https://github.com/buggins/dlangui/archive/refs/heads/master.tar.gz",
+)
+
 ldc_extension = use_extension("//tools/d_rules:extensions.bzl", "ldc_repositories")
 use_repo(ldc_extension, "ldc_toolchain")

@@ -1,0 +1,252 @@
+module gui_d.ipc_client;
+
+import core.stdc.string : memcpy;
+import dproto.proto : decodeProto, encodeProto;
+import pb.commands : ProjectCmd, Request, TrackCmd, TransportCmd;
+import pb.core : EntityRef;
+import pb.notifications : Notification;
+import std.process : Pipe, ProcessPipes, pipeProcess, Redirect, tryWait, wait;
+import std.stdio : stderr;
+
+/// Magic header `0x48424B49` ("HBKI") written by `engine/ipc/ipc.cpp` in little-endian.
+enum uint HBKI_MAGIC = 0x48424B49;
+
+/// Maximum single IPC notification payload size (4 MiB).
+enum uint MAX_IPC_FRAME_BYTES = 4 * 1024 * 1024;
+
+/// Encodes a Protobuf `Request` with a 4-byte little-endian length prefix for `hbk-play` stdin.
+ubyte[] encodeLengthPrefixedRequest(const ref Request req) @safe {
+    ubyte[] payload = encodeProto(req);
+    const uint len = cast(uint)payload.length;
+    auto framed = new ubyte[4 + payload.length];
+    framed[0] = cast(ubyte)(len & 0xFF);
+    framed[1] = cast(ubyte)((len >> 8) & 0xFF);
+    framed[2] = cast(ubyte)((len >> 16) & 0xFF);
+    framed[3] = cast(ubyte)((len >> 24) & 0xFF);
+    framed[4 .. $] = payload[];
+    return framed;
+}
+
+/// Extracts one `HBKI`-framed payload from `rxBuf`, advancing `rxBuf` past the consumed frame.
+/// Returns `true` if a complete frame was extracted, `false` if more bytes are needed.
+bool extractNextFrame(ref ubyte[] rxBuf, out ubyte[] outPayload) @safe {
+    while (rxBuf.length >= 8) {
+        const uint magic = cast(uint)rxBuf[0] |
+                           (cast(uint)rxBuf[1] << 8) |
+                           (cast(uint)rxBuf[2] << 16) |
+                           (cast(uint)rxBuf[3] << 24);
+        if (magic != HBKI_MAGIC) {
+            // Resynchronize by scanning forward 1 byte.
+            rxBuf = rxBuf[1 .. $];
+            continue;
+        }
+        const uint len = cast(uint)rxBuf[4] |
+                         (cast(uint)rxBuf[5] << 8) |
+                         (cast(uint)rxBuf[6] << 16) |
+                         (cast(uint)rxBuf[7] << 24);
+        if (len > MAX_IPC_FRAME_BYTES) {
+            rxBuf = rxBuf[4 .. $];
+            continue;
+        }
+        if (rxBuf.length < 8 + len) {
+            return false;
+        }
+        outPayload = rxBuf[8 .. 8 + len].dup;
+        rxBuf = rxBuf[8 + len .. $];
+        return true;
+    }
+    return false;
+}
+
+/// Helper constructors for common engine commands.
+Request makeTransportRequest(TransportCmd.Action action) @safe {
+    Request req;
+    TransportCmd cmd;
+    cmd.action = action;
+    req.transport.set(cmd);
+    return req;
+}
+
+Request makeSetLoopRequest(bool enabled, double startSec, double endSec) @safe {
+    Request req;
+    TransportCmd cmd;
+    cmd.action = TransportCmd.Action.ACTION_SET_LOOP;
+    cmd.loop_enabled = enabled;
+    cmd.loop_start = startSec;
+    cmd.loop_end = endSec;
+    req.transport.set(cmd);
+    return req;
+}
+
+Request makeSetBpmRequest(float bpm) @safe {
+    Request req;
+    ProjectCmd cmd;
+    cmd.action = ProjectCmd.Action.ACTION_SET_BPM;
+    cmd.bpm = bpm;
+    req.project.set(cmd);
+    return req;
+}
+
+Request makeQuitRequest() @safe {
+    Request req;
+    ProjectCmd cmd;
+    cmd.action = ProjectCmd.Action.ACTION_QUIT;
+    req.project.set(cmd);
+    return req;
+}
+
+Request makeTrackMuteRequest(int trackIdx, bool muted) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_SET_MUTE;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    cmd.flag = muted;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeTrackSoloRequest(int trackIdx, bool soloed) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_SET_SOLO;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    cmd.flag = soloed;
+    req.track.set(cmd);
+    return req;
+}
+
+/// Manages the `hbk-play` child process and its binary Protobuf IPC pipes.
+class EngineProcessClient {
+    import core.sync.mutex : Mutex;
+    import core.thread : Thread;
+
+    private ProcessPipes pipes_;
+    private Mutex writeMutex_;
+    private Thread readerThread_;
+    private bool running_ = false;
+    private void delegate(Notification) onNotification_;
+
+    this(void delegate(Notification) onNotification) {
+        writeMutex_ = new Mutex();
+        onNotification_ = onNotification;
+    }
+
+    bool start(string engineBinaryPath) {
+        try {
+            pipes_ = pipeProcess([engineBinaryPath], Redirect.stdin | Redirect.stdout);
+        } catch (Exception e) {
+            stderr.writeln("Failed to start engine ", engineBinaryPath, ": ", e.msg);
+            return false;
+        }
+        running_ = true;
+        readerThread_ = new Thread(&readLoop);
+        readerThread_.isDaemon = true;
+        readerThread_.start();
+        return true;
+    }
+
+    void sendRequest(Request req) {
+        if (!running_) return;
+        ubyte[] framed = encodeLengthPrefixedRequest(req);
+        synchronized (writeMutex_) {
+            pipes_.stdin.rawWrite(framed);
+            pipes_.stdin.flush();
+        }
+    }
+
+    void stop() {
+        if (!running_) return;
+        sendRequest(makeQuitRequest());
+        running_ = false;
+        try {
+            pipes_.stdin.close();
+        } catch (Exception) {}
+        try {
+            wait(pipes_.pid);
+        } catch (Exception) {}
+    }
+
+    private void readLoop() {
+        ubyte[4096] chunk;
+        ubyte[] rxBuf;
+        while (running_) {
+            ubyte[] readSlice;
+            try {
+                readSlice = pipes_.stdout.rawRead(chunk[]);
+            } catch (Exception) {
+                break;
+            }
+            if (readSlice.length == 0) break;
+            rxBuf ~= readSlice;
+
+            ubyte[] payload;
+            while (extractNextFrame(rxBuf, payload)) {
+                Notification notif;
+                if (decodeProto(payload, notif) && onNotification_ !is null) {
+                    onNotification_(notif);
+                }
+            }
+        }
+        running_ = false;
+    }
+}
+
+unittest {
+    // 1. Test length-prefixed request encoding
+    auto req = makeTransportRequest(TransportCmd.Action.ACTION_PLAY);
+    ubyte[] framed = encodeLengthPrefixedRequest(req);
+    assert(framed.length > 4);
+    uint len = cast(uint)framed[0] |
+               (cast(uint)framed[1] << 8) |
+               (cast(uint)framed[2] << 16) |
+               (cast(uint)framed[3] << 24);
+    assert(len == framed.length - 4);
+    Request decoded;
+    assert(decodeProto(framed[4 .. $], decoded));
+    assert(decoded.transport.hasValue);
+    assert(decoded.transport.value.action == TransportCmd.Action.ACTION_PLAY);
+
+    // 2. Test HBKI frame extraction across fragmented chunks and garbage prefix
+    import pb.notifications : PlayheadInfo;
+
+    Notification notif;
+    PlayheadInfo pi;
+    pi.position_sec = 1.25f;
+    pi.bpm = 135.0f;
+    notif.playhead_info.set(pi);
+    ubyte[] payload = encodeProto(notif);
+
+    ubyte[] stream;
+    stream ~= [0x00, 0xFF]; // noise before magic
+    stream ~= [
+        cast(ubyte)(HBKI_MAGIC & 0xFF),
+        cast(ubyte)((HBKI_MAGIC >> 8) & 0xFF),
+        cast(ubyte)((HBKI_MAGIC >> 16) & 0xFF),
+        cast(ubyte)((HBKI_MAGIC >> 24) & 0xFF),
+    ];
+    const uint plen = cast(uint)payload.length;
+    stream ~= [
+        cast(ubyte)(plen & 0xFF),
+        cast(ubyte)((plen >> 8) & 0xFF),
+        cast(ubyte)((plen >> 16) & 0xFF),
+        cast(ubyte)((plen >> 24) & 0xFF),
+    ];
+    stream ~= payload;
+
+    // Feed partial first half, expect false
+    ubyte[] rx = stream[0 .. 8].dup;
+    ubyte[] outP;
+    assert(!extractNextFrame(rx, outP));
+    // Feed remaining bytes, expect true and matching decoded notification
+    rx ~= stream[8 .. $];
+    assert(extractNextFrame(rx, outP));
+    assert(rx.length == 0);
+    Notification decodedNotif;
+    assert(decodeProto(outP, decodedNotif));
+    assert(decodedNotif.playhead_info.hasValue);
+    assert(decodedNotif.playhead_info.value.bpm == 135.0f);
+}

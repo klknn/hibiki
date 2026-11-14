@@ -8,6 +8,9 @@ DInfo = provider(
     fields = {
         "srcs": "depset of D source files (.d)",
         "import_dirs": "depset of import directories (-I)",
+        "string_imports": "depset of string import files (-J)",
+        "string_import_dirs": "depset of string import directories (-J)",
+        "d_versions": "depset of D version identifiers (-d-version=)",
         "betterc": "bool indicating if library is compiled in -betterC mode",
     },
 )
@@ -17,8 +20,9 @@ def _is_macos(ctx):
         ctx.attr._macos_constraint[platform_common.ConstraintValueInfo],
     )
 
-def _common_ldc_flags(ctx, import_dirs):
+def _common_ldc_flags(ctx, import_dirs, string_import_dirs = [], d_versions = []):
     flags = [
+        "-oq",
         "-conf=" + ctx.file._ldc_conf.path,
         "-I=" + ctx.file._ldc_conf.dirname + "/../import",
     ]
@@ -33,26 +37,53 @@ def _common_ldc_flags(ctx, import_dirs):
             flags.append("-I=" + imp)
         else:
             flags.append("-I=.")
+    for jdir in string_import_dirs:
+        flags.append("-J=" + (jdir if jdir else "."))
+    for ver in d_versions:
+        flags.append("-d-version=" + ver)
     return flags
+
+def _base_dir(ctx):
+    pkg_dir = ctx.label.package
+    ws_root = ctx.label.workspace_root
+    if ws_root and pkg_dir:
+        return ws_root + "/" + pkg_dir
+    return ws_root or pkg_dir
 
 def _collect_deps(ctx):
     transitive_srcs = []
-    pkg_dir = ctx.label.package
-    direct_imports = ["."]
-    if pkg_dir:
-        direct_imports.append(pkg_dir)
+    base_dir = _base_dir(ctx)
+    direct_imports = [".", ctx.bin_dir.path]
+    if base_dir:
+        direct_imports.append(base_dir)
+        direct_imports.append(ctx.bin_dir.path + "/" + base_dir)
     for inc in ctx.attr.includes:
-        if pkg_dir:
-            direct_imports.append(pkg_dir + "/" + inc if inc != "." else pkg_dir)
+        if base_dir:
+            direct_imports.append(base_dir + "/" + inc if inc != "." else base_dir)
+            direct_imports.append(ctx.bin_dir.path + "/" + base_dir + ("/" + inc if inc != "." else ""))
         else:
             direct_imports.append(inc)
+            direct_imports.append(ctx.bin_dir.path + "/" + inc)
     transitive_imports = [depset(direct_imports)]
+
+    direct_string_import_dirs = []
+    for sdir in ctx.attr.string_import_dirs:
+        if base_dir:
+            direct_string_import_dirs.append(base_dir + "/" + sdir if sdir != "." else base_dir)
+        else:
+            direct_string_import_dirs.append(sdir)
+    transitive_string_imports = [depset(ctx.files.string_imports)]
+    transitive_string_import_dirs = [depset(direct_string_import_dirs)]
+    transitive_versions = [depset(ctx.attr.d_versions)]
     cc_infos = []
 
     for dep in ctx.attr.deps:
         if DInfo in dep:
             transitive_srcs.append(dep[DInfo].srcs)
             transitive_imports.append(dep[DInfo].import_dirs)
+            transitive_string_imports.append(dep[DInfo].string_imports)
+            transitive_string_import_dirs.append(dep[DInfo].string_import_dirs)
+            transitive_versions.append(dep[DInfo].d_versions)
         if CcInfo in dep:
             cc_infos.append(dep[CcInfo])
 
@@ -63,24 +94,32 @@ def _collect_deps(ctx):
     return (
         depset(ctx.files.srcs, transitive = transitive_srcs),
         depset(transitive = transitive_imports),
+        depset(transitive = transitive_string_imports),
+        depset(transitive = transitive_string_import_dirs),
+        depset(transitive = transitive_versions),
         cc_infos,
     )
 
 def _d_library_impl(ctx):
     out_lib = ctx.actions.declare_file("lib" + ctx.label.name + ".a")
-    all_srcs, all_imports, dep_cc_infos = _collect_deps(ctx)
+    all_srcs, all_imports, all_str_imports, all_str_dirs, all_versions, dep_cc_infos = _collect_deps(ctx)
 
     args = ctx.actions.args()
     args.add("--lib")
     args.add("-of=" + out_lib.path)
-    args.add_all(_common_ldc_flags(ctx, all_imports.to_list()))
+    args.add_all(_common_ldc_flags(
+        ctx,
+        all_imports.to_list(),
+        all_str_dirs.to_list(),
+        all_versions.to_list(),
+    ))
     args.add_all(ctx.attr.copts)
     args.add_all(ctx.files.srcs)
 
     ctx.actions.run(
         inputs = depset(
             ctx.files.srcs + ctx.files._ldc_files,
-            transitive = [all_srcs],
+            transitive = [all_srcs, all_str_imports],
         ),
         outputs = [out_lib],
         executable = ctx.executable._ldc2,
@@ -121,6 +160,9 @@ def _d_library_impl(ctx):
         DInfo(
             srcs = all_srcs,
             import_dirs = all_imports,
+            string_imports = all_str_imports,
+            string_import_dirs = all_str_dirs,
+            d_versions = all_versions,
             betterc = ctx.attr.betterc,
         ),
         merged_cc_info,
@@ -128,11 +170,16 @@ def _d_library_impl(ctx):
 
 def _link_d_executable(ctx, is_test):
     out_bin = ctx.actions.declare_file(ctx.label.name)
-    all_srcs, all_imports, dep_cc_infos = _collect_deps(ctx)
+    all_srcs, all_imports, all_str_imports, all_str_dirs, all_versions, dep_cc_infos = _collect_deps(ctx)
 
     args = ctx.actions.args()
     args.add("-of=" + out_bin.path)
-    args.add_all(_common_ldc_flags(ctx, all_imports.to_list()))
+    args.add_all(_common_ldc_flags(
+        ctx,
+        all_imports.to_list(),
+        all_str_dirs.to_list(),
+        all_versions.to_list(),
+    ))
     if is_test:
         args.add("-unittest")
         if ctx.attr.main_module:
@@ -173,7 +220,7 @@ def _link_d_executable(ctx, is_test):
     ctx.actions.run(
         inputs = depset(
             ctx.files.srcs + lib_inputs + ctx.files._ldc_files,
-            transitive = [all_srcs],
+            transitive = [all_srcs, all_str_imports],
         ),
         outputs = [out_bin],
         executable = ctx.executable._ldc2,
@@ -207,6 +254,9 @@ _COMMON_ATTRS = {
     "srcs": attr.label_list(allow_files = [".d"], mandatory = True),
     "deps": attr.label_list(providers = [[DInfo], [CcInfo]]),
     "includes": attr.string_list(default = []),
+    "string_imports": attr.label_list(allow_files = True),
+    "string_import_dirs": attr.string_list(default = []),
+    "d_versions": attr.string_list(default = []),
     "copts": attr.string_list(default = ["-O3", "-release"]),
     "linkopts": attr.string_list(default = []),
     "data": attr.label_list(allow_files = True),

@@ -38,6 +38,7 @@ public:
         setParams(type_, mod_hz, q, gain_db, sample_rate);
     }
 
+    pragma(inline, true)
     float process(float x) @nogc nothrow pure @safe {
         if (type_ == Type.OFF) {
             return x;
@@ -50,6 +51,39 @@ public:
         return y;
     }
 
+    /// Processes a contiguous block of samples with coefficients and state cached in registers.
+    void processBlock(const(float)* src, float* dst, int numSamples) @nogc nothrow pure @trusted {
+        if (type_ == Type.OFF) {
+            if (src !is dst) {
+                dst[0 .. numSamples] = src[0 .. numSamples];
+            }
+            return;
+        }
+        const float b0 = b0_;
+        const float b1 = b1_;
+        const float b2 = b2_;
+        const float a1 = a1_;
+        const float a2 = a2_;
+        float x1 = x1_;
+        float x2 = x2_;
+        float y1 = y1_;
+        float y2 = y2_;
+        foreach (i; 0 .. numSamples) {
+            const float x = src[i];
+            const float y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+            x2 = x1;
+            x1 = x;
+            y2 = y1;
+            y1 = y;
+            dst[i] = y;
+        }
+        x1_ = x1;
+        x2_ = x2;
+        y1_ = y1;
+        y2_ = y2;
+    }
+
+    pragma(inline, true)
     void reset() @nogc nothrow pure @safe {
         x1_ = 0.0f;
         x2_ = 0.0f;

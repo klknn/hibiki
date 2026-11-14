@@ -178,9 +178,7 @@ extern (C) {
     void d_bench_biquad(const(float)* src, float* dst, int numSamples) @nogc nothrow {
         BiquadFilter filter;
         filter.setParams(BiquadFilter.Type.LOWPASS, 1000.0f, 0.707f, 0.0f, 44100.0f);
-        foreach (i; 0 .. numSamples) {
-            dst[i] = filter.process(src[i]);
-        }
+        filter.processBlock(src, dst, numSamples);
     }
 
     // 5. DSP Compressor (full production d_compressor_process)

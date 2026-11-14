@@ -1,6 +1,7 @@
 module engine.core.math;
 
-import core.stdc.math : cosf, fabsf, floorf, log10f, powf, sinf, sqrtf;
+import core.stdc.math : cosf, expf, fabsf, floorf, log10f, powf, sinf, sqrtf;
+import ldc.intrinsics : llvm_exp2;
 
 /// High-precision mathematical constant pi (matching hibiki::pi).
 enum double pi = 3.14159265358979323846;
@@ -31,7 +32,7 @@ float linearToDb(float linear) nothrow @nogc @trusted {
 /// Converts MIDI note number (0..127) to frequency in Hz (A4 = 440 Hz).
 pragma(inline, true)
 float midiNoteToHz(float note) nothrow @nogc @trusted {
-    return 440.0f * powf(2.0f, (note - 69.0f) / 12.0f);
+    return 440.0f * llvm_exp2((note - 69.0f) * (1.0f / 12.0f));
 }
 
 /// Computes constant-power stereo pan gains (left, right) for pan in [-1, 1].

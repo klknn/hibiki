@@ -30,8 +30,10 @@ struct ProtoOptional(T) {
     }
 
     void clear() pure nothrow @nogc @safe {
-        value = T.init;
-        hasValue = false;
+        if (hasValue) {
+            value = T.init;
+            hasValue = false;
+        }
     }
 
     void opAssign(T v) pure nothrow @nogc @safe {
@@ -133,7 +135,17 @@ size_t writeFixed64Double(ubyte[] buf, double val) pure nothrow @nogc @trusted {
     return 8;
 }
 
-bool readVarint(ref const(ubyte)[] buf, out ulong val) pure nothrow @nogc @safe {
+pragma(inline, true)
+bool readVarint(ref const(ubyte)[] buf, out ulong val) pure nothrow @nogc @trusted {
+    if (buf.length > 0 && buf.ptr[0] < 0x80) {
+        val = buf.ptr[0];
+        buf = buf[1 .. $];
+        return true;
+    }
+    return readVarintSlow(buf, val);
+}
+
+private bool readVarintSlow(ref const(ubyte)[] buf, out ulong val) pure nothrow @nogc @safe {
     val = 0;
     uint shift = 0;
     while (buf.length > 0) {
@@ -512,25 +524,73 @@ struct ProtoWriter {
     ubyte[] dest;
     size_t written;
 
-    bool putBytes(const(ubyte)[] bytes) pure nothrow @nogc @safe {
+    pragma(inline, true)
+    bool putBytes(const(ubyte)[] bytes) pure nothrow @nogc @trusted {
         if (dest.length - written < bytes.length) return false;
-        dest[written .. written + bytes.length] = bytes[];
+        dest.ptr[written .. written + bytes.length] = bytes[];
         written += bytes.length;
         return true;
     }
 
-    bool putVarint(ulong val) pure nothrow @nogc @safe {
-        ubyte[10] tmp;
-        size_t n = writeVarint(tmp[], val);
-        return putBytes(tmp[0 .. n]);
+    pragma(inline, true)
+    bool putVarint(ulong val) pure nothrow @nogc @trusted {
+        if (val < 0x80) {
+            if (written >= dest.length) return false;
+            dest.ptr[written++] = cast(ubyte)val;
+            return true;
+        }
+        return putVarintSlow(val);
     }
 
+    private bool putVarintSlow(ulong val) pure nothrow @nogc @trusted {
+        size_t pos = written;
+        size_t cap = dest.length;
+        ubyte* p = dest.ptr;
+        while (val >= 0x80) {
+            if (pos >= cap) return false;
+            p[pos++] = cast(ubyte)((val & 0x7F) | 0x80);
+            val >>= 7;
+        }
+        if (pos >= cap) return false;
+        p[pos++] = cast(ubyte)val;
+        written = pos;
+        return true;
+    }
+
+    pragma(inline, true)
+    bool putFixed32Float(float val) pure nothrow @nogc @trusted {
+        if (dest.length - written < 4) return false;
+        version (LittleEndian) {
+            ubyte[4] raw = (cast(const(ubyte)*)&val)[0 .. 4];
+            dest.ptr[written .. written + 4] = raw[];
+        } else {
+            writeFixed32Float(dest[written .. written + 4], val);
+        }
+        written += 4;
+        return true;
+    }
+
+    pragma(inline, true)
+    bool putFixed64Double(double val) pure nothrow @nogc @trusted {
+        if (dest.length - written < 8) return false;
+        version (LittleEndian) {
+            ubyte[8] raw = (cast(const(ubyte)*)&val)[0 .. 8];
+            dest.ptr[written .. written + 8] = raw[];
+        } else {
+            writeFixed64Double(dest[written .. written + 8], val);
+        }
+        written += 8;
+        return true;
+    }
+
+    pragma(inline, true)
     bool putTag(uint fieldNum, WireType wt) pure nothrow @nogc @safe {
         return putVarint(makeTag(fieldNum, wt));
     }
 }
 
-private bool encodeScalarValue(T)(ref ProtoWriter writer, const auto ref T val) pure nothrow @nogc @safe {
+pragma(inline, true)
+private bool encodeScalarValue(T)(ref ProtoWriter writer, const auto ref T val) pure nothrow @nogc @trusted {
     alias U = Unqual!T;
     static if (is(U == enum)) {
         ulong uval = (cast(int)val < 0) ? cast(ulong)(cast(long)cast(int)val) : cast(ulong)cast(int)val;
@@ -543,25 +603,39 @@ private bool encodeScalarValue(T)(ref ProtoWriter writer, const auto ref T val) 
     } else static if (is(U == uint) || is(U == ulong) || is(U == long)) {
         return writer.putVarint(cast(ulong)val);
     } else static if (is(U == float)) {
-        ubyte[4] tmp;
-        writeFixed32Float(tmp[], val);
-        return writer.putBytes(tmp[]);
+        return writer.putFixed32Float(val);
     } else static if (is(U == double)) {
-        ubyte[8] tmp;
-        writeFixed64Double(tmp[], val);
-        return writer.putBytes(tmp[]);
+        return writer.putFixed64Double(val);
     } else static if (is(U : const(char)[]) || is(U : const(ubyte)[])) {
         if (!writer.putVarint(val.length)) return false;
         return writer.putBytes(cast(const(ubyte)[])val);
     } else static if (is(U == struct)) {
-        size_t subSize = computeProtoSize(val);
-        if (!writer.putVarint(subSize)) return false;
-        return encodeStructFields(writer, val);
+        // Optimistically reserve 1 byte for length varint (fast path for sub-messages < 128 B).
+        if (writer.written >= writer.dest.length) return false;
+        size_t lenPos = writer.written++;
+        size_t startPos = writer.written;
+        if (!encodeStructFields(writer, val)) return false;
+        size_t subSize = writer.written - startPos;
+        if (subSize < 0x80) {
+            writer.dest.ptr[lenPos] = cast(ubyte)subSize;
+            return true;
+        }
+        size_t varLen = varintSize(subSize);
+        size_t extra = varLen - 1;
+        if (writer.dest.length - writer.written < extra) return false;
+        ubyte* base = writer.dest.ptr;
+        foreach_reverse (i; 0 .. subSize) {
+            base[startPos + extra + i] = base[startPos + i];
+        }
+        writeVarint(writer.dest[lenPos .. lenPos + varLen], subSize);
+        writer.written += extra;
+        return true;
     } else {
         static assert(0, "Unsupported scalar type: " ~ T.stringof);
     }
 }
 
+pragma(inline, true)
 private bool encodeField(FieldT, uint fieldNum, bool isPacked)(
     ref ProtoWriter writer,
     const auto ref FieldT fieldVal
@@ -605,6 +679,7 @@ private bool encodeField(FieldT, uint fieldNum, bool isPacked)(
     }
 }
 
+pragma(inline, true)
 private bool encodeStructFields(T)(ref ProtoWriter writer, const auto ref T msg) pure nothrow @nogc @safe
 if (is(T == struct)) {
     static foreach (idx; 0 .. T.tupleof.length) {{
@@ -830,28 +905,27 @@ if (is(T == struct)) {
             return false;
         }
 
-        bool matched = false;
-        static foreach (idx; 0 .. T.tupleof.length) {{
-            alias MemberType = typeof(T.tupleof[idx]);
-            static foreach (attr; __traits(getAttributes, T.tupleof[idx])) {
-                static if (is(typeof(attr) == ProtoField)) {
-                    if (!matched && fieldNum == attr.number) {
-                        matched = true;
-                        static if (attr.oneofGroup.length > 0) {
-                            clearOneofGroup!(T, attr.oneofGroup, attr.number)(msg);
-                        }
-                        if (!decodeField!(MemberType)(buf, wt, msg.tupleof[idx], arena)) {
-                            return false;
-                        }
+        fieldSwitch: switch (fieldNum) {
+            static foreach (idx; 0 .. T.tupleof.length) {{
+                alias MemberType = typeof(T.tupleof[idx]);
+                static foreach (attr; __traits(getAttributes, T.tupleof[idx])) {
+                    static if (is(typeof(attr) == ProtoField)) {
+                        case attr.number:
+                            static if (attr.oneofGroup.length > 0) {
+                                clearOneofGroup!(T, attr.oneofGroup, attr.number)(msg);
+                            }
+                            if (!decodeField!(MemberType)(buf, wt, msg.tupleof[idx], arena)) {
+                                return false;
+                            }
+                            break fieldSwitch;
                     }
                 }
-            }
-        }}
-
-        if (!matched) {
-            if (!skipField(buf, wt)) {
-                return false;
-            }
+            }}
+            default:
+                if (!skipField(buf, wt)) {
+                    return false;
+                }
+                break fieldSwitch;
         }
     }
     return true;

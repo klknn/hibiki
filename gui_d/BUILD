@@ -14,19 +14,24 @@ d_library(
         "//pb:commands_d_proto",
         "//pb:core_d_proto",
         "//pb:notifications_d_proto",
+        "@dlangui",
     ],
 )
 
 d_test(
     name = "gui_d_test",
     srcs = [
+        "browser_panel.d",
         "channel_rack.d",
         "ipc_client.d",
+        "mixer_view.d",
         "piano_roll.d",
+        "plugin_window.d",
         "theme.d",
         "timeline_view.d",
+        "toolbar.d",
         "transport_model.d",
-        "widgets.d",
+        "workspace.d",
     ],
     deps = [
         "//dproto",
@@ -42,9 +47,12 @@ d_library(
     srcs = [
         "browser_panel.d",
         "channel_rack.d",
+        "mixer_view.d",
         "piano_roll.d",
+        "plugin_window.d",
         "timeline_view.d",
-        "widgets.d",
+        "toolbar.d",
+        "workspace.d",
     ],
     deps = [
         ":gui_model",

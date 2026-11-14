@@ -137,7 +137,9 @@ void renderAudioClipBlock(
         int samplePos = startSample + cast(int)i;
         if (samplePos < 0) continue;
         if (isLoop && loopLen > 0) {
-            samplePos = trimSamples + ((samplePos - trimSamples) % loopLen);
+            int rel = (samplePos - trimSamples) % loopLen;
+            if (rel < 0) rel += loopLen;
+            samplePos = trimSamples + rel;
         }
 
         double fadeGain = 1.0;

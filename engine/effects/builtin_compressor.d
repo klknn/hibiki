@@ -1,6 +1,6 @@
 module engine.effects.builtin_compressor;
 
-import core.stdc.math : exp, log10, pow, sqrt;
+import core.stdc.math : exp, expf, log10f, pow, powf, sqrtf;
 
 extern (C++, "hibiki") {
 
@@ -145,54 +145,73 @@ void d_compressor_process(
     bool has_sidechain = (sc_l !is null && sc_r !is null);
     float peak_sidechain_db = -200.0f;
 
+    float env_db = state.envelope_db;
+    float rms_sum_l = state.rms_sum_l;
+    float rms_sum_r = state.rms_sum_r;
+    int rms_idx = state.rms_index;
+    const float one_minus_att = 1.0f - attack_coeff;
+    const float one_minus_rel = 1.0f - release_coeff;
+    enum float kInvRmsWindow = 1.0f / cast(float)kRmsWindowSize;
+    enum float kLn10Div20 = 0.11512925464970228f; // ln(10) / 20
+
     foreach (i; 0 .. num_samples) {
         float input_abs;
         if (use_rms) {
-            float s_l = det_l[i] * det_l[i];
-            float s_r = det_r[i] * det_r[i];
-            state.rms_sum_l -= state.rms_buf_l[state.rms_index];
-            state.rms_sum_r -= state.rms_buf_r[state.rms_index];
-            state.rms_buf_l[state.rms_index] = s_l;
-            state.rms_buf_r[state.rms_index] = s_r;
-            state.rms_sum_l += s_l;
-            state.rms_sum_r += s_r;
-            state.rms_index = (state.rms_index + 1) % kRmsWindowSize;
-            float sum_l = state.rms_sum_l > 0.0f ? state.rms_sum_l : 0.0f;
-            float sum_r = state.rms_sum_r > 0.0f ? state.rms_sum_r : 0.0f;
-            float rms_l = sqrt(sum_l / kRmsWindowSize);
-            float rms_r = sqrt(sum_r / kRmsWindowSize);
+            float dl = det_l[i];
+            float dr = det_r[i];
+            float s_l = dl * dl;
+            float s_r = dr * dr;
+            rms_sum_l -= state.rms_buf_l[rms_idx];
+            rms_sum_r -= state.rms_buf_r[rms_idx];
+            state.rms_buf_l[rms_idx] = s_l;
+            state.rms_buf_r[rms_idx] = s_r;
+            rms_sum_l += s_l;
+            rms_sum_r += s_r;
+            rms_idx = (rms_idx + 1) & (kRmsWindowSize - 1);
+            float sum_l = rms_sum_l > 0.0f ? rms_sum_l : 0.0f;
+            float sum_r = rms_sum_r > 0.0f ? rms_sum_r : 0.0f;
+            float rms_l = sqrtf(sum_l * kInvRmsWindow);
+            float rms_r = sqrtf(sum_r * kInvRmsWindow);
             input_abs = (rms_l > rms_r) ? rms_l : rms_r;
         } else {
-            float abs_l = det_l[i] >= 0 ? det_l[i] : -det_l[i];
-            float abs_r = det_r[i] >= 0 ? det_r[i] : -det_r[i];
+            float dl = det_l[i];
+            float dr = det_r[i];
+            float abs_l = dl >= 0 ? dl : -dl;
+            float abs_r = dr >= 0 ? dr : -dr;
             input_abs = (abs_l > abs_r) ? abs_l : abs_r;
         }
 
-        float input_db = (input_abs > 1e-10f) ? (20.0f * log10(input_abs)) : -200.0f;
+        float input_db = (input_abs > 1e-10f) ? (20.0f * log10f(input_abs)) : -200.0f;
         if (input_db > peak_input_db) peak_input_db = input_db;
         if (has_sidechain && input_db > peak_sidechain_db) peak_sidechain_db = input_db;
 
         float gr_db = d_compressor_compute_gain_reduction(input_db, threshold, ratio, knee_db, up_threshold, up_ratio);
 
-        if (gr_db < state.envelope_db) {
-            state.envelope_db = attack_coeff * state.envelope_db + (1.0f - attack_coeff) * gr_db;
+        if (gr_db < env_db) {
+            env_db = attack_coeff * env_db + one_minus_att * gr_db;
         } else {
-            state.envelope_db = release_coeff * state.envelope_db + (1.0f - release_coeff) * gr_db;
+            env_db = release_coeff * env_db + one_minus_rel * gr_db;
         }
 
-        float gain = cast(float)pow(10.0, state.envelope_db / 20.0) * makeup_lin;
-        out_l[i] *= gain;
-        out_r[i] *= gain;
+        float gain = expf(env_db * kLn10Div20) * makeup_lin;
+        float ol = out_l[i] * gain;
+        float or_ = out_r[i] * gain;
+        out_l[i] = ol;
+        out_r[i] = or_;
 
-        float out_abs_l = out_l[i] >= 0 ? out_l[i] : -out_l[i];
-        float out_abs_r = out_r[i] >= 0 ? out_r[i] : -out_r[i];
+        float out_abs_l = ol >= 0 ? ol : -ol;
+        float out_abs_r = or_ >= 0 ? or_ : -or_;
         float out_abs = (out_abs_l > out_abs_r) ? out_abs_l : out_abs_r;
-        float output_db = (out_abs > 1e-10f) ? (20.0f * log10(out_abs)) : -200.0f;
+        float output_db = (out_abs > 1e-10f) ? (20.0f * log10f(out_abs)) : -200.0f;
         if (output_db > peak_output_db) peak_output_db = output_db;
 
-        if (state.envelope_db < peak_gr) peak_gr = state.envelope_db;
+        if (env_db < peak_gr) peak_gr = env_db;
     }
 
+    state.envelope_db = env_db;
+    state.rms_sum_l = rms_sum_l;
+    state.rms_sum_r = rms_sum_r;
+    state.rms_index = rms_idx;
     state.gain_reduction_db = peak_gr;
     state.input_db = peak_input_db;
     state.output_db = peak_output_db;

@@ -89,4 +89,13 @@ import engine.playback_mixer;
     assert(fabs(auxDstL[1] - 1.2) < 1e-9);
     assert(fabs(auxDstR[0] - 0.55) < 1e-9);
     assert(fabs(auxDstR[1] - 0.9) < 1e-9);
+
+    // 9. Test renderAudioClipBlock with trimSamples > 0 and startSample < trimSamples
+    float[4] trimmedClip = [0.1f, 0.2f, 0.3f, 0.4f];
+    double[2] trimL = [0.0, 0.0];
+    double[2] trimR = [0.0, 0.0];
+    renderAudioClipBlock(trimmedClip[], 1, true, 2, 1, 2, 0.0, 1.0, 0.0, 0.0, 100.0, trimL[], trimR[]);
+    // startSample=1 wraps positively into [2, 4) -> 3 (0.4f), then sample 2 -> 2 (0.3f)
+    assert(fabs(trimL[0] - 0.4) < 1e-6);
+    assert(fabs(trimL[1] - 0.3) < 1e-6);
 }

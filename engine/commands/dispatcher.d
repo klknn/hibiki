@@ -208,10 +208,13 @@ bool dispatchCommandWithFallback(
             hibiki.sendAck("PLAY", true);
             return true;
         case TransportCmd.Action.ACTION_STOP:
-            hibiki.setTimelinePlaying(cppState, false);
-            hibiki.stopPlaybackTracks(cppState);
-            hibiki.sendAck("STOP", true);
-            return true;
+            if (!hibiki.isRecording(cppState)) {
+                hibiki.setTimelinePlaying(cppState, false);
+                hibiki.stopPlaybackTracks(cppState);
+                hibiki.sendAck("STOP", true);
+                return true;
+            }
+            break;
         case TransportCmd.Action.ACTION_SEEK:
             hibiki.setPlayheadPos(cppState, t.seek_pos);
             hibiki.sendAck("SEEK", true);

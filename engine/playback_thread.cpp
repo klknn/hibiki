@@ -55,6 +55,18 @@ extern void d_render_audio_clip_block(
 extern void d_accumulate_aux_send(const double* srcL, const double* srcR,
                                   double* dstL, double* dstR, int blockSize,
                                   float level);
+extern void d_double_to_float_stereo(const double* srcL, const double* srcR,
+                                     float* dstL, float* dstR, int blockSize);
+extern void d_float_to_double_stereo(const float* srcL, const float* srcR,
+                                     double* dstL, double* dstR, int blockSize);
+extern void d_render_session_audio_clip_block(const float* audioData,
+                                              int audioLen, int numChannels,
+                                              bool isLoop, int startSample,
+                                              double* bufferL, double* bufferR,
+                                              int blockSize);
+extern void d_compute_waveform_summary(const float* recordBuffer,
+                                       int totalSamples, int numChannels,
+                                       float* outSummary, int summarySize);
 
 namespace hibiki {
 
@@ -85,6 +97,10 @@ void setTimelinePlaying(ProjectState* state, bool playing) {
 
 bool isTimelinePlaying(const ProjectState* state) {
   return state ? state->is_timeline_playing : false;
+}
+
+bool isRecording(const ProjectState* state) {
+  return state ? state->is_recording : false;
 }
 
 void setPlayheadPos(ProjectState* state, double pos) {
@@ -295,18 +311,8 @@ void sendNotificationTick(ProjectState& state) {
 
       int summary_size = 200;
       std::vector<float> waveform(summary_size, 0.0f);
-      int samples_per_bucket = total_samples / (rec_ch * summary_size);
-      if (samples_per_bucket < 1) samples_per_bucket = 1;
-      for (int b = 0; b < summary_size; ++b) {
-        float peak = 0.0f;
-        for (int s = 0; s < samples_per_bucket; ++s) {
-          int idx = (b * samples_per_bucket + s) * rec_ch;
-          if (idx < total_samples) {
-            peak = std::max(peak, std::abs(track->record_buffer[idx]));
-          }
-        }
-        waveform[b] = peak;
-      }
+      d_compute_waveform_summary(track->record_buffer.data(), total_samples,
+                                 rec_ch, waveform.data(), summary_size);
 
       int live_clip_idx = (int)track->timeline_clips.size();
       sendTimelineClipInfo(pair.first, live_clip_idx, "Recording...", "",
@@ -392,25 +398,10 @@ void playback_thread(ProjectState& state) {
             auto& clip = track->clips[track->playing_slot];
             if (clip->type == Clip::Type::AUDIO) {
               int start_sample = (int)(track->current_time_sec * sample_rate);
-              for (int i = 0; i < block_size; ++i) {
-                int sample_pos = start_sample + i;
-                if (clip->is_loop) {
-                  int total_samples =
-                      clip->audio_data.size() / clip->num_channels;
-                  if (total_samples > 0)
-                    sample_pos = sample_pos % total_samples;
-                }
-                if (clip->num_channels == 2 &&
-                    sample_pos * 2 + 1 < (int)clip->audio_data.size()) {
-                  bufferL[i] += clip->audio_data[sample_pos * 2];
-                  bufferR[i] += clip->audio_data[sample_pos * 2 + 1];
-                } else if (clip->num_channels == 1 &&
-                           sample_pos < (int)clip->audio_data.size()) {
-                  double s = clip->audio_data[sample_pos];
-                  bufferL[i] += s;
-                  bufferR[i] += s;
-                }
-              }
+              d_render_session_audio_clip_block(
+                  clip->audio_data.data(), (int)clip->audio_data.size(),
+                  clip->num_channels, clip->is_loop, start_sample, bufferL,
+                  bufferR, block_size);
             } else if (clip->type == Clip::Type::MIDI) {
               double beats_per_sec = state.bpm / 60.0;
               double current_beats = track->current_time_sec * beats_per_sec;
@@ -723,25 +714,19 @@ void playback_thread(ProjectState& state) {
               sc_ptr = sc_ch;
             }
           }
-          for (int j = 0; j < block_size; ++j) {
-            plugBufL[j] = (float)bufferL[j];
-            plugBufR[j] = (float)bufferR[j];
-          }
+          d_double_to_float_stereo(bufferL, bufferR, plugBufL, plugBufR,
+                                   block_size);
           track->plugins[i]->process(outChannels, outChannels, block_size,
                                      context, {}, sc_ptr);
-          for (int j = 0; j < block_size; ++j) {
-            bufferL[j] = plugBufL[j];
-            bufferR[j] = plugBufR[j];
-          }
+          d_float_to_double_stereo(plugBufL, plugBufR, bufferL, bufferR,
+                                   block_size);
         }
 
         // 4b. Capture post-effects output for sidechain
         {
           auto& buf = sc_buffers[track_idx];
-          for (int i = 0; i < block_size; ++i) {
-            buf.first[i] = (float)bufferL[i];
-            buf.second[i] = (float)bufferR[i];
-          }
+          d_double_to_float_stereo(bufferL, bufferR, buf.first.data(),
+                                   buf.second.data(), block_size);
         }
 
         // 4c. Send to aux buses (pre-fader sends use pre-volume signal)

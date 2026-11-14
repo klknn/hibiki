@@ -98,4 +98,35 @@ import engine.playback_mixer;
     // startSample=1 wraps positively into [2, 4) -> 3 (0.4f), then sample 2 -> 2 (0.3f)
     assert(fabs(trimL[0] - 0.4) < 1e-6);
     assert(fabs(trimL[1] - 0.3) < 1e-6);
+
+    // 10. Test renderSessionAudioClipBlock (stereo looping & mono non-looping)
+    float[4] sessStereo = [0.2f, -0.2f, 0.8f, -0.8f];
+    double[4] sessL = [0.0, 0.0, 0.0, 0.0];
+    double[4] sessR = [0.0, 0.0, 0.0, 0.0];
+    renderSessionAudioClipBlock(sessStereo[], 2, true, 1, sessL[], sessR[]);
+    assert(fabs(sessL[0] - 0.8) < 1e-6 && fabs(sessR[0] + 0.8) < 1e-6);
+    assert(fabs(sessL[1] - 0.2) < 1e-6 && fabs(sessR[1] + 0.2) < 1e-6);
+    assert(fabs(sessL[2] - 0.8) < 1e-6 && fabs(sessR[2] + 0.8) < 1e-6);
+
+    // 11. Test computeWaveformSummary
+    float[8] recBuf = [0.1f, 0.0f, -0.9f, 0.0f, 0.3f, 0.0f, -0.4f, 0.0f];
+    float[2] summary;
+    computeWaveformSummary(recBuf[], 2, summary[]);
+    assert(fabs(summary[0] - 0.9f) < 1e-6f);
+    assert(fabs(summary[1] - 0.4f) < 1e-6f);
+
+    // 12. Test d_double_to_float_stereo / d_float_to_double_stereo
+    double[2] srcDblL = [0.25, -0.75];
+    double[2] srcDblR = [-0.5, 0.5];
+    float[2] tmpFltL;
+    float[2] tmpFltR;
+    d_double_to_float_stereo(srcDblL.ptr, srcDblR.ptr, tmpFltL.ptr, tmpFltR.ptr, 2);
+    assert(fabs(tmpFltL[0] - 0.25f) < 1e-6f && fabs(tmpFltL[1] + 0.75f) < 1e-6f);
+    assert(fabs(tmpFltR[0] + 0.5f) < 1e-6f && fabs(tmpFltR[1] - 0.5f) < 1e-6f);
+
+    double[2] dstDblL;
+    double[2] dstDblR;
+    d_float_to_double_stereo(tmpFltL.ptr, tmpFltR.ptr, dstDblL.ptr, dstDblR.ptr, 2);
+    assert(fabs(dstDblL[0] - 0.25) < 1e-6 && fabs(dstDblL[1] + 0.75) < 1e-6);
+    assert(fabs(dstDblR[0] + 0.5) < 1e-6 && fabs(dstDblR[1] - 0.5) < 1e-6);
 }

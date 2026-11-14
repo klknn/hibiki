@@ -192,6 +192,72 @@ void accumulateAuxSend(
     }
 }
 
+/// Renders a session clip audio block (mono or stereo, optional looping) into stereo track buffers.
+void renderSessionAudioClipBlock(
+    const(float)[] audioData,
+    int numChannels,
+    bool isLoop,
+    int startSample,
+    double[] bufferL,
+    double[] bufferR
+) @nogc nothrow pure @safe {
+    if (audioData.length == 0 || numChannels <= 0) return;
+    const int totalSamples = cast(int)(audioData.length / numChannels);
+    if (totalSamples <= 0) return;
+    const size_t blockSize = bufferL.length < bufferR.length ? bufferL.length : bufferR.length;
+
+    foreach (i; 0 .. blockSize) {
+        int samplePos = startSample + cast(int)i;
+        if (samplePos < 0) continue;
+        if (isLoop) {
+            samplePos = samplePos % totalSamples;
+        }
+        if (numChannels == 2) {
+            size_t idx = cast(size_t)samplePos * 2;
+            if (idx + 1 < audioData.length) {
+                bufferL[i] += audioData[idx];
+                bufferR[i] += audioData[idx + 1];
+            }
+        } else if (numChannels == 1) {
+            size_t idx = cast(size_t)samplePos;
+            if (idx < audioData.length) {
+                double s = audioData[idx];
+                bufferL[i] += s;
+                bufferR[i] += s;
+            }
+        }
+    }
+}
+
+/// Downsamples recorded audio into a peak-amplitude waveform summary buffer.
+void computeWaveformSummary(
+    const(float)[] recordBuffer,
+    int numChannels,
+    float[] outSummary
+) @nogc nothrow pure @safe {
+    if (outSummary.length == 0) return;
+    outSummary[] = 0.0f;
+    if (recordBuffer.length == 0 || numChannels <= 0) return;
+
+    const size_t totalSamples = recordBuffer.length;
+    const size_t summarySize = outSummary.length;
+    size_t samplesPerBucket = totalSamples / (cast(size_t)numChannels * summarySize);
+    if (samplesPerBucket < 1) samplesPerBucket = 1;
+
+    foreach (b; 0 .. summarySize) {
+        float peak = 0.0f;
+        foreach (s; 0 .. samplesPerBucket) {
+            size_t idx = (b * samplesPerBucket + s) * cast(size_t)numChannels;
+            if (idx < totalSamples) {
+                float v = recordBuffer[idx];
+                float av = v >= 0.0f ? v : -v;
+                if (av > peak) peak = av;
+            }
+        }
+        outSummary[b] = peak;
+    }
+}
+
 // C++ interop externs for calling from playback_thread.cpp
 extern (C++) {
     void d_advance_playhead(
@@ -288,5 +354,61 @@ extern (C++) {
         if (!srcL || !srcR || !dstL || !dstR || blockSize <= 0) return;
         accumulateAuxSend(srcL[0 .. blockSize], srcR[0 .. blockSize],
                           dstL[0 .. blockSize], dstR[0 .. blockSize], level);
+    }
+
+    void d_render_session_audio_clip_block(
+        const(float)* audioData,
+        int audioLen,
+        int numChannels,
+        bool isLoop,
+        int startSample,
+        double* bufferL,
+        double* bufferR,
+        int blockSize
+    ) @nogc nothrow {
+        if (!audioData || audioLen <= 0 || !bufferL || !bufferR || blockSize <= 0) return;
+        renderSessionAudioClipBlock(
+            audioData[0 .. audioLen], numChannels, isLoop, startSample,
+            bufferL[0 .. blockSize], bufferR[0 .. blockSize]);
+    }
+
+    void d_compute_waveform_summary(
+        const(float)* recordBuffer,
+        int totalSamples,
+        int numChannels,
+        float* outSummary,
+        int summarySize
+    ) @nogc nothrow {
+        if (!recordBuffer || totalSamples <= 0 || !outSummary || summarySize <= 0) return;
+        computeWaveformSummary(
+            recordBuffer[0 .. totalSamples], numChannels, outSummary[0 .. summarySize]);
+    }
+
+    void d_double_to_float_stereo(
+        const(double)* srcL,
+        const(double)* srcR,
+        float* dstL,
+        float* dstR,
+        int blockSize
+    ) @nogc nothrow {
+        if (!srcL || !srcR || !dstL || !dstR || blockSize <= 0) return;
+        foreach (i; 0 .. blockSize) {
+            dstL[i] = cast(float)srcL[i];
+            dstR[i] = cast(float)srcR[i];
+        }
+    }
+
+    void d_float_to_double_stereo(
+        const(float)* srcL,
+        const(float)* srcR,
+        double* dstL,
+        double* dstR,
+        int blockSize
+    ) @nogc nothrow {
+        if (!srcL || !srcR || !dstL || !dstR || blockSize <= 0) return;
+        foreach (i; 0 .. blockSize) {
+            dstL[i] = srcL[i];
+            dstR[i] = srcR[i];
+        }
     }
 }

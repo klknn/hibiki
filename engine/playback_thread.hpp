@@ -24,6 +24,7 @@ void setStateQuit(ProjectState* state, bool quit);
 
 void setTimelinePlaying(ProjectState* state, bool playing);
 bool isTimelinePlaying(const ProjectState* state);
+bool isRecording(const ProjectState* state);
 void setPlayheadPos(ProjectState* state, double pos);
 double getPlayheadPos(const ProjectState* state);
 void setBpm(ProjectState* state, double bpm);

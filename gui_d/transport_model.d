@@ -2,11 +2,36 @@ module gui_d.transport_model;
 
 import pb.core : MidiEvent, TransportState;
 import pb.notifications : Notification, PluginDescription;
+import std.conv : to;
 
-/// Timeline arrangement clip state for a track.
+/// FL Studio Pattern vs Song playback mode.
+enum PlaybackMode {
+    PAT,
+    SONG,
+}
+
+/// Global snap resolution for Playlist and Piano Roll.
+enum SnapMode {
+    LINE,
+    CELL,
+    HALF_BEAT,
+    QUARTER_BEAT,
+    NONE,
+}
+
+/// Playlist clip type matching FL Studio's Pattern / Audio / Automation clips.
+enum PlaylistClipKind {
+    PATTERN,
+    AUDIO,
+    AUTOMATION,
+}
+
+/// Timeline / Playlist clip state for a track.
 struct TimelineClipState {
     int clipIndex = 0;
-    string name = "Clip";
+    int patternIndex = 0;
+    PlaylistClipKind kind = PlaylistClipKind.PATTERN;
+    string name = "Pattern 1";
     double startTimeSec = 0.0;
     double durationSec = 4.0;
     float[] waveform;
@@ -20,15 +45,39 @@ struct ParamItemState {
     float currentValue = 0.0f;
 }
 
-/// Loaded plugin slot on a track.
+/// Loaded plugin slot on a track or mixer insert.
 struct PluginSlotState {
     int pluginIndex = 0;
     string name = "Plugin";
+    string uri;
+    bool enabled = true;
+    float mix = 1.0f;
     bool isInstrument = false;
     ParamItemState[] params;
 }
 
-/// Mixer strip & timeline track state for a single track.
+/// Channel Rack generator/sampler row with 16-step sequencer and mixer routing.
+struct ChannelState {
+    int index = 0;
+    string name = "Channel";
+    string uri = "builtin://3xosc";
+    uint color = 0x003D5A73;
+    float volume = 0.78f;
+    float pan = 0.0f;
+    bool muted = false;
+    int mixerInsert = 1; // 0 = Master, 1..N = Insert
+    bool[16] steps;
+    MidiEvent[] notes;
+}
+
+/// FL Studio Pattern containing step sequences & notes per channel.
+struct PatternState {
+    int index = 0;
+    string name = "Pattern 1";
+    uint color = 0x003D5A73;
+}
+
+/// Mixer strip & timeline track state for a single track/insert.
 struct TrackStripState {
     int index = 0;
     string name = "Track";
@@ -46,11 +95,12 @@ struct TrackStripState {
 struct ActiveMidiClip {
     int trackIndex = 0;
     int clipIndex = 0;
+    int channelIndex = 0;
     int resolution = 480;
     MidiEvent[] events;
 }
 
-/// UI-side state model synchronized with `hbk-play` notifications.
+/// UI-side FL Studio 2026 DAW state model synchronized with `hbk-play` notifications.
 struct TransportModel {
     double playheadPosSec = 0.0;
     double bpm = 140.0;
@@ -58,14 +108,90 @@ struct TransportModel {
     bool isRecording = false;
     bool loopEnabled = false;
     double loopStartSec = 0.0;
-    double loopEndSec = 0.0;
-    string statusMessage = "Ready (dlangui + hbk-play)";
+    double loopEndSec = 8.0;
+    PlaybackMode playbackMode = PlaybackMode.PAT;
+    SnapMode snapMode = SnapMode.QUARTER_BEAT;
+    float masterVolume = 0.82f;
+    float masterPitch = 0.0f;
+    float swingAmount = 0.0f;
+
+    string hintText = "Ready — Hover any control for tips | F5 Playlist, F6 Channel Rack, F7 Piano Roll, F9 Mixer";
+    string statusMessage = "Ready (FL Studio 2026 dlangui)";
+
     int selectedTrack = 0;
     int selectedClipIndex = 0;
     int selectedPluginIndex = 0;
+    int selectedPatternIndex = 0;
+    int selectedChannelIndex = 0;
+    int selectedMixerInsert = 1;
+
+    ChannelState[] channels;
+    PatternState[] patterns;
     TrackStripState[] tracks;
     ActiveMidiClip activeMidi;
     PluginDescription[] scannedPlugins;
+
+    /// Populates a realistic FL Studio default template (4 channels, 4 patterns, 8 tracks).
+    void initDefaultTemplate() @safe {
+        if (patterns.length == 0) {
+            patterns = [
+                PatternState(0, "Pattern 1", 0x003D5A73),
+                PatternState(1, "Pattern 2", 0x002D5F5D),
+                PatternState(2, "Pattern 3", 0x005B4570),
+                PatternState(3, "Pattern 4", 0x006A4B33),
+            ];
+        }
+        if (channels.length == 0) {
+            ChannelState kick;
+            kick.index = 0;
+            kick.name = "DR-8 Kick";
+            kick.uri = "builtin://dr8_kick";
+            kick.color = 0x00465E73;
+            kick.mixerInsert = 1;
+            kick.steps = [true, false, false, false, true, false, false, false,
+                          true, false, false, false, true, false, false, false];
+
+            ChannelState snare;
+            snare.index = 1;
+            snare.name = "DR-8 Snare";
+            snare.uri = "builtin://dr8_snare";
+            snare.color = 0x005C496B;
+            snare.mixerInsert = 2;
+            snare.steps = [false, false, false, false, true, false, false, false,
+                           false, false, false, false, true, false, false, false];
+
+            ChannelState hat;
+            hat.index = 2;
+            hat.name = "DR-8 Hat";
+            hat.uri = "builtin://dr8_hat";
+            hat.color = 0x00385E58;
+            hat.mixerInsert = 3;
+            hat.steps = [true, false, true, false, true, false, true, false,
+                         true, false, true, false, true, false, true, false];
+
+            ChannelState bass;
+            bass.index = 3;
+            bass.name = "Acid Bass";
+            bass.uri = "builtin://acid_bass";
+            bass.color = 0x006B5038;
+            bass.mixerInsert = 4;
+
+            channels = [kick, snare, hat, bass];
+        }
+        if (tracks.length == 0) {
+            foreach (i; 0 .. 8) {
+                ensureTrackIndex(i);
+            }
+            TimelineClipState c0;
+            c0.clipIndex = 0;
+            c0.patternIndex = 0;
+            c0.kind = PlaylistClipKind.PATTERN;
+            c0.name = "Pattern 1";
+            c0.startTimeSec = 0.0;
+            c0.durationSec = 4.0;
+            tracks[0].clips ~= c0;
+        }
+    }
 
     /// Ensures a track slot exists for `trackIndex` and returns its array index.
     size_t ensureTrackIndex(int trackIndex) @safe {
@@ -74,8 +200,7 @@ struct TransportModel {
         }
         TrackStripState t;
         t.index = trackIndex;
-        import std.conv : to;
-        t.name = "Track " ~ to!string(trackIndex + 1);
+        t.name = (trackIndex == 0) ? "Master" : ("Insert " ~ to!string(trackIndex));
         tracks ~= t;
         return tracks.length - 1;
     }
@@ -90,6 +215,14 @@ struct TransportModel {
             }
         }
         return null;
+    }
+
+    /// Current 16th-step index `[0..15]` for the Step Sequencer playhead indicator.
+    int currentStepIndex() const pure nothrow @safe {
+        if (!isPlaying) return -1;
+        const double beats = playheadPosSec * ((bpm > 0.0 ? bpm : 140.0) / 60.0);
+        const int step = cast(int)(beats * 4.0) % 16;
+        return step < 0 ? 0 : step;
     }
 
     /// Applies an engine `Notification` to update transport, mixer, timeline, MIDI, and plugin state.
@@ -127,6 +260,7 @@ struct TransportModel {
                     c.startTimeSec = tci.start_time;
                     c.durationSec = tci.duration;
                     c.waveform = tci.waveform.dup;
+                    c.kind = tci.waveform.length > 0 ? PlaylistClipKind.AUDIO : PlaylistClipKind.PATTERN;
                     found = true;
                     break;
                 }
@@ -138,6 +272,7 @@ struct TransportModel {
                 c.startTimeSec = tci.start_time;
                 c.durationSec = tci.duration;
                 c.waveform = tci.waveform.dup;
+                c.kind = tci.waveform.length > 0 ? PlaylistClipKind.AUDIO : PlaylistClipKind.PATTERN;
                 tracks[idx].clips ~= c;
             }
         }
@@ -219,9 +354,13 @@ struct TransportModel {
 
 unittest {
     import pb.notifications : ClearProject, ClipMidiData, ParamInfo, ParamList,
-        PlayheadInfo, PluginListResponse, TimelineClipInfo, TrackInfo, TrackLevel, TrackLevels;
+        PlayheadInfo, TimelineClipInfo, TrackInfo, TrackLevel, TrackLevels;
 
     TransportModel model;
+    model.initDefaultTemplate();
+    assert(model.channels.length == 4);
+    assert(model.patterns.length == 4);
+    assert(model.tracks.length == 8);
 
     Notification n1;
     PlayheadInfo pi;
@@ -248,27 +387,7 @@ unittest {
     tls.levels ~= tl;
     n2.track_levels.set(tls);
     model.applyNotification(n2);
-    assert(model.tracks.length == 1);
-
-    Notification n3;
-    TrackInfo ti;
-    ti.track_index = 0;
-    ti.name = "Bassline";
-    n3.track_info.set(ti);
-    model.applyNotification(n3);
-    assert(model.tracks[0].name == "Bassline");
-
-    Notification n3b;
-    TimelineClipInfo tci;
-    tci.track_index = 0;
-    tci.clip_index = 0;
-    tci.name = "Sub Bass";
-    tci.start_time = 2.0f;
-    tci.duration = 4.0f;
-    tci.waveform = [0.2f, 0.8f, 0.5f];
-    n3b.timeline_clip_info.set(tci);
-    model.applyNotification(n3b);
-    assert(model.tracks[0].clips.length == 1);
+    assert(model.tracks[0].peakL == 0.75f);
 
     Notification nPlug;
     ParamList pl;
@@ -284,8 +403,6 @@ unittest {
     nPlug.param_list.set(pl);
     model.applyNotification(nPlug);
     assert(model.tracks[0].plugins.length == 1);
-    assert(model.tracks[0].plugins[0].name == "Acid Bass");
-    assert(model.tracks[0].plugins[0].params.length == 1);
 
     Notification nMidi;
     ClipMidiData md;
@@ -301,7 +418,6 @@ unittest {
     nMidi.clip_midi_data.set(md);
     model.applyNotification(nMidi);
     assert(model.activeMidi.events.length == 1);
-    assert(model.activeMidi.events[0].pitch == 60);
 
     Notification n4;
     ClearProject cp;

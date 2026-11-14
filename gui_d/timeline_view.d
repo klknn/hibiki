@@ -4,7 +4,7 @@ import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.widgets.widget : Widget;
 import gui_d.theme : Y2kColor;
-import gui_d.transport_model : TimelineClipState, TransportModel;
+import gui_d.transport_model : PlaylistClipKind, TimelineClipState, TransportModel;
 import gui_d.widgets : drawBevelPanel, truncateLabel;
 import std.format : format;
 
@@ -40,6 +40,8 @@ class TimelineCanvasWidget : Widget {
 
     void delegate(double seekSec) onSeek;
     void delegate(int trackIdx, int clipIdx) onSelectTrackClip;
+    void delegate(int trackIdx, double startSec) onPaintPatternClip;
+    void delegate(int trackIdx, int clipIdx) onDeleteClip;
 
     this(string id, TransportModel* model) {
         super(id);
@@ -74,27 +76,46 @@ class TimelineCanvasWidget : Widget {
         Rect well = Rect(_pos.left + 8, _pos.top + 8, _pos.right - 8, _pos.bottom - 8);
         Rect arrRc = arrangementRect(well);
 
-        if (event.action == MouseAction.ButtonDown && event.button == MouseButton.Left) {
+        if (event.action == MouseAction.ButtonDown) {
             if (event.y >= well.top + RULER_HEIGHT && event.y < well.bottom) {
                 const int lane = (event.y - (well.top + RULER_HEIGHT)) / LANE_HEIGHT;
                 if (model_ && lane >= 0 && lane < cast(int)model_.tracks.length) {
                     const int trackIdx = model_.tracks[lane].index;
                     int hitClip = -1;
+                    int hitArrIdx = -1;
                     if (arrRc.isPointInside(event.x, event.y)) {
                         const double clickSec = pixelXToSec(event.x, pixelsPerSec, arrRc.left, scrollSec);
-                        foreach (const ref c; model_.tracks[lane].clips) {
+                        foreach (ci, const ref c; model_.tracks[lane].clips) {
                             if (clickSec >= c.startTimeSec && clickSec <= c.startTimeSec + c.durationSec) {
                                 hitClip = c.clipIndex;
+                                hitArrIdx = cast(int)ci;
                                 break;
                             }
+                        }
+                        if (event.button == MouseButton.Right && hitArrIdx >= 0) {
+                            model_.tracks[lane].clips =
+                                model_.tracks[lane].clips[0 .. hitArrIdx] ~
+                                model_.tracks[lane].clips[hitArrIdx + 1 .. $];
+                            if (onDeleteClip !is null) onDeleteClip(trackIdx, hitClip);
+                            invalidate();
+                            return true;
+                        }
+                        if (event.button == MouseButton.Left && hitClip < 0) {
+                            const double barSec = 4.0 * beatDurationSec(model_.bpm);
+                            const double snapped = (cast(int)(clickSec / barSec)) * barSec;
+                            if (onPaintPatternClip !is null) onPaintPatternClip(trackIdx, snapped);
+                            invalidate();
+                            return true;
                         }
                     }
                     model_.selectedTrack = trackIdx;
                     if (hitClip >= 0) model_.selectedClipIndex = hitClip;
                     if (onSelectTrackClip !is null) onSelectTrackClip(trackIdx, hitClip);
+                    invalidate();
+                    return true;
                 }
             }
-            if (arrRc.isPointInside(event.x, event.y)) {
+            if (event.button == MouseButton.Left && arrRc.isPointInside(event.x, event.y)) {
                 draggingPlayhead_ = true;
                 handleSeekAtX(event.x, arrRc);
                 return true;
@@ -235,8 +256,11 @@ private void drawTimelineClip(
     if (cx1 - cx0 < 4 || botY - topY < 10) return;
 
     Rect clipRc = Rect(cx0, topY, cx1, botY);
-    drawBevelPanel(buf, clipRc, 0x002C4A46, false);
-    buf.fillRect(Rect(cx0 + 1, topY + 1, cx1 - 1, topY + 13), 0x003B6B64);
+    uint baseCol = Y2kColor.CLIP_AUDIO;
+    if (clip.kind == PlaylistClipKind.PATTERN) baseCol = Y2kColor.CLIP_PATTERN;
+    else if (clip.kind == PlaylistClipKind.AUTOMATION) baseCol = Y2kColor.CLIP_AUTO;
+    drawBevelPanel(buf, clipRc, baseCol, false);
+    buf.fillRect(Rect(cx0 + 1, topY + 1, cx1 - 1, topY + 13), baseCol + 0x00101418);
 
     if (fnt !is null && cx1 - cx0 > 24) {
         import std.utf : toUTF32;

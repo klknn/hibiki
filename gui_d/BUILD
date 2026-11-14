@@ -20,6 +20,7 @@ d_library(
 d_test(
     name = "gui_d_test",
     srcs = [
+        "channel_rack.d",
         "ipc_client.d",
         "piano_roll.d",
         "theme.d",
@@ -39,7 +40,8 @@ d_test(
 d_library(
     name = "gui_widgets",
     srcs = [
-        "device_panel.d",
+        "browser_panel.d",
+        "channel_rack.d",
         "piano_roll.d",
         "timeline_view.d",
         "widgets.d",

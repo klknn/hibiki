@@ -109,6 +109,87 @@ void processMasterOutput(
     peakR = pR;
 }
 
+/// Renders a mono or interleaved-stereo audio clip block into stereo track buffers,
+/// applying optional loop wrapping and exponential dB fade-in / fade-out.
+void renderAudioClipBlock(
+    const(float)[] audioData,
+    int numChannels,
+    bool isLoop,
+    int trimSamples,
+    int startSample,
+    int loopLen,
+    double clipLocalTime,
+    double clipDuration,
+    double fadeInSec,
+    double fadeOutSec,
+    double sampleRate,
+    double[] bufferL,
+    double[] bufferR
+) @nogc nothrow @safe {
+    import core.stdc.math : pow;
+
+    if (audioData.length == 0 || sampleRate <= 0.0) return;
+    size_t blockSize = bufferL.length < bufferR.length ? bufferL.length : bufferR.length;
+    enum double fadeMinDb = -30.0;
+    const double invSr = 1.0 / sampleRate;
+
+    foreach (i; 0 .. blockSize) {
+        int samplePos = startSample + cast(int)i;
+        if (samplePos < 0) continue;
+        if (isLoop && loopLen > 0) {
+            samplePos = trimSamples + ((samplePos - trimSamples) % loopLen);
+        }
+
+        double fadeGain = 1.0;
+        double sampleTimeInClip = clipLocalTime + cast(double)i * invSr;
+        if (fadeInSec > 0.0 && sampleTimeInClip < fadeInSec) {
+            double t = sampleTimeInClip / fadeInSec;
+            double db = fadeMinDb * (1.0 - t);
+            fadeGain *= pow(10.0, db / 20.0);
+        }
+        if (fadeOutSec > 0.0 && sampleTimeInClip > clipDuration - fadeOutSec) {
+            double t = (clipDuration - sampleTimeInClip) / fadeOutSec;
+            if (t < 0.0) t = 0.0;
+            double db = fadeMinDb * (1.0 - t);
+            fadeGain *= pow(10.0, db / 20.0);
+        }
+
+        if (numChannels == 2) {
+            size_t idx = cast(size_t)samplePos * 2;
+            if (idx + 1 < audioData.length) {
+                bufferL[i] += audioData[idx] * fadeGain;
+                bufferR[i] += audioData[idx + 1] * fadeGain;
+            }
+        } else if (numChannels == 1) {
+            size_t idx = cast(size_t)samplePos;
+            if (idx < audioData.length) {
+                double s = audioData[idx] * fadeGain;
+                bufferL[i] += s;
+                bufferR[i] += s;
+            }
+        }
+    }
+}
+
+/// Accumulates a scaled pre-fader stereo signal into an aux bus buffer.
+void accumulateAuxSend(
+    const(double)[] srcL,
+    const(double)[] srcR,
+    double[] dstL,
+    double[] dstR,
+    float level
+) @nogc nothrow pure @safe {
+    size_t len = srcL.length;
+    if (srcR.length < len) len = srcR.length;
+    if (dstL.length < len) len = dstL.length;
+    if (dstR.length < len) len = dstR.length;
+    const double lvl = level;
+    foreach (i; 0 .. len) {
+        dstL[i] += srcL[i] * lvl;
+        dstR[i] += srcR[i] * lvl;
+    }
+}
+
 // C++ interop externs for calling from playback_thread.cpp
 extern (C++) {
     void d_advance_playhead(
@@ -168,5 +249,42 @@ extern (C++) {
         processMasterOutput(masterL[0 .. blockSize], masterR[0 .. blockSize], outInterleaved[0 .. blockSize * 2], pL, pR);
         if (outPeakL) *outPeakL = pL;
         if (outPeakR) *outPeakR = pR;
+    }
+
+    void d_render_audio_clip_block(
+        const(float)* audioData,
+        int audioLen,
+        int numChannels,
+        bool isLoop,
+        int trimSamples,
+        int startSample,
+        int loopLen,
+        double clipLocalTime,
+        double clipDuration,
+        double fadeInSec,
+        double fadeOutSec,
+        double sampleRate,
+        double* bufferL,
+        double* bufferR,
+        int blockSize
+    ) @nogc nothrow {
+        if (!audioData || audioLen <= 0 || !bufferL || !bufferR || blockSize <= 0) return;
+        renderAudioClipBlock(
+            audioData[0 .. audioLen], numChannels, isLoop, trimSamples,
+            startSample, loopLen, clipLocalTime, clipDuration, fadeInSec,
+            fadeOutSec, sampleRate, bufferL[0 .. blockSize], bufferR[0 .. blockSize]);
+    }
+
+    void d_accumulate_aux_send(
+        const(double)* srcL,
+        const(double)* srcR,
+        double* dstL,
+        double* dstR,
+        int blockSize,
+        float level
+    ) @nogc nothrow {
+        if (!srcL || !srcR || !dstL || !dstR || blockSize <= 0) return;
+        accumulateAuxSend(srcL[0 .. blockSize], srcR[0 .. blockSize],
+                          dstL[0 .. blockSize], dstR[0 .. blockSize], level);
     }
 }

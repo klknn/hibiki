@@ -58,4 +58,35 @@ import engine.playback_mixer;
     assert(fabs(interleaved[1] - 0.3f) < 1e-6f);
     assert(fabs(peakL - 0.9f) < 1e-6f);
     assert(fabs(peakR - 0.6f) < 1e-6f);
+
+    // 6. Test renderAudioClipBlock (stereo + loop + fade-in/out)
+    float[4] stereoClip = [0.5f, -0.5f, 1.0f, -1.0f];
+    double[4] clipL = [0.0, 0.0, 0.0, 0.0];
+    double[4] clipR = [0.0, 0.0, 0.0, 0.0];
+    renderAudioClipBlock(stereoClip[], 2, true, 0, 0, 2, 0.0, 1.0, 0.0, 0.0, 100.0, clipL[], clipR[]);
+    assert(fabs(clipL[0] - 0.5) < 1e-6 && fabs(clipR[0] + 0.5) < 1e-6);
+    assert(fabs(clipL[1] - 1.0) < 1e-6 && fabs(clipR[1] + 1.0) < 1e-6);
+    assert(fabs(clipL[2] - 0.5) < 1e-6 && fabs(clipR[2] + 0.5) < 1e-6);
+    assert(fabs(clipL[3] - 1.0) < 1e-6 && fabs(clipR[3] + 1.0) < 1e-6);
+
+    // 7. Test renderAudioClipBlock mono with fade-in
+    float[2] monoClip = [1.0f, 1.0f];
+    double[2] monoL = [0.0, 0.0];
+    double[2] monoR = [0.0, 0.0];
+    renderAudioClipBlock(monoClip[], 1, false, 0, 0, 2, 0.0, 1.0, 1.0, 0.0, 100.0, monoL[], monoR[]);
+    // At sample 0, t=0 => -30dB => ~0.03162; at sample 1, t=0.01 => slightly louder
+    assert(monoL[0] > 0.03 && monoL[0] < 0.04);
+    assert(monoL[1] > monoL[0]);
+    assert(fabs(monoL[0] - monoR[0]) < 1e-9);
+
+    // 8. Test accumulateAuxSend
+    double[2] auxDstL = [0.1, 0.2];
+    double[2] auxDstR = [0.3, 0.4];
+    double[2] auxSrcL = [1.0, 2.0];
+    double[2] auxSrcR = [0.5, 1.0];
+    accumulateAuxSend(auxSrcL[], auxSrcR[], auxDstL[], auxDstR[], 0.5f);
+    assert(fabs(auxDstL[0] - 0.6) < 1e-9);
+    assert(fabs(auxDstL[1] - 1.2) < 1e-9);
+    assert(fabs(auxDstR[0] - 0.55) < 1e-9);
+    assert(fabs(auxDstR[1] - 0.9) < 1e-9);
 }

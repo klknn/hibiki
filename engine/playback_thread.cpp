@@ -47,6 +47,14 @@ extern void d_process_master_output(const double* masterL,
                                     const double* masterR,
                                     float* outInterleaved, int blockSize,
                                     float* outPeakL, float* outPeakR);
+extern void d_render_audio_clip_block(
+    const float* audioData, int audioLen, int numChannels, bool isLoop,
+    int trimSamples, int startSample, int loopLen, double clipLocalTime,
+    double clipDuration, double fadeInSec, double fadeOutSec, double sampleRate,
+    double* bufferL, double* bufferR, int blockSize);
+extern void d_accumulate_aux_send(const double* srcL, const double* srcR,
+                                  double* dstL, double* dstR, int blockSize,
+                                  float level);
 
 namespace hibiki {
 
@@ -614,45 +622,13 @@ void playback_thread(ProjectState& state) {
                   } else {
                     loop_len = content_samples - trim_samples;
                   }
-                  for (int i = 0; i < block_size; ++i) {
-                    int sample_pos = start_sample + i;
-                    if (sample_pos < 0) continue;
-                    if (tc->clip->is_loop && loop_len > 0) {
-                      sample_pos = trim_samples +
-                                   ((sample_pos - trim_samples) % loop_len);
-                    }
-                    double fade_gain = 1.0;
-                    constexpr double kFadeMinDb = -30.0;
-                    double sample_time_in_clip =
-                        clip_local_time + (double)i / sample_rate;
-                    if (tc->fade_in_sec > 0 &&
-                        sample_time_in_clip < tc->fade_in_sec) {
-                      double t = sample_time_in_clip / tc->fade_in_sec;
-                      double db = kFadeMinDb * (1.0 - t);
-                      fade_gain *= std::pow(10.0, db / 20.0);
-                    }
-                    if (tc->fade_out_sec > 0 &&
-                        sample_time_in_clip >
-                            clip_duration - tc->fade_out_sec) {
-                      double t =
-                          std::max(0.0, (clip_duration - sample_time_in_clip) /
-                                            tc->fade_out_sec);
-                      double db = kFadeMinDb * (1.0 - t);
-                      fade_gain *= std::pow(10.0, db / 20.0);
-                    }
-                    if (tc->clip->num_channels == 2 &&
-                        sample_pos * 2 + 1 < (int)tc->clip->audio_data.size()) {
-                      bufferL[i] +=
-                          tc->clip->audio_data[sample_pos * 2] * fade_gain;
-                      bufferR[i] +=
-                          tc->clip->audio_data[sample_pos * 2 + 1] * fade_gain;
-                    } else if (tc->clip->num_channels == 1 &&
-                               sample_pos < (int)tc->clip->audio_data.size()) {
-                      double s = tc->clip->audio_data[sample_pos] * fade_gain;
-                      bufferL[i] += s;
-                      bufferR[i] += s;
-                    }
-                  }
+                  d_render_audio_clip_block(
+                      tc->clip->audio_data.data(),
+                      static_cast<int>(tc->clip->audio_data.size()),
+                      tc->clip->num_channels, tc->clip->is_loop, trim_samples,
+                      start_sample, loop_len, clip_local_time, clip_duration,
+                      tc->fade_in_sec, tc->fade_out_sec, sample_rate, bufferL,
+                      bufferR, block_size);
                 }
               }
             }
@@ -772,10 +748,9 @@ void playback_thread(ProjectState& state) {
         for (const auto& send : track->aux_sends) {
           auto it = bus_input_buffers.find(send.aux_track_index);
           if (it == bus_input_buffers.end()) continue;
-          for (int i = 0; i < block_size; ++i) {
-            it->second.first[i] += bufferL[i] * send.level;
-            it->second.second[i] += bufferR[i] * send.level;
-          }
+          d_accumulate_aux_send(bufferL, bufferR, it->second.first.data(),
+                                it->second.second.data(), block_size,
+                                send.level);
         }
 
         // 5. Apply volume and pan (via @nogc D DSP kernel)

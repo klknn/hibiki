@@ -1,19 +1,27 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/d_rules:defs.bzl", "d_library")
+load("//tools/d_rules:defs.bzl", "d_library", "d_test")
 
 package(default_visibility = ["//visibility:public"])
 
+d_library(
+    name = "tcp_d",
+    srcs = ["tcp.d"],
+    betterc = True,
+)
+
+d_test(
+    name = "tcp_d_test",
+    srcs = ["tcp.d"],
+)
+
 cc_library(
     name = "tcp",
-    srcs = select({
-        "@platforms//os:windows": ["tcp_win32.cpp"],
-        "//conditions:default": ["tcp_posix.cpp"],
-    }),
     hdrs = ["tcp.hpp"],
     linkopts = select({
         "@platforms//os:windows": ["-lws2_32"],
         "//conditions:default": [],
     }),
+    deps = [":tcp_d"],
 )
 
 cc_library(

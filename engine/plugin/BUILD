@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/d_rules:defs.bzl", "d_library", "d_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -6,6 +7,24 @@ cc_library(
     name = "iplugin",
     hdrs = ["iplugin.hpp"],
     includes = ["."],
+)
+
+d_library(
+    name = "plugin_proxy_d",
+    srcs = ["plugin_proxy_d.d"],
+    deps = [
+        "//dproto",
+        "//pb:plugin_worker_d_proto",
+    ],
+)
+
+d_test(
+    name = "plugin_proxy_d_test",
+    srcs = ["plugin_proxy_d.d"],
+    deps = [
+        "//dproto",
+        "//pb:plugin_worker_d_proto",
+    ],
 )
 
 cc_library(
@@ -22,9 +41,9 @@ cc_library(
     }),
     deps = [
         ":iplugin",
+        ":plugin_proxy_d",
         "//engine/ipc:worker_channel",
         "//engine/ipc:worker_channel_tcp",
-        "//pb:plugin_worker_cc_proto",
     ],
 )
 

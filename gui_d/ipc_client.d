@@ -2,8 +2,9 @@ module gui_d.ipc_client;
 
 import core.stdc.string : memcpy;
 import dproto.proto : decodeProto, encodeProto;
-import pb.commands : ProjectCmd, Request, TrackCmd, TransportCmd;
-import pb.core : EntityRef;
+import pb.commands : MidiCmd, PluginCmd, ProjectCmd, Request, SendVirtualMidi,
+                       TrackCmd, TransportCmd;
+import pb.core : Clip, EntityRef, MidiEvent;
 import pb.notifications : Notification;
 import std.process : Pipe, ProcessPipes, pipeProcess, Redirect, tryWait, wait;
 import std.stdio : stderr;
@@ -149,6 +150,157 @@ Request makeTrackVolumeRequest(int trackIdx, float volume) @safe {
     cmd.target = target;
     cmd.value = volume;
     req.track.set(cmd);
+    return req;
+}
+
+Request makeProjectLoadRequest(string path) @safe {
+    Request req;
+    ProjectCmd cmd;
+    cmd.action = ProjectCmd.Action.ACTION_LOAD;
+    cmd.path = path;
+    req.project.set(cmd);
+    return req;
+}
+
+Request makeProjectSaveRequest(string path) @safe {
+    Request req;
+    ProjectCmd cmd;
+    cmd.action = ProjectCmd.Action.ACTION_SAVE;
+    cmd.path = path;
+    req.project.set(cmd);
+    return req;
+}
+
+Request makeUndoRedoRequest(bool redo) @safe {
+    Request req;
+    ProjectCmd cmd;
+    cmd.action = redo ? ProjectCmd.Action.ACTION_REDO : ProjectCmd.Action.ACTION_UNDO;
+    req.project.set(cmd);
+    return req;
+}
+
+Request makeAddTimelineClipRequest(int trackIdx, string path, float startSec, float durBeats) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_ADD_TIMELINE_CLIP;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    cmd.value = startSec;
+    Clip clip;
+    clip.path = path;
+    clip.duration_beats = durBeats;
+    cmd.clip_data = clip;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeRemoveTimelineClipRequest(int trackIdx, int clipIdx) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_REMOVE_TIMELINE_CLIP;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.timeline_clip.set(cast(uint)clipIdx);
+    cmd.target = target;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeMidiGetRequest(int trackIdx, int clipIdx) @safe {
+    Request req;
+    MidiCmd cmd;
+    cmd.action = MidiCmd.Action.ACTION_GET;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.timeline_clip.set(cast(uint)clipIdx);
+    cmd.target = target;
+    req.midi.set(cmd);
+    return req;
+}
+
+Request makeMidiUpdateRequest(int trackIdx, int clipIdx, uint resolution, const(MidiEvent)[] events) @safe {
+    Request req;
+    MidiCmd cmd;
+    cmd.action = MidiCmd.Action.ACTION_UPDATE;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.timeline_clip.set(cast(uint)clipIdx);
+    cmd.target = target;
+    cmd.resolution = (resolution > 0) ? resolution : 480;
+    cmd.events = events.dup;
+    req.midi.set(cmd);
+    return req;
+}
+
+Request makePluginLoadRequest(int trackIdx, string path, int subPluginIndex = 0) @safe {
+    Request req;
+    PluginCmd cmd;
+    cmd.action = PluginCmd.Action.ACTION_LOAD;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.plugin_index.set(cast(uint)subPluginIndex);
+    cmd.target = target;
+    cmd.path = path;
+    req.plugin.set(cmd);
+    return req;
+}
+
+Request makePluginRemoveRequest(int trackIdx, int pluginIdx) @safe {
+    Request req;
+    PluginCmd cmd;
+    cmd.action = PluginCmd.Action.ACTION_REMOVE;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.plugin_index.set(cast(uint)pluginIdx);
+    cmd.target = target;
+    req.plugin.set(cmd);
+    return req;
+}
+
+Request makePluginShowGuiRequest(int trackIdx, int pluginIdx) @safe {
+    Request req;
+    PluginCmd cmd;
+    cmd.action = PluginCmd.Action.ACTION_SHOW_GUI;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.plugin_index.set(cast(uint)pluginIdx);
+    cmd.target = target;
+    req.plugin.set(cmd);
+    return req;
+}
+
+Request makePluginSetParamRequest(int trackIdx, int pluginIdx, uint paramId, float value) @safe {
+    Request req;
+    PluginCmd cmd;
+    cmd.action = PluginCmd.Action.ACTION_SET_PARAM;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.plugin_index.set(cast(uint)pluginIdx);
+    cmd.target = target;
+    cmd.param_id = paramId;
+    cmd.param_value = value;
+    req.plugin.set(cmd);
+    return req;
+}
+
+Request makePluginListRequest(string searchPath) @safe {
+    Request req;
+    PluginCmd cmd;
+    cmd.action = PluginCmd.Action.ACTION_LIST;
+    cmd.path = searchPath;
+    req.plugin.set(cmd);
+    return req;
+}
+
+Request makeSendVirtualMidiRequest(int trackIdx, uint note, uint velocity, bool noteOn) @safe {
+    Request req;
+    SendVirtualMidi cmd;
+    cmd.track_index = trackIdx;
+    cmd.note = note;
+    cmd.velocity = velocity;
+    cmd.note_on = noteOn;
+    req.send_virtual_midi.set(cmd);
     return req;
 }
 

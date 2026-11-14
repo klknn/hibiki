@@ -21,6 +21,7 @@ d_test(
     name = "gui_d_test",
     srcs = [
         "ipc_client.d",
+        "piano_roll.d",
         "theme.d",
         "timeline_view.d",
         "transport_model.d",
@@ -38,6 +39,8 @@ d_test(
 d_library(
     name = "gui_widgets",
     srcs = [
+        "device_panel.d",
+        "piano_roll.d",
         "timeline_view.d",
         "widgets.d",
     ],

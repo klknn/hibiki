@@ -39,6 +39,7 @@ class TimelineCanvasWidget : Widget {
     enum int LANE_HEIGHT = 52;
 
     void delegate(double seekSec) onSeek;
+    void delegate(int trackIdx, int clipIdx) onSelectTrackClip;
 
     this(string id, TransportModel* model) {
         super(id);
@@ -74,11 +75,31 @@ class TimelineCanvasWidget : Widget {
         Rect arrRc = arrangementRect(well);
 
         if (event.action == MouseAction.ButtonDown && event.button == MouseButton.Left) {
+            if (event.y >= well.top + RULER_HEIGHT && event.y < well.bottom) {
+                const int lane = (event.y - (well.top + RULER_HEIGHT)) / LANE_HEIGHT;
+                if (model_ && lane >= 0 && lane < cast(int)model_.tracks.length) {
+                    const int trackIdx = model_.tracks[lane].index;
+                    int hitClip = -1;
+                    if (arrRc.isPointInside(event.x, event.y)) {
+                        const double clickSec = pixelXToSec(event.x, pixelsPerSec, arrRc.left, scrollSec);
+                        foreach (const ref c; model_.tracks[lane].clips) {
+                            if (clickSec >= c.startTimeSec && clickSec <= c.startTimeSec + c.durationSec) {
+                                hitClip = c.clipIndex;
+                                break;
+                            }
+                        }
+                    }
+                    model_.selectedTrack = trackIdx;
+                    if (hitClip >= 0) model_.selectedClipIndex = hitClip;
+                    if (onSelectTrackClip !is null) onSelectTrackClip(trackIdx, hitClip);
+                }
+            }
             if (arrRc.isPointInside(event.x, event.y)) {
                 draggingPlayhead_ = true;
                 handleSeekAtX(event.x, arrRc);
                 return true;
             }
+            return true;
         } else if (event.action == MouseAction.Move && draggingPlayhead_) {
             handleSeekAtX(event.x, arrRc);
             return true;

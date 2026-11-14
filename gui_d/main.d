@@ -4,6 +4,7 @@ import dlangui;
 import dlangui.widgets.widget : Widget;
 import gui_d.ipc_client;
 import gui_d.theme;
+import gui_d.timeline_view : TimelineCanvasWidget;
 import gui_d.transport_model;
 import gui_d.widgets : MixerCanvasWidget;
 import pb.commands : TransportCmd;
@@ -31,7 +32,7 @@ private string resolveEnginePath(string[] args) {
 extern (C) int UIAppMain(string[] args) {
     Platform.instance.uiTheme = "theme_dark";
 
-    Window window = Platform.instance.createWindow("Hibiki DAW (dlangui + SDL2)", null, WindowFlag.Resizable, 1120, 680);
+    Window window = Platform.instance.createWindow("Hibiki DAW (dlangui + SDL2)", null, WindowFlag.Resizable, 1180, 760);
 
     TransportModel model;
     EngineProcessClient client;
@@ -67,6 +68,9 @@ extern (C) int UIAppMain(string[] args) {
 
     auto btnBpmDown = new Button("btn_bpm_down", "-"d);
     auto btnBpmUp   = new Button("btn_bpm_up",   "+"d);
+    auto btnViewSplit    = new Button("btn_view_split", "SPLIT"d);
+    auto btnViewTimeline = new Button("btn_view_tl",    "TIMELINE"d);
+    auto btnViewMixer    = new Button("btn_view_mix",   "MIXER"d);
 
     transportBar.addChild(btnPlay);
     transportBar.addChild(btnStop);
@@ -76,7 +80,11 @@ extern (C) int UIAppMain(string[] args) {
     transportBar.addChild(btnBpmDown);
     transportBar.addChild(lcdBpm);
     transportBar.addChild(btnBpmUp);
+    transportBar.addChild(btnViewSplit);
+    transportBar.addChild(btnViewTimeline);
+    transportBar.addChild(btnViewMixer);
 
+    auto timelineCanvas = new TimelineCanvasWidget("timeline_canvas", &model);
     auto mixerCanvas = new MixerCanvasWidget("mixer_canvas", &model);
 
     auto statusBar = new TextWidget("status_bar", "Initializing Hibiki dlangui..."d);
@@ -86,6 +94,7 @@ extern (C) int UIAppMain(string[] args) {
     statusBar.layoutWidth = FILL_PARENT;
 
     root.addChild(transportBar);
+    root.addChild(timelineCanvas);
     root.addChild(mixerCanvas);
     root.addChild(statusBar);
 
@@ -96,6 +105,7 @@ extern (C) int UIAppMain(string[] args) {
             formatBarBeat(model.playheadPosSec, model.bpm));
         lcdBpm.text = toUTF32(format("%.1f BPM", model.bpm));
         statusBar.text = toUTF32(model.statusMessage);
+        timelineCanvas.invalidate();
         mixerCanvas.invalidate();
     }
 
@@ -149,6 +159,29 @@ extern (C) int UIAppMain(string[] args) {
         return true;
     };
 
+    btnViewSplit.click = delegate(Widget src) {
+        timelineCanvas.visibility = Visibility.Visible;
+        mixerCanvas.visibility = Visibility.Visible;
+        root.requestLayout();
+        return true;
+    };
+    btnViewTimeline.click = delegate(Widget src) {
+        timelineCanvas.visibility = Visibility.Visible;
+        mixerCanvas.visibility = Visibility.Gone;
+        root.requestLayout();
+        return true;
+    };
+    btnViewMixer.click = delegate(Widget src) {
+        timelineCanvas.visibility = Visibility.Gone;
+        mixerCanvas.visibility = Visibility.Visible;
+        root.requestLayout();
+        return true;
+    };
+
+    timelineCanvas.onSeek = (double seekSec) {
+        client.sendRequest(makeSeekRequest(seekSec));
+        refreshUi();
+    };
     mixerCanvas.onVolumeChange = (int trackIdx, float vol) {
         client.sendRequest(makeTrackVolumeRequest(trackIdx, vol));
     };

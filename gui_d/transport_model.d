@@ -3,7 +3,16 @@ module gui_d.transport_model;
 import pb.core : TransportState;
 import pb.notifications : Notification;
 
-/// Mixer strip state for a single track.
+/// Timeline arrangement clip state for a track.
+struct TimelineClipState {
+    int clipIndex = 0;
+    string name = "Clip";
+    double startTimeSec = 0.0;
+    double durationSec = 4.0;
+    float[] waveform;
+}
+
+/// Mixer strip & timeline track state for a single track.
 struct TrackStripState {
     int index = 0;
     string name = "Track";
@@ -13,6 +22,7 @@ struct TrackStripState {
     bool soloed = false;
     float peakL = 0.0f;
     float peakR = 0.0f;
+    TimelineClipState[] clips;
 }
 
 /// UI-side state model synchronized with `hbk-play` notifications.
@@ -40,7 +50,7 @@ struct TransportModel {
         return tracks.length - 1;
     }
 
-    /// Applies an engine `Notification` to update transport and mixer state.
+    /// Applies an engine `Notification` to update transport, mixer, and timeline state.
     void applyNotification(ref const(Notification) notif) @safe {
         if (notif.playhead_info.hasValue) {
             const p = notif.playhead_info.value;
@@ -64,6 +74,30 @@ struct TransportModel {
             const ti = notif.track_info.value;
             const idx = ensureTrackIndex(ti.track_index);
             if (ti.name.length > 0) tracks[idx].name = ti.name;
+        }
+        if (notif.timeline_clip_info.hasValue) {
+            const tci = notif.timeline_clip_info.value;
+            const idx = ensureTrackIndex(tci.track_index);
+            bool found = false;
+            foreach (ref c; tracks[idx].clips) {
+                if (c.clipIndex == tci.clip_index) {
+                    if (tci.name.length > 0) c.name = tci.name.idup;
+                    c.startTimeSec = tci.start_time;
+                    c.durationSec = tci.duration;
+                    c.waveform = tci.waveform.dup;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                TimelineClipState c;
+                c.clipIndex = tci.clip_index;
+                c.name = tci.name.length > 0 ? tci.name.idup : "Clip";
+                c.startTimeSec = tci.start_time;
+                c.durationSec = tci.duration;
+                c.waveform = tci.waveform.dup;
+                tracks[idx].clips ~= c;
+            }
         }
         if (notif.clear_project.hasValue) {
             tracks.length = 0;
@@ -119,6 +153,21 @@ unittest {
     n3.track_info.set(ti);
     model.applyNotification(n3);
     assert(model.tracks[0].name == "Bassline");
+
+    import pb.notifications : TimelineClipInfo;
+    Notification n3b;
+    TimelineClipInfo tci;
+    tci.track_index = 0;
+    tci.clip_index = 0;
+    tci.name = "Sub Bass";
+    tci.start_time = 2.0f;
+    tci.duration = 4.0f;
+    tci.waveform = [0.2f, 0.8f, 0.5f];
+    n3b.timeline_clip_info.set(tci);
+    model.applyNotification(n3b);
+    assert(model.tracks[0].clips.length == 1);
+    assert(model.tracks[0].clips[0].name == "Sub Bass");
+    assert(model.tracks[0].clips[0].waveform.length == 3);
 
     Notification n4;
     ClearProject cp;

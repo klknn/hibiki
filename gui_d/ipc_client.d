@@ -78,6 +78,15 @@ Request makeSetLoopRequest(bool enabled, double startSec, double endSec) @safe {
     return req;
 }
 
+Request makeSeekRequest(double posSec) @safe {
+    Request req;
+    TransportCmd cmd;
+    cmd.action = TransportCmd.Action.ACTION_SEEK;
+    cmd.seek_pos = cast(float)(posSec < 0.0 ? 0.0 : posSec);
+    req.transport.set(cmd);
+    return req;
+}
+
 Request makeSetBpmRequest(float bpm) @safe {
     Request req;
     ProjectCmd cmd;
@@ -115,6 +124,18 @@ Request makeTrackSoloRequest(int trackIdx, bool soloed) @safe {
     target.track_index = trackIdx;
     cmd.target = target;
     cmd.flag = soloed;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeAddTrackRequest(int trackIdx) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_SET_TRACK_TYPE;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    cmd.value = 0.0f;
     req.track.set(cmd);
     return req;
 }

@@ -22,6 +22,7 @@ d_test(
     srcs = [
         "ipc_client.d",
         "theme.d",
+        "timeline_view.d",
         "transport_model.d",
         "widgets.d",
     ],
@@ -36,7 +37,10 @@ d_test(
 
 d_library(
     name = "gui_widgets",
-    srcs = ["widgets.d"],
+    srcs = [
+        "timeline_view.d",
+        "widgets.d",
+    ],
     deps = [
         ":gui_model",
         "@dlangui",

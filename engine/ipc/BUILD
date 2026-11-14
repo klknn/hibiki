@@ -61,9 +61,17 @@ d_library(
     name = "ipc_d",
     srcs = ["ipc.d"],
     deps = [
-        ":ipc",
         "//dproto",
-        "//engine:bridge_d",
+        "//pb:core_d_proto",
+        "//pb:notifications_d_proto",
+    ],
+)
+
+d_test(
+    name = "ipc_d_test",
+    srcs = ["ipc.d"],
+    deps = [
+        "//dproto",
         "//pb:core_d_proto",
         "//pb:notifications_d_proto",
     ],
@@ -74,6 +82,7 @@ cc_library(
     srcs = ["ipc.cpp"],
     hdrs = ["ipc.hpp"],
     deps = [
+        ":ipc_d",
         "//engine/plugin:iplugin",
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",

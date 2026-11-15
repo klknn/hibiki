@@ -6,8 +6,8 @@ import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : adjustColorBrightness, dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText,
-    drawPlayheadTriangle, drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette,
-    safeWidgetFont, truncateLabel, uiScale;
+    drawDetailedWaveform, drawPlayheadTriangle, drawThickLine, drawVCenteredText, FlPalette, getDawFont,
+    getFlPalette, safeWidgetFont, truncateLabel, uiScale;
 import gui_d.transport_model : AutomationPoint, EditorTool, PlaylistClipKind,
     TimelineClipState, TransportModel;
 import gui_d.workspace : activateParentWindow;
@@ -405,18 +405,11 @@ private void drawPlaylistClip(
     if (bodyBot - bodyTop < dp(6) || bodyW < dp(8)) return;
 
     if (clip.kind == PlaylistClipKind.AUDIO && clip.waveform.length > 0) {
-        const int midY = (bodyTop + bodyBot) / 2;
-        const int halfH = (bodyBot - bodyTop) / 2;
-        foreach (px; 0 .. bodyW) {
-            const size_t bucket = (cast(size_t)px * clip.waveform.length) / cast(size_t)bodyW;
-            float peak = clip.waveform[bucket];
-            if (peak < 0.0f) peak = -peak;
-            if (peak > 1.0f) peak = 1.0f;
-            int barH = cast(int)(peak * halfH);
-            if (barH < 1) barH = 1;
-            buf.fillRect(Rect(cx0 + padX + px, midY - barH, cx0 + padX + px + 1, midY + barH),
-                         clip.muted ? pal.fgDim : pal.accentCyan);
-        }
+        const uint waveCoreCol = clip.muted ? pal.fgDim : pal.accentCyan;
+        const uint waveBodyCol = (waveCoreCol & 0x00FFFFFF) | 0x8C000000;
+        const uint waveAxisCol = (pal.fgDim & 0x00FFFFFF) | 0x90000000;
+        drawDetailedWaveform(buf, Rect(cx0 + padX, bodyTop, cx0 + padX + bodyW, bodyBot),
+                             clip.waveform, waveCoreCol, waveBodyCol, waveAxisCol);
     } else if (clip.kind == PlaylistClipKind.AUTOMATION) {
         // Draw smooth automation envelope curve + control nodes
         const int h = bodyBot - bodyTop;

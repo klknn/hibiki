@@ -9,9 +9,9 @@ import dlangui.widgets.editors : EditLine;
 import dlangui.widgets.layouts : HorizontalLayout, VerticalLayout;
 import dlangui.widgets.scroll : ScrollWidget;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : activeDawUiFontFace, dp, drawCard, drawVCenteredText, FlCompactButton, FlPalette,
-    getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
-import gui_d.transport_model : BrowserCategory, PatternState, TransportModel;
+import gui_d.theme : activeDawUiFontFace, dp, drawCard, drawDetailedWaveform, drawVCenteredText,
+    FlCompactButton, FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
+import gui_d.transport_model : BrowserCategory, generateSampleWaveform, PatternState, TransportModel;
 import std.algorithm : canFind;
 import std.conv : to;
 import std.format : format;
@@ -85,21 +85,12 @@ void drawSampleWaveformPreview(
     const int midY = (wfTop + wfBot) / 2;
     const int halfH = (wfBot - wfTop) / 2;
 
-    buf.fillRect(Rect(rc.left + dp(4), midY, rc.right - dp(4), midY + dp(1)), pal.borderSubtle);
-
     if (model && model.samplePreview.waveform.length > 0 && halfH >= dp(3)) {
-        const w = rc.width - padX * 2;
-        const wf = model.samplePreview.waveform;
-        foreach (px; 0 .. w) {
-            const size_t bucket = (cast(size_t)px * wf.length) / cast(size_t)w;
-            float amp = wf[bucket];
-            if (amp < 0.0f) amp = -amp;
-            if (amp > 1.0f) amp = 1.0f;
-            int barH = cast(int)(amp * halfH);
-            if (barH < 1) barH = 1;
-            buf.fillRect(Rect(rc.left + padX + px, midY - barH, rc.left + padX + px + 1, midY + barH),
-                         pal.accentCyan);
-        }
+        drawDetailedWaveform(buf, Rect(rc.left + padX, wfTop, rc.right - padX, wfBot),
+                             model.samplePreview.waveform, pal.accentCyan,
+                             (pal.accentCyan & 0x00FFFFFF) | 0x8C000000, pal.borderSubtle);
+    } else {
+        buf.fillRect(Rect(rc.left + dp(4), midY, rc.right - dp(4), midY + dp(1)), pal.borderSubtle);
     }
 
     if (model) {
@@ -396,6 +387,10 @@ class BrowserPanel : VerticalLayout {
                         if (model_) {
                             model_.samplePreview.name = baseName(entry.uri);
                             model_.samplePreview.path = entry.uri;
+                            uint seed = 17;
+                            foreach (ch; entry.uri) seed = seed * 31u + cast(uint)ch;
+                            model_.samplePreview.waveform =
+                                generateSampleWaveform(512, seed, canFind(toLower(entry.uri), "loop"));
                         }
                         if (onAddSampleClip !is null) onAddSampleClip(entry.uri);
                         if (onPreviewNote !is null) onPreviewNote(60);

@@ -1,7 +1,7 @@
 module gui_d.theme;
 
 import core.math : fabs;
-import core.stdc.math : cosf, log10f, sinf, sqrtf;
+import core.stdc.math : ceilf, cosf, floorf, log10f, sinf, sqrtf;
 import dlangui.core.config : ENABLE_FREETYPE;
 import dlangui.core.types : BASE_DPI, Point, Rect, SCREEN_DPI;
 import dlangui.graphics.colors : COLOR_TRANSPARENT;
@@ -550,6 +550,188 @@ void drawThickLine(DrawBuf buf, float x0, float y0, float x1, float y1, float wi
     }
 }
 
+/// Evaluates clamped Catmull-Rom cubic spline interpolation over `wf` at continuous index `u`.
+private float sampleWaveformCatmullRom(const(float)[] wf, float u) pure nothrow @safe {
+    if (wf.length == 0) return 0.0f;
+    if (wf.length == 1) return wf[0];
+    const int n = cast(int)wf.length;
+    int i1 = cast(int)floorf(u);
+    if (i1 < 0) i1 = 0;
+    if (i1 >= n - 1) i1 = n - 2;
+    const float t = u - cast(float)i1;
+    const float p0 = wf[(i1 > 0) ? (i1 - 1) : 0];
+    const float p1 = wf[i1];
+    const float p2 = wf[i1 + 1];
+    const float p3 = wf[(i1 + 2 < n) ? (i1 + 2) : (n - 1)];
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+    float v = 0.5f * ((2.0f * p1) +
+                      (-p0 + p2) * t +
+                      (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
+                      (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
+    if (v > 1.0f) v = 1.0f;
+    if (v < -1.0f) v = -1.0f;
+    return v;
+}
+
+/// Renders a smooth, anti-aliased high-resolution audio waveform with peak envelope, inner RMS core,
+/// and sub-pixel edge anti-aliasing across `rc` (handles both signed `[-1, 1]` and unsigned `[0, 1]` data).
+void drawDetailedWaveform(
+    DrawBuf buf,
+    Rect rc,
+    const(float)[] wf,
+    uint coreColor,
+    uint peakBodyColor = COLOR_TRANSPARENT,
+    uint centerLineColor = COLOR_TRANSPARENT
+) {
+    if (rc.width <= 1 || rc.height <= 2 || wf.length == 0) return;
+
+    const float midY = rc.top + cast(float)rc.height * 0.5f;
+    const float maxHalfH = cast(float)rc.height * 0.5f - dpf(1.0f);
+    if (maxHalfH < 1.0f) return;
+
+    if (centerLineColor != COLOR_TRANSPARENT) {
+        const int cy = cast(int)(midY + 0.5f);
+        buf.fillRect(Rect(rc.left, cy, rc.right, cy + 1), centerLineColor);
+    }
+
+    bool hasNegative = false;
+    foreach (s; wf) {
+        if (s < -0.001f) {
+            hasNegative = true;
+            break;
+        }
+    }
+
+    const uint rgb = coreColor & 0x00FFFFFF;
+    const uint baseAlpha = (coreColor >> 24) & 0xFF;
+    const float baseCov = 1.0f - cast(float)baseAlpha / 255.0f;
+    const uint bodyCol = (peakBodyColor != COLOR_TRANSPARENT)
+        ? peakBodyColor
+        : (rgb | (cast(uint)((1.0f - baseCov * 0.42f) * 255.0f) << 24));
+    const uint contourCol = rgb | (cast(uint)((1.0f - baseCov * 0.85f) * 255.0f) << 24);
+
+    uint aaPixelColor(float frac) {
+        if (frac < 0.0f) frac = 0.0f;
+        if (frac > 1.0f) frac = 1.0f;
+        const float cov = baseCov * 0.72f * frac;
+        const uint a = cast(uint)((1.0f - cov) * 255.0f + 0.5f);
+        return rgb | ((a > 255 ? 255 : a) << 24);
+    }
+
+    const int w = rc.width;
+    float prevTopY = midY;
+    float prevBotY = midY;
+    bool hasPrev = false;
+
+    foreach (px; 0 .. w) {
+        float posPeak = 0.0f;
+        float negPeak = 0.0f;
+        float rms = 0.0f;
+
+        if (wf.length > cast(size_t)w) {
+            const size_t i0 = (cast(size_t)px * wf.length) / cast(size_t)w;
+            size_t i1 = (cast(size_t)(px + 1) * wf.length) / cast(size_t)w;
+            if (i1 <= i0) i1 = i0 + 1;
+            if (i1 > wf.length) i1 = wf.length;
+
+            double sumSq = 0.0;
+            foreach (i; i0 .. i1) {
+                float s = wf[i];
+                if (s > 1.0f) s = 1.0f;
+                if (s < -1.0f) s = -1.0f;
+                if (hasNegative) {
+                    if (s > posPeak) posPeak = s;
+                    if (-s > negPeak) negPeak = -s;
+                } else {
+                    const float a = fabs(s);
+                    if (a > posPeak) posPeak = a;
+                    if (a > negPeak) negPeak = a;
+                }
+                sumSq += cast(double)s * cast(double)s;
+            }
+            rms = sqrtf(cast(float)(sumSq / cast(double)(i1 - i0)));
+            // Keep transient peaks visually crisp while preserving RMS contrast
+            if (rms > posPeak && rms > negPeak) rms = posPeak > negPeak ? posPeak : negPeak;
+        } else {
+            // Smooth Catmull-Rom cubic interpolation across sub-sample columns
+            const float denom = (w > 1) ? cast(float)(w - 1) : 1.0f;
+            const float u = (cast(float)px / denom) * cast(float)(wf.length - 1);
+            const float s0 = sampleWaveformCatmullRom(wf, u);
+            const float sL = sampleWaveformCatmullRom(wf, u - 0.35f);
+            const float sR = sampleWaveformCatmullRom(wf, u + 0.35f);
+            if (hasNegative) {
+                posPeak = fabs(s0) * 0.65f + (fabs(sL) > fabs(sR) ? fabs(sL) : fabs(sR)) * 0.35f;
+                negPeak = posPeak * 0.96f;
+                if (s0 > 0.0f) posPeak = (posPeak > s0) ? posPeak : s0;
+                else negPeak = (negPeak > -s0) ? negPeak : -s0;
+            } else {
+                const float v = fabs(s0);
+                posPeak = v;
+                negPeak = v;
+            }
+            rms = ((posPeak > negPeak ? posPeak : negPeak)) * 0.56f;
+        }
+
+        if (posPeak > 1.0f) posPeak = 1.0f;
+        if (negPeak > 1.0f) negPeak = 1.0f;
+        if (rms > 1.0f) rms = 1.0f;
+
+        float topF = midY - posPeak * maxHalfH;
+        float botF = midY + negPeak * maxHalfH;
+        if (botF - topF < 1.0f) {
+            topF = midY - 0.5f;
+            botF = midY + 0.5f;
+        }
+
+        const int x = rc.left + px;
+        const int iy0 = cast(int)ceilf(topF);
+        const int iy1 = cast(int)floorf(botF);
+
+        // 1. Translucent peak envelope fill
+        if (iy1 >= iy0) {
+            buf.fillRect(Rect(x, iy0, x + 1, iy1 + 1), bodyCol);
+        } else {
+            const int cy = cast(int)(midY + 0.5f);
+            buf.fillRect(Rect(x, cy, x + 1, cy + 1), bodyCol);
+        }
+
+        // 2. Smooth contour bridge between steep adjacent samples + anti-aliased tip pixels
+        if (hasPrev) {
+            const int cTop0 = cast(int)(prevTopY < topF ? prevTopY : topF);
+            const int cTop1 = cast(int)(prevTopY > topF ? prevTopY : topF);
+            if (cTop1 > cTop0) {
+                buf.fillRect(Rect(x, cTop0, x + 1, cTop1 + 1), contourCol);
+            }
+            const int cBot0 = cast(int)(prevBotY < botF ? prevBotY : botF);
+            const int cBot1 = cast(int)(prevBotY > botF ? prevBotY : botF);
+            if (cBot1 > cBot0) {
+                buf.fillRect(Rect(x, cBot0, x + 1, cBot1 + 1), contourCol);
+            }
+        }
+        const float topFrac = cast(float)iy0 - topF;
+        if (iy0 - 1 >= rc.top && topFrac > 0.04f) {
+            buf.fillRect(Rect(x, iy0 - 1, x + 1, iy0), aaPixelColor(topFrac));
+        }
+        const float botFrac = botF - cast(float)iy1;
+        if (iy1 + 1 < rc.bottom && botFrac > 0.04f) {
+            buf.fillRect(Rect(x, iy1 + 1, x + 1, iy1 + 2), aaPixelColor(botFrac));
+        }
+
+        // 3. Crisp inner RMS core
+        const float innerHalf = rms * maxHalfH * 0.78f;
+        const int r0 = cast(int)(midY - innerHalf + 0.5f);
+        const int r1 = cast(int)(midY + innerHalf + 0.5f);
+        if (r1 > r0) {
+            buf.fillRect(Rect(x, r0, x + 1, r1), coreColor);
+        }
+
+        prevTopY = topF;
+        prevBotY = botF;
+        hasPrev = true;
+    }
+}
+
 /// Draws an open circular arc stroke between `startDeg` and `endDeg` (in degrees, 0 = right, 90 = down).
 void drawOpenArc(
     DrawBuf buf,
@@ -1094,4 +1276,13 @@ unittest {
     assert(exists(buildPath(testFontDir, "BIZUDPGothic-Regular.ttf")));
     assert(exists(buildPath(testFontDir, "BIZUDPGothic-Bold.ttf")));
     assert(getSize(buildPath(testFontDir, "BIZUDPGothic-Regular.ttf")) > 100_000);
+
+    // Verify drawDetailedWaveform smoothly interpolates sparse waveforms & renders peak+RMS layers
+    auto wfBuf = new ColorDrawBuf(160, 48);
+    wfBuf.fill(pal.bgWindow);
+    static immutable float[6] sparseWf = [0.1f, 0.9f, -0.7f, 0.5f, -0.8f, 0.2f];
+    drawDetailedWaveform(wfBuf, Rect(4, 4, 156, 44), sparseWf[], pal.accentCyan,
+                         (pal.accentCyan & 0x00FFFFFF) | 0x80000000, pal.borderSubtle);
+    // Midpoint (~x=44) between 0.1 and 0.9 must interpolate rather than stay flat
+    assert(wfBuf.scanLine(24)[44] != pal.bgWindow, "Expected smooth Catmull-Rom waveform body");
 }

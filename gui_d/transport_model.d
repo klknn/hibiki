@@ -1,5 +1,6 @@
 module gui_d.transport_model;
 
+import core.stdc.math : expf, sinf;
 import gui_d.theme : FlPalette, FlThemeId, getFlPalette;
 import pb.core : MidiEvent, TransportState;
 import pb.notifications : Notification, PluginDescription;
@@ -199,6 +200,51 @@ struct SamplePreviewState {
     string path = "testdata/loop140.wav";
     string info = "140 BPM | 44.1 kHz | 16-bit";
     float[] waveform;
+}
+
+/// Synthesizes a high-resolution deterministic audio waveform (`count` signed samples in `[-1, 1]`)
+/// with punchy transients, harmonic body, and high-frequency texture for crisp clip/preview rendering.
+float[] generateSampleWaveform(size_t count = 768, uint seed = 1, bool isLoop = true) nothrow @safe {
+    if (count == 0) return null;
+    float[] wf = new float[count];
+    uint state = seed == 0 ? 0x9E3779B9u : (seed * 747796405u + 2891336453u);
+    const double phaseSeed = cast(double)(seed & 0x3F) * 0.17;
+    foreach (i; 0 .. count) {
+        const double t = cast(double)i / cast(double)(count > 1 ? count - 1 : 1);
+        state = state * 1664525u + 1013904223u;
+        const float noise = (cast(float)(state & 0xFFFF) / 32768.0f) - 1.0f;
+        float env;
+        float carrier;
+        if (isLoop) {
+            const double beat = (t * 8.0) % 1.0;
+            const int beatIdx = cast(int)(t * 8.0);
+            const double sixteenth = (t * 32.0) % 1.0;
+            const float kickEnv = ((beatIdx % 2) == 0 || beatIdx == 3)
+                ? expf(-cast(float)(beat * 7.5)) * 0.92f : 0.0f;
+            const float snareEnv = ((beatIdx % 2) == 1)
+                ? expf(-cast(float)(beat * 9.0)) * 0.85f : 0.0f;
+            const float hatEnv = expf(-cast(float)(sixteenth * 9.5)) * 0.34f;
+            const float bassEnv = 0.22f + 0.18f * sinf(cast(float)(t * 12.566 + phaseSeed));
+            env = kickEnv + snareEnv * 0.85f + hatEnv + bassEnv;
+            if (env > 0.98f) env = 0.98f;
+            const double f0 = 38.0 + phaseSeed * 4.0;
+            carrier = 0.52f * sinf(cast(float)(t * 6.28318 * f0)) +
+                      0.26f * sinf(cast(float)(t * 6.28318 * (f0 * 2.37) + 0.7)) +
+                      (0.22f + snareEnv * 0.35f) * noise;
+        } else {
+            const float attack = (t < 0.015) ? cast(float)(t / 0.015) : 1.0f;
+            env = attack * (0.86f * expf(-cast(float)(t * 4.2)) + 0.16f * expf(-cast(float)(t * 1.4)));
+            const double sweep = 26.0 + 34.0 * expf(-cast(float)(t * 8.0));
+            carrier = 0.62f * sinf(cast(float)(t * 6.28318 * sweep + phaseSeed)) +
+                      0.24f * sinf(cast(float)(t * 6.28318 * (sweep * 3.1))) +
+                      0.14f * noise;
+        }
+        float v = env * carrier;
+        if (v > 1.0f) v = 1.0f;
+        if (v < -1.0f) v = -1.0f;
+        wf[i] = v;
+    }
+    return wf;
 }
 
 /// UI-side FL Studio 2026 DAW state model synchronized with `hbk-play` notifications.
@@ -446,11 +492,7 @@ struct TransportModel {
             aud.color = pal.clipAudio;
             aud.startTimeSec = barSec;
             aud.durationSec = barSec * 2.0;
-            aud.waveform = [
-                0.2f, 0.85f, 0.55f, 0.92f, 0.35f, 0.72f, 0.40f, 0.88f,
-                0.25f, 0.80f, 0.62f, 0.95f, 0.30f, 0.65f, 0.45f, 0.78f,
-                0.20f, 0.90f, 0.50f, 0.86f, 0.38f, 0.74f, 0.42f, 0.82f
-            ];
+            aud.waveform = generateSampleWaveform(768, 140, true);
 
             TimelineClipState aut;
             aut.clipIndex = 4;
@@ -503,11 +545,7 @@ struct TransportModel {
         }
 
         if (samplePreview.waveform.length == 0) {
-            samplePreview.waveform = [
-                0.15f, 0.92f, 0.65f, 0.40f, 0.85f, 0.55f, 0.30f, 0.78f,
-                0.96f, 0.62f, 0.38f, 0.72f, 0.48f, 0.25f, 0.80f, 0.50f,
-                0.22f, 0.88f, 0.58f, 0.32f, 0.74f, 0.44f, 0.20f, 0.60f
-            ];
+            samplePreview.waveform = generateSampleWaveform(512, 140, true);
         }
     }
 

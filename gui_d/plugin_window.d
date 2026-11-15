@@ -145,23 +145,28 @@ void drawPluginWrapperCanvas(
     const int cellW = (rc.width - 20) / cols;
     const int cellH = gridH / 2;
     const size_t count = plug.params.length > 8 ? 8 : plug.params.length;
+    const int knobR = (cellH >= 68) ? 17 : ((cellH - 26) / 2 > 10 ? (cellH - 26) / 2 : 10);
 
     foreach (i; 0 .. count) {
         const int col = cast(int)i % cols;
         const int row = cast(int)i / cols;
         const int cx = rc.left + 10 + col * cellW + cellW / 2;
-        const int cy = gridTop + row * cellH + cellH / 2 - 6;
+        const int cy = gridTop + row * cellH + cellH / 2 - (cellH >= 68 ? 4 : 6);
         const auto pm = plug.params[i];
         const uint arcCol = (i % 2 == 0) ? pal.accentOrange : pal.accentCyan;
 
-        drawRotaryKnob(buf, cx, cy, 17, pm.currentValue,
+        drawRotaryKnob(buf, cx, cy, knobR, pm.currentValue,
                        pal.bgLcd, arcCol, pal.bgControl, pal.borderSubtle, false);
 
         if (!fnt.isNull) {
             const string lbl = truncateLabel(pm.name, 11);
             const string valStr = format("%d%%", cast(int)(pm.currentValue * 100.0f + 0.5f));
-            fnt.drawText(buf, cx - 28, cy + 20, toUTF32(lbl), pal.fgText);
-            fnt.drawText(buf, cx - 14, cy - 30, toUTF32(valStr), pal.fgMuted);
+            fnt.drawText(buf, cx - 28, cy + knobR + 2, toUTF32(lbl), pal.fgText);
+            if (cellH >= 68) {
+                fnt.drawText(buf, cx - 14, cy - knobR - 13, toUTF32(valStr), pal.fgMuted);
+            } else {
+                fnt.drawText(buf, cx + knobR + 3, cy - 5, toUTF32(valStr), pal.fgMuted);
+            }
         }
     }
 }
@@ -178,6 +183,7 @@ class PluginWrapperWidget : Widget {
     private float dragStartVal_ = 0.0f;
 
     void delegate(int trackIdx, int pluginIdx, uint paramId, float value) onSetParam;
+    void delegate(int trackIdx, int pluginIdx, bool enabled) onSetBypass;
     void delegate(int trackIdx, int pluginIdx) onShowNativeGui;
 
     this(string id, TransportModel* model) {
@@ -198,6 +204,17 @@ class PluginWrapperWidget : Widget {
         targetIndex = mixerInsert;
         targetFxSlot = slotIdx;
         invalidate();
+    }
+
+    private int resolveTargetMixerTrack() const nothrow @safe {
+        if (!model_) return 0;
+        if (targetKind == WrapperTargetKind.MIXER_FX) {
+            return targetIndex;
+        }
+        if (targetIndex >= 0 && targetIndex < cast(int)model_.channels.length) {
+            return model_.channels[targetIndex].mixerInsert;
+        }
+        return model_.selectedTrack;
     }
 
     override void onDraw(DrawBuf buf) {
@@ -235,12 +252,14 @@ class PluginWrapperWidget : Widget {
                     return true;
                 }
                 if (guiRc.isPointInside(event.x, event.y)) {
-                    const int trk = (targetKind == WrapperTargetKind.MIXER_FX) ? targetIndex : model_.selectedTrack;
+                    const int trk = resolveTargetMixerTrack();
                     if (onShowNativeGui !is null) onShowNativeGui(trk, plug.pluginIndex);
                     return true;
                 }
                 if (bypRc.isPointInside(event.x, event.y)) {
                     plug.enabled = !plug.enabled;
+                    const int trk = resolveTargetMixerTrack();
+                    if (onSetBypass !is null) onSetBypass(trk, plug.pluginIndex, plug.enabled);
                     invalidate();
                     return true;
                 }
@@ -250,14 +269,14 @@ class PluginWrapperWidget : Widget {
             // Knob grid hit test
             const int gridTop = _pos.top + WRAP_HDR_H + 8 + SCOPE_H + 10;
             const int gridH = _pos.bottom - gridTop - 8;
-            if (event.y >= gridTop && gridH > 40) {
+            if (event.y >= gridTop && gridH > 40 && _pos.width > 20) {
                 const int col = (event.x - (_pos.left + 10)) * 4 / (_pos.width - 20);
                 const int row = (event.y - gridTop) * 2 / gridH;
                 const int idx = row * 4 + col;
                 if (col >= 0 && col < 4 && row >= 0 && row < 2 && idx < cast(int)plug.params.length) {
                     if (event.button == MouseButton.Right) {
                         plug.params[idx].currentValue = plug.params[idx].defaultValue;
-                        const int trk = (targetKind == WrapperTargetKind.MIXER_FX) ? targetIndex : model_.selectedTrack;
+                        const int trk = resolveTargetMixerTrack();
                         if (onSetParam !is null) {
                             onSetParam(trk, plug.pluginIndex, plug.params[idx].id, plug.params[idx].currentValue);
                         }
@@ -282,7 +301,7 @@ class PluginWrapperWidget : Widget {
             plug.params[dragParamIdx_].currentValue = v;
             model_.hintText = format("%s — %s: %d%%", plug.name, plug.params[dragParamIdx_].name,
                                      cast(int)(v * 100.0f + 0.5f));
-            const int trk = (targetKind == WrapperTargetKind.MIXER_FX) ? targetIndex : model_.selectedTrack;
+            const int trk = resolveTargetMixerTrack();
             if (onSetParam !is null) {
                 onSetParam(trk, plug.pluginIndex, plug.params[dragParamIdx_].id, v);
             }
@@ -290,7 +309,8 @@ class PluginWrapperWidget : Widget {
             return true;
         }
 
-        if (event.action == MouseAction.ButtonUp && dragParamIdx_ >= 0) {
+        if ((event.action == MouseAction.ButtonUp || event.action == MouseAction.Cancel) &&
+            dragParamIdx_ >= 0) {
             dragParamIdx_ = -1;
             return true;
         }
@@ -310,4 +330,31 @@ unittest {
     auto buf = new ColorDrawBuf(440, 260);
     drawPluginWrapperCanvas(buf, Rect(0, 0, 440, 260), &model, plug);
     assert(buf.scanLine(12)[200] == model.palette().bgLcd);
+
+    // Regression: CHANNEL_GENERATOR param edits must target channel's mixerInsert (4), not model.selectedTrack (0)
+    import dlangui.widgets.styles : currentTheme, createDefaultTheme;
+    import gui_d.theme : destroyWidgetTree;
+    if (currentTheme is null) currentTheme = createDefaultTheme();
+
+    model.selectedTrack = 0; // Master
+    auto pw = new PluginWrapperWidget("pw", &model);
+    scope (exit) destroyWidgetTree(pw);
+    pw.setTargetChannel(3); // Acid Bass -> mixerInsert = 4
+    pw.measure(440, 280);
+    pw.layout(Rect(0, 0, 440, 280));
+    int sentTrack = -1;
+    pw.onSetParam = (int trkIdx, int plugIdx, uint pid, float v) {
+        sentTrack = trkIdx;
+    };
+    // Click and drag param 0 knob
+    const int gridTop = WRAP_HDR_H + 8 + SCOPE_H + 10;
+    pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)60, cast(short)(gridTop + 20)));
+    pw.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, MouseFlag.LButton, cast(short)60, cast(short)(gridTop + 5)));
+    assert(sentTrack == 4, "Expected CHANNEL_GENERATOR param change to target channel's mixerInsert (4)");
+
+    // Cancel ends knob drag cleanly
+    pw.onMouseEvent(new MouseEvent(MouseAction.Cancel, MouseButton.None, 0, cast(short)60, cast(short)(gridTop + 5)));
+    sentTrack = -1;
+    pw.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, 0, cast(short)60, cast(short)(gridTop + 40)));
+    assert(sentTrack == -1, "Expected MouseAction.Cancel to clear knob drag");
 }

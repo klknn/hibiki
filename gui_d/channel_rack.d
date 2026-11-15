@@ -14,7 +14,8 @@ void drawChannelRackCanvas(
     DrawBuf buf,
     Rect rc,
     const(TransportModel)* model,
-    FontRef fnt = FontRef.init
+    FontRef fnt = FontRef.init,
+    int scrollRow = 0
 ) {
     const pal = model ? model.palette() : getFlPalette();
     buf.fillRect(rc, pal.bgWindow);
@@ -81,10 +82,16 @@ void drawChannelRackCanvas(
     }
 
     // 2. Channel Rows
+    int skipped = 0;
     int visRow = 0;
     foreach (const ref ch; model.channels) {
         if (model.channelFilter == ChannelFilterMode.DRUMS && ch.category != "Drums") continue;
         if (model.channelFilter == ChannelFilterMode.SYNTHS && ch.category != "Synths") continue;
+        if (model.channelFilter == ChannelFilterMode.AUDIO && ch.category != "Audio") continue;
+        if (skipped < scrollRow) {
+            skipped++;
+            continue;
+        }
 
         const int y0 = bodyTop + visRow * ROW_H;
         const int y1 = y0 + ROW_H - 4;
@@ -230,6 +237,7 @@ class ChannelRackWidget : Widget {
     private int dragStartY_ = 0;
     private float dragStartVal_ = 0.0f;
     private bool dragStepPaintVal_ = true;
+    int scrollRow = 0;
 
     void delegate(int channelIdx, int stepIdx, bool active) onStepToggle;
     void delegate(int channelIdx) onSelectChannel;
@@ -248,7 +256,7 @@ class ChannelRackWidget : Widget {
 
     override void onDraw(DrawBuf buf) {
         if (visibility != Visibility.Visible) return;
-        drawChannelRackCanvas(buf, _pos, model_, font);
+        drawChannelRackCanvas(buf, _pos, model_, font, scrollRow);
     }
 
     private int[] visibleChannelIndices() const @safe {
@@ -257,6 +265,7 @@ class ChannelRackWidget : Widget {
         foreach (i, const ref ch; model_.channels) {
             if (model_.channelFilter == ChannelFilterMode.DRUMS && ch.category != "Drums") continue;
             if (model_.channelFilter == ChannelFilterMode.SYNTHS && ch.category != "Synths") continue;
+            if (model_.channelFilter == ChannelFilterMode.AUDIO && ch.category != "Audio") continue;
             res ~= cast(int)i;
         }
         return res;
@@ -278,6 +287,17 @@ class ChannelRackWidget : Widget {
         const int stepW = (stepAreaW > 160) ? (stepAreaW / 16) : 14;
         const int graphAreaTop = model_.graphEditorOpen ? (_pos.bottom - GRAPH_H) : _pos.bottom;
 
+        if (event.action == MouseAction.Wheel) {
+            const auto visIdx = visibleChannelIndices();
+            if (visIdx.length > 0) {
+                scrollRow -= (event.wheelDelta > 0) ? 1 : -1;
+                if (scrollRow < 0) scrollRow = 0;
+                if (scrollRow >= cast(int)visIdx.length) scrollRow = cast(int)visIdx.length - 1;
+                invalidate();
+            }
+            return true;
+        }
+
         if (event.action == MouseAction.ButtonDown) {
             activateParentWindow(this);
 
@@ -285,8 +305,10 @@ class ChannelRackWidget : Widget {
             if (event.y >= _pos.top && event.y < _pos.top + TOOLBAR_H) {
                 Rect filterRc = Rect(_pos.left + 8, _pos.top + 4, _pos.left + 68, _pos.top + TOOLBAR_H - 4);
                 if (filterRc.isPointInside(event.x, event.y)) {
-                    model_.channelFilter = cast(ChannelFilterMode)((cast(int)model_.channelFilter + 1) % 3);
-                    model_.hintText = "Channel Filter changed";
+                    model_.channelFilter = cast(ChannelFilterMode)((cast(int)model_.channelFilter + 1) % 4);
+                    scrollRow = 0;
+                    static immutable string[4] F_NAMES = ["All", "Drums", "Synths", "Audio"];
+                    model_.hintText = "Channel Filter: " ~ F_NAMES[cast(int)model_.channelFilter];
                     invalidate();
                     return true;
                 }
@@ -339,7 +361,8 @@ class ChannelRackWidget : Widget {
 
             // 3. Channel Row hit testing
             const int bodyTop = _pos.top + TOOLBAR_H + 4;
-            const int visRow = (event.y - bodyTop) / ROW_H;
+            if (event.y < bodyTop) return true;
+            const int visRow = scrollRow + (event.y - bodyTop) / ROW_H;
             const auto visIdx = visibleChannelIndices();
             if (visRow < 0 || visRow >= cast(int)visIdx.length) return true;
             auto ch = &model_.channels[visIdx[visRow]];
@@ -399,17 +422,18 @@ class ChannelRackWidget : Widget {
                 return true;
             }
 
-            // Channel Name Pill
+            // Channel Name Pill: single-click selects, double-click opens Plugin Wrapper, right-click opens Piano Roll
             if (event.x < stepAreaLeft) {
-                model_.selectedChannelIndex = ch.index;
-                model_.activeMidi.channelIndex = ch.index;
+                model_.selectPianoRollChannel(visIdx[visRow]);
                 if (event.button == MouseButton.Right) {
+                    if (onSelectChannel !is null) onSelectChannel(ch.index);
                     if (onOpenPianoRoll !is null) onOpenPianoRoll(ch.index);
                 } else if (event.doubleClick) {
-                    if (onOpenPluginWrapper !is null) onOpenPluginWrapper(ch.index);
-                } else {
                     if (onSelectChannel !is null) onSelectChannel(ch.index);
                     if (onOpenPluginWrapper !is null) onOpenPluginWrapper(ch.index);
+                } else {
+                    model_.hintText = format("Selected Channel: %s (double-click for Wrapper, right-click for Piano Roll)", ch.name);
+                    if (onSelectChannel !is null) onSelectChannel(ch.index);
                 }
                 invalidate();
                 return true;
@@ -492,7 +516,8 @@ class ChannelRackWidget : Widget {
             }
         }
 
-        if (event.action == MouseAction.ButtonUp && dragTarget_ != DragTarget.NONE) {
+        if ((event.action == MouseAction.ButtonUp || event.action == MouseAction.Cancel) &&
+            dragTarget_ != DragTarget.NONE) {
             dragTarget_ = DragTarget.NONE;
             dragChannelArrIdx_ = -1;
             return true;
@@ -517,15 +542,23 @@ class ChannelRackWidget : Widget {
                 final switch (model_.graphEditorMode) {
                     case GraphEditorMode.VELOCITY:
                         ch.stepVelocities[stepIdx] = norm;
+                        model_.hintText = format("%s Step %d Velocity: %d%%",
+                                                 ch.name, stepIdx + 1, cast(int)(norm * 100.0f + 0.5f));
                         break;
                     case GraphEditorMode.PITCH:
                         ch.stepPitches[stepIdx] = norm * 2.0f - 1.0f;
+                        model_.hintText = format("%s Step %d Pitch: %+d%%",
+                                                 ch.name, stepIdx + 1, cast(int)(ch.stepPitches[stepIdx] * 100.0f));
                         break;
                     case GraphEditorMode.PAN:
                         ch.stepPans[stepIdx] = norm * 2.0f - 1.0f;
+                        model_.hintText = format("%s Step %d Pan: %+d%%",
+                                                 ch.name, stepIdx + 1, cast(int)(ch.stepPans[stepIdx] * 100.0f));
                         break;
                     case GraphEditorMode.SHIFT:
                         ch.stepShifts[stepIdx] = norm;
+                        model_.hintText = format("%s Step %d Shift: %d%%",
+                                                 ch.name, stepIdx + 1, cast(int)(norm * 100.0f + 0.5f));
                         break;
                 }
                 invalidate();
@@ -549,4 +582,53 @@ unittest {
     // stepAreaLeft = 248, y0 = 28 + 4 = 32, padRc top = 35
     const uint c = buf.scanLine(42)[255];
     assert(c == pal.stepActive, "Expected active FL Studio step pad to render stepActive");
+
+    // Regression 1: Cycling filter visits all 4 modes including AUDIO and filters Audio channels
+    import dlangui.widgets.styles : currentTheme, createDefaultTheme;
+    import gui_d.theme : destroyWidgetTree;
+    if (currentTheme is null) currentTheme = createDefaultTheme();
+    auto cr = new ChannelRackWidget("cr", &model);
+    scope (exit) destroyWidgetTree(cr);
+    cr.measure(720, 320);
+    cr.layout(Rect(0, 0, 720, 320));
+    foreach (_; 0 .. 3) {
+        cr.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, 20, 14));
+    }
+    assert(model.channelFilter == ChannelFilterMode.AUDIO,
+           "Expected 3 clicks on filter button from ALL to reach ChannelFilterMode.AUDIO");
+    assert(cr.visibleChannelIndices().length == 0,
+           "Expected AUDIO filter to show 0 channels on default Drums/Synths template");
+    ChannelState audioCh;
+    audioCh.initDefaults();
+    audioCh.index = 5;
+    audioCh.name = "Vocal Loop";
+    audioCh.category = "Audio";
+    model.channels ~= audioCh;
+    assert(cr.visibleChannelIndices().length == 1,
+           "Expected AUDIO filter to show only the Audio channel");
+
+    // Regression 2: Single-clicking channel pill selects without popping Plugin Wrapper; double-click opens it
+    bool wrapperOpened = false;
+    int selectedCh = -1;
+    cr.onSelectChannel = (int chIdx) { selectedCh = chIdx; };
+    cr.onOpenPluginWrapper = (int chIdx) { wrapperOpened = true; };
+    model.channelFilter = ChannelFilterMode.ALL;
+    cr.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, 150, 44));
+    assert(selectedCh == 0 && !wrapperOpened,
+           "Expected single-click on channel pill to select channel without opening Plugin Wrapper");
+    auto dblEvt = new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, 150, 44);
+    dblEvt.lbutton.down(150, 44, MouseFlag.LButton);
+    dblEvt.lbutton.up(150, 44, 0);
+    dblEvt.lbutton.down(150, 44, MouseFlag.LButton);
+    cr.onMouseEvent(dblEvt);
+    assert(wrapperOpened, "Expected double-click on channel pill to open Plugin Wrapper");
+
+    // Regression 3: MouseWheel scrolls channels and Cancel stops swing drag
+    cr.onMouseEvent(new MouseEvent(MouseAction.Wheel, MouseButton.None, 0, 150, 100, -1));
+    assert(cr.scrollRow == 1, "Expected wheel down in Channel Rack to scroll row offset");
+    cr.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, 92, 14));
+    cr.onMouseEvent(new MouseEvent(MouseAction.Cancel, MouseButton.None, 0, 92, 14));
+    const float swingBefore = model.swingAmount;
+    cr.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, 0, 92, 0));
+    assert(model.swingAmount == swingBefore, "Expected Cancel to clear swing drag");
 }

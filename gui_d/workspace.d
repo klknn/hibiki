@@ -166,6 +166,10 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
         }
     }
 
+    package @property int minWindowW() const pure nothrow @safe { return minW_; }
+    package @property int minWindowH() const pure nothrow @safe { return minH_; }
+    package void applyClampedBounds(Rect rc) nothrow @safe { bounds_ = rc; }
+
     @property bool isActive() const pure nothrow @safe { return isActive_; }
     @property void isActive(bool v) { isActive_ = v; invalidate(); }
 
@@ -234,7 +238,7 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
 
         // Subtle outer drop-shadow frame
         Rect shadowRc = Rect(_pos.left + 1, _pos.top + 1, _pos.right + 2, _pos.bottom + 2);
-        buf.fillRect(shadowRc, 0x55000000);
+        buf.fillRect(shadowRc, 0xBA000000);
 
         // Window body frame & border
         const uint borderCol = isActive_ ? pal.borderAccent : pal.borderSubtle;
@@ -382,7 +386,8 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
             return true;
         }
 
-        if (event.action == MouseAction.ButtonUp && dragMode_ != DragMode.NONE) {
+        if ((event.action == MouseAction.ButtonUp || event.action == MouseAction.Cancel) &&
+            dragMode_ != DragMode.NONE) {
             dragMode_ = DragMode.NONE;
             return true;
         }
@@ -530,24 +535,24 @@ class FlDesktopCanvas : WidgetGroupDefaultDrawing {
 
         final switch (preset) {
             case DesktopLayoutPreset.DEFAULT_FL:
-                // Authentic FL Studio 2026 default floating layout:
-                // Playlist fills top/left, Mixer docks lower-right, Channel Rack floats crisp on top-right,
-                // Piano Roll sits bottom-left overlapping cleanly (toggle/click to focus).
+                // Authentic FL Studio 2026 workspace layout:
+                // Playlist top-left, Channel Rack top-right, Piano Roll bottom-left, Mixer bottom-right,
+                // tiled cleanly without obscured window captions or faders.
                 if (pl) {
                     pl.visibility = Visibility.Visible;
-                    pl.windowBounds = Rect(0, 0, (W * 62) / 100, (H * 56) / 100);
-                }
-                if (pr) {
-                    pr.visibility = Visibility.Visible;
-                    pr.windowBounds = Rect(0, (H * 56) / 100 + G, (W * 52) / 100, H);
-                }
-                if (mx) {
-                    mx.visibility = Visibility.Visible;
-                    mx.windowBounds = Rect((W * 52) / 100 + G, (H * 46) / 100, W, H);
+                    pl.windowBounds = Rect(0, 0, (W * 60) / 100, (H * 55) / 100);
                 }
                 if (cr) {
                     cr.visibility = Visibility.Visible;
-                    cr.windowBounds = Rect((W * 62) / 100 + G, 0, W, (H * 46) / 100 - G);
+                    cr.windowBounds = Rect((W * 60) / 100 + G, 0, W, (H * 55) / 100);
+                }
+                if (pr) {
+                    pr.visibility = Visibility.Visible;
+                    pr.windowBounds = Rect(0, (H * 55) / 100 + G, (W * 52) / 100, H);
+                }
+                if (mx) {
+                    mx.visibility = Visibility.Visible;
+                    mx.windowBounds = Rect((W * 52) / 100 + G, (H * 55) / 100 + G, W, H);
                 }
                 if (pg) {
                     pg.visibility = Visibility.Gone;
@@ -621,12 +626,28 @@ class FlDesktopCanvas : WidgetGroupDefaultDrawing {
             initialPresetApplied_ = true;
             applyLayoutPreset(DesktopLayoutPreset.DEFAULT_FL, rc.width, rc.height);
         }
+        const Rect deskLocal = desktopLocalRect();
         foreach (w; windows_) {
+            Rect wb = w.windowBounds;
+            if (deskLocal.width > 0 && deskLocal.height > 0 && !w.maximized) {
+                int bw = wb.width;
+                int bh = wb.height;
+                if (bw > deskLocal.width) bw = deskLocal.width;
+                if (bh > deskLocal.height) bh = deskLocal.height;
+                const int effMinW = w.minWindowW < deskLocal.width ? w.minWindowW : deskLocal.width;
+                const int effMinH = w.minWindowH < deskLocal.height ? w.minWindowH : deskLocal.height;
+                if (bw < effMinW) bw = effMinW;
+                if (bh < effMinH) bh = effMinH;
+                wb.right = wb.left + bw;
+                wb.bottom = wb.top + bh;
+                wb = snapWindowRect(wb, deskLocal, null, 0, true);
+                w.applyClampedBounds(wb);
+            }
             if (w.visibility != Visibility.Gone) {
                 Rect wr = w.maximized
                     ? rc
-                    : Rect(rc.left + w.windowBounds.left, rc.top + w.windowBounds.top,
-                           rc.left + w.windowBounds.right, rc.top + w.windowBounds.bottom);
+                    : Rect(rc.left + wb.left, rc.top + wb.top,
+                           rc.left + wb.right, rc.top + wb.bottom);
                 w.layout(wr);
             }
         }
@@ -637,13 +658,13 @@ class FlDesktopCanvas : WidgetGroupDefaultDrawing {
         const pal = model_ ? model_.palette() : getFlPalette();
         buf.fillRect(_pos, pal.bgDesktop);
 
-        // Subtle FL Studio workspace backdrop grid
+        // Subtle FL Studio workspace backdrop grid (dlangui alpha: 0xEE ≈ 7% opacity)
         enum int GRID_STEP = 48;
         for (int gx = _pos.left + GRID_STEP; gx < _pos.right; gx += GRID_STEP) {
-            buf.fillRect(Rect(gx, _pos.top, gx + 1, _pos.bottom), 0x10FFFFFF);
+            buf.fillRect(Rect(gx, _pos.top, gx + 1, _pos.bottom), 0xEEFFFFFF);
         }
         for (int gy = _pos.top + GRID_STEP; gy < _pos.bottom; gy += GRID_STEP) {
-            buf.fillRect(Rect(_pos.left, gy, _pos.right, gy + 1), 0x10FFFFFF);
+            buf.fillRect(Rect(_pos.left, gy, _pos.right, gy + 1), 0xEEFFFFFF);
         }
 
         // Draw windows bottom -> top so windows_[$-1] renders on top
@@ -693,4 +714,59 @@ unittest {
     assert(zOrder[0] == "win_piano_roll");
     assert(zOrder[1] == "win_mixer");
     assert(zOrder[2] == "win_channel_rack");
+
+    // 3. Widget-level tests (with default dlangui theme initialized)
+    import dlangui.graphics.drawbuf : ColorDrawBuf;
+    import dlangui.widgets.styles : currentTheme, createDefaultTheme;
+    import gui_d.theme : destroyWidgetTree;
+
+    if (currentTheme is null) {
+        currentTheme = createDefaultTheme();
+    }
+
+    TransportModel model;
+    model.initDefaultTemplate();
+    auto desk = new FlDesktopCanvas("desk", &model);
+    scope (exit) destroyWidgetTree(desk);
+    auto body1 = new Widget("b1");
+    auto w1 = new FlWindowFrame("win_playlist", "Playlist", &model, body1, Rect(0, 0, 500, 400), 200, 140);
+    auto body2 = new Widget("b2");
+    auto w2 = new FlWindowFrame("win_mixer", "Mixer", &model, body2, Rect(600, 400, 1100, 750), 200, 140);
+    desk.addWindow(w1);
+    desk.addWindow(w2);
+
+    desk.measure(1200, 800);
+    desk.layout(Rect(0, 0, 1200, 800));
+
+    // Bug: FlDesktopCanvas grid used 0x10FFFFFF (nearly opaque white in dlangui!)
+    auto buf = new ColorDrawBuf(1200, 800);
+    // Draw just the desktop grid by hiding windows momentarily
+    w1.visibility = Visibility.Gone;
+    w2.visibility = Visibility.Gone;
+    desk.onDraw(buf);
+    w1.visibility = Visibility.Visible;
+    w2.visibility = Visibility.Visible;
+    const uint gridPx = buf.scanLine(10)[48];
+    const uint redChan = (gridPx >> 16) & 0xFF;
+    assert(redChan < 80, "Expected subtle dark desktop grid line, not near-white 0x10FFFFFF");
+
+    // Bug: Resizing desktop smaller should clamp windows inside new desktop bounds
+    desk.measure(700, 500);
+    desk.layout(Rect(0, 0, 700, 500));
+    assert(w2.windowBounds.right <= 700 && w2.windowBounds.bottom <= 500,
+           "Expected floating window to clamp inside resized desktop");
+
+    // Bug: MouseAction.Cancel during titlebar move should stop drag
+    const Rect beforeDrag = w1.windowBounds;
+    auto downEv = new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
+                                 cast(short)(w1.pos.left + 60), cast(short)(w1.pos.top + 10));
+    assert(w1.onMouseEvent(downEv));
+    auto cancelEv = new MouseEvent(MouseAction.Cancel, MouseButton.None, 0,
+                                   cast(short)(w1.pos.left + 120), cast(short)(w1.pos.top + 60));
+    w1.onMouseEvent(cancelEv);
+    auto moveAfterCancel = new MouseEvent(MouseAction.Move, MouseButton.None, 0,
+                                          cast(short)(w1.pos.left + 200), cast(short)(w1.pos.top + 120));
+    w1.onMouseEvent(moveAfterCancel);
+    assert(w1.windowBounds == beforeDrag,
+           "Expected MouseAction.Cancel to clear window dragMode_");
 }

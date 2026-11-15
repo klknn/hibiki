@@ -101,7 +101,8 @@ void drawMixerCanvas(
     DrawBuf buf,
     Rect rc,
     const(TransportModel)* model,
-    FontRef fnt = FontRef.init
+    FontRef fnt = FontRef.init,
+    int scrollInsert = 0
 ) {
     const pal = model ? model.palette() : getFlPalette();
     buf.fillRect(rc, pal.bgWindow);
@@ -127,6 +128,16 @@ void drawMixerCanvas(
                      toUTF32("MIXER  |  " ~ selName), pal.accentOrange);
     }
 
+    // Horizontal insert scroll buttons (< >) and FX RACK toggle
+    Rect scrLeftRc  = Rect(tbRc.right - 130, tbRc.top + 4, tbRc.right - 106, tbRc.bottom - 4);
+    Rect scrRightRc = Rect(tbRc.right - 102, tbRc.top + 4, tbRc.right - 78, tbRc.bottom - 4);
+    drawCard(buf, scrLeftRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, scrRightRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    if (!fnt.isNull) {
+        fnt.drawText(buf, scrLeftRc.left + 7, scrLeftRc.top + 2, "<"d, pal.fgText);
+        fnt.drawText(buf, scrRightRc.left + 7, scrRightRc.top + 2, ">"d, pal.fgText);
+    }
+
     const bool showFx = model ? model.showMixerFxRack : true;
     Rect fxToggleRc = Rect(tbRc.right - 74, tbRc.top + 4, tbRc.right - 8, tbRc.bottom - 4);
     drawCard(buf, fxToggleRc, showFx ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
@@ -140,15 +151,16 @@ void drawMixerCanvas(
     const int stripsRight = (showFx && rc.width > FX_RACK_W + 280) ? (rc.right - FX_RACK_W) : rc.right - 4;
 
     // Find selected insert pointer & master pointer
-    const(TrackStripState)* masterTrk = (model && model.tracks.length > 0) ? &model.tracks[0] : null;
-    const(TrackStripState)* selTrk = masterTrk;
+    const(TrackStripState)* masterTrk = null;
+    const(TrackStripState)* selTrk = null;
+    size_t[] insTrackIndices;
     if (model) {
-        foreach (const ref t; model.tracks) {
-            if (t.index == selIns) {
-                selTrk = &t;
-                break;
-            }
+        foreach (idx, const ref t; model.tracks) {
+            if (t.index == 0) masterTrk = &t;
+            else insTrackIndices ~= idx;
+            if (t.index == selIns) selTrk = &t;
         }
+        if (selTrk is null) selTrk = masterTrk;
     }
 
     // 2. Left Docked "C" (Current) big meter + "M" (Master) strip
@@ -169,15 +181,18 @@ void drawMixerCanvas(
     const int divX = masterRc.right + 4;
     buf.fillRect(Rect(divX, bodyTop, divX + 2, bodyBot), pal.borderSubtle);
 
-    // 3. Insert Strips 1..N
+    // 3. Insert Strips (scrolled starting from scrollInsert)
     const int insStartX = divX + 6;
-    const int insCount = (model && model.tracks.length > 1) ? cast(int)model.tracks.length - 1 : 8;
-    foreach (i; 0 .. insCount) {
-        const int x0 = insStartX + i * (STRIP_W + 3);
+    const int insCount = (insTrackIndices.length > 0) ? cast(int)insTrackIndices.length : 8;
+    int startIns = scrollInsert < 0 ? 0 : scrollInsert;
+    if (startIns >= insCount) startIns = insCount > 0 ? insCount - 1 : 0;
+    int visCol = 0;
+    for (int i = startIns; i < insCount; ++i, ++visCol) {
+        const int x0 = insStartX + visCol * (STRIP_W + 3);
         const int x1 = x0 + STRIP_W;
         if (x1 > stripsRight - 2) break;
-        const(TrackStripState)* tPtr = (model && i + 1 < cast(int)model.tracks.length)
-            ? &model.tracks[i + 1]
+        const(TrackStripState)* tPtr = (model && i < cast(int)insTrackIndices.length)
+            ? &model.tracks[insTrackIndices[i]]
             : null;
         const int tIdx = tPtr ? tPtr.index : (i + 1);
         drawMixerStrip(buf, Rect(x0, bodyTop, x1, bodyBot), tPtr, tIdx, false,
@@ -276,11 +291,16 @@ class MixerCanvasWidget : Widget {
     private int dragSlotIdx_ = 0;
     private int dragStartY_ = 0;
     private float dragStartVal_ = 0.0f;
+    int scrollInsert = 0;
 
     void delegate(int trackIdx, float volume) onVolumeChange;
+    void delegate(int trackIdx, float pan) onPanChange;
     void delegate(int trackIdx, bool muted) onMuteToggle;
     void delegate(int trackIdx, bool soloed) onSoloToggle;
+    void delegate(int trackIdx, int slotIdx, bool enabled) onFxBypass;
     void delegate(int trackIdx, int slotIdx, string uri) onLoadFxSlot;
+    void delegate(int trackIdx, int slotIdx) onPromptLoadFx;
+    void delegate(int trackIdx, int slotIdx) onRemoveFxSlot;
     void delegate(int trackIdx, int slotIdx) onOpenFxPlugin;
 
     this(string id, TransportModel* model) {
@@ -292,7 +312,16 @@ class MixerCanvasWidget : Widget {
 
     override void onDraw(DrawBuf buf) {
         if (visibility != Visibility.Visible) return;
-        drawMixerCanvas(buf, _pos, model_, font);
+        drawMixerCanvas(buf, _pos, model_, font, scrollInsert);
+    }
+
+    private size_t[] collectInsertIndices() const @safe {
+        size_t[] insTrackIndices;
+        if (!model_) return insTrackIndices;
+        foreach (idx, const ref t; model_.tracks) {
+            if (t.index != 0) insTrackIndices ~= idx;
+        }
+        return insTrackIndices;
     }
 
     override bool onMouseEvent(MouseEvent event) {
@@ -305,14 +334,32 @@ class MixerCanvasWidget : Widget {
         const int bodyBot = _pos.bottom - 4;
         const bool showFx = model_.showMixerFxRack && _pos.width > FX_RACK_W + 280;
         const int stripsRight = showFx ? (_pos.right - FX_RACK_W) : (_pos.right - 4);
+        const auto insTrackIndices = collectInsertIndices();
+        const int insCount = (insTrackIndices.length > 0) ? cast(int)insTrackIndices.length : 8;
+
+        if (event.action == MouseAction.Wheel) {
+            scrollInsert -= (event.wheelDelta > 0) ? 1 : -1;
+            if (scrollInsert < 0) scrollInsert = 0;
+            if (scrollInsert >= insCount) scrollInsert = insCount > 0 ? insCount - 1 : 0;
+            invalidate();
+            return true;
+        }
 
         if (event.action == MouseAction.ButtonDown) {
             activateParentWindow(this);
 
-            // 1. Toolbar FX Rack toggle
+            // 1. Toolbar scroll (< >) & FX Rack toggle
             if (event.y >= _pos.top && event.y < _pos.top + MIX_TOOLBAR_H) {
+                Rect scrLeftRc  = Rect(_pos.right - 130, _pos.top + 4, _pos.right - 106, _pos.top + MIX_TOOLBAR_H - 4);
+                Rect scrRightRc = Rect(_pos.right - 102, _pos.top + 4, _pos.right - 78, _pos.top + MIX_TOOLBAR_H - 4);
                 Rect fxToggleRc = Rect(_pos.right - 74, _pos.top + 4, _pos.right - 8, _pos.top + MIX_TOOLBAR_H - 4);
-                if (fxToggleRc.isPointInside(event.x, event.y)) {
+                if (scrLeftRc.isPointInside(event.x, event.y)) {
+                    if (scrollInsert > 0) scrollInsert--;
+                    invalidate();
+                } else if (scrRightRc.isPointInside(event.x, event.y)) {
+                    if (scrollInsert + 1 < insCount) scrollInsert++;
+                    invalidate();
+                } else if (fxToggleRc.isPointInside(event.x, event.y)) {
                     model_.showMixerFxRack = !model_.showMixerFxRack;
                     invalidate();
                 }
@@ -355,17 +402,24 @@ class MixerCanvasWidget : Widget {
                         model_.selectedFxSlot = slotIdx;
                         const size_t tArr = model_.ensureTrackIndex(model_.selectedMixerInsert);
                         auto trk = &model_.tracks[tArr];
-                        PluginSlotState* plug = null;
-                        foreach (ref p; trk.plugins) {
+                        ptrdiff_t plugArrIdx = -1;
+                        foreach (pi, const ref p; trk.plugins) {
                             if (p.pluginIndex == slotIdx) {
-                                plug = &p;
+                                plugArrIdx = cast(ptrdiff_t)pi;
                                 break;
                             }
                         }
-                        if (plug !is null) {
-                            if (event.x >= fxRc.right - 22) {
-                                plug.mix = plug.mix; // keep
+                        if (plugArrIdx >= 0) {
+                            auto plug = &trk.plugins[plugArrIdx];
+                            if (event.button == MouseButton.Right) {
+                                const string rName = plug.name;
+                                trk.plugins = trk.plugins[0 .. plugArrIdx] ~ trk.plugins[plugArrIdx + 1 .. $];
+                                model_.hintText = format("Removed FX slot %d (%s)", slotIdx + 1, rName);
+                                if (onRemoveFxSlot !is null) onRemoveFxSlot(model_.selectedMixerInsert, slotIdx);
+                            } else if (event.x >= fxRc.right - 22) {
                                 plug.enabled = !plug.enabled;
+                                model_.hintText = format("%s: %s", plug.name, plug.enabled ? "Active" : "Bypassed");
+                                if (onFxBypass !is null) onFxBypass(model_.selectedMixerInsert, slotIdx, plug.enabled);
                             } else if (event.x >= fxRc.right - 44) {
                                 dragMode_ = DragMode.FX_MIX;
                                 dragTrackIdx_ = model_.selectedMixerInsert;
@@ -376,20 +430,23 @@ class MixerCanvasWidget : Widget {
                                 if (onOpenFxPlugin !is null) onOpenFxPlugin(model_.selectedMixerInsert, slotIdx);
                             }
                         } else {
-                            // Quick-load an effect onto the empty FL Mixer slot
-                            static immutable string[6] QUICK_URIS = [
-                                "builtin://eq", "builtin://compressor", "builtin://reverb",
-                                "builtin://delay", "builtin://hott", "builtin://limiter"
-                            ];
-                            static immutable string[6] QUICK_NAMES = [
-                                "Parametric EQ", "Compressor", "Stereo Reverb",
-                                "Ping-Pong Delay", "HOTT Multiband", "Fruity Limiter"
-                            ];
-                            const size_t q = slotIdx % QUICK_URIS.length;
-                            auto newPlug = TransportModel.makeDefaultPluginSlot(QUICK_NAMES[q], QUICK_URIS[q], false, slotIdx);
-                            trk.plugins ~= newPlug;
-                            if (onLoadFxSlot !is null) onLoadFxSlot(model_.selectedMixerInsert, slotIdx, QUICK_URIS[q]);
-                            if (onOpenFxPlugin !is null) onOpenFxPlugin(model_.selectedMixerInsert, slotIdx);
+                            if (onPromptLoadFx !is null) {
+                                onPromptLoadFx(model_.selectedMixerInsert, slotIdx);
+                            } else {
+                                static immutable string[6] QUICK_URIS = [
+                                    "builtin://eq", "builtin://compressor", "builtin://reverb",
+                                    "builtin://delay", "builtin://hott", "builtin://limiter"
+                                ];
+                                static immutable string[6] QUICK_NAMES = [
+                                    "Parametric EQ", "Compressor", "Stereo Reverb",
+                                    "Ping-Pong Delay", "HOTT Multiband", "Fruity Limiter"
+                                ];
+                                const size_t q = slotIdx % QUICK_URIS.length;
+                                auto newPlug = TransportModel.makeDefaultPluginSlot(QUICK_NAMES[q], QUICK_URIS[q], false, slotIdx);
+                                trk.plugins ~= newPlug;
+                                if (onLoadFxSlot !is null) onLoadFxSlot(model_.selectedMixerInsert, slotIdx, QUICK_URIS[q]);
+                                if (onOpenFxPlugin !is null) onOpenFxPlugin(model_.selectedMixerInsert, slotIdx);
+                            }
                         }
                         invalidate();
                     }
@@ -401,7 +458,7 @@ class MixerCanvasWidget : Widget {
             // 3. Master & Insert Strips hit-test
             Rect curRc = Rect(_pos.left + 4, bodyTop, _pos.left + 4 + CURRENT_W, bodyBot);
             Rect masterRc = Rect(curRc.right + 4, bodyTop, curRc.right + 4 + STRIP_W, bodyBot);
-            const int insStartX = masterRc.right + 12;
+            const int insStartX = masterRc.right + 10;
 
             bool handleStripClick(Rect stripRc, int trackIdx) {
                 if (!stripRc.isPointInside(event.x, event.y)) return false;
@@ -429,11 +486,22 @@ class MixerCanvasWidget : Widget {
                     dragTrackIdx_ = trackIdx;
                     dragStartY_ = event.y;
                     if (event.x < stripRc.middlex) {
-                        if (event.button == MouseButton.Right) trk.pan = 0.0f;
-                        else { dragMode_ = DragMode.PAN; dragStartVal_ = trk.pan; }
+                        if (event.button == MouseButton.Right) {
+                            trk.pan = 0.0f;
+                            model_.hintText = format("%s Pan: Center", trk.name);
+                            if (onPanChange !is null) onPanChange(trackIdx, 0.0f);
+                        } else {
+                            dragMode_ = DragMode.PAN;
+                            dragStartVal_ = trk.pan;
+                        }
                     } else {
-                        if (event.button == MouseButton.Right) trk.stereoSep = 0.0f;
-                        else { dragMode_ = DragMode.STEREO_SEP; dragStartVal_ = trk.stereoSep; }
+                        if (event.button == MouseButton.Right) {
+                            trk.stereoSep = 0.0f;
+                            model_.hintText = format("%s Stereo Sep: 0%%", trk.name);
+                        } else {
+                            dragMode_ = DragMode.STEREO_SEP;
+                            dragStartVal_ = trk.stereoSep;
+                        }
                     }
                     invalidate();
                     return true;
@@ -460,12 +528,16 @@ class MixerCanvasWidget : Widget {
 
             if (handleStripClick(masterRc, 0)) return true;
 
-            const int insCount = (model_.tracks.length > 1) ? cast(int)model_.tracks.length - 1 : 8;
-            foreach (i; 0 .. insCount) {
-                const int x0 = insStartX + i * (STRIP_W + 3);
+            int startIns = scrollInsert < 0 ? 0 : scrollInsert;
+            if (startIns >= insCount) startIns = insCount > 0 ? insCount - 1 : 0;
+            int visCol = 0;
+            for (int i = startIns; i < insCount; ++i, ++visCol) {
+                const int x0 = insStartX + visCol * (STRIP_W + 3);
                 const int x1 = x0 + STRIP_W;
                 if (x1 > stripsRight - 2) break;
-                const int tIdx = (i + 1 < cast(int)model_.tracks.length) ? model_.tracks[i + 1].index : (i + 1);
+                const int tIdx = (i < cast(int)insTrackIndices.length)
+                    ? model_.tracks[insTrackIndices[i]].index
+                    : (i + 1);
                 if (handleStripClick(Rect(x0, bodyTop, x1, bodyBot), tIdx)) return true;
             }
             return true;
@@ -487,30 +559,37 @@ class MixerCanvasWidget : Widget {
                     if (p < -1.0f) p = -1.0f;
                     if (p > 1.0f) p = 1.0f;
                     trk.pan = p;
+                    model_.hintText = format("%s Pan: %+d%%", trk.name, cast(int)(p * 100.0f));
+                    if (onPanChange !is null) onPanChange(dragTrackIdx_, p);
                     break;
                 case DragMode.STEREO_SEP:
                     float sp = dragStartVal_ + delta * 2.0f;
                     if (sp < -1.0f) sp = -1.0f;
                     if (sp > 1.0f) sp = 1.0f;
                     trk.stereoSep = sp;
+                    model_.hintText = format("%s Stereo Sep: %+d%%", trk.name, cast(int)(sp * 100.0f));
                     break;
                 case DragMode.EQ_LOW:
                     float vL = dragStartVal_ + delta;
                     trk.eqLow = vL < 0.0f ? 0.0f : (vL > 1.0f ? 1.0f : vL);
+                    model_.hintText = format("%s EQ Low: %d%%", trk.name, cast(int)(trk.eqLow * 100.0f + 0.5f));
                     break;
                 case DragMode.EQ_MID:
                     float vM = dragStartVal_ + delta;
                     trk.eqMid = vM < 0.0f ? 0.0f : (vM > 1.0f ? 1.0f : vM);
+                    model_.hintText = format("%s EQ Mid: %d%%", trk.name, cast(int)(trk.eqMid * 100.0f + 0.5f));
                     break;
                 case DragMode.EQ_HIGH:
                     float vH = dragStartVal_ + delta;
                     trk.eqHigh = vH < 0.0f ? 0.0f : (vH > 1.0f ? 1.0f : vH);
+                    model_.hintText = format("%s EQ High: %d%%", trk.name, cast(int)(trk.eqHigh * 100.0f + 0.5f));
                     break;
                 case DragMode.FX_MIX:
                     foreach (ref plug; trk.plugins) {
                         if (plug.pluginIndex == dragSlotIdx_) {
                             float mx = dragStartVal_ + delta;
                             plug.mix = mx < 0.0f ? 0.0f : (mx > 1.0f ? 1.0f : mx);
+                            model_.hintText = format("%s Mix: %d%%", plug.name, cast(int)(plug.mix * 100.0f + 0.5f));
                             break;
                         }
                     }
@@ -520,7 +599,8 @@ class MixerCanvasWidget : Widget {
             return true;
         }
 
-        if (event.action == MouseAction.ButtonUp && dragMode_ != DragMode.NONE) {
+        if ((event.action == MouseAction.ButtonUp || event.action == MouseAction.Cancel) &&
+            dragMode_ != DragMode.NONE) {
             dragMode_ = DragMode.NONE;
             return true;
         }
@@ -555,4 +635,36 @@ unittest {
     // FX rack should render on the right side
     assert(buf.scanLine(40)[700] != 0, "Expected Mixer FX Rack to render cleanly");
     assert(pal.bgWindow != 0);
+
+    // Regression 1: Horizontal wheel scroll & toolbar > button allow selecting higher inserts
+    import dlangui.widgets.styles : currentTheme, createDefaultTheme;
+    import gui_d.theme : destroyWidgetTree;
+    if (currentTheme is null) currentTheme = createDefaultTheme();
+    auto mx = new MixerCanvasWidget("mx", &model);
+    scope (exit) destroyWidgetTree(mx);
+    mx.measure(560, 320);
+    mx.layout(Rect(0, 0, 560, 320));
+    foreach (_; 0 .. 12) {
+        auto wh = new MouseEvent(MouseAction.Wheel, MouseButton.None, 0, 200, 150, -1);
+        mx.onMouseEvent(wh);
+    }
+    // Click first visible insert strip after Master (x ~ 160) -> should no longer be Insert 1
+    mx.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, 160, 150));
+    assert(model.selectedMixerInsert > 1,
+           "Expected horizontal scroll in Mixer to advance visible inserts past Insert 1");
+
+    // Clicking < toolbar button scrolls back left cleanly
+    mx.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, 560 - 118, 14));
+    assert(mx.scrollInsert < cast(int)model.tracks.length - 1);
+
+    // Regression 2: Pan drag fires onPanChange and MouseAction.Cancel ends drag
+    int panTrack = -1;
+    mx.onPanChange = (int t, float p) { panTrack = t; };
+    mx.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, 68, 95));
+    mx.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, MouseFlag.LButton, 68, 70));
+    assert(panTrack == 0, "Expected Master Pan drag to trigger onPanChange");
+    mx.onMouseEvent(new MouseEvent(MouseAction.Cancel, MouseButton.None, 0, 68, 70));
+    panTrack = -1;
+    mx.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, 0, 68, 40));
+    assert(panTrack == -1, "Expected MouseAction.Cancel to clear Pan drag");
 }

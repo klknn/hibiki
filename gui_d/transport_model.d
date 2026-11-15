@@ -497,6 +497,9 @@ struct TransportModel {
                 ev.velocity = vels[i];
                 activeMidi.events ~= ev;
             }
+            if (channels.length > 3 && channels[3].notes.length == 0) {
+                channels[3].notes = activeMidi.events.dup;
+            }
         }
 
         if (samplePreview.waveform.length == 0) {
@@ -506,6 +509,32 @@ struct TransportModel {
                 0.22f, 0.88f, 0.58f, 0.32f, 0.74f, 0.44f, 0.20f, 0.60f
             ];
         }
+    }
+
+    /// Saves current `activeMidi.events` back to its channel and loads `newChannelIdx`'s notes.
+    void selectPianoRollChannel(int newChannelIdx) @safe {
+        if (channels.length == 0) {
+            activeMidi.channelIndex = newChannelIdx;
+            return;
+        }
+        const int prev = activeMidi.channelIndex;
+        if (prev >= 0 && prev < cast(int)channels.length) {
+            channels[prev].notes = activeMidi.events.dup;
+        }
+        int clamped = newChannelIdx % cast(int)channels.length;
+        if (clamped < 0) clamped += cast(int)channels.length;
+        activeMidi.channelIndex = clamped;
+        selectedChannelIndex = clamped;
+        activeMidi.events = channels[clamped].notes.dup;
+    }
+
+    /// Returns the next unique clipIndex for `trk`.
+    int nextClipIndex(ref const(TrackStripState) trk) const pure nothrow @safe {
+        int maxIdx = -1;
+        foreach (ref c; trk.clips) {
+            if (c.clipIndex > maxIdx) maxIdx = c.clipIndex;
+        }
+        return maxIdx + 1;
     }
 
     /// Ensures a track slot exists for `trackIndex` and returns its array index.
@@ -768,4 +797,30 @@ unittest {
     model.applyNotification(n4);
     assert(model.tracks.length == 0);
     assert(!model.isPlaying);
+
+    // 3. Test selectPianoRollChannel preserves per-channel notes and wraps safely
+    model.initDefaultTemplate();
+    assert(model.activeMidi.channelIndex == 3);
+    assert(model.activeMidi.events.length == 8);
+    model.selectPianoRollChannel(0);
+    assert(model.activeMidi.channelIndex == 0);
+    assert(model.activeMidi.events.length == 0);
+    MidiEvent kickEv;
+    kickEv.tick = 0;
+    kickEv.pitch = 60;
+    kickEv.duration_ticks = 120;
+    kickEv.velocity = 120;
+    model.activeMidi.events ~= kickEv;
+    model.selectPianoRollChannel(3);
+    assert(model.activeMidi.events.length == 8);
+    model.selectPianoRollChannel(0);
+    assert(model.activeMidi.events.length == 1 && model.activeMidi.events[0].pitch == 60);
+
+    // 4. Test nextClipIndex after deletions/slices
+    TrackStripState tr;
+    TimelineClipState c0, c5;
+    c0.clipIndex = 0;
+    c5.clipIndex = 5;
+    tr.clips = [c0, c5];
+    assert(model.nextClipIndex(tr) == 6);
 }

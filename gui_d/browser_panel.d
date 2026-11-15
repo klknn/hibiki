@@ -8,10 +8,12 @@ import dlangui.widgets.layouts : HorizontalLayout, VerticalLayout;
 import dlangui.widgets.scroll : ScrollWidget;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.theme : drawCard, FlPalette, getFlPalette, truncateLabel;
-import gui_d.transport_model : BrowserCategory, TransportModel;
+import gui_d.transport_model : BrowserCategory, PatternState, TransportModel;
 import std.algorithm : canFind;
+import std.conv : to;
 import std.format : format;
-import std.string : toLower;
+import std.path : baseName;
+import std.string : startsWith, toLower;
 import std.utf : toUTF32, toUTF8;
 
 /// Entry in the FL Studio 2026 Browser tree.
@@ -137,6 +139,7 @@ class BrowserPanel : VerticalLayout {
     private VerticalLayout listBody_;
     private BrowserPreviewWidget previewWidget_;
     private bool[string] collapsedSections_;
+    private Button[5] tabBtns_;
 
     void delegate(string label, string uri, bool isInstrument) onAddGenerator;
     void delegate(string label, string uri) onAddEffect;
@@ -151,6 +154,7 @@ class BrowserPanel : VerticalLayout {
         model_ = model;
         layoutWidth = 250;
         minWidth = 220;
+        maxWidth = 300;
         layoutHeight = FILL_PARENT;
         const pal = model_ ? model_.palette() : getFlPalette();
         backgroundColor = pal.bgWindowHeader;
@@ -163,6 +167,7 @@ class BrowserPanel : VerticalLayout {
         hdr.padding = Rect(4, 2, 4, 4);
         hdr.layoutWidth = FILL_PARENT;
         auto btnScan = new Button("br_scan", "SCAN VST3"d);
+        btnScan.focusable = false;
         btnScan.click = (Widget s) {
             if (onScanVst3 !is null) {
                 onScanVst3("testdata");
@@ -182,8 +187,10 @@ class BrowserPanel : VerticalLayout {
         auto btnPlug = new Button("br_plug", "PLUG"d);
         auto btnSmp  = new Button("br_smp",  "SMP"d);
         auto btnRec  = new Button("br_rec",  "REC"d);
-        foreach (b; [btnAll, btnProj, btnPlug, btnSmp, btnRec]) {
+        tabBtns_ = [btnAll, btnProj, btnPlug, btnSmp, btnRec];
+        foreach (b; tabBtns_) {
             b.layoutWidth = FILL_PARENT;
+            b.focusable = false;
             tabs.addChild(b);
         }
         addChild(tabs);
@@ -228,6 +235,7 @@ class BrowserPanel : VerticalLayout {
             const uint n = NOTES[i];
             auto bk = new Button(null, toUTF32(LABELS[i]));
             bk.layoutWidth = FILL_PARENT;
+            bk.focusable = false;
             bk.click = (Widget s) {
                 if (onPreviewNote !is null) onPreviewNote(n);
                 return true;
@@ -242,6 +250,21 @@ class BrowserPanel : VerticalLayout {
     void refresh() {
         const pal = model_ ? model_.palette() : getFlPalette();
         backgroundColor = pal.bgWindowHeader;
+
+        static immutable BrowserCategory[5] CATS = [
+            BrowserCategory.ALL,
+            BrowserCategory.PROJECT,
+            BrowserCategory.PLUGINS,
+            BrowserCategory.SAMPLES,
+            BrowserCategory.RECENT,
+        ];
+        foreach (i; 0 .. 5) {
+            if (tabBtns_[i] is null) continue;
+            const bool active = activeCat_ == CATS[i];
+            tabBtns_[i].backgroundColor = active ? pal.accentOrange : pal.bgControl;
+            tabBtns_[i].textColor = active ? pal.bgLcd : pal.fgText;
+        }
+
         listBody_.removeAllChildren();
         const string q = toLower(toUTF8(edSearch_.text));
 
@@ -258,7 +281,16 @@ class BrowserPanel : VerticalLayout {
             grouped[sec] ~= BrowserEntry(cat, sec, label, uri, isInst);
         }
 
+        const bool hasDynamicPatterns = model_ !is null && model_.patterns.length > 0;
+        if (hasDynamicPatterns) {
+            foreach (pat; model_.patterns) {
+                collect(BrowserCategory.PROJECT, "Current Project",
+                        "Pat: " ~ pat.name, format("pattern://%d", pat.index), false);
+            }
+        }
+
         foreach (e; DEFAULT_BROWSER_ENTRIES) {
+            if (hasDynamicPatterns && e.uri.startsWith("pattern://")) continue;
             collect(e.category, e.section, e.label, e.uri, e.isInstrument);
         }
         if (model_) {
@@ -275,6 +307,7 @@ class BrowserPanel : VerticalLayout {
             const string secPrefix = collapsed ? "> " : "v ";
             auto secBtn = new Button(null, toUTF32(secPrefix ~ sec));
             secBtn.layoutWidth = FILL_PARENT;
+            secBtn.focusable = false;
             secBtn.backgroundColor = pal.bgPanelAlt;
             secBtn.textColor = pal.accentCyan;
             const string secKey = sec;
@@ -289,6 +322,7 @@ class BrowserPanel : VerticalLayout {
             foreach (item; grouped[sec]) {
                 auto btn = new Button(null, toUTF32("  " ~ item.label));
                 btn.layoutWidth = FILL_PARENT;
+                btn.focusable = false;
                 const auto entry = item;
                 btn.click = (Widget s) {
                     if (entry.category == BrowserCategory.PLUGINS) {
@@ -299,7 +333,7 @@ class BrowserPanel : VerticalLayout {
                         }
                     } else if (entry.category == BrowserCategory.SAMPLES) {
                         if (model_) {
-                            model_.samplePreview.name = entry.label;
+                            model_.samplePreview.name = baseName(entry.uri);
                             model_.samplePreview.path = entry.uri;
                         }
                         if (onAddSampleClip !is null) onAddSampleClip(entry.uri);
@@ -308,7 +342,6 @@ class BrowserPanel : VerticalLayout {
                         if (onLoadProject !is null) onLoadProject(entry.uri);
                     } else if (entry.category == BrowserCategory.PROJECT) {
                         if (entry.uri.length > 10 && entry.uri[0 .. 10] == "pattern://") {
-                            import std.conv : to;
                             if (onSelectPattern !is null) onSelectPattern(to!int(entry.uri[10 .. $]));
                         }
                     }
@@ -324,6 +357,59 @@ class BrowserPanel : VerticalLayout {
 
 unittest {
     import dlangui.graphics.drawbuf : ColorDrawBuf;
+    import dlangui.graphics.fonts : Font, FontFamily, FontManager, FontRef, Glyph;
+    import dlangui.widgets.styles : createDefaultTheme, currentTheme;
+
+    static class HeadlessTestFont : Font {
+        Glyph _glyph;
+        this() {
+            _glyph.widthPixels = 7;
+            _glyph.widthScaled = 7 << 6;
+            _glyph.blackBoxX = 6;
+            _glyph.blackBoxY = 10;
+            _glyph.originY = 10;
+        }
+        override @property int size() { return 12; }
+        override @property int height() { return 14; }
+        override @property int weight() { return 400; }
+        override @property int baseline() { return 11; }
+        override @property bool italic() { return false; }
+        override @property string face() { return "headless"; }
+        override @property FontFamily family() { return FontFamily.SansSerif; }
+        override @property bool isNull() { return false; }
+        override Glyph* getCharGlyph(dchar ch, bool withImage = true) { return &_glyph; }
+        override void checkpoint() {}
+        override void cleanup() {}
+        override void clearGlyphCache() {}
+    }
+
+    static class HeadlessTestFontManager : FontManager {
+        FontRef _font;
+        this() { _font = FontRef(new HeadlessTestFont()); }
+        override ref FontRef getFont(int size, int weight, bool italic, FontFamily family, string face) {
+            return _font;
+        }
+        override void checkpoint() {}
+        override void cleanup() {}
+    }
+
+    if (currentTheme is null) {
+        currentTheme = createDefaultTheme();
+    }
+    const bool hadFontMgr = FontManager.instance !is null;
+    if (!hadFontMgr) {
+        FontManager.instance = new HeadlessTestFontManager();
+    }
+    BrowserPanel bp;
+    import gui_d.theme : destroyWidgetTree;
+    scope (exit) {
+        destroyWidgetTree(bp);
+        bp = null;
+        currentTheme = null;
+        if (!hadFontMgr) {
+            FontManager.instance = null;
+        }
+    }
 
     TransportModel model;
     model.initDefaultTemplate();
@@ -333,4 +419,19 @@ unittest {
     // Centerline should be present at midY
     assert(buf.scanLine(5)[5] == pal.bgLcd || buf.scanLine(37)[20] == pal.accentCyan ||
            buf.scanLine(2)[10] == pal.borderSubtle);
+
+    model.patterns ~= PatternState(3, "Pattern 4 (Break)", 0x00385770, 16);
+    bp = new BrowserPanel("br_test", &model);
+    foreach (b; bp.tabBtns_) {
+        assert(!b.focusable);
+    }
+    bool foundDynPattern = false;
+    foreach (i; 0 .. bp.listBody_.childCount) {
+        auto w = bp.listBody_.child(i);
+        assert(!w.focusable);
+        if (canFind(toUTF8(w.text), "Pattern 4 (Break)")) {
+            foundDynPattern = true;
+        }
+    }
+    assert(foundDynPattern);
 }

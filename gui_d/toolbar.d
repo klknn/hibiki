@@ -340,11 +340,13 @@ class FlToolbarWidget : Widget {
             // 3. Rec / Metronome / Typing Keyboard
             Rect recOptsPanel = Rect(x, top, x + 150, bot);
             if (recOptsPanel.isPointInside(event.x, event.y)) {
-                const int idx = (event.x - (x + 5)) / 35;
-                if (idx == 0) model_.metronomeEnabled = !model_.metronomeEnabled;
-                else if (idx == 1) model_.countdownEnabled = !model_.countdownEnabled;
-                else if (idx == 2) model_.overdubEnabled = !model_.overdubEnabled;
-                else if (idx == 3) model_.typingKeyboardEnabled = !model_.typingKeyboardEnabled;
+                if (event.x >= x + 5) {
+                    const int idx = (event.x - (x + 5)) / 35;
+                    if (idx == 0) model_.metronomeEnabled = !model_.metronomeEnabled;
+                    else if (idx == 1) model_.countdownEnabled = !model_.countdownEnabled;
+                    else if (idx == 2) model_.overdubEnabled = !model_.overdubEnabled;
+                    else if (idx == 3) model_.typingKeyboardEnabled = !model_.typingKeyboardEnabled;
+                }
                 invalidate();
                 return true;
             }
@@ -371,6 +373,8 @@ class FlToolbarWidget : Widget {
             if (patPanel.isPointInside(event.x, event.y)) {
                 if (Rect(x + 5, top + 5, x + 26, bot - 5).isPointInside(event.x, event.y)) {
                     if (onPatternStep !is null) onPatternStep(-1);
+                } else if (Rect(x + 28, top + 5, x + 144, bot - 5).isPointInside(event.x, event.y)) {
+                    if (onPatternStep !is null) onPatternStep(event.button == MouseButton.Right ? -1 : 1);
                 } else if (Rect(x + 146, top + 5, x + 167, bot - 5).isPointInside(event.x, event.y)) {
                     if (onPatternStep !is null) onPatternStep(1);
                 } else if (Rect(x + 170, top + 5, x + 191, bot - 5).isPointInside(event.x, event.y)) {
@@ -389,9 +393,11 @@ class FlToolbarWidget : Widget {
                         "win_playlist", "win_channel_rack", "win_piano_roll",
                         "browser", "win_mixer", "win_plugin"
                     ];
-                    const int idx = (event.x - (x + 5)) / 32;
-                    if (idx >= 0 && idx < 6 && onToggleWindow !is null) {
-                        onToggleWindow(KEYS[idx]);
+                    if (event.x >= x + 5) {
+                        const int idx = (event.x - (x + 5)) / 32;
+                        if (idx >= 0 && idx < 6 && onToggleWindow !is null) {
+                            onToggleWindow(KEYS[idx]);
+                        }
                     }
                     invalidate();
                     return true;
@@ -422,7 +428,11 @@ class FlToolbarWidget : Widget {
             return true;
         }
 
-        if (event.action == MouseAction.ButtonUp && dragMode_ != DragMode.NONE) {
+        if ((event.action == MouseAction.ButtonUp || event.action == MouseAction.Cancel) &&
+            dragMode_ != DragMode.NONE) {
+            if (dragMode_ == DragMode.BPM && onBpmChanged !is null) {
+                onBpmChanged(model_.bpm);
+            }
             dragMode_ = DragMode.NONE;
             return true;
         }
@@ -433,6 +443,7 @@ class FlToolbarWidget : Widget {
 
 unittest {
     import dlangui.graphics.drawbuf : ColorDrawBuf;
+    import dlangui.widgets.styles : currentTheme, createDefaultTheme;
 
     TransportModel model;
     model.initDefaultTemplate();
@@ -441,4 +452,29 @@ unittest {
     drawToolbarCanvas(buf, Rect(0, 0, 1280, 48), &model, true, true, true, true, true, false);
     assert(buf.scanLine(10)[100] == model.palette().bgToolbarWell ||
            buf.scanLine(10)[100] == model.palette().accentOrange);
+
+    import gui_d.theme : destroyWidgetTree;
+    if (currentTheme is null) currentTheme = createDefaultTheme();
+    auto tb = new FlToolbarWidget("tb", &model);
+    scope (exit) destroyWidgetTree(tb);
+    tb.measure(1280, 48);
+    tb.layout(Rect(0, 0, 1280, 48));
+    bool played = false;
+    bool stopped = false;
+    double changedBpm = 0.0;
+    tb.onPlayToggle = () { played = true; };
+    tb.onStop = () { stopped = true; };
+    tb.onBpmChanged = (double b) { changedBpm = b; };
+
+    // Play button is at x = 6 + 76 + 6 + 56..88 = 144..176
+    tb.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, 155, 24));
+    assert(played, "Expected toolbar Play button click to trigger onPlayToggle");
+    // BPM drag + Cancel ends drag cleanly and notifies onBpmChanged
+    tb.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, 300, 24));
+    tb.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, MouseFlag.LButton, 300, 14));
+    tb.onMouseEvent(new MouseEvent(MouseAction.Cancel, MouseButton.None, 0, 300, 14));
+    assert(changedBpm > 140.0, "Expected BPM drag + Cancel to commit updated BPM");
+    const double lockedBpm = model.bpm;
+    tb.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, 0, 300, 0));
+    assert(model.bpm == lockedBpm, "Expected MouseAction.Cancel to clear BPM drag");
 }

@@ -471,12 +471,52 @@ uint segmentColor(int idx, int totalSegments, const ref FlPalette pal) pure noth
     return pal.accentGreen;
 }
 
+/// Safely adjusts RGB channels of a `0xAARRGGBB` color by `delta`, clamping each channel to `[0..255]` and preserving alpha.
+uint adjustColorBrightness(uint color, int delta) pure nothrow @safe {
+    const uint alpha = color & 0xFF000000;
+    int r = cast(int)((color >> 16) & 0xFF) + delta;
+    int g = cast(int)((color >> 8) & 0xFF) + delta;
+    int b = cast(int)(color & 0xFF) + delta;
+    if (r < 0) r = 0; else if (r > 255) r = 255;
+    if (g < 0) g = 0; else if (g > 255) g = 255;
+    if (b < 0) b = 0; else if (b > 255) b = 255;
+    return alpha | (cast(uint)r << 16) | (cast(uint)g << 8) | cast(uint)b;
+}
+
+version (unittest) {
+    import dlangui.widgets.widget : Widget;
+
+    /// Recursively removes and destroys a widget and its children prior to GC shutdown.
+    void destroyWidgetTree(Widget w) {
+        if (w is null) return;
+        Widget[] children;
+        foreach (i; 0 .. w.childCount) {
+            if (auto c = w.child(i)) {
+                children ~= c;
+            }
+        }
+        w.removeAllChildren(false);
+        foreach_reverse (c; children) {
+            destroyWidgetTree(c);
+        }
+        destroy(w);
+    }
+}
+
 unittest {
     import dlangui.graphics.drawbuf : ColorDrawBuf;
 
     const pal = getFlPalette(FlThemeId.DEFAULT_DARK);
     assert(pal.accentOrange == 0x00FF8F2D);
     assert(getFlPalette(FlThemeId.ULTRAMARINE).name == "Ultramarine");
+
+    // Verify adjustColorBrightness clamps RGB without overflowing into adjacent bytes or alpha
+    const uint clampedBright = adjustColorBrightness(0x00FF8F2D, 0x20);
+    assert((clampedBright & 0xFF000000) == 0);
+    assert(((clampedBright >> 16) & 0xFF) == 0xFF);
+    const uint clampedDark = adjustColorBrightness(0x00050A02, -16);
+    assert(clampedDark == 0x00000000);
+    assert(adjustColorBrightness(0x80102030, 10) == 0x801A2A3A);
 
     assert(formatTimecode(0.0) == "00:00.000");
     assert(formatTimecode(65.432) == "01:05.432");

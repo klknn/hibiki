@@ -3,7 +3,8 @@ module gui_d.timeline_view;
 import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : drawCard, drawPlayheadTriangle, drawThickLine, FlPalette, getFlPalette, truncateLabel;
+import gui_d.theme : adjustColorBrightness, drawCard, drawPlayheadTriangle, drawThickLine,
+    FlPalette, getFlPalette, truncateLabel;
 import gui_d.transport_model : AutomationPoint, EditorTool, PlaylistClipKind,
     TimelineClipState, TransportModel;
 import gui_d.workspace : activateParentWindow;
@@ -192,7 +193,13 @@ void drawTimelineCanvas(
     // 4. Beat & Bar Grid + Alternating 4-Bar Blocks
     const double bpm = (model && model.bpm > 0.0) ? model.bpm : 140.0;
     const double beatSec = beatDurationSec(bpm);
-    const int trackCount = (model && model.tracks.length > 1) ? cast(int)model.tracks.length - 1 : 6;
+    size_t[] laneTracks;
+    if (model) {
+        foreach (idx, ref t; model.tracks) {
+            if (t.index != 0) laneTracks ~= idx;
+        }
+    }
+    const int trackCount = laneTracks.length > 0 ? cast(int)laneTracks.length : 6;
     const int lanesTop = contentTop + RULER_H;
 
     // 4-bar alternating background shading
@@ -209,9 +216,8 @@ void drawTimelineCanvas(
         buf.fillRect(Rect(bx0, lanesTop, bx1, rc.bottom), bg);
     }
 
-    // Track headers + lane dividers + clips
+    // Track headers + lane dividers
     foreach (laneIdx; 0 .. trackCount) {
-        const int tIdx = laneIdx + 1; // Skip 0 (Master) in Playlist lanes
         const int y0 = lanesTop + laneIdx * LANE_H;
         int y1 = y0 + LANE_H;
         if (y0 >= rc.bottom - 4) break;
@@ -223,9 +229,10 @@ void drawTimelineCanvas(
         buf.fillRect(Rect(hdrRc.left, hdrRc.bottom - 1, hdrRc.right, hdrRc.bottom), pal.borderStrong);
         buf.fillRect(Rect(hdrRc.right - 1, hdrRc.top, hdrRc.right, hdrRc.bottom), pal.borderStrong);
 
-        const bool hasTrack = (model && tIdx < cast(int)model.tracks.length);
+        const bool hasTrack = (model !is null && laneIdx < cast(int)laneTracks.length);
+        const size_t tIdx = hasTrack ? laneTracks[laneIdx] : 0;
         const uint trkCol = hasTrack ? model.tracks[tIdx].color : pal.clipPattern;
-        const string title = hasTrack ? model.tracks[tIdx].name : format("Track %d", tIdx);
+        const string title = hasTrack ? model.tracks[tIdx].name : format("Track %d", laneIdx + 1);
         const bool muted = hasTrack ? model.tracks[tIdx].muted : false;
         const bool soloed = hasTrack ? model.tracks[tIdx].soloed : false;
 
@@ -254,7 +261,6 @@ void drawTimelineCanvas(
         if (gx >= arrRc.right) break;
         if (gx < arrRc.left) continue;
         const bool isBar = (beatIdx % 4) == 0;
-        const uint gridCol = isBar ? pal.borderSubtle : 0x40FFFFFF;
         buf.fillRect(Rect(gx, lanesTop, gx + 1, rc.bottom), isBar ? pal.borderSubtle : pal.borderStrong);
         buf.fillRect(Rect(gx, isBar ? rulerRc.top + 8 : rulerRc.bottom - 6, gx + 1, rulerRc.bottom),
                      isBar ? pal.accentCyan : pal.fgDim);
@@ -278,10 +284,8 @@ void drawTimelineCanvas(
 
     // Draw Clips on Lanes
     if (model) {
-        foreach (laneIdx; 0 .. trackCount) {
-            const int tIdx = laneIdx + 1;
-            if (tIdx >= cast(int)model.tracks.length) break;
-            const int y0 = lanesTop + laneIdx * LANE_H;
+        foreach (laneIdx, tIdx; laneTracks) {
+            const int y0 = lanesTop + cast(int)laneIdx * LANE_H;
             int y1 = y0 + LANE_H;
             if (y0 >= rc.bottom - 4) break;
             if (y1 > rc.bottom) y1 = rc.bottom;
@@ -332,7 +336,7 @@ private void drawPlaylistClip(
     // Clip header bar
     const int hdrBot = (topY + 15 < botY) ? (topY + 15) : botY;
     buf.fillRect(Rect(cx0 + 2, topY + 1, cx1 - 2, hdrBot),
-                 clip.muted ? pal.bgPanel : (baseCol + 0x00121518));
+                 clip.muted ? pal.bgPanel : adjustColorBrightness(baseCol, 18));
     if (!fnt.isNull && cx1 - cx0 > 28) {
         fnt.drawText(buf, cx0 + 5, topY + 1, toUTF32(truncateLabel(clip.name, 16)),
                      clip.muted ? pal.fgDim : pal.fgText);
@@ -455,6 +459,19 @@ class TimelineCanvasWidget : Widget {
         const int contentTop = _pos.top + TOOLBAR_H;
         const int lanesTop = contentTop + RULER_H;
 
+        if (event.action == MouseAction.Wheel) {
+            if ((event.flags & MouseFlag.Control) != 0) {
+                pixelsPerSec *= (event.wheelDelta > 0) ? 1.15 : 0.87;
+                if (pixelsPerSec < 16.0) pixelsPerSec = 16.0;
+                if (pixelsPerSec > 220.0) pixelsPerSec = 220.0;
+            } else {
+                scrollSec -= event.wheelDelta * 0.45;
+                if (scrollSec < 0.0) scrollSec = 0.0;
+            }
+            invalidate();
+            return true;
+        }
+
         if (event.action == MouseAction.ButtonDown) {
             activateParentWindow(this);
 
@@ -533,9 +550,13 @@ class TimelineCanvasWidget : Widget {
 
             // 4. Track Header & Lane clicks
             if (event.y >= lanesTop) {
+                size_t[] laneTracks;
+                foreach (idx, ref t; model_.tracks) {
+                    if (t.index != 0) laneTracks ~= idx;
+                }
                 const int laneIdx = (event.y - lanesTop) / LANE_H;
-                const int tIdx = laneIdx + 1;
-                if (tIdx <= 0 || tIdx >= cast(int)model_.tracks.length) return true;
+                if (laneIdx < 0 || laneIdx >= cast(int)laneTracks.length) return true;
+                const int tIdx = cast(int)laneTracks[laneIdx];
                 auto trk = &model_.tracks[tIdx];
 
                 // Track header mute LED
@@ -548,6 +569,14 @@ class TimelineCanvasWidget : Widget {
                     } else {
                         model_.selectedTrack = trk.index;
                     }
+                    invalidate();
+                    return true;
+                }
+
+                if (model_.playlistTool == EditorTool.ZOOM) {
+                    pixelsPerSec *= (event.button == MouseButton.Right) ? 0.8 : 1.25;
+                    if (pixelsPerSec < 16.0) pixelsPerSec = 16.0;
+                    if (pixelsPerSec > 220.0) pixelsPerSec = 220.0;
                     invalidate();
                     return true;
                 }
@@ -584,7 +613,7 @@ class TimelineCanvasWidget : Widget {
                         if (splitSec > clip.startTimeSec + 0.1 &&
                             splitSec < clip.startTimeSec + clip.durationSec - 0.1) {
                             TimelineClipState rightHalf = *clip;
-                            rightHalf.clipIndex = cast(int)trk.clips.length + 10;
+                            rightHalf.clipIndex = model_.nextClipIndex(*trk);
                             rightHalf.startTimeSec = splitSec;
                             rightHalf.durationSec = (clip.startTimeSec + clip.durationSec) - splitSec;
                             clip.durationSec = splitSec - clip.startTimeSec;
@@ -620,7 +649,7 @@ class TimelineCanvasWidget : Widget {
                         onPaintClip(trk.index, startSec);
                     } else {
                         TimelineClipState nc;
-                        nc.clipIndex = cast(int)trk.clips.length;
+                        nc.clipIndex = model_.nextClipIndex(*trk);
                         nc.kind = model_.activePickerKind;
                         nc.patternIndex = model_.activePickerIndex;
                         nc.startTimeSec = startSec;
@@ -660,7 +689,8 @@ class TimelineCanvasWidget : Widget {
             return true;
         }
 
-        if (event.action == MouseAction.ButtonUp && dragMode_ != DragMode.NONE) {
+        if ((event.action == MouseAction.ButtonUp || event.action == MouseAction.Cancel) &&
+            dragMode_ != DragMode.NONE) {
             dragMode_ = DragMode.NONE;
             dragTrackArrIdx_ = -1;
             dragClipArrIdx_ = -1;
@@ -678,6 +708,7 @@ class TimelineCanvasWidget : Widget {
 
 unittest {
     import dlangui.graphics.drawbuf : ColorDrawBuf;
+    import dlangui.widgets.styles : currentTheme, createDefaultTheme;
 
     assert(secToPixelX(0.0, 40.0, 136) == 136);
     assert(secToPixelX(2.5, 40.0, 136) == 236);
@@ -697,4 +728,46 @@ unittest {
     const int phX = secToPixelX(1.0, 52.0, PICKER_W + HEADER_W);
     assert(buf.scanLine(TOOLBAR_H + 12)[phX] == pal.accentOrange,
            "Expected FL Studio orange playhead line in Playlist ruler");
+
+    // Regression 1: Bright clip color 0x00FF8F2D must not overflow into alpha byte (0x01...)
+    model.tracks[1].clips[0].color = 0x00FF8F2D;
+    drawTimelineCanvas(buf, Rect(0, 0, 900, 360), &model, 52.0, 0.0);
+    const int clipHdrY = TOOLBAR_H + RULER_H + 6;
+    const uint hdrPx = buf.scanLine(clipHdrY)[PICKER_W + HEADER_W + 10];
+    assert((hdrPx >> 24) == 0, "Expected opaque clip header pixel (alpha == 0 in dlangui), no overflow");
+
+    // Regression 2: Sparse tracks (e.g. after clear_project + ensureTrackIndex(3)) render & click on lane 0 without OOB
+    model.tracks.length = 0;
+    const idx3 = model.ensureTrackIndex(3);
+    model.tracks[idx3].name = "Lead";
+    TimelineClipState sparseClip;
+    sparseClip.clipIndex = 0;
+    sparseClip.name = "SparsePat";
+    sparseClip.color = pal.clipPattern;
+    sparseClip.startTimeSec = 0.0;
+    sparseClip.durationSec = 4.0;
+    model.tracks[idx3].clips ~= sparseClip;
+    drawTimelineCanvas(buf, Rect(0, 0, 900, 360), &model, 52.0, 0.0);
+    const uint sparsePx = buf.scanLine(TOOLBAR_H + RULER_H + 25)[PICKER_W + HEADER_W + 20];
+    assert(sparsePx == pal.clipPattern, "Expected sparse track 3 clip to render on lane 0");
+
+    // Widget interaction: SLICE creates unique clipIndex, ZOOM zooms, Cancel ends drag
+    import gui_d.theme : destroyWidgetTree;
+    if (currentTheme is null) currentTheme = createDefaultTheme();
+    auto tl = new TimelineCanvasWidget("tl", &model);
+    scope (exit) destroyWidgetTree(tl);
+    tl.measure(900, 360);
+    tl.layout(Rect(0, 0, 900, 360));
+    model.playlistTool = EditorTool.SLICE;
+    const int sliceX = secToPixelX(2.0, tl.pixelsPerSec, PICKER_W + HEADER_W);
+    const int lane0Y = TOOLBAR_H + RULER_H + 20;
+    tl.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)sliceX, cast(short)lane0Y));
+    assert(model.tracks[idx3].clips.length == 2, "Expected SLICE tool to split clip into two");
+    assert(model.tracks[idx3].clips[0].clipIndex != model.tracks[idx3].clips[1].clipIndex,
+           "Expected sliced halves to have distinct clipIndex");
+
+    const double prevZoom = tl.pixelsPerSec;
+    model.playlistTool = EditorTool.ZOOM;
+    tl.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)sliceX, cast(short)lane0Y));
+    assert(tl.pixelsPerSec > prevZoom, "Expected EditorTool.ZOOM click to zoom in");
 }

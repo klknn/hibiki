@@ -153,6 +153,18 @@ Request makeTrackVolumeRequest(int trackIdx, float volume) @safe {
     return req;
 }
 
+Request makeTrackPanRequest(int trackIdx, float pan) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_SET_PAN;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    cmd.value = pan;
+    req.track.set(cmd);
+    return req;
+}
+
 Request makeProjectLoadRequest(string path) @safe {
     Request req;
     ProjectCmd cmd;
@@ -280,6 +292,20 @@ Request makePluginSetParamRequest(int trackIdx, int pluginIdx, uint paramId, flo
     cmd.target = target;
     cmd.param_id = paramId;
     cmd.param_value = value;
+    req.plugin.set(cmd);
+    return req;
+}
+
+/// Sends `ACTION_SET_BYPASS` where `cmd.flag = enabled` (`flag=true` means plugin active, `!flag` means bypassed).
+Request makePluginBypassRequest(int trackIdx, int pluginIdx, bool enabled) @safe {
+    Request req;
+    PluginCmd cmd;
+    cmd.action = PluginCmd.Action.ACTION_SET_BYPASS;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.plugin_index.set(cast(uint)pluginIdx);
+    cmd.target = target;
+    cmd.flag = enabled;
     req.plugin.set(cmd);
     return req;
 }
@@ -444,4 +470,23 @@ unittest {
     assert(decodeProto(outP, decodedNotif));
     assert(decodedNotif.playhead_info.hasValue);
     assert(decodedNotif.playhead_info.value.bpm == 135.0f);
+
+    // 3. Test makeTrackPanRequest & makePluginBypassRequest round-trip
+    auto panReq = makeTrackPanRequest(2, -0.4f);
+    ubyte[] panFramed = encodeLengthPrefixedRequest(panReq);
+    Request panDec;
+    assert(decodeProto(panFramed[4 .. $], panDec));
+    assert(panDec.track.hasValue);
+    assert(panDec.track.value.action == TrackCmd.Action.ACTION_SET_PAN);
+    assert(panDec.track.value.target.track_index == 2);
+
+    auto bypReq = makePluginBypassRequest(3, 1, false);
+    ubyte[] bypFramed = encodeLengthPrefixedRequest(bypReq);
+    Request bypDec;
+    assert(decodeProto(bypFramed[4 .. $], bypDec));
+    assert(bypDec.plugin.hasValue);
+    assert(bypDec.plugin.value.action == PluginCmd.Action.ACTION_SET_BYPASS);
+    assert(bypDec.plugin.value.target.track_index == 3);
+    assert(bypDec.plugin.value.target.plugin_index.value == 1);
+    assert(!bypDec.plugin.value.flag);
 }

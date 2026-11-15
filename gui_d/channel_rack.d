@@ -5,8 +5,9 @@ import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
-import gui_d.theme : dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText, drawRotaryKnob,
-    drawVCenteredText, FlPalette, getDawFont, getDawMonoFont, getFlPalette, safeWidgetFont, truncateLabel;
+import gui_d.theme : adjustColorBrightness, dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText,
+    drawRotaryKnob, drawVCenteredText, FlPalette, getDawFont, getDawMonoFont, getFlPalette, safeWidgetFont,
+    truncateLabel;
 import gui_d.transport_model : ChannelFilterMode, ChannelState, GraphEditorMode, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import std.format : format;
@@ -164,6 +165,8 @@ void drawChannelRackCanvas(
             Rect padRc = Rect(sx0, y0 + dp(3), sx1, y1 - dp(2));
             drawCard(buf, padRc, padCol, padBorder, 2.0f);
             if (active) {
+                buf.fillRect(Rect(padRc.left + dp(3), padRc.top + dp(1), padRc.right - dp(3), padRc.top + dp(2)),
+                             adjustColorBrightness(padCol, 14));
                 buf.fillRect(Rect(padRc.left + dp(3), padRc.bottom - dp(5), padRc.right - dp(3), padRc.bottom - dp(2)),
                              pal.stepActiveLed);
             }
@@ -236,12 +239,22 @@ void drawChannelRackCanvas(
                     }
                     if (val < 0.0f) val = 0.0f;
                     if (val > 1.0f) val = 1.0f;
+                    if (model.graphEditorMode == GraphEditorMode.PITCH || model.graphEditorMode == GraphEditorMode.PAN) {
+                        const int midY = (barsTop + barsBot) / 2;
+                        buf.fillRect(Rect(sx0 + dp(1), midY, sx1 - dp(1), midY + dp(1)),
+                                     (pal.borderSubtle & 0x00FFFFFF) | 0x80000000);
+                    }
                     const int bh = cast(int)(val * (barsH - dp(2)));
                     const int inset = dp(1);
-                    if (bh > 0 && selCh.steps[s]) {
-                        buf.fillRect(Rect(sx0 + inset, barsBot - inset - bh, sx1 - inset, barsBot - inset), barCol);
-                    } else if (bh > 0) {
-                        buf.fillRect(Rect(sx0 + inset, barsBot - inset - bh, sx1 - inset, barsBot - inset), pal.fgDim);
+                    if (bh > 0) {
+                        const int barTop = barsBot - inset - bh;
+                        const uint fillCol = selCh.steps[s]
+                            ? ((barCol & 0x00FFFFFF) | 0x60000000)
+                            : ((pal.fgDim & 0x00FFFFFF) | 0x90000000);
+                        const uint capCol = selCh.steps[s] ? barCol : pal.fgDim;
+                        buf.fillRect(Rect(sx0 + inset, barTop, sx1 - inset, barsBot - inset), fillCol);
+                        const int capBot = (barTop + dp(2) < barsBot - inset) ? (barTop + dp(2)) : (barsBot - inset);
+                        buf.fillRect(Rect(sx0 + inset, barTop, sx1 - inset, capBot), capCol);
                     }
                 }
             }

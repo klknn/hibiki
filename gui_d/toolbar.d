@@ -188,6 +188,10 @@ void drawToolbarCanvas(
     // Unified BPM + Time LCD well inside Transport cluster (cohesive tone with toolbar)
     Rect lcdGroup = Rect(tl.bpmRc.left, tl.bpmRc.top, tl.timeRc.right, tl.timeRc.bottom);
     drawCard(buf, lcdGroup, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
+    buf.fillRect(Rect(lcdGroup.left + dp(1), lcdGroup.top, lcdGroup.right - dp(1), lcdGroup.top + dp(1)),
+                 adjustColorBrightness(pal.bgLcd, -6));
+    buf.fillRect(Rect(tl.bpmRc.right, lcdGroup.top + dp(6), tl.bpmRc.right + dp(1), lcdGroup.bottom - dp(6)),
+                 adjustColorBrightness(pal.bgLcd, 14));
     drawCenteredText(buf, lcdFnt, tl.bpmRc, toUTF32(format("%.1f", model.bpm)), pal.fgText);
     const string timeStr = (model.timeDisplayMode == TimeDisplayMode.TIME_MS)
         ? formatTimecode(model.playheadPosSec)
@@ -266,29 +270,63 @@ void drawToolbarCanvas(
         }
     }
 
-    // 7. Live Oscilloscope & CPU monitor (cohesive slate surface & calm readout)
+    // 7. Live Oscilloscope & CPU monitor (cohesive slate surface & smooth AA trace)
     if (tl.hasScopePanel) {
         Rect scopePanel = tl.scopePanel;
         drawCard(buf, scopePanel, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
+        buf.fillRect(Rect(scopePanel.left + dp(1), scopePanel.top, scopePanel.right - dp(1), scopePanel.top + dp(1)),
+                     adjustColorBrightness(pal.bgLcd, -6));
         const int sw = scopePanel.width - dp(12);
-        const int midY = scopePanel.middley;
-        const float amp = dpf(model.isPlaying ? 9.0f : 2.0f);
-        const float phase = cast(float)(model.playheadPosSec * 14.0);
-        float prevX = scopePanel.left + dp(6);
-        float prevY = midY;
-        const uint scopeTraceCol = model.isPlaying ? pal.fgText : pal.fgMuted;
-        enum int PTS = 24;
-        foreach (i; 1 .. PTS + 1) {
-            const float t = cast(float)i / cast(float)PTS;
-            const float sx = scopePanel.left + dp(6) + t * sw;
-            const float sy = midY + sinf(t * 12.56f + phase) * amp * sinf(t * 3.14159f);
-            drawThickLine(buf, prevX, prevY, sx, sy, dpf(1.5f), scopeTraceCol);
-            prevX = sx;
-            prevY = sy;
+        const int midY = scopePanel.middley + dp(3);
+        buf.fillRect(Rect(scopePanel.left + dp(6), midY, scopePanel.right - dp(6), midY + dp(1)),
+                     (pal.borderSubtle & 0x00FFFFFF) | 0xA8000000);
+        if (sw > dp(12)) {
+            const float amp = dpf(model.isPlaying ? 8.5f : 1.8f);
+            const float phase = cast(float)(model.playheadPosSec * 14.0);
+            float prevX = scopePanel.left + dp(6);
+            float prevY = midY;
+            const uint scopeTraceCol = model.isPlaying ? pal.fgText : pal.fgMuted;
+            const uint scopeFillCol = (scopeTraceCol & 0x00FFFFFF) | 0xD2000000;
+            enum int PTS = 56;
+            foreach (i; 1 .. PTS + 1) {
+                const float t = cast(float)i / cast(float)PTS;
+                const float sx = scopePanel.left + dp(6) + t * sw;
+                const float env = sinf(t * 3.14159265f);
+                const float wave = sinf(t * 12.56f + phase) * 0.72f + sinf(t * 25.12f - phase * 0.6f) * 0.28f;
+                const float sy = midY + wave * amp * env;
+                const int fx0 = cast(int)prevX;
+                const int fx1 = cast(int)(sx + 0.5f);
+                const int fy = cast(int)((prevY + sy) * 0.5f + 0.5f);
+                if (fx1 > fx0) {
+                    const int fTop = fy < midY ? fy : midY;
+                    const int fBot = fy > midY ? fy : midY + 1;
+                    if (fBot > fTop) {
+                        buf.fillRect(Rect(fx0, fTop, fx1, fBot), scopeFillCol);
+                    }
+                }
+                drawThickLine(buf, prevX, prevY, sx, sy, dpf(1.4f), scopeTraceCol);
+                prevX = sx;
+                prevY = sy;
+            }
         }
         drawVCenteredText(buf, getDawFont(10, fnt, FontWeight.Normal), scopePanel.left + dp(6),
-                          Rect(scopePanel.left, scopePanel.top + dp(2), scopePanel.right, scopePanel.top + dp(16)),
+                          Rect(scopePanel.left, scopePanel.top + dp(2), scopePanel.right, scopePanel.top + dp(15)),
                           toUTF32(format("CPU %d%%", model.cpuPercent)), pal.fgMuted);
+        if (scopePanel.width >= dp(106)) {
+            const int barW = dp(38);
+            const int barH = dp(4);
+            Rect cpuBg = Rect(scopePanel.right - dp(8) - barW, scopePanel.top + dp(6),
+                              scopePanel.right - dp(8), scopePanel.top + dp(6) + barH);
+            buf.fillRect(cpuBg, pal.ledOff);
+            int clampedCpu = model.cpuPercent;
+            if (clampedCpu < 0) clampedCpu = 0;
+            if (clampedCpu > 100) clampedCpu = 100;
+            const int fillW = (barW * clampedCpu) / 100;
+            if (fillW > 0) {
+                const uint cpuCol = clampedCpu >= 75 ? pal.accentRed : (clampedCpu >= 45 ? pal.accentOrange : pal.accentCyan);
+                buf.fillRect(Rect(cpuBg.left, cpuBg.top, cpuBg.left + fillW, cpuBg.bottom), cpuCol);
+            }
+        }
     }
 }
 

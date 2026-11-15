@@ -1,13 +1,14 @@
 module gui_d.mixer_view;
 
+import core.stdc.math : cosf;
 import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
-import gui_d.theme : dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText, drawLevelMeter,
-    drawRotaryKnob, drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette,
-    safeWidgetFont, truncateLabel;
+import gui_d.theme : adjustColorBrightness, dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText,
+    drawFilledCircle, drawLevelMeter, drawRotaryKnob, drawThickLine, drawVCenteredText, FlPalette,
+    getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
 import gui_d.transport_model : PluginSlotState, TrackStripState, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import std.format : format;
@@ -154,22 +155,41 @@ private void drawMixerStrip(
 
         const int capH = dp(16);
         const int capHalf = dp(8);
-        // Unity 0 dB tick mark (~80%)
-        const int zeroY = sm.grooveRc.bottom - capHalf - cast(int)(0.8f * (sm.grooveRc.height - capH));
-        buf.fillRect(Rect(stripRc.left + dp(8), zeroY, stripRc.left + dp(32), zeroY + dp(1)), pal.fgDim);
+        const int trackTravel = sm.grooveRc.height - capH;
+        // Subtle FL Studio dB scale ticks along fader track (unity 0 dB at 0.80 highlighted)
+        static immutable float[5] TICK_POS = [0.95f, 0.80f, 0.60f, 0.40f, 0.20f];
+        foreach (ti, normT; TICK_POS) {
+            const int ty = sm.grooveRc.bottom - capHalf - cast(int)(normT * trackTravel);
+            const bool isUnity = (ti == 1);
+            const int tSpan = isUnity ? dp(10) : dp(7);
+            const uint tickCol = isUnity ? pal.fgMuted : pal.borderSubtle;
+            buf.fillRect(Rect(sm.grooveRc.left - tSpan, ty, sm.grooveRc.left - dp(1), ty + dp(1)), tickCol);
+            buf.fillRect(Rect(sm.grooveRc.right + dp(1), ty, sm.grooveRc.right + tSpan, ty + dp(1)), tickCol);
+        }
 
         float vol = trk ? trk.volume : 0.8f;
         if (vol < 0.0f) vol = 0.0f;
         if (vol > 1.0f) vol = 1.0f;
-        const int capY = sm.grooveRc.bottom - cast(int)(vol * (sm.grooveRc.height - capH)) - capH;
+        const int capY = sm.grooveRc.bottom - cast(int)(vol * trackTravel) - capH;
         Rect capRc = Rect(stripRc.left + dp(10), capY, stripRc.left + dp(30), capY + capH);
-        drawCard(buf, capRc, 0x008A94A3, pal.borderStrong, 2.0f);
-        buf.fillRect(Rect(capRc.left + dp(2), capRc.middley, capRc.right - dp(2), capRc.middley + dp(2)),
-                     pal.bgLcd);
+        const uint capBase = 0x008A94A3;
+        drawCard(buf, capRc, capBase, pal.borderStrong, 2.0f);
+        if (capRc.height >= dp(8)) {
+            buf.fillRect(Rect(capRc.left + dp(2), capRc.top + dp(1), capRc.right - dp(2), capRc.top + dp(3)),
+                         adjustColorBrightness(capBase, 22));
+            buf.fillRect(Rect(capRc.left + dp(2), capRc.middley - dp(1), capRc.right - dp(2), capRc.middley + dp(2)),
+                         pal.bgLcd);
+            buf.fillRect(Rect(capRc.left + dp(3), capRc.middley, capRc.right - dp(3), capRc.middley + dp(1)),
+                         isSelected ? pal.accentOrange : pal.fgText);
+            buf.fillRect(Rect(capRc.left + dp(2), capRc.bottom - dp(3), capRc.right - dp(2), capRc.bottom - dp(1)),
+                         adjustColorBrightness(capBase, -20));
+        }
     }
 
-    // Bottom routing badge
+    // Bottom routing badge + subtle active status dot
     drawCard(buf, sm.routeRc, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
+    drawFilledCircle(buf, sm.routeRc.left + dpf(7.5f), cast(float)sm.routeRc.middley + 0.5f,
+                     dpf(2.2f), isMaster ? pal.accentCyan : pal.accentOrange);
     drawCenteredText(buf, smallFnt, sm.routeRc, isMaster ? "OUT"d : "-> M"d, pal.accentOrange);
 }
 
@@ -327,15 +347,62 @@ void drawMixerCanvas(
             const float mid = selTrk ? selTrk.eqMid : 0.5f;
             const float high = selTrk ? selTrk.eqHigh : 0.5f;
 
-            // Mini EQ curve graphic
-            const int cy = eqRc.top + dp(24);
-            const float ampPx = dpf(26.0f);
+            // Smooth cosine-interpolated Parametric 3-Band EQ curve + translucent area fill
+            const int cy = eqRc.top + dp(25);
+            const float ampPx = dpf(24.0f);
+            const float xL = eqRc.left + dpf(10.0f);
+            const float xM = cast(float)eqRc.middlex;
+            const float xH = eqRc.right - dpf(10.0f);
             const float yL = cy + (0.5f - low) * ampPx;
             const float yM = cy + (0.5f - mid) * ampPx;
             const float yH = cy + (0.5f - high) * ampPx;
+
+            // Subtle +/- dB and center grid lines
+            const uint gridCol = (pal.borderSubtle & 0x00FFFFFF) | 0x80000000;
+            buf.fillRect(Rect(eqRc.left + dp(6), cy - dp(12), eqRc.right - dp(6), cy - dp(11)), gridCol);
+            buf.fillRect(Rect(eqRc.left + dp(6), cy + dp(12), eqRc.right - dp(6), cy + dp(13)), gridCol);
             buf.fillRect(Rect(eqRc.left + dp(6), cy, eqRc.right - dp(6), cy + dp(1)), pal.borderSubtle);
-            drawThickLine(buf, eqRc.left + dp(8), yL, eqRc.middlex, yM, dpf(2.0f), pal.accentCyan);
-            drawThickLine(buf, eqRc.middlex, yM, eqRc.right - dp(8), yH, dpf(2.0f), pal.accentOrange);
+            buf.fillRect(Rect(eqRc.middlex, eqRc.top + dp(6), eqRc.middlex + dp(1), cy + dp(16)), gridCol);
+
+            enum int EQ_STEPS = 24;
+            float evalEqY(float tNorm) {
+                if (tNorm <= 0.5f) {
+                    const float u = tNorm * 2.0f;
+                    const float ease = 0.5f - 0.5f * cosf(u * 3.14159265f);
+                    return yL + (yM - yL) * ease;
+                }
+                const float u = (tNorm - 0.5f) * 2.0f;
+                const float ease = 0.5f - 0.5f * cosf(u * 3.14159265f);
+                return yM + (yH - yM) * ease;
+            }
+
+            float prevEx = xL;
+            float prevEy = evalEqY(0.0f);
+            foreach (s; 1 .. EQ_STEPS + 1) {
+                const float tNorm = cast(float)s / cast(float)EQ_STEPS;
+                const float ex = xL + tNorm * (xH - xL);
+                const float ey = evalEqY(tNorm);
+                const uint segCol = (tNorm <= 0.38f)
+                    ? pal.accentCyan
+                    : (tNorm <= 0.66f ? pal.accentGreen : pal.accentOrange);
+                const uint areaCol = (segCol & 0x00FFFFFF) | 0xC6000000;
+                const int ix0 = cast(int)prevEx;
+                const int ix1 = cast(int)(ex + 0.5f);
+                const int iyMid = cast(int)((prevEy + ey) * 0.5f + 0.5f);
+                if (ix1 > ix0) {
+                    const int fTop = iyMid < cy ? iyMid : cy;
+                    const int fBot = iyMid > cy ? iyMid : cy + 1;
+                    if (fBot > fTop) {
+                        buf.fillRect(Rect(ix0, fTop, ix1, fBot), areaCol);
+                    }
+                }
+                drawThickLine(buf, prevEx, prevEy, ex, ey, dpf(1.8f), segCol);
+                prevEx = ex;
+                prevEy = ey;
+            }
+            drawFilledCircle(buf, xL, yL, dpf(2.8f), pal.accentCyan, pal.bgLcd);
+            drawFilledCircle(buf, xM, yM, dpf(2.8f), pal.accentGreen, pal.bgLcd);
+            drawFilledCircle(buf, xH, yH, dpf(2.8f), pal.accentOrange, pal.bgLcd);
 
             // Low / Mid / High rotary knobs
             drawRotaryKnob(buf, eqRc.left + dp(34), eqRc.bottom - dp(20), dp(10), low,

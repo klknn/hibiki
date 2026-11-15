@@ -1,10 +1,10 @@
 module gui_d.icons;
 
-import core.stdc.math : ceilf, floorf;
+import core.stdc.math : ceilf, floorf, fmaxf, fminf;
 import dlangui.core.types : Rect;
 import dlangui.graphics.colors : COLOR_TRANSPARENT;
 import dlangui.graphics.drawbuf : DrawBuf;
-import gui_d.theme : dpf, drawFilledCircle, drawOpenArc, drawThickLine;
+import gui_d.theme : colorWithCoverage, dpf, drawFilledCircle, drawOpenArc, drawThickLine;
 import std.ascii : isDigit, isWhite;
 import std.conv : to;
 
@@ -190,8 +190,10 @@ private void fillSvgRings(DrawBuf buf, Rect clipBox, const(SvgPt[])[] rings,
                           float ox, float oy, float scale, uint color) {
     if (rings.length == 0 || color == COLOR_TRANSPARENT) return;
 
-    // Transform vertices once and find vertical bounds
+    // Transform vertices once and find vertical + horizontal bounds
     SvgPt[][] trRings;
+    float minX = 1e9f;
+    float maxX = -1e9f;
     float minY = 1e9f;
     float maxY = -1e9f;
     foreach (ring; rings) {
@@ -202,6 +204,8 @@ private void fillSvgRings(DrawBuf buf, Rect clipBox, const(SvgPt[])[] rings,
             const float px = ox + pt.x * scale;
             const float py = oy + pt.y * scale;
             tr[idx] = SvgPt(px, py);
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
             if (py < minY) minY = py;
             if (py > maxY) maxY = py;
         }
@@ -209,50 +213,87 @@ private void fillSvgRings(DrawBuf buf, Rect clipBox, const(SvgPt[])[] rings,
     }
     if (trRings.length == 0) return;
 
+    int x0 = cast(int)floorf(minX);
+    int x1 = cast(int)ceilf(maxX);
     int y0 = cast(int)floorf(minY);
     int y1 = cast(int)ceilf(maxY);
+    if (x0 < clipBox.left) x0 = clipBox.left;
+    if (x1 > clipBox.right) x1 = clipBox.right;
     if (y0 < clipBox.top) y0 = clipBox.top;
     if (y1 > clipBox.bottom) y1 = clipBox.bottom;
-    if (y1 <= y0) return;
+    if (x1 <= x0 || y1 <= y0) return;
 
+    const int spanW = x1 - x0;
+    float[128] stackCov = void;
+    float[] covRow = (spanW <= 128) ? stackCov[0 .. spanW] : new float[spanW];
     float[] xs;
+
     foreach (py; y0 .. y1) {
-        const float sy = cast(float)py + 0.5f;
-        xs.length = 0;
-        foreach (ring; trRings) {
-            const size_t len = ring.length;
-            foreach (k; 0 .. len) {
-                const SvgPt a = ring[k];
-                const SvgPt b = ring[(k + 1) % len];
-                if ((a.y <= sy && b.y > sy) || (b.y <= sy && a.y > sy)) {
-                    const float t = (sy - a.y) / (b.y - a.y);
-                    xs ~= a.x + t * (b.x - a.x);
+        covRow[] = 0.0f;
+        foreach (sub; 0 .. 4) {
+            const float sy = cast(float)py + (cast(float)sub + 0.5f) * 0.25f;
+            xs.length = 0;
+            foreach (ring; trRings) {
+                const size_t len = ring.length;
+                foreach (k; 0 .. len) {
+                    const SvgPt a = ring[k];
+                    const SvgPt b = ring[(k + 1) % len];
+                    if ((a.y <= sy && b.y > sy) || (b.y <= sy && a.y > sy)) {
+                        const float t = (sy - a.y) / (b.y - a.y);
+                        xs ~= a.x + t * (b.x - a.x);
+                    }
+                }
+            }
+            if (xs.length < 2) continue;
+            // Sort intersections ascending (tiny counts, simple insertion sort avoids allocs)
+            foreach (idx; 1 .. xs.length) {
+                const float key = xs[idx];
+                size_t j = idx;
+                while (j > 0 && xs[j - 1] > key) {
+                    xs[j] = xs[j - 1];
+                    j--;
+                }
+                xs[j] = key;
+            }
+            for (size_t k = 0; k + 1 < xs.length; k += 2) {
+                const float cxL = fmaxf(xs[k], cast(float)x0);
+                const float cxR = fminf(xs[k + 1], cast(float)x1);
+                if (cxR <= cxL) continue;
+                int pxA = cast(int)floorf(cxL);
+                int pxB = cast(int)ceilf(cxR);
+                if (pxA < x0) pxA = x0;
+                if (pxB > x1) pxB = x1;
+                foreach (px; pxA .. pxB) {
+                    const float overlap = fminf(cast(float)(px + 1), cxR) - fmaxf(cast(float)px, cxL);
+                    if (overlap > 0.0f) {
+                        covRow[px - x0] += overlap * 0.25f;
+                    }
                 }
             }
         }
-        if (xs.length < 2) continue;
-        // Sort intersections ascending (tiny counts, simple insertion sort avoids allocs)
-        foreach (idx; 1 .. xs.length) {
-            const float key = xs[idx];
-            size_t j = idx;
-            while (j > 0 && xs[j - 1] > key) {
-                xs[j] = xs[j - 1];
-                j--;
+
+        // Emit coalesced opaque spans and anti-aliased edge pixels
+        int runStart = -1;
+        foreach (i; 0 .. spanW) {
+            const float cov = covRow[i];
+            const int px = x0 + cast(int)i;
+            if (cov >= 0.996f) {
+                if (runStart < 0) runStart = px;
+            } else {
+                if (runStart >= 0) {
+                    buf.fillRect(Rect(runStart, py, px, py + 1), color);
+                    runStart = -1;
+                }
+                if (cov > 0.004f) {
+                    const uint c = colorWithCoverage(color, cov);
+                    if (c != COLOR_TRANSPARENT) {
+                        buf.fillRect(Rect(px, py, px + 1, py + 1), c);
+                    }
+                }
             }
-            xs[j] = key;
         }
-        for (size_t k = 0; k + 1 < xs.length; k += 2) {
-            int ix0 = cast(int)floorf(xs[k] + 0.5f);
-            int ix1 = cast(int)floorf(xs[k + 1] + 0.5f);
-            if (ix0 < clipBox.left) ix0 = clipBox.left;
-            if (ix1 > clipBox.right) ix1 = clipBox.right;
-            if (ix1 <= ix0 && xs[k + 1] - xs[k] >= 0.35f) {
-                // Ensure thin horizontal strokes still light at least 1px when inside bounds
-                if (ix0 >= clipBox.left && ix0 < clipBox.right) ix1 = ix0 + 1;
-            }
-            if (ix1 > ix0) {
-                buf.fillRect(Rect(ix0, py, ix1, py + 1), color);
-            }
+        if (runStart >= 0) {
+            buf.fillRect(Rect(runStart, py, x1, py + 1), color);
         }
     }
 }
@@ -340,7 +381,7 @@ void drawDawIcon(DrawBuf buf, Rect box, DawIcon icon, uint color, uint secondary
             break;
 
         case DawIcon.RECORD:
-            drawFilledCircle(buf, sq.middlex, sq.middley, 4.6f * sc, color);
+            drawFilledCircle(buf, ox + 8.0f * sc, oy + 8.0f * sc, 4.6f * sc, color);
             break;
 
         case DawIcon.LOOP:
@@ -552,12 +593,23 @@ unittest {
     const uint fg = 0x00FF8F2D;
     const uint bg = 0x001F2329;
 
-    // 1. Test SVG even-odd polygon fill with inner hole (M ... Z M ... Z)
+    // 1. Test SVG even-odd polygon fill with inner hole (M ... Z M ... Z) & smooth AA triangle edges
     auto buf = new ColorDrawBuf(32, 32);
     buf.fill(bg);
     drawSvgPath(buf, Rect(0, 0, 32, 32), "M 2,2 H 14 V 14 H 2 Z M 5,5 V 11 H 11 V 5 Z", fg);
     assert(buf.scanLine(6)[6] == fg, "Outer ring pixel should be filled");
     assert(buf.scanLine(16)[16] == bg, "Inner cutout hole should remain background");
+
+    buf.fill(bg);
+    drawSvgPath(buf, Rect(0, 0, 32, 32), "M 3,2 L 14,8 L 3,14 Z", fg);
+    int blendedCount = 0;
+    foreach (y; 0 .. 32) {
+        auto row = buf.scanLine(y);
+        foreach (x; 0 .. 32) {
+            if (row[x] != bg && row[x] != fg) blendedCount++;
+        }
+    }
+    assert(blendedCount > 4, "Expected sub-pixel anti-aliased edge coverage on diagonal triangle");
 
     // 2. Verify every DawIcon enum member draws inside bounds cleanly
     foreach (ic; EnumMembers!DawIcon) {

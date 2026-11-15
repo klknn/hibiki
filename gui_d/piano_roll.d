@@ -6,7 +6,8 @@ import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawFilledCircle,
-    drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel, uiScale;
+    drawPlayheadTriangle, drawRightVCenteredText, drawThickLine, drawVCenteredText, FlPalette, getDawFont,
+    getFlPalette, safeWidgetFont, truncateLabel, uiScale;
 import gui_d.transport_model : EditorTool, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import pb.core : MidiEvent;
@@ -170,16 +171,27 @@ void drawPianoRollCanvas(
         const bool black = isBlackKey(pitch);
         const bool inScale = isInAMinorScale(pitch);
 
-        // Piano key on the left (white key base + shorter black key overlay)
-        const uint whiteBg = 0x00D8DCE3;
-        const uint blackBg = 0x00222730;
+        // Piano key on the left (sculpted white keybed + beveled black key overlay)
+        const uint whiteBg = 0x00DCE0E6;
+        const uint blackBg = 0x00242933;
         buf.fillRect(Rect(rc.left, y0, gridLeft - bw, y1 - bw), whiteBg);
+        if (y1 - y0 >= dp(5)) {
+            buf.fillRect(Rect(rc.left, y0, gridLeft - bw, y0 + bw), adjustColorBrightness(whiteBg, 14));
+        }
+        buf.fillRect(Rect(gridLeft - dp(4), y0, gridLeft - bw, y1 - bw), adjustColorBrightness(whiteBg, -24));
         buf.fillRect(Rect(rc.left, y1 - bw, gridLeft, y1), pal.borderStrong);
         if (black) {
-            buf.fillRect(Rect(rc.left, y0 + bw, gridLeft - dp(18), y1 - bw), blackBg);
+            Rect bkRc = Rect(rc.left, y0 + bw, gridLeft - dp(18), y1 - bw);
+            buf.fillRect(bkRc, blackBg);
+            if (bkRc.height >= dp(4) && bkRc.width >= dp(6)) {
+                buf.fillRect(Rect(bkRc.left, bkRc.top, bkRc.right - dp(1), bkRc.top + bw),
+                             adjustColorBrightness(blackBg, 18));
+                buf.fillRect(Rect(bkRc.right - dp(2), bkRc.top, bkRc.right, bkRc.bottom),
+                             adjustColorBrightness(blackBg, -18));
+            }
         } else if (((pitch % 12) + 12) % 12 == 0 && (y1 - y0) >= dp(10)) {
-            drawVCenteredText(buf, noteFnt, rc.left + dp(6), Rect(rc.left, y0, gridLeft, y1),
-                              toUTF32(noteName(pitch)), pal.bgLcd);
+            drawRightVCenteredText(buf, noteFnt, Rect(rc.left, y0, gridLeft, y1),
+                                   toUTF32(noteName(pitch)), pal.bgLcd, dp(5));
         }
 
         // Scale-highlighted row lane
@@ -269,8 +281,8 @@ void drawPianoRollCanvas(
     const double phBeat = (model ? model.playheadPosSec : 0.0) * (bpm / 60.0);
     const int phX = gridLeft + cast(int)((phBeat - scrollBeats) * pixelsPerBeat + 0.5);
     if (phX >= gridLeft && phX < gridRight) {
-        buf.fillRect(Rect(phX - dp(3), rulerTop + dp(2), phX + dp(4), rulerTop + dp(7)), pal.accentOrange);
-        buf.fillRect(Rect(phX, rulerTop + dp(4), phX + dp(2), velTop), pal.accentOrange);
+        drawPlayheadTriangle(buf, phX, rulerTop + dp(2), dp(5), dp(8), pal.accentOrange);
+        buf.fillRect(Rect(phX, rulerTop + dp(7), phX + dp(2), velTop), pal.accentOrange);
     }
 
     // 6. Bottom Velocity / Event Lane
@@ -286,6 +298,9 @@ void drawPianoRollCanvas(
         const int stemTopMax = velTop + dp(8);
         const int stemSpan = stemBot - stemTopMax;
         if (stemSpan > dp(8)) {
+            const uint refCol = (pal.borderSubtle & 0x00FFFFFF) | 0xA0000000;
+            buf.fillRect(Rect(gridLeft, stemTopMax, gridRight, stemTopMax + dp(1)), refCol);
+            buf.fillRect(Rect(gridLeft, (stemTopMax + stemBot) / 2, gridRight, (stemTopMax + stemBot) / 2 + dp(1)), refCol);
             foreach (const ref ev; events) {
                 if (ev.cc_number != 0 || ev.velocity == 0) continue;
                 const double startBeat = cast(double)ev.tick / resF;
@@ -293,8 +308,9 @@ void drawPianoRollCanvas(
                 if (sx < gridLeft + dp(2) || sx >= gridRight - dp(2)) continue;
                 const float normVel = cast(float)ev.velocity / 127.0f;
                 const int sy = stemBot - cast(int)(normVel * stemSpan);
-                buf.fillRect(Rect(sx - bw, sy, sx + bw, stemBot), pal.accentGreen);
-                drawFilledCircle(buf, sx, sy, dpf(3.2f), pal.noteFill, pal.bgLcd);
+                drawThickLine(buf, cast(float)sx + 0.5f, cast(float)sy, cast(float)sx + 0.5f,
+                              cast(float)stemBot, dpf(1.6f), pal.accentGreen);
+                drawFilledCircle(buf, cast(float)sx + 0.5f, cast(float)sy + 0.5f, dpf(3.2f), pal.noteFill, pal.bgLcd);
             }
         }
     }

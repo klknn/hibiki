@@ -6,8 +6,8 @@ import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : adjustColorBrightness, dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText,
-    drawDetailedWaveform, drawPlayheadTriangle, drawThickLine, drawVCenteredText, FlPalette, getDawFont,
-    getFlPalette, safeWidgetFont, truncateLabel, uiScale;
+    drawDetailedWaveform, drawFilledCircle, drawPlayheadTriangle, drawThickLine, drawVCenteredText, FlPalette,
+    getDawFont, getFlPalette, safeWidgetFont, truncateLabel, uiScale;
 import gui_d.transport_model : AutomationPoint, EditorTool, PlaylistClipKind,
     TimelineClipState, TransportModel;
 import gui_d.workspace : activateParentWindow;
@@ -317,6 +317,12 @@ void drawTimelineCanvas(
             drawVCenteredText(buf, smallFnt, gx + dp(3), rulerRc,
                               toUTF32(format("%d", (beatIdx / 4) + 1)), pal.fgText);
         }
+        if (pixelsPerSec * beatSec >= dp(18)) {
+            const int hx = secToPixelX(t + beatSec * 0.5, pixelsPerSec, arrRc.left, scrollSec);
+            if (hx >= arrRc.left && hx < arrRc.right) {
+                buf.fillRect(Rect(hx, rulerRc.bottom - dp(3), hx + bw, rulerRc.bottom), pal.borderSubtle);
+            }
+        }
     }
 
     // Time Markers on Ruler
@@ -344,10 +350,12 @@ void drawTimelineCanvas(
         }
     }
 
-    // Playhead cap & vertical line
+    // Playhead cap, subtle column glint & vertical line
     const double phSec = model ? model.playheadPosSec : 0.0;
     const int phX = secToPixelX(phSec, pixelsPerSec, arrRc.left, scrollSec);
     if (phX >= arrRc.left && phX < arrRc.right) {
+        buf.fillRect(Rect(phX - dp(2), rulerRc.bottom, phX + dp(4), rc.bottom),
+                     (pal.accentOrange & 0x00FFFFFF) | 0xE6000000);
         drawPlayheadTriangle(buf, phX, rulerRc.top + dp(2), dp(6), dp(9), pal.accentOrange);
         buf.fillRect(Rect(phX, rulerRc.top + dp(8), phX + dp(2), rc.bottom), pal.accentOrange);
     }
@@ -392,6 +400,10 @@ private void drawPlaylistClip(
     Rect hdrBarRc = Rect(cx0 + dp(1), topY + dp(1), cx1 - dp(1), hdrBot);
     const uint hdrCol = (clip.muted ? pal.bgPanel : adjustColorBrightness(baseCol, 18)) & 0x00FFFFFF;
     buf.fillRect(hdrBarRc, hdrCol);
+    if (hdrBarRc.height >= dp(4) && hdrBarRc.width >= dp(4)) {
+        buf.fillRect(Rect(hdrBarRc.left, hdrBarRc.top, hdrBarRc.right, hdrBarRc.top + dp(1)),
+                     adjustColorBrightness(hdrCol, 16) & 0x00FFFFFF);
+    }
     if (cx1 - cx0 > dp(28)) {
         drawVCenteredText(buf, fnt, cx0 + dp(5), hdrBarRc,
                           toUTF32(truncateLabel(clip.name, 16)),
@@ -411,9 +423,10 @@ private void drawPlaylistClip(
         drawDetailedWaveform(buf, Rect(cx0 + padX, bodyTop, cx0 + padX + bodyW, bodyBot),
                              clip.waveform, waveCoreCol, waveBodyCol, waveAxisCol);
     } else if (clip.kind == PlaylistClipKind.AUTOMATION) {
-        // Draw smooth automation envelope curve + control nodes
+        // Draw smooth anti-aliased automation envelope curve + circular SDF control nodes
         const int h = bodyBot - bodyTop;
-        const int nodeR = dp(2);
+        const float nodeR = dpf(2.8f);
+        const uint envCol = clip.muted ? pal.fgDim : pal.accentAmber;
         if (clip.autoPoints.length >= 2) {
             foreach (i; 0 .. clip.autoPoints.length - 1) {
                 const auto p0 = clip.autoPoints[i];
@@ -422,19 +435,18 @@ private void drawPlaylistClip(
                 const float y0 = bodyBot - p0.value * h;
                 const float x1 = cx0 + padX + cast(float)(p1.normTime * bodyW);
                 const float y1 = bodyBot - p1.value * h;
-                drawThickLine(buf, x0, y0, x1, y1, dpf(1.8f),
-                              clip.muted ? pal.fgDim : pal.accentAmber);
-                buf.fillRect(Rect(cast(int)x0 - nodeR, cast(int)y0 - nodeR,
-                                  cast(int)x0 + nodeR + 1, cast(int)y0 + nodeR + 1), pal.fgText);
+                drawThickLine(buf, x0, y0, x1, y1, dpf(1.8f), envCol);
             }
-            const auto plast = clip.autoPoints[$ - 1];
-            const int lx = cx0 + padX + cast(int)(plast.normTime * bodyW);
-            const int ly = bodyBot - cast(int)(plast.value * h);
-            buf.fillRect(Rect(lx - nodeR, ly - nodeR, lx + nodeR + 1, ly + nodeR + 1), pal.fgText);
+            foreach (const ref pt; clip.autoPoints) {
+                const float nx = cx0 + padX + cast(float)(pt.normTime * bodyW);
+                const float ny = bodyBot - pt.value * h;
+                drawFilledCircle(buf, nx, ny, nodeR, pal.fgText, pal.bgLcd);
+            }
         }
     } else if (clip.kind == PlaylistClipKind.PATTERN) {
         // Mini piano-roll / step preview bars inside pattern clip
         const uint noteCol = clip.muted ? pal.fgDim : pal.noteFill;
+        const uint attackCol = clip.muted ? pal.fgDim : pal.accentGreen;
         const int spanY = bodyBot - bodyTop - dp(3);
         if (spanY > 0) {
             foreach (k; 0 .. 8) {
@@ -443,6 +455,9 @@ private void drawPlaylistClip(
                 const int ny = bodyTop + (dp(k * 5 + clip.patternIndex * 3) % spanY);
                 if (nx1 < cx1 - dp(2)) {
                     buf.fillRect(Rect(nx0, ny, nx1, ny + dp(3)), noteCol);
+                    if (nx1 - nx0 >= dp(4)) {
+                        buf.fillRect(Rect(nx0, ny, nx0 + dp(2), ny + dp(3)), attackCol);
+                    }
                 }
             }
         }

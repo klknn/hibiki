@@ -1,7 +1,7 @@
 module gui_d.theme;
 
 import core.math : fabs;
-import core.stdc.math : ceilf, cosf, floorf, log10f, sinf, sqrtf;
+import core.stdc.math : atan2f, ceilf, cosf, floorf, fmaxf, fminf, log10f, sinf, sqrtf;
 import dlangui.core.config : ENABLE_FREETYPE;
 import dlangui.core.types : BASE_DPI, Point, Rect, SCREEN_DPI;
 import dlangui.graphics.colors : COLOR_TRANSPARENT;
@@ -530,23 +530,104 @@ void drawBeveledTrackCard(DrawBuf buf, Rect rc, uint fillColor, uint cornerBgCol
     }
 }
 
-/// Draws a thickness-scaled line using `DrawBuf.drawLine` (works on both `ColorDrawBuf` and `GLDrawBuf`).
-void drawThickLine(DrawBuf buf, float x0, float y0, float x1, float y1, float width, uint color) {
-    const int ix0 = cast(int)(x0 + 0.5f);
-    const int iy0 = cast(int)(y0 + 0.5f);
-    const int ix1 = cast(int)(x1 + 0.5f);
-    const int iy1 = cast(int)(y1 + 0.5f);
-    buf.drawLine(Point(ix0, iy0), Point(ix1, iy1), color);
-    if (width >= 1.8f) {
-        const int thickness = cast(int)(width + 0.3f);
-        const bool horizDominant = fabs(x1 - x0) >= fabs(y1 - y0);
-        foreach (d; 1 .. thickness) {
-            if (horizDominant) {
-                buf.drawLine(Point(ix0, iy0 + d), Point(ix1, iy1 + d), color);
-            } else {
-                buf.drawLine(Point(ix0 + d, iy0), Point(ix1 + d, iy1), color);
-            }
+/// Modulates `color`'s opacity by `cov` in `[0, 1]` using `dlangui` inverted-alpha ARGB (`0x00` = opaque, `0xFF` = transparent).
+uint colorWithCoverage(uint color, float cov) pure nothrow @safe {
+    if (color == COLOR_TRANSPARENT || cov <= 0.004f) return COLOR_TRANSPARENT;
+    if (cov >= 0.996f) return color;
+    const uint baseAlpha = (color >> 24) & 0xFF;
+    const float baseOpacity = 1.0f - cast(float)baseAlpha / 255.0f;
+    float outAlpha = 255.0f * (1.0f - baseOpacity * cov);
+    if (outAlpha < 0.0f) outAlpha = 0.0f;
+    if (outAlpha > 255.0f) outAlpha = 255.0f;
+    const uint a = cast(uint)(outAlpha + 0.5f);
+    if (a >= 255) return COLOR_TRANSPARENT;
+    return (a << 24) | (color & 0x00FFFFFF);
+}
+
+/// Flushes a contiguous opaque horizontal pixel run `[runStart, px)` on row `py` if active.
+private void flushOpaqueRun(DrawBuf buf, int py, ref int runStart, int px, uint color) {
+    if (runStart >= 0) {
+        if (px > runStart) {
+            buf.fillRect(Rect(runStart, py, px, py + 1), color);
         }
+        runStart = -1;
+    }
+}
+
+/// Emits one pixel's coverage onto row `py`, coalescing contiguous opaque pixels into wider `fillRect` spans.
+private void emitCoveragePixel(DrawBuf buf, int px, int py, float cov, uint color, ref int opaqueRunStart) {
+    if (cov >= 0.996f) {
+        if (opaqueRunStart < 0) opaqueRunStart = px;
+        return;
+    }
+    flushOpaqueRun(buf, py, opaqueRunStart, px, color);
+    const uint c = colorWithCoverage(color, cov);
+    if (c != COLOR_TRANSPARENT) {
+        buf.fillRect(Rect(px, py, px + 1, py + 1), c);
+    }
+}
+
+/// Draws an anti-aliased thickness-scaled SDF capsule line using `DrawBuf.fillRect`
+/// (works identically across headless `ColorDrawBuf` and `GLDrawBuf`).
+void drawThickLine(DrawBuf buf, float x0, float y0, float x1, float y1, float width, uint color) {
+    if (color == COLOR_TRANSPARENT || width <= 0.0f) return;
+    const float dx = x1 - x0;
+    const float dy = y1 - y0;
+    const float len2 = dx * dx + dy * dy;
+
+    // Fast path for exact crisp axis-aligned hairlines/bars
+    if (len2 < 1e-4f) {
+        drawFilledCircle(buf, x0, y0, width * 0.5f, color);
+        return;
+    }
+
+    const float halfW = fmaxf(0.45f, width * 0.5f);
+    const float reach = halfW + 0.65f;
+    const float invLen2 = 1.0f / len2;
+
+    const int py0 = cast(int)floorf(fminf(y0, y1) - reach);
+    const int py1 = cast(int)ceilf(fmaxf(y0, y1) + reach) + 1;
+    const float xMinAll = fminf(x0, x1) - reach;
+    const float xMaxAll = fmaxf(x0, x1) + reach;
+    const float absDy = fabs(dy);
+
+    foreach (py; py0 .. py1) {
+        const float sy = cast(float)py + 0.5f;
+        float rowMinX = xMinAll;
+        float rowMaxX = xMaxAll;
+        // Narrow horizontal scan window along tilted lines while keeping rounded endcaps intact
+        if (absDy >= 0.5f) {
+            float tA = (sy - reach - y0) / dy;
+            float tB = (sy + reach - y0) / dy;
+            if (tA > tB) {
+                const float tmp = tA;
+                tA = tB;
+                tB = tmp;
+            }
+            tA = fmaxf(0.0f, fminf(1.0f, tA));
+            tB = fmaxf(0.0f, fminf(1.0f, tB));
+            const float xA = x0 + tA * dx;
+            const float xB = x0 + tB * dx;
+            rowMinX = fmaxf(rowMinX, fminf(xA, xB) - reach);
+            rowMaxX = fminf(rowMaxX, fmaxf(xA, xB) + reach);
+        }
+        const int px0 = cast(int)floorf(rowMinX);
+        const int px1 = cast(int)ceilf(rowMaxX) + 1;
+        if (px1 <= px0) continue;
+
+        int runStart = -1;
+        foreach (px; px0 .. px1) {
+            const float sx = cast(float)px + 0.5f;
+            float t = ((sx - x0) * dx + (sy - y0) * dy) * invLen2;
+            if (t < 0.0f) t = 0.0f;
+            else if (t > 1.0f) t = 1.0f;
+            const float qx = sx - (x0 + t * dx);
+            const float qy = sy - (y0 + t * dy);
+            const float dist = sqrtf(qx * qx + qy * qy);
+            const float cov = fminf(1.0f, fmaxf(0.0f, halfW + 0.5f - dist));
+            emitCoveragePixel(buf, px, py, cov, color, runStart);
+        }
+        flushOpaqueRun(buf, py, runStart, px1, color);
     }
 }
 
@@ -732,7 +813,61 @@ void drawDetailedWaveform(
     }
 }
 
-/// Draws an open circular arc stroke between `startDeg` and `endDeg` (in degrees, 0 = right, 90 = down).
+/// Evaluates signed-distance coverage for an arc ring pixel `(dx, dy)` and emits it cleanly.
+private void emitArcSpan(
+    DrawBuf buf,
+    int py,
+    int px0,
+    int px1,
+    float cx,
+    float cy,
+    float radius,
+    float halfW,
+    bool fullRing,
+    float a0,
+    float aSpan,
+    float e0x,
+    float e0y,
+    float e1x,
+    float e1y,
+    uint color
+) {
+    if (px1 <= px0) return;
+    enum float TWO_PI = 6.283185307f;
+    const float sy = cast(float)py + 0.5f;
+    const float dy = sy - cy;
+    int runStart = -1;
+    foreach (px; px0 .. px1) {
+        const float sx = cast(float)px + 0.5f;
+        const float dx = sx - cx;
+        const float r = sqrtf(dx * dx + dy * dy);
+        float dist;
+        if (fullRing) {
+            dist = fabs(r - radius);
+        } else {
+            float rel = atan2f(dy, dx) - a0;
+            while (rel < 0.0f) rel += TWO_PI;
+            while (rel >= TWO_PI) rel -= TWO_PI;
+            if (rel <= aSpan) {
+                dist = fabs(r - radius);
+            } else {
+                const float dx0 = sx - e0x;
+                const float dy0 = sy - e0y;
+                const float dx1 = sx - e1x;
+                const float dy1 = sy - e1y;
+                const float d0 = sqrtf(dx0 * dx0 + dy0 * dy0);
+                const float d1 = sqrtf(dx1 * dx1 + dy1 * dy1);
+                dist = fminf(d0, d1);
+            }
+        }
+        const float cov = fminf(1.0f, fmaxf(0.0f, halfW + 0.5f - dist));
+        emitCoveragePixel(buf, px, py, cov, color, runStart);
+    }
+    flushOpaqueRun(buf, py, runStart, px1, color);
+}
+
+/// Draws an analytic SDF anti-aliased circular arc stroke with rounded endcaps between
+/// `startDeg` and `endDeg` (in degrees, 0 = right, 90 = down).
 void drawOpenArc(
     DrawBuf buf,
     float cx,
@@ -744,45 +879,109 @@ void drawOpenArc(
     uint color,
     int segments = 18
 ) {
-    if (radius <= 0.5f || segments < 2) return;
-    enum float DEG2RAD = 3.14159265f / 180.0f;
-    const float a0 = startDeg * DEG2RAD;
-    const float a1 = endDeg * DEG2RAD;
-    const float step = (a1 - a0) / cast(float)segments;
-    float prevX = cx + cosf(a0) * radius;
-    float prevY = cy + sinf(a0) * radius;
-    foreach (i; 1 .. segments + 1) {
-        const float a = a0 + step * cast(float)i;
-        const float nx = cx + cosf(a) * radius;
-        const float ny = cy + sinf(a) * radius;
-        drawThickLine(buf, prevX, prevY, nx, ny, lineWidth, color);
-        prevX = nx;
-        prevY = ny;
+    if (color == COLOR_TRANSPARENT || radius <= 0.3f || lineWidth <= 0.0f) return;
+    const float sweep = endDeg - startDeg;
+    if (fabs(sweep) < 0.05f) return;
+
+    enum float DEG2RAD = 3.1415926535f / 180.0f;
+    enum float TWO_PI = 6.283185307f;
+    const bool fullRing = fabs(sweep) >= 359.5f;
+    const float sDeg = sweep >= 0.0f ? startDeg : endDeg;
+    const float eDeg = sweep >= 0.0f ? endDeg : startDeg;
+    float a0 = sDeg * DEG2RAD;
+    while (a0 < 0.0f) a0 += TWO_PI;
+    while (a0 >= TWO_PI) a0 -= TWO_PI;
+    const float aSpan = (eDeg - sDeg) * DEG2RAD;
+    const float e0x = cx + cosf(a0) * radius;
+    const float e0y = cy + sinf(a0) * radius;
+    const float e1x = cx + cosf(a0 + aSpan) * radius;
+    const float e1y = cy + sinf(a0 + aSpan) * radius;
+
+    const float halfW = fmaxf(0.45f, lineWidth * 0.5f);
+    const float rOut = radius + halfW + 0.65f;
+    const float rInSkip = radius - halfW - 0.65f;
+    const int py0 = cast(int)floorf(cy - rOut);
+    const int py1 = cast(int)ceilf(cy + rOut) + 1;
+
+    foreach (py; py0 .. py1) {
+        const float dy = (cast(float)py + 0.5f) - cy;
+        const float remOut = rOut * rOut - dy * dy;
+        if (remOut <= 0.0f) continue;
+        const float dxOut = sqrtf(remOut);
+        const int pxMin = cast(int)floorf(cx - dxOut);
+        const int pxMax = cast(int)ceilf(cx + dxOut) + 1;
+
+        if (rInSkip > 0.5f && fabs(dy) < rInSkip) {
+            const float dxIn = sqrtf(rInSkip * rInSkip - dy * dy);
+            const int holeL = cast(int)ceilf(cx - dxIn);
+            const int holeR = cast(int)floorf(cx + dxIn);
+            if (holeR > holeL + 1) {
+                emitArcSpan(buf, py, pxMin, holeL + 1, cx, cy, radius, halfW,
+                            fullRing, a0, aSpan, e0x, e0y, e1x, e1y, color);
+                emitArcSpan(buf, py, holeR, pxMax, cx, cy, radius, halfW,
+                            fullRing, a0, aSpan, e0x, e0y, e1x, e1y, color);
+                continue;
+            }
+        }
+        emitArcSpan(buf, py, pxMin, pxMax, cx, cy, radius, halfW,
+                    fullRing, a0, aSpan, e0x, e0y, e1x, e1y, color);
     }
 }
 
-/// Draws a filled circle via horizontal `fillRect` scanlines (universal across `ColorDrawBuf` & `GLDrawBuf`).
+/// Draws an analytic SDF anti-aliased filled circle (universal across `ColorDrawBuf` & `GLDrawBuf`).
 void drawFilledCircle(DrawBuf buf, float cx, float cy, float radius, uint fillColor, uint borderColor = COLOR_TRANSPARENT) {
-    if (radius <= 0.5f) return;
-    const int icx = cast(int)(cx + 0.5f);
-    const int icy = cast(int)(cy + 0.5f);
-    const int r = cast(int)(radius + 0.5f);
-    const float r2 = radius * radius;
+    if (radius <= 0.3f) return;
 
     if (fillColor != COLOR_TRANSPARENT) {
-        foreach (dy; -r .. r + 1) {
-            const float rem = r2 - cast(float)(dy * dy);
-            if (rem < 0.0f) continue;
-            const int dx = cast(int)sqrtf(rem);
-            buf.fillRect(Rect(icx - dx, icy + dy, icx + dx + 1, icy + dy + 1), fillColor);
+        const float rOut = radius + 0.65f;
+        const float rSolid = radius - 0.6f;
+        const int py0 = cast(int)floorf(cy - rOut);
+        const int py1 = cast(int)ceilf(cy + rOut) + 1;
+
+        foreach (py; py0 .. py1) {
+            const float dy = (cast(float)py + 0.5f) - cy;
+            const float remOut = rOut * rOut - dy * dy;
+            if (remOut <= 0.0f) continue;
+            const float dxOut = sqrtf(remOut);
+            const int pxMin = cast(int)floorf(cx - dxOut);
+            const int pxMax = cast(int)ceilf(cx + dxOut) + 1;
+
+            int solidL = pxMax;
+            int solidR = pxMax;
+            if (rSolid > 0.0f && fabs(dy) < rSolid) {
+                const float dxSolid = sqrtf(rSolid * rSolid - dy * dy);
+                solidL = cast(int)ceilf(cx - dxSolid);
+                solidR = cast(int)floorf(cx + dxSolid);
+                if (solidR > solidL) {
+                    buf.fillRect(Rect(solidL, py, solidR, py + 1), fillColor);
+                } else {
+                    solidL = pxMax;
+                    solidR = pxMax;
+                }
+            }
+
+            foreach (px; pxMin .. (solidL < pxMax ? solidL : pxMax)) {
+                const float dx = (cast(float)px + 0.5f) - cx;
+                const float cov = fminf(1.0f, fmaxf(0.0f, radius + 0.5f - sqrtf(dx * dx + dy * dy)));
+                const uint c = colorWithCoverage(fillColor, cov);
+                if (c != COLOR_TRANSPARENT) buf.fillRect(Rect(px, py, px + 1, py + 1), c);
+            }
+            if (solidR < pxMax) {
+                foreach (px; solidR .. pxMax) {
+                    const float dx = (cast(float)px + 0.5f) - cx;
+                    const float cov = fminf(1.0f, fmaxf(0.0f, radius + 0.5f - sqrtf(dx * dx + dy * dy)));
+                    const uint c = colorWithCoverage(fillColor, cov);
+                    if (c != COLOR_TRANSPARENT) buf.fillRect(Rect(px, py, px + 1, py + 1), c);
+                }
+            }
         }
     }
     if (borderColor != COLOR_TRANSPARENT) {
-        drawOpenArc(buf, cx, cy, radius, 0.0f, 360.0f, 1.0f, borderColor, 18);
+        drawOpenArc(buf, cx, cy, radius, 0.0f, 360.0f, 1.0f, borderColor);
     }
 }
 
-/// Draws an FL Studio 2026 rotary knob with outer value arc and pointer needle.
+/// Draws an FL Studio 2026 anti-aliased rotary knob with outer value arc, bevel cap, center pivot, and needle.
 /// `normValue` is `[0..1]`. If `bipolar`, `0.5` is center (12 o'clock) and arc sweeps left/right.
 void drawRotaryKnob(
     DrawBuf buf,
@@ -807,42 +1006,51 @@ void drawRotaryKnob(
     enum float CENTER_DEG = 270.0f;
     const float valDeg = START_DEG + v * (END_DEG - START_DEG);
 
+    const float fcx = cast(float)cx + 0.5f;
+    const float fcy = cast(float)cy + 0.5f;
     const float arcR = cast(float)radius;
-    const float trackW = dpf(1.8f);
+    const float trackW = dpf(1.7f);
     const float arcW = dpf(2.2f);
-    drawOpenArc(buf, cx, cy, arcR, START_DEG, END_DEG, trackW, trackColor, 20);
+    drawOpenArc(buf, fcx, fcy, arcR, START_DEG, END_DEG, trackW, trackColor);
 
     if (bipolar) {
+        // Subtle 12 o'clock zero detent tick on outer ring
+        const float tickR0 = arcR + dpf(0.8f);
+        const float tickR1 = arcR + dpf(2.2f);
+        drawThickLine(buf, fcx, fcy - tickR0, fcx, fcy - tickR1, dpf(1.1f), adjustColorBrightness(trackColor, 26));
         if (fabs(v - 0.5f) > 0.01f) {
             if (v >= 0.5f) {
-                drawOpenArc(buf, cx, cy, arcR, CENTER_DEG, valDeg, arcW, arcColor, 14);
+                drawOpenArc(buf, fcx, fcy, arcR, CENTER_DEG, valDeg, arcW, arcColor);
             } else {
-                drawOpenArc(buf, cx, cy, arcR, valDeg, CENTER_DEG, arcW, arcColor, 14);
+                drawOpenArc(buf, fcx, fcy, arcR, valDeg, CENTER_DEG, arcW, arcColor);
             }
         }
     } else if (v > 0.01f) {
-        drawOpenArc(buf, cx, cy, arcR, START_DEG, valDeg, arcW, arcColor, 18);
+        drawOpenArc(buf, fcx, fcy, arcR, START_DEG, valDeg, arcW, arcColor);
     }
 
-    const float gap = dpf(3.0f);
+    const float gap = dpf(2.8f);
     const float capR = arcR > gap + 1.0f ? arcR - gap : arcR * 0.7f;
-    drawFilledCircle(buf, cx, cy, capR, capColor, COLOR_TRANSPARENT);
+    drawFilledCircle(buf, fcx, fcy, capR, capColor, COLOR_TRANSPARENT);
     if (capR >= dpf(4.0f)) {
         const float rimR = capR - dpf(0.6f);
-        drawOpenArc(buf, cx, cy, rimR, 195.0f, 345.0f, dpf(1.1f), adjustColorBrightness(capColor, 16), 12);
-        drawOpenArc(buf, cx, cy, rimR, 15.0f, 165.0f, dpf(1.1f), adjustColorBrightness(capColor, -14), 12);
+        drawOpenArc(buf, fcx, fcy, rimR, 200.0f, 340.0f, dpf(1.0f), adjustColorBrightness(capColor, 18));
+        drawOpenArc(buf, fcx, fcy, rimR, 20.0f, 160.0f, dpf(1.0f), adjustColorBrightness(capColor, -14));
     }
     if (borderColor != COLOR_TRANSPARENT) {
-        drawOpenArc(buf, cx, cy, capR, 0.0f, 360.0f, 1.0f, borderColor, 18);
+        drawOpenArc(buf, fcx, fcy, capR, 0.0f, 360.0f, 0.9f, borderColor);
     }
 
-    enum float DEG2RAD = 3.14159265f / 180.0f;
+    enum float DEG2RAD = 3.1415926535f / 180.0f;
     const float rad = valDeg * DEG2RAD;
-    const float x0 = cx + cosf(rad) * (capR * 0.25f);
-    const float y0 = cy + sinf(rad) * (capR * 0.25f);
-    const float x1 = cx + cosf(rad) * (capR - dpf(1.0f));
-    const float y1 = cy + sinf(rad) * (capR - dpf(1.0f));
+    const float x0 = fcx + cosf(rad) * (capR * 0.22f);
+    const float y0 = fcy + sinf(rad) * (capR * 0.22f);
+    const float x1 = fcx + cosf(rad) * (capR - dpf(0.9f));
+    const float y1 = fcy + sinf(rad) * (capR - dpf(0.9f));
     drawThickLine(buf, x0, y0, x1, y1, dpf(1.6f), arcColor);
+    if (radius >= dp(9)) {
+        drawFilledCircle(buf, fcx, fcy, dpf(1.2f), adjustColorBrightness(capColor, 20));
+    }
 }
 
 /// Draws a modern FL Studio stereo peak meter inside `rc` (`-60 dB .. 0 dB`).
@@ -879,12 +1087,24 @@ void drawLevelMeter(
     }
 }
 
-/// Draws the classic FL Studio downward-pointing playhead triangle in the timeline ruler.
+/// Draws the classic FL Studio downward-pointing anti-aliased playhead triangle in the timeline ruler.
 void drawPlayheadTriangle(DrawBuf buf, int cx, int topY, int halfW, int height, uint color) {
-    if (height <= 0 || halfW <= 0) return;
+    if (height <= 0 || halfW <= 0 || color == COLOR_TRANSPARENT) return;
+    const float fcx = cast(float)cx + 0.5f;
     foreach (dy; 0 .. height) {
-        const int span = (halfW * (height - dy)) / height;
-        buf.fillRect(Rect(cx - span, topY + dy, cx + span + 1, topY + dy + 1), color);
+        const float t = (cast(float)dy + 0.5f) / cast(float)height;
+        const float span = cast(float)halfW * (1.0f - t);
+        const float xLeft = fcx - span;
+        const float xRight = fcx + span;
+        const int ix0 = cast(int)floorf(xLeft);
+        const int ix1 = cast(int)ceilf(xRight);
+        const uint rowCol = (dy == 0) ? adjustColorBrightness(color, 18) : color;
+        int runStart = -1;
+        foreach (px; ix0 .. ix1) {
+            const float cov = fminf(1.0f, fmaxf(0.0f, fminf(cast(float)(px + 1), xRight) - fmaxf(cast(float)px, xLeft)));
+            emitCoveragePixel(buf, px, topY + dy, cov, rowCol, runStart);
+        }
+        flushOpaqueRun(buf, topY + dy, runStart, ix1, rowCol);
     }
 }
 
@@ -1285,4 +1505,32 @@ unittest {
                          (pal.accentCyan & 0x00FFFFFF) | 0x80000000, pal.borderSubtle);
     // Midpoint (~x=44) between 0.1 and 0.9 must interpolate rather than stay flat
     assert(wfBuf.scanLine(24)[44] != pal.bgWindow, "Expected smooth Catmull-Rom waveform body");
+
+    // Verify SDF anti-aliasing on diagonal lines, arcs, circles, and playhead triangle
+    assert(colorWithCoverage(0x00FF8F2D, 0.0f) == COLOR_TRANSPARENT);
+    assert(colorWithCoverage(0x00FF8F2D, 1.0f) == 0x00FF8F2D);
+    assert(((colorWithCoverage(0x00FF8F2D, 0.5f) >> 24) & 0xFF) > 100);
+
+    auto aaBuf = new ColorDrawBuf(48, 48);
+    aaBuf.fill(pal.bgLcd);
+    drawThickLine(aaBuf, 6.0f, 6.0f, 40.0f, 38.0f, 2.0f, pal.accentOrange);
+    int aaBlended = 0;
+    int aaSolid = 0;
+    foreach (y; 0 .. 48) {
+        auto row = aaBuf.scanLine(y);
+        foreach (x; 0 .. 48) {
+            if (row[x] == pal.accentOrange) aaSolid++;
+            else if (row[x] != pal.bgLcd) aaBlended++;
+        }
+    }
+    assert(aaSolid > 10 && aaBlended > 10, "Expected anti-aliased intermediate edge pixels on diagonal line");
+
+    aaBuf.fill(pal.bgLcd);
+    drawFilledCircle(aaBuf, 24.5f, 24.5f, 10.0f, pal.accentCyan);
+    assert(aaBuf.scanLine(24)[24] == pal.accentCyan, "Circle center must be opaque fill");
+    assert(aaBuf.scanLine(2)[2] == pal.bgLcd, "Far corner must stay untouched");
+
+    aaBuf.fill(pal.bgLcd);
+    drawPlayheadTriangle(aaBuf, 24, 4, 6, 10, pal.accentOrange);
+    assert(aaBuf.scanLine(6)[24] == pal.accentOrange, "Playhead interior must be opaque");
 }

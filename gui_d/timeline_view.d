@@ -114,9 +114,9 @@ void drawTimelineCanvas(
 
     const m = computeTimelineMetrics(rc, model);
     const int bw = dp(1);
-    FontRef boldFnt = getDawFont(10, fnt, FontWeight.Bold);
+    FontRef boldFnt = getDawFont(11, fnt, FontWeight.Normal);
     FontRef uiFnt = getDawFont(10, fnt, FontWeight.Normal);
-    FontRef smallFnt = getDawFont(9, fnt, FontWeight.Normal);
+    FontRef smallFnt = getDawFont(10, fnt, FontWeight.Normal);
 
     // 1. Top Playlist Toolbar
     Rect tbRc = Rect(rc.left, rc.top, rc.right, m.contentTop);

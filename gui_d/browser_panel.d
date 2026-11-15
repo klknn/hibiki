@@ -103,7 +103,7 @@ void drawSampleWaveformPreview(
     }
 
     if (model) {
-        auto labelFnt = getDawFont(10, fnt, FontWeight.Bold);
+        auto labelFnt = getDawFont(10, fnt, FontWeight.Normal);
         drawVCenteredText(buf, labelFnt, rc.left + dp(6),
                           Rect(rc.left, rc.top + dp(1), rc.right, rc.top + hdrH),
                           toUTF32(truncateLabel(model.samplePreview.name, 18)),
@@ -182,9 +182,12 @@ class BrowserPanel : VerticalLayout {
         auto hdr = new TextWidget("br_hdr", "BROWSER"d);
         hdr.textColor = pal.accentOrange;
         hdr.fontSize = dp(11);
+        hdr.fontWeight = FontWeight.Normal;
+        const string hdrFace = activeDawUiFontFace();
+        if (hdrFace.length > 0) hdr.fontFace = hdrFace;
         hdr.padding = Rect(dp(4), dp(2), dp(4), dp(2));
         hdr.layoutWidth = FILL_PARENT;
-        btnScan_ = new FlCompactButton("br_scan", "SCAN VST3"d, pal, 10, 20, true, true);
+        btnScan_ = new FlCompactButton("br_scan", "SCAN VST3"d, pal, 10, 20, true, false);
         btnScan_.click = (Widget s) {
             if (onScanVst3 !is null) {
                 onScanVst3("testdata");
@@ -199,11 +202,11 @@ class BrowserPanel : VerticalLayout {
         // FL Studio 2026 Browser Tabs: ALL | PROJ | PLUG | SMP | REC
         auto tabs = new HorizontalLayout("br_tabs");
         tabs.layoutWidth = FILL_PARENT;
-        auto btnAll = new FlCompactButton("br_all", "ALL"d, pal, 10, 22, true, true);
-        auto btnProj = new FlCompactButton("br_proj", "PROJ"d, pal, 10, 22, true, true);
-        auto btnPlug = new FlCompactButton("br_plug", "PLUG"d, pal, 10, 22, true, true);
-        auto btnSmp = new FlCompactButton("br_smp", "SMP"d, pal, 10, 22, true, true);
-        auto btnRec = new FlCompactButton("br_rec", "REC"d, pal, 10, 22, true, true);
+        auto btnAll = new FlCompactButton("br_all", "ALL"d, pal, 10, 22, true, false);
+        auto btnProj = new FlCompactButton("br_proj", "PROJ"d, pal, 10, 22, true, false);
+        auto btnPlug = new FlCompactButton("br_plug", "PLUG"d, pal, 10, 22, true, false);
+        auto btnSmp = new FlCompactButton("br_smp", "SMP"d, pal, 10, 22, true, false);
+        auto btnRec = new FlCompactButton("br_rec", "REC"d, pal, 10, 22, true, false);
         tabBtns_ = [btnAll, btnProj, btnPlug, btnSmp, btnRec];
         foreach (b; tabBtns_) {
             b.layoutWidth = FILL_PARENT;
@@ -361,7 +364,7 @@ class BrowserPanel : VerticalLayout {
         foreach (sec; sectionOrder) {
             const bool collapsed = (sec in collapsedSections_) !is null && collapsedSections_[sec];
             const string secPrefix = collapsed ? "> " : "v ";
-            auto secBtn = new FlCompactButton(null, toUTF32(secPrefix ~ sec), pal, 10, 20, false, true);
+            auto secBtn = new FlCompactButton(null, toUTF32(secPrefix ~ sec), pal, 11, 20, false, false);
             secBtn.layoutWidth = FILL_PARENT;
             secBtn.focusable = false;
             secBtn.customFillColor = pal.bgPanelAlt;

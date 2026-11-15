@@ -67,11 +67,16 @@ def _collect_deps(ctx):
     transitive_imports = [depset(direct_imports)]
 
     direct_string_import_dirs = []
+    seen_str_dirs = {}
     for sdir in ctx.attr.string_import_dirs:
-        if base_dir:
-            direct_string_import_dirs.append(base_dir + "/" + sdir if sdir != "." else base_dir)
-        else:
-            direct_string_import_dirs.append(sdir)
+        resolved = (base_dir + "/" + sdir if sdir != "." else base_dir) if base_dir else sdir
+        if resolved not in seen_str_dirs:
+            seen_str_dirs[resolved] = True
+            direct_string_import_dirs.append(resolved)
+    for f in ctx.files.string_imports:
+        if f.dirname not in seen_str_dirs:
+            seen_str_dirs[f.dirname] = True
+            direct_string_import_dirs.append(f.dirname)
     transitive_string_imports = [depset(ctx.files.string_imports)]
     transitive_string_import_dirs = [depset(direct_string_import_dirs)]
     transitive_versions = [depset(ctx.attr.d_versions)]

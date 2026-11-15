@@ -2,6 +2,11 @@ load("//tools/d_rules:defs.bzl", "d_binary", "d_library", "d_test")
 
 package(default_visibility = ["//visibility:public"])
 
+BUNDLED_UI_FONTS = [
+    "@biz_ud_gothic//:BIZUDPGothic-Bold.ttf",
+    "@biz_ud_gothic//:BIZUDPGothic-Regular.ttf",
+]
+
 d_library(
     name = "gui_model",
     srcs = [
@@ -10,6 +15,7 @@ d_library(
         "theme.d",
         "transport_model.d",
     ],
+    string_imports = BUNDLED_UI_FONTS,
     deps = [
         "//dproto",
         "//pb:commands_d_proto",
@@ -35,6 +41,7 @@ d_test(
         "transport_model.d",
         "workspace.d",
     ],
+    string_imports = BUNDLED_UI_FONTS,
     deps = [
         "//dproto",
         "//pb:commands_d_proto",

@@ -6,22 +6,25 @@ import dlangui.core.config : ENABLE_FREETYPE;
 import dlangui.core.types : BASE_DPI, Point, Rect, SCREEN_DPI;
 import dlangui.graphics.colors : COLOR_TRANSPARENT;
 import dlangui.graphics.drawbuf : DrawBuf;
-import dlangui.graphics.fonts : FontFamily, FontManager, FontRef, FontWeight;
+import dlangui.graphics.fonts : FontFamily, FontManager, FontRef, FontWeight, HintingMode;
 import dlangui.widgets.controls : Button;
 import dlangui.widgets.widget : State, Visibility, Widget;
-import std.file : exists, thisExePath;
+import std.file : exists, getSize, mkdirRecurse, tempDir, thisExePath, write;
 import std.format : format;
 import std.path : buildPath, dirName;
 import std.process : environment;
 
-/// Free MS-Gothic-inspired open fonts (Morisawa BIZ UDGothic / UDPGothic, SIL OFL 1.1).
+/// Free MS-Gothic-inspired open font unified across the entire UI (Morisawa BIZ UDPGothic, SIL OFL 1.1).
 enum string DAW_UI_FONT_FACE = "BIZ UDPGothic";
-enum string DAW_MONO_FONT_FACE = "BIZ UDGothic";
+enum string DAW_MONO_FONT_FACE = DAW_UI_FONT_FACE;
+
+private immutable ubyte[] EMBEDDED_BIZ_UDP_REGULAR = cast(immutable(ubyte)[]) import("BIZUDPGothic-Regular.ttf");
+private immutable ubyte[] EMBEDDED_BIZ_UDP_BOLD = cast(immutable(ubyte)[]) import("BIZUDPGothic-Bold.ttf");
 
 private __gshared string activeUiFontFace_ = null;
 private __gshared string activeMonoFontFace_ = null;
 
-/// Searches Bazel runfiles and working tree for bundled `BIZ UDGothic` TTF fonts.
+/// Searches Bazel runfiles and working tree for bundled `BIZ UDPGothic` TTF fonts.
 string findDawFontDirectory() {
     string[] dirs;
     const string rfDir = environment.get("RUNFILES_DIR", "");
@@ -41,32 +44,53 @@ string findDawFontDirectory() {
         "+http_archive+biz_ud_gothic",
     ];
     foreach (dir; dirs) {
-        if (exists(buildPath(dir, "BIZUDGothic-Regular.ttf")) &&
-            exists(buildPath(dir, "BIZUDPGothic-Regular.ttf"))) {
+        if (exists(buildPath(dir, "BIZUDPGothic-Regular.ttf")) &&
+            exists(buildPath(dir, "BIZUDPGothic-Bold.ttf"))) {
             return dir;
         }
     }
     return "";
 }
 
-/// Registers bundled MS-Gothic-style (`BIZ UDGothic` / `BIZ UDPGothic`) fonts into `FontManager`.
+/// Ensures embedded `BIZ UDPGothic` TTFs exist on disk for standalone OS-independent loading.
+string ensureEmbeddedDawFontDirectory(string targetDir = null) {
+    const string dir = targetDir.length > 0 ? targetDir : buildPath(tempDir(), "hibiki_daw_fonts");
+    try {
+        mkdirRecurse(dir);
+        static void syncFile(string path, immutable(ubyte)[] data) {
+            if (!exists(path) || getSize(path) != data.length) {
+                write(path, data);
+            }
+        }
+        syncFile(buildPath(dir, "BIZUDPGothic-Regular.ttf"), EMBEDDED_BIZ_UDP_REGULAR);
+        syncFile(buildPath(dir, "BIZUDPGothic-Bold.ttf"), EMBEDDED_BIZ_UDP_BOLD);
+        return dir;
+    } catch (Exception) {
+        return "";
+    }
+}
+
+/// Registers bundled `BIZ UDPGothic` Regular/Bold fonts across both UI and numeric faces with crisp light hinting.
 bool registerBundledDawFonts() {
     static if (ENABLE_FREETYPE) {
         import dlangui.graphics.ftfonts : FreeTypeFontManager;
+        FontManager.hintingMode = HintingMode.Light;
+        FontManager.minAnitialiasedFontSize = 0;
         auto ft = cast(FreeTypeFontManager)FontManager.instance;
         if (ft is null) return false;
-        const string dir = findDawFontDirectory();
+        string dir = findDawFontDirectory();
+        if (dir.length == 0) {
+            dir = ensureEmbeddedDawFontDirectory();
+        }
         if (dir.length == 0) return false;
 
+        const string regPath = buildPath(dir, "BIZUDPGothic-Regular.ttf");
+        const string boldPath = buildPath(dir, "BIZUDPGothic-Bold.ttf");
         bool ok = true;
-        ok &= ft.registerFont(buildPath(dir, "BIZUDPGothic-Regular.ttf"),
-                              FontFamily.SansSerif, DAW_UI_FONT_FACE, false, FontWeight.Normal, true);
-        ok &= ft.registerFont(buildPath(dir, "BIZUDPGothic-Bold.ttf"),
-                              FontFamily.SansSerif, DAW_UI_FONT_FACE, false, FontWeight.Bold, true);
-        ok &= ft.registerFont(buildPath(dir, "BIZUDGothic-Regular.ttf"),
-                              FontFamily.MonoSpace, DAW_MONO_FONT_FACE, false, FontWeight.Normal, true);
-        ok &= ft.registerFont(buildPath(dir, "BIZUDGothic-Bold.ttf"),
-                              FontFamily.MonoSpace, DAW_MONO_FONT_FACE, false, FontWeight.Bold, true);
+        ok &= ft.registerFont(regPath, FontFamily.SansSerif, DAW_UI_FONT_FACE, false, FontWeight.Normal, true);
+        ok &= ft.registerFont(boldPath, FontFamily.SansSerif, DAW_UI_FONT_FACE, false, FontWeight.Bold, true);
+        ok &= ft.registerFont(regPath, FontFamily.MonoSpace, DAW_MONO_FONT_FACE, false, FontWeight.Normal, true);
+        ok &= ft.registerFont(boldPath, FontFamily.MonoSpace, DAW_MONO_FONT_FACE, false, FontWeight.Bold, true);
         if (ok) {
             activeUiFontFace_ = DAW_UI_FONT_FACE;
             activeMonoFontFace_ = DAW_MONO_FONT_FACE;
@@ -809,6 +833,8 @@ void applyFlatThemeOverrides(const ref FlPalette pal) {
         STYLE_SCROLLBAR_BUTTON, STYLE_SCROLLBAR_BUTTON_TRANSPARENT;
 
     if (currentTheme is null) return;
+    currentTheme.fontSize = dp(11);
+    currentTheme.fontWeight = FontWeight.Normal;
     if (activeUiFontFace_.length > 0) {
         currentTheme.fontFace = activeUiFontFace_;
     }
@@ -1012,4 +1038,17 @@ unittest {
     assert(currentTheme.createSubstyle(STYLE_EDIT_LINE).backgroundColor == pal.bgLcd);
     assert(currentTheme.createSubstyle(STYLE_POPUP_MENU).backgroundImageId is null);
     assert(currentTheme.createSubstyle(STYLE_SCROLLBAR_BUTTON).backgroundImageId is null);
+
+    // Verify bundled BIZ UDPGothic TTFs are embedded in the binary and extract cleanly
+    assert(DAW_UI_FONT_FACE == DAW_MONO_FONT_FACE);
+    import std.file : rmdirRecurse;
+    const string testFontDir = buildPath(tempDir(), "hibiki_daw_fonts_unit_test");
+    scope (exit) {
+        if (exists(testFontDir)) rmdirRecurse(testFontDir);
+    }
+    const string extractedDir = ensureEmbeddedDawFontDirectory(testFontDir);
+    assert(extractedDir == testFontDir);
+    assert(exists(buildPath(testFontDir, "BIZUDPGothic-Regular.ttf")));
+    assert(exists(buildPath(testFontDir, "BIZUDPGothic-Bold.ttf")));
+    assert(getSize(buildPath(testFontDir, "BIZUDPGothic-Regular.ttf")) > 100_000);
 }

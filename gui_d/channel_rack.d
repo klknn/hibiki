@@ -58,9 +58,9 @@ void drawChannelRackCanvas(
 
     const m = computeChannelRackMetrics(rc, model);
     FontRef uiFnt = getDawFont(11, fnt, FontWeight.Normal);
-    FontRef boldFnt = getDawFont(11, fnt, FontWeight.Bold);
+    FontRef boldFnt = getDawFont(11, fnt, FontWeight.Normal);
     FontRef smallFnt = getDawFont(10, fnt, FontWeight.Normal);
-    FontRef monoFnt = getDawMonoFont(10, fnt, FontWeight.Bold);
+    FontRef monoFnt = getDawMonoFont(10, fnt, FontWeight.Normal);
 
     // 1. Top Channel Rack Toolbar
     Rect tbRc = Rect(rc.left, rc.top, rc.right, rc.top + m.toolbarH);

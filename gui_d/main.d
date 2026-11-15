@@ -110,6 +110,7 @@ extern (C) int UIAppMain(string[] args) {
     hintBar.padding = Rect(dp(10), dp(4), dp(10), dp(4));
     hintBar.margins = Rect(dp(8), 0, dp(6), 0);
     hintBar.fontSize = dp(11);
+    hintBar.fontWeight = FontWeight.Normal;
     hintBar.layoutWidth = FILL_PARENT;
 
     auto btnTheme = new FlCompactButton("btn_theme", "Theme: FL Default Dark"d, initPal, 11, 22, true, false);
@@ -157,6 +158,7 @@ extern (C) int UIAppMain(string[] args) {
     auto statusBar = new TextWidget("status_bar", toUTF32(model.statusMessage));
     statusBar.padding = Rect(dp(10), dp(3), dp(10), dp(3));
     statusBar.fontSize = dp(11);
+    statusBar.fontWeight = FontWeight.Normal;
     statusBar.layoutWidth = FILL_PARENT;
 
     void applyThemeColors() {

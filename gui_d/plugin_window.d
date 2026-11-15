@@ -91,9 +91,9 @@ void drawPluginWrapperCanvas(
     if (rc.width < dp(260) || rc.height < dp(160)) return;
 
     const m = computePluginWrapperMetrics(rc);
-    FontRef boldFnt = getDawFont(11, fnt, FontWeight.Bold);
+    FontRef boldFnt = getDawFont(11, fnt, FontWeight.Normal);
     FontRef uiFnt = getDawFont(10, fnt, FontWeight.Normal);
-    FontRef valFnt = getDawMonoFont(9, fnt, FontWeight.Normal);
+    FontRef valFnt = getDawMonoFont(10, fnt, FontWeight.Normal);
 
     // 1. Wrapper Header Bar (< Preset >, VST3 GUI, Mix, Bypass)
     buf.fillRect(m.hdrRc, pal.bgPanelAlt);

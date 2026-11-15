@@ -186,9 +186,9 @@ void drawMixerCanvas(
     if (rc.width < dp(260) || rc.height < dp(140)) return;
 
     const m = computeMixerMetrics(rc, model);
-    FontRef hdrFnt = getDawFont(11, fnt, FontWeight.Bold);
+    FontRef hdrFnt = getDawFont(11, fnt, FontWeight.Normal);
     FontRef lblFnt = getDawFont(10, fnt, FontWeight.Normal);
-    FontRef smallFnt = getDawFont(9, fnt, FontWeight.Bold);
+    FontRef smallFnt = getDawFont(10, fnt, FontWeight.Normal);
 
     // 1. Top Mixer Toolbar
     Rect tbRc = Rect(rc.left, rc.top, rc.right, rc.top + m.toolbarH);

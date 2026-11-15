@@ -7,7 +7,7 @@ import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawRotaryKnob, drawThickLine,
-    drawVCenteredText, FlPalette, formatBarBeat, formatTimecode, getDawFont, getDawMonoFont,
+    drawVCenteredText, FlPalette, formatBarBeat, formatTimecode, getDawFont,
     getFlPalette, safeWidgetFont, truncateLabel, uiScale;
 import gui_d.transport_model : PlaybackMode, SnapMode, TimeDisplayMode, TransportModel;
 import std.format : format;
@@ -145,9 +145,9 @@ void drawToolbarCanvas(
     if (!model || rc.width < dp(600) || rc.height < dp(42)) return;
 
     auto tl = computeToolbarLayout(rc);
-    FontRef uiFnt = getDawFont(10, fnt, FontWeight.Bold);
+    FontRef uiFnt = getDawFont(11, fnt, FontWeight.Normal);
     FontRef patFnt = getDawFont(11, fnt, FontWeight.Normal);
-    FontRef lcdFnt = getDawMonoFont(12, fnt, FontWeight.Bold);
+    FontRef lcdFnt = getDawFont(12, fnt, FontWeight.Normal);
 
     // 1. Master Volume & Master Pitch knobs directly on toolbar surface
     drawRotaryKnob(buf, tl.volKnobX, tl.masterPanel.middley, dp(12), model.masterVolume,

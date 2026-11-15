@@ -276,8 +276,8 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
         Rect mRc = menuBtnRect();
         drawDawIcon(buf, mRc, DawIcon.WINDOW_MENU, isActive_ ? pal.accentOrange : pal.fgMuted);
 
-        // Title
-        auto f = getDawFont(12, safeWidgetFont(this), FontWeight.Bold);
+        // Title (clean Regular weight matching top menu strip)
+        auto f = getDawFont(11, safeWidgetFont(this), FontWeight.Normal);
         drawVCenteredText(buf, f, mRc.right + dp(8), hdr,
                           toUTF32(truncateLabel(title_, 48)),
                           isActive_ ? pal.fgText : pal.fgMuted);

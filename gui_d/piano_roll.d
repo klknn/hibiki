@@ -92,9 +92,9 @@ void drawPianoRollCanvas(
     const bool velOn = model ? model.showVelocityLane : true;
     const m = computePianoRollMetrics(rc, keyWidth, velOn);
 
-    FontRef boldFnt = getDawFont(10, fnt, FontWeight.Bold);
-    FontRef smallFnt = getDawFont(9, fnt, FontWeight.Normal);
-    FontRef noteFnt = getDawFont(9, fnt, FontWeight.Bold);
+    FontRef boldFnt = getDawFont(11, fnt, FontWeight.Normal);
+    FontRef smallFnt = getDawFont(10, fnt, FontWeight.Normal);
+    FontRef noteFnt = getDawFont(10, fnt, FontWeight.Normal);
 
     // 1. Top Piano Roll Toolbar
     Rect tbRc = Rect(rc.left, rc.top, rc.right, m.rulerTop);

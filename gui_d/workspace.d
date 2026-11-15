@@ -2,9 +2,11 @@ module gui_d.workspace;
 
 import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
+import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.layouts : WidgetGroupDefaultDrawing;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : drawCard, drawPlayheadTriangle, drawThickLine, FlPalette, getFlPalette, truncateLabel;
+import gui_d.theme : dp, dpf, drawCard, drawPlayheadTriangle, drawThickLine, drawVCenteredText,
+                     FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
 import gui_d.transport_model : TransportModel;
 import std.algorithm : canFind;
 import std.math : abs;
@@ -117,8 +119,8 @@ void activateParentWindow(Widget w) {
 
 /// FL Studio 2026 floating, snapping, resizable sub-window frame (Playlist, Channel Rack, Piano Roll, Mixer, Wrapper).
 class FlWindowFrame : WidgetGroupDefaultDrawing {
-    enum int HEADER_H = 26;
-    enum int RESIZE_GRIP = 14;
+    static int headerH() nothrow @safe { return dp(24); }
+    static int resizeGrip() nothrow @safe { return dp(14); }
 
     private TransportModel* model_;
     private Widget bodyWidget_;
@@ -166,8 +168,8 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
         }
     }
 
-    package @property int minWindowW() const pure nothrow @safe { return minW_; }
-    package @property int minWindowH() const pure nothrow @safe { return minH_; }
+    package @property int minWindowW() const nothrow @safe { return dp(minW_); }
+    package @property int minWindowH() const nothrow @safe { return dp(minH_); }
     package void applyClampedBounds(Rect rc) nothrow @safe { bounds_ = rc; }
 
     @property bool isActive() const pure nothrow @safe { return isActive_; }
@@ -192,7 +194,8 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
         if (bodyWidget_ !is null) {
             const int bw = maximized_ ? parentWidth : bounds_.width;
             const int bh = maximized_ ? parentHeight : bounds_.height;
-            bodyWidget_.measure(bw - 2, bh - HEADER_H - 1);
+            const int border = dp(1);
+            bodyWidget_.measure(bw - border * 2, bh - headerH() - border);
         }
         measuredContent(parentWidth, parentHeight, bounds_.width, bounds_.height);
     }
@@ -202,7 +205,8 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
         if (visibility == Visibility.Gone) return;
         _pos = rc;
         if (bodyWidget_ !is null && bodyWidget_.visibility != Visibility.Gone) {
-            Rect bodyRc = Rect(rc.left + 1, rc.top + HEADER_H, rc.right - 1, rc.bottom - 1);
+            const int border = dp(1);
+            Rect bodyRc = Rect(rc.left + border, rc.top + headerH(), rc.right - border, rc.bottom - border);
             if (bodyRc.width < 1) bodyRc.right = bodyRc.left + 1;
             if (bodyRc.height < 1) bodyRc.bottom = bodyRc.top + 1;
             bodyWidget_.layout(bodyRc);
@@ -210,19 +214,23 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
     }
 
     private Rect menuBtnRect() const nothrow @safe {
-        return Rect(_pos.left + 2, _pos.top + 2, _pos.left + 24, _pos.top + HEADER_H - 2);
+        const int hh = headerH();
+        return Rect(_pos.left + dp(2), _pos.top + dp(2), _pos.left + dp(22), _pos.top + hh - dp(2));
     }
 
     private Rect maxBtnRect() const nothrow @safe {
-        return Rect(_pos.right - 46, _pos.top + 3, _pos.right - 25, _pos.top + HEADER_H - 3);
+        const int hh = headerH();
+        return Rect(_pos.right - dp(44), _pos.top + dp(3), _pos.right - dp(24), _pos.top + hh - dp(3));
     }
 
     private Rect closeBtnRect() const nothrow @safe {
-        return Rect(_pos.right - 23, _pos.top + 3, _pos.right - 3, _pos.top + HEADER_H - 3);
+        const int hh = headerH();
+        return Rect(_pos.right - dp(22), _pos.top + dp(3), _pos.right - dp(3), _pos.top + hh - dp(3));
     }
 
     private Rect resizeGripRect() const nothrow @safe {
-        return Rect(_pos.right - RESIZE_GRIP, _pos.bottom - RESIZE_GRIP, _pos.right, _pos.bottom);
+        const int rg = resizeGrip();
+        return Rect(_pos.right - rg, _pos.bottom - rg, _pos.right, _pos.bottom);
     }
 
     override uint getCursorType(int x, int y) {
@@ -235,59 +243,61 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
     override void onDraw(DrawBuf buf) {
         if (visibility != Visibility.Visible) return;
         const pal = model_ ? model_.palette() : getFlPalette();
+        const int bw = dp(1);
+        const int hh = headerH();
 
         // Subtle outer drop-shadow frame
-        Rect shadowRc = Rect(_pos.left + 1, _pos.top + 1, _pos.right + 2, _pos.bottom + 2);
+        Rect shadowRc = Rect(_pos.left + bw, _pos.top + bw, _pos.right + bw * 2, _pos.bottom + bw * 2);
         buf.fillRect(shadowRc, 0xBA000000);
 
         // Window body frame & border
         const uint borderCol = isActive_ ? pal.borderAccent : pal.borderSubtle;
         buf.fillRect(_pos, pal.bgWindow);
-        buf.fillRect(Rect(_pos.left, _pos.top, _pos.right, _pos.top + 1), borderCol);
-        buf.fillRect(Rect(_pos.left, _pos.bottom - 1, _pos.right, _pos.bottom), pal.borderStrong);
-        buf.fillRect(Rect(_pos.left, _pos.top, _pos.left + 1, _pos.bottom), borderCol);
-        buf.fillRect(Rect(_pos.right - 1, _pos.top, _pos.right, _pos.bottom), pal.borderStrong);
+        buf.fillRect(Rect(_pos.left, _pos.top, _pos.right, _pos.top + bw), borderCol);
+        buf.fillRect(Rect(_pos.left, _pos.bottom - bw, _pos.right, _pos.bottom), pal.borderStrong);
+        buf.fillRect(Rect(_pos.left, _pos.top, _pos.left + bw, _pos.bottom), borderCol);
+        buf.fillRect(Rect(_pos.right - bw, _pos.top, _pos.right, _pos.bottom), pal.borderStrong);
 
         // Caption header bar
-        Rect hdr = Rect(_pos.left + 1, _pos.top + 1, _pos.right - 1, _pos.top + HEADER_H);
+        Rect hdr = Rect(_pos.left + bw, _pos.top + bw, _pos.right - bw, _pos.top + hh);
         buf.fillRect(hdr, isActive_ ? pal.bgWindowHeaderActive : pal.bgWindowHeader);
-        buf.fillRect(Rect(hdr.left, hdr.bottom - 1, hdr.right, hdr.bottom), pal.borderStrong);
+        buf.fillRect(Rect(hdr.left, hdr.bottom - bw, hdr.right, hdr.bottom), pal.borderStrong);
 
         // Active top indicator strip
         if (isActive_) {
-            buf.fillRect(Rect(hdr.left, hdr.top, hdr.right, hdr.top + 2), pal.accentOrange);
+            buf.fillRect(Rect(hdr.left, hdr.top, hdr.right, hdr.top + dp(2)), pal.accentOrange);
         }
 
         // Top-left FL Studio Window Menu icon (▼)
         Rect mRc = menuBtnRect();
         drawCard(buf, mRc, pal.bgControl, pal.borderSubtle, 3.0f);
-        drawPlayheadTriangle(buf, mRc.middlex, mRc.middley - 2, 4, 5,
+        drawPlayheadTriangle(buf, mRc.middlex, mRc.middley - dp(2), dp(4), dp(5),
                              isActive_ ? pal.accentOrange : pal.fgMuted);
 
         // Title
-        auto f = font;
-        if (f !is null) {
-            f.drawText(buf, mRc.right + 8, hdr.top + 5,
-                       toUTF32(truncateLabel(title_, 44)),
-                       isActive_ ? pal.fgText : pal.fgMuted);
-        }
+        auto f = getDawFont(12, safeWidgetFont(this), FontWeight.Bold);
+        drawVCenteredText(buf, f, mRc.right + dp(8), hdr,
+                          toUTF32(truncateLabel(title_, 48)),
+                          isActive_ ? pal.fgText : pal.fgMuted);
 
         // Maximize / Restore button
         Rect maxRc = maxBtnRect();
         drawCard(buf, maxRc, pal.bgControl, pal.borderSubtle, 3.0f);
         const uint iconCol = pal.fgMuted;
-        buf.drawFrame(Rect(maxRc.left + 5, maxRc.top + 5, maxRc.right - 5, maxRc.bottom - 5),
-                      iconCol, Rect(1, 2, 1, 1), pal.bgControl);
+        buf.drawFrame(Rect(maxRc.left + dp(5), maxRc.top + dp(4), maxRc.right - dp(5), maxRc.bottom - dp(4)),
+                      iconCol, Rect(bw, dp(2), bw, bw), pal.bgControl);
 
         // Close button
         Rect clsRc = closeBtnRect();
         drawCard(buf, clsRc, pal.bgControl, pal.borderSubtle, 3.0f);
-        drawThickLine(buf, clsRc.left + 6, clsRc.top + 5, clsRc.right - 6, clsRc.bottom - 5, 1.4f, pal.fgMuted);
-        drawThickLine(buf, clsRc.right - 6, clsRc.top + 5, clsRc.left + 6, clsRc.bottom - 5, 1.4f, pal.fgMuted);
+        drawThickLine(buf, clsRc.left + dp(5), clsRc.top + dp(5), clsRc.right - dp(5), clsRc.bottom - dp(5),
+                      dpf(1.4f), pal.fgMuted);
+        drawThickLine(buf, clsRc.right - dp(5), clsRc.top + dp(5), clsRc.left + dp(5), clsRc.bottom - dp(5),
+                      dpf(1.4f), pal.fgMuted);
 
         // Body widget
         if (bodyWidget_ !is null && bodyWidget_.visibility == Visibility.Visible) {
-            Rect bodyClip = Rect(_pos.left + 1, _pos.top + HEADER_H, _pos.right - 1, _pos.bottom - 1);
+            Rect bodyClip = Rect(_pos.left + bw, _pos.top + hh, _pos.right - bw, _pos.bottom - bw);
             auto saver = ClipRectSaver(buf, bodyClip);
             bodyWidget_.onDraw(buf);
         }
@@ -295,10 +305,10 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
         // Subtle bottom-right resize grip diagonal lines
         if (!maximized_) {
             foreach (k; 0 .. 3) {
-                const int off = 4 + k * 3;
-                drawThickLine(buf, _pos.right - off, _pos.bottom - 2,
-                              _pos.right - 2, _pos.bottom - off,
-                              1.0f, pal.fgDim);
+                const int off = dp(4 + k * 3);
+                drawThickLine(buf, _pos.right - off, _pos.bottom - dp(2),
+                              _pos.right - dp(2), _pos.bottom - off,
+                              dpf(1.0f), pal.fgDim);
             }
         }
     }
@@ -337,7 +347,7 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
             }
 
             // Title bar drag
-            if (event.y >= _pos.top && event.y <= _pos.top + HEADER_H) {
+            if (event.y >= _pos.top && event.y <= _pos.top + headerH()) {
                 if (event.doubleClick) {
                     toggleMaximize();
                     return true;
@@ -362,23 +372,25 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
                 Rect cand = Rect(dragStartBounds_.left + dx, dragStartBounds_.top + dy,
                                  dragStartBounds_.right + dx, dragStartBounds_.bottom + dy);
                 if (desk !is null) {
-                    cand = snapWindowRect(cand, desk.desktopLocalRect(), desk.siblingRectsFor(this), 10, altHeld);
+                    cand = snapWindowRect(cand, desk.desktopLocalRect(), desk.siblingRectsFor(this), dp(10), altHeld);
                 }
                 bounds_ = cand;
                 if (desk !is null) desk.relayoutWindow(this);
             } else if (dragMode_ == DragMode.RESIZE_BR) {
                 int newW = dragStartBounds_.width + dx;
                 int newH = dragStartBounds_.height + dy;
-                if (newW < minW_) newW = minW_;
-                if (newH < minH_) newH = minH_;
+                const int effMinW = minWindowW;
+                const int effMinH = minWindowH;
+                if (newW < effMinW) newW = effMinW;
+                if (newH < effMinH) newH = effMinH;
                 Rect cand = Rect(dragStartBounds_.left, dragStartBounds_.top,
                                  dragStartBounds_.left + newW, dragStartBounds_.top + newH);
                 if (desk !is null) {
                     const Rect deskRc = desk.desktopLocalRect();
                     if (cand.right > deskRc.right) cand.right = deskRc.right;
                     if (cand.bottom > deskRc.bottom) cand.bottom = deskRc.bottom;
-                    if (cand.width < minW_) cand.right = cand.left + minW_;
-                    if (cand.height < minH_) cand.bottom = cand.top + minH_;
+                    if (cand.width < effMinW) cand.right = cand.left + effMinW;
+                    if (cand.height < effMinH) cand.bottom = cand.top + effMinH;
                 }
                 bounds_ = cand;
                 if (desk !is null) desk.relayoutWindow(this);
@@ -495,8 +507,8 @@ class FlDesktopCanvas : WidgetGroupDefaultDrawing {
     }
 
     Rect desktopLocalRect() const nothrow @safe {
-        const int w = _pos.width > 0 ? _pos.width : 1180;
-        const int h = _pos.height > 0 ? _pos.height : 760;
+        const int w = _pos.width > 0 ? _pos.width : dp(1180);
+        const int h = _pos.height > 0 ? _pos.height : dp(760);
         return Rect(0, 0, w, h);
     }
 
@@ -523,9 +535,9 @@ class FlDesktopCanvas : WidgetGroupDefaultDrawing {
 
     /// Arranges the FL Studio 2026 sub-windows according to `preset`.
     void applyLayoutPreset(DesktopLayoutPreset preset, int desktopW = 0, int desktopH = 0) {
-        const int W = (desktopW > 0) ? desktopW : (_pos.width > 100 ? _pos.width : 1180);
-        const int H = (desktopH > 0) ? desktopH : (_pos.height > 100 ? _pos.height : 760);
-        enum int G = 6; // Snapped gap
+        const int W = (desktopW > 0) ? desktopW : (_pos.width > 100 ? _pos.width : dp(1180));
+        const int H = (desktopH > 0) ? desktopH : (_pos.height > 100 ? _pos.height : dp(760));
+        const int G = dp(6); // Snapped gap
 
         auto pl = findWindow("win_playlist");
         auto cr = findWindow("win_channel_rack");
@@ -659,12 +671,13 @@ class FlDesktopCanvas : WidgetGroupDefaultDrawing {
         buf.fillRect(_pos, pal.bgDesktop);
 
         // Subtle FL Studio workspace backdrop grid (dlangui alpha: 0xEE ≈ 7% opacity)
-        enum int GRID_STEP = 48;
-        for (int gx = _pos.left + GRID_STEP; gx < _pos.right; gx += GRID_STEP) {
-            buf.fillRect(Rect(gx, _pos.top, gx + 1, _pos.bottom), 0xEEFFFFFF);
+        const int gridStep = dp(48);
+        const int bw = dp(1);
+        for (int gx = _pos.left + gridStep; gx < _pos.right; gx += gridStep) {
+            buf.fillRect(Rect(gx, _pos.top, gx + bw, _pos.bottom), 0xEEFFFFFF);
         }
-        for (int gy = _pos.top + GRID_STEP; gy < _pos.bottom; gy += GRID_STEP) {
-            buf.fillRect(Rect(_pos.left, gy, _pos.right, gy + 1), 0xEEFFFFFF);
+        for (int gy = _pos.top + gridStep; gy < _pos.bottom; gy += gridStep) {
+            buf.fillRect(Rect(_pos.left, gy, _pos.right, gy + bw), 0xEEFFFFFF);
         }
 
         // Draw windows bottom -> top so windows_[$-1] renders on top

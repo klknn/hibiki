@@ -2,9 +2,10 @@ module gui_d.piano_roll;
 
 import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
+import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : adjustColorBrightness, drawCard, drawFilledCircle, FlPalette,
-    getFlPalette, truncateLabel;
+import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawFilledCircle,
+    drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel, uiScale;
 import gui_d.transport_model : EditorTool, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import pb.core : MidiEvent;
@@ -34,6 +35,40 @@ private enum int PR_TOOLBAR_H = 28;
 private enum int PR_RULER_H = 18;
 private enum int PR_VEL_H = 68;
 
+/// DPI-scaled layout metrics shared between `drawPianoRollCanvas` and `PianoRollCanvasWidget`.
+struct PianoRollMetrics {
+    int toolbarH;
+    int rulerH;
+    int velH;
+    int gridLeft;
+    int rulerTop;
+    int gridTop;
+    int velTop;
+    Rect[6] toolBtns;
+    Rect tgtRc;
+    Rect ghostRc;
+    Rect velRc;
+}
+
+PianoRollMetrics computePianoRollMetrics(Rect rc, int effKeyWidth, bool velOn) nothrow @safe {
+    PianoRollMetrics m;
+    m.toolbarH = dp(PR_TOOLBAR_H);
+    m.rulerH = dp(PR_RULER_H);
+    m.velH = dp(PR_VEL_H);
+    m.gridLeft = rc.left + effKeyWidth;
+    m.rulerTop = rc.top + m.toolbarH;
+    m.gridTop = m.rulerTop + m.rulerH;
+    m.velTop = (velOn && rc.bottom - m.gridTop > m.velH + dp(60)) ? (rc.bottom - m.velH) : rc.bottom;
+    foreach (i; 0 .. 6) {
+        const int bx0 = rc.left + dp(6 + cast(int)i * 24);
+        m.toolBtns[i] = Rect(bx0, rc.top + dp(4), bx0 + dp(21), m.rulerTop - dp(4));
+    }
+    m.tgtRc = Rect(rc.left + dp(158), rc.top + dp(4), rc.left + dp(290), m.rulerTop - dp(4));
+    m.ghostRc = Rect(rc.right - dp(104), rc.top + dp(4), rc.right - dp(54), m.rulerTop - dp(4));
+    m.velRc = Rect(rc.right - dp(50), rc.top + dp(4), rc.right - dp(6), m.rulerTop - dp(4));
+    return m;
+}
+
 /// Renders the FL Studio 2026 Piano Roll (Toolbar, Keyboard, Scale-Highlighted Grid, Ghost Notes, Velocity Lane).
 void drawPianoRollCanvas(
     DrawBuf buf,
@@ -50,12 +85,20 @@ void drawPianoRollCanvas(
 ) {
     const pal = model ? model.palette() : getFlPalette();
     buf.fillRect(rc, pal.bgWindow);
-    if (rc.width < 180 || rc.height < 90) return;
+    if (rc.width < dp(180) || rc.height < dp(90)) return;
+
+    const bool ghostOn = model ? model.ghostNotesEnabled : true;
+    const bool velOn = model ? model.showVelocityLane : true;
+    const m = computePianoRollMetrics(rc, keyWidth, velOn);
+
+    FontRef boldFnt = getDawFont(10, fnt, FontWeight.Bold);
+    FontRef smallFnt = getDawFont(9, fnt, FontWeight.Normal);
+    FontRef noteFnt = getDawFont(9, fnt, FontWeight.Bold);
 
     // 1. Top Piano Roll Toolbar
-    Rect tbRc = Rect(rc.left, rc.top, rc.right, rc.top + PR_TOOLBAR_H);
+    Rect tbRc = Rect(rc.left, rc.top, rc.right, m.rulerTop);
     buf.fillRect(tbRc, pal.bgPanelAlt);
-    buf.fillRect(Rect(tbRc.left, tbRc.bottom - 1, tbRc.right, tbRc.bottom), pal.borderStrong);
+    buf.fillRect(Rect(tbRc.left, tbRc.bottom - dp(1), tbRc.right, tbRc.bottom), pal.borderStrong);
 
     static immutable string[6] TOOLS = ["P", "B", "D", "C", "E", "Z"];
     static immutable EditorTool[6] TOOL_ENUMS = [
@@ -63,13 +106,10 @@ void drawPianoRollCanvas(
         EditorTool.SLICE, EditorTool.SELECT, EditorTool.ZOOM
     ];
     foreach (i, lbl; TOOLS) {
-        const int bx0 = tbRc.left + 6 + cast(int)i * 24;
-        Rect bRc = Rect(bx0, tbRc.top + 4, bx0 + 21, tbRc.bottom - 4);
+        Rect bRc = m.toolBtns[i];
         const bool active = model && model.pianoRollTool == TOOL_ENUMS[i];
         drawCard(buf, bRc, active ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
-        if (!fnt.isNull) {
-            fnt.drawText(buf, bRc.left + 7, bRc.top + 2, toUTF32(lbl), active ? pal.bgLcd : pal.fgText);
-        }
+        drawCenteredText(buf, boldFnt, bRc, toUTF32(lbl), active ? pal.bgLcd : pal.fgText);
     }
 
     // Target Channel pill
@@ -78,35 +118,27 @@ void drawPianoRollCanvas(
         model.activeMidi.channelIndex < cast(int)model.channels.length) {
         targetName = model.channels[model.activeMidi.channelIndex].name;
     }
-    Rect tgtRc = Rect(tbRc.left + 158, tbRc.top + 4, tbRc.left + 290, tbRc.bottom - 4);
-    drawCard(buf, tgtRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, tgtRc.left + 8, tgtRc.top + 2,
+    drawCard(buf, m.tgtRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCenteredText(buf, boldFnt, m.tgtRc,
                      toUTF32("< " ~ truncateLabel(targetName, 12) ~ " >"), pal.accentOrange);
-    }
 
     // Ghost Notes & Velocity Lane toggles
-    const bool ghostOn = model ? model.ghostNotesEnabled : true;
-    const bool velOn = model ? model.showVelocityLane : true;
-    Rect ghostRc = Rect(tbRc.right - 104, tbRc.top + 4, tbRc.right - 54, tbRc.bottom - 4);
-    Rect velRc = Rect(tbRc.right - 50, tbRc.top + 4, tbRc.right - 6, tbRc.bottom - 4);
-    drawCard(buf, ghostRc, ghostOn ? pal.accentCyan : pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, velRc, velOn ? pal.accentGreen : pal.bgControl, pal.borderSubtle, 3.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, ghostRc.left + 5, ghostRc.top + 2, "GHOST"d, ghostOn ? pal.bgLcd : pal.fgText);
-        fnt.drawText(buf, velRc.left + 9, velRc.top + 2, "VEL"d, velOn ? pal.bgLcd : pal.fgText);
-    }
+    drawCard(buf, m.ghostRc, ghostOn ? pal.accentCyan : pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, m.velRc, velOn ? pal.accentGreen : pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCenteredText(buf, boldFnt, m.ghostRc, "GHOST"d, ghostOn ? pal.bgLcd : pal.fgText);
+    drawCenteredText(buf, boldFnt, m.velRc, "VEL"d, velOn ? pal.bgLcd : pal.fgText);
 
     // 2. Beat Ruler & Piano Grid Geometry
-    const int gridLeft = rc.left + keyWidth;
+    const int gridLeft = m.gridLeft;
     const int gridRight = rc.right;
-    const int rulerTop = tbRc.bottom;
-    const int gridTop = rulerTop + PR_RULER_H;
-    const int velTop = (velOn && rc.bottom - gridTop > PR_VEL_H + 60) ? (rc.bottom - PR_VEL_H) : rc.bottom;
+    const int rulerTop = m.rulerTop;
+    const int gridTop = m.gridTop;
+    const int velTop = m.velTop;
+    const int bw = dp(1);
 
     buf.fillRect(Rect(rc.left, rulerTop, gridLeft, gridTop), pal.bgPanel);
     buf.fillRect(Rect(gridLeft, rulerTop, gridRight, gridTop), pal.bgLcd);
-    buf.fillRect(Rect(rc.left, gridTop - 1, rc.right, gridTop), pal.borderStrong);
+    buf.fillRect(Rect(rc.left, gridTop - bw, rc.right, gridTop), pal.borderStrong);
 
     const int numRows = pitchHigh - pitchLow + 1;
     foreach (r; 0 .. numRows) {
@@ -122,20 +154,21 @@ void drawPianoRollCanvas(
         // Piano key on the left (white key base + shorter black key overlay)
         const uint whiteBg = 0x00D8DCE3;
         const uint blackBg = 0x00222730;
-        buf.fillRect(Rect(rc.left, y0, gridLeft - 1, y1 - 1), whiteBg);
-        buf.fillRect(Rect(rc.left, y1 - 1, gridLeft, y1), pal.borderStrong);
+        buf.fillRect(Rect(rc.left, y0, gridLeft - bw, y1 - bw), whiteBg);
+        buf.fillRect(Rect(rc.left, y1 - bw, gridLeft, y1), pal.borderStrong);
         if (black) {
-            buf.fillRect(Rect(rc.left, y0 + 1, gridLeft - 18, y1 - 1), blackBg);
-        } else if (!fnt.isNull && ((pitch % 12) + 12) % 12 == 0 && (y1 - y0) >= 10) {
-            fnt.drawText(buf, rc.left + 6, y0 + 1, toUTF32(noteName(pitch)), pal.bgLcd);
+            buf.fillRect(Rect(rc.left, y0 + bw, gridLeft - dp(18), y1 - bw), blackBg);
+        } else if (((pitch % 12) + 12) % 12 == 0 && (y1 - y0) >= dp(10)) {
+            drawVCenteredText(buf, noteFnt, rc.left + dp(6), Rect(rc.left, y0, gridLeft, y1),
+                              toUTF32(noteName(pitch)), pal.bgLcd);
         }
 
         // Scale-highlighted row lane
         const uint laneBg = black
             ? adjustColorBrightness(pal.bgPanelAlt, -6)
             : (inScale ? pal.bgWindow : pal.bgPanelAlt);
-        buf.fillRect(Rect(gridLeft, y0, gridRight, y1 - 1), laneBg);
-        buf.fillRect(Rect(gridLeft, y1 - 1, gridRight, y1), pal.borderStrong);
+        buf.fillRect(Rect(gridLeft, y0, gridRight, y1 - bw), laneBg);
+        buf.fillRect(Rect(gridLeft, y1 - bw, gridRight, y1), pal.borderStrong);
     }
 
     // 3. Vertical Beat & 16th Subdivisions + Ruler Numbers
@@ -147,9 +180,10 @@ void drawPianoRollCanvas(
         const bool isBar = (s % 16 == 0);
         const bool isBeat = (s % 4 == 0);
         const uint col = isBar ? pal.borderSubtle : (isBeat ? pal.bgControl : pal.borderStrong);
-        buf.fillRect(Rect(x, gridTop, x + 1, velTop), col);
-        if (isBar && !fnt.isNull && x + 14 < gridRight) {
-            fnt.drawText(buf, x + 3, rulerTop + 2, toUTF32(format("%d", (s / 16) + 1)), pal.fgText);
+        buf.fillRect(Rect(x, gridTop, x + bw, velTop), col);
+        if (isBar && x + dp(14) < gridRight) {
+            drawVCenteredText(buf, smallFnt, x + dp(3), Rect(x, rulerTop, gridRight, gridTop),
+                              toUTF32(format("%d", (s / 16) + 1)), pal.fgText);
         }
     }
 
@@ -164,8 +198,8 @@ void drawPianoRollCanvas(
                 const int gp = cast(int)gev.pitch;
                 if (gp < pitchLow || gp > pitchHigh) continue;
                 const int row = pitchHigh - gp;
-                const int y0 = gridTop + row * rowHeight + 2;
-                const int y1 = y0 + rowHeight - 4;
+                const int y0 = gridTop + row * rowHeight + dp(2);
+                const int y1 = y0 + rowHeight - dp(4);
                 if (y1 <= gridTop || y0 >= velTop) continue;
                 const double startBeat = cast(double)gev.tick / resF;
                 const double durBeat = (gev.duration_ticks > 0) ? (cast(double)gev.duration_ticks / resF) : 0.25;
@@ -188,15 +222,15 @@ void drawPianoRollCanvas(
         if (p < pitchLow || p > pitchHigh) continue;
 
         const int row = pitchHigh - p;
-        const int y0 = gridTop + row * rowHeight + 1;
-        const int y1 = y0 + rowHeight - 2;
+        const int y0 = gridTop + row * rowHeight + bw;
+        const int y1 = y0 + rowHeight - bw * 2;
         if (y1 <= gridTop || y0 >= velTop) continue;
 
         const double startBeat = cast(double)ev.tick / resF;
         const double durBeat = (ev.duration_ticks > 0) ? (cast(double)ev.duration_ticks / resF) : 0.25;
         int x0 = gridLeft + cast(int)((startBeat - scrollBeats) * pixelsPerBeat + 0.5);
         int x1 = gridLeft + cast(int)((startBeat + durBeat - scrollBeats) * pixelsPerBeat + 0.5);
-        if (x1 <= x0 + 4) x1 = x0 + 6;
+        if (x1 <= x0 + dp(4)) x1 = x0 + dp(6);
         if (x1 <= gridLeft || x0 >= gridRight) continue;
         if (x0 < gridLeft) x0 = gridLeft;
         if (x1 > gridRight) x1 = gridRight;
@@ -204,9 +238,10 @@ void drawPianoRollCanvas(
         Rect noteRc = Rect(x0, y0, x1, y1);
         drawCard(buf, noteRc, pal.noteFill, pal.borderStrong, 2.5f);
         // Brighter left attack bar
-        buf.fillRect(Rect(x0 + 1, y0 + 1, x0 + 4 < x1 ? x0 + 4 : x1, y1 - 1), pal.accentGreen);
-        if (!fnt.isNull && (x1 - x0) >= 24 && (y1 - y0) >= 11) {
-            fnt.drawText(buf, x0 + 5, y0 + 1, toUTF32(noteName(p)), pal.bgLcd);
+        const int attackW = dp(4);
+        buf.fillRect(Rect(x0 + bw, y0 + bw, x0 + attackW < x1 ? x0 + attackW : x1, y1 - bw), pal.accentGreen);
+        if ((x1 - x0) >= dp(24) && (y1 - y0) >= dp(11)) {
+            drawVCenteredText(buf, noteFnt, x0 + dp(5), noteRc, toUTF32(noteName(p)), pal.bgLcd);
         }
     }
 
@@ -215,8 +250,8 @@ void drawPianoRollCanvas(
     const double phBeat = (model ? model.playheadPosSec : 0.0) * (bpm / 60.0);
     const int phX = gridLeft + cast(int)((phBeat - scrollBeats) * pixelsPerBeat + 0.5);
     if (phX >= gridLeft && phX < gridRight) {
-        buf.fillRect(Rect(phX - 3, rulerTop + 2, phX + 4, rulerTop + 7), pal.accentOrange);
-        buf.fillRect(Rect(phX, rulerTop + 4, phX + 2, velTop), pal.accentOrange);
+        buf.fillRect(Rect(phX - dp(3), rulerTop + dp(2), phX + dp(4), rulerTop + dp(7)), pal.accentOrange);
+        buf.fillRect(Rect(phX, rulerTop + dp(4), phX + dp(2), velTop), pal.accentOrange);
     }
 
     // 6. Bottom Velocity / Event Lane
@@ -225,24 +260,22 @@ void drawPianoRollCanvas(
         Rect laneBg = Rect(gridLeft, velTop, gridRight, rc.bottom);
         buf.fillRect(laneHdr, pal.bgPanel);
         buf.fillRect(laneBg, pal.bgPanelAlt);
-        buf.fillRect(Rect(rc.left, velTop, rc.right, velTop + 1), pal.borderSubtle);
-        if (!fnt.isNull) {
-            fnt.drawText(buf, laneHdr.left + 6, velTop + 8, "Velocity"d, pal.fgMuted);
-        }
+        buf.fillRect(Rect(rc.left, velTop, rc.right, velTop + bw), pal.borderSubtle);
+        drawVCenteredText(buf, smallFnt, laneHdr.left + dp(6), laneHdr, "Velocity"d, pal.fgMuted);
 
-        const int stemBot = rc.bottom - 5;
-        const int stemTopMax = velTop + 8;
+        const int stemBot = rc.bottom - dp(5);
+        const int stemTopMax = velTop + dp(8);
         const int stemSpan = stemBot - stemTopMax;
-        if (stemSpan > 8) {
+        if (stemSpan > dp(8)) {
             foreach (const ref ev; events) {
                 if (ev.cc_number != 0 || ev.velocity == 0) continue;
                 const double startBeat = cast(double)ev.tick / resF;
-                const int sx = gridLeft + cast(int)((startBeat - scrollBeats) * pixelsPerBeat + 0.5) + 4;
-                if (sx < gridLeft + 2 || sx >= gridRight - 2) continue;
+                const int sx = gridLeft + cast(int)((startBeat - scrollBeats) * pixelsPerBeat + 0.5) + dp(4);
+                if (sx < gridLeft + dp(2) || sx >= gridRight - dp(2)) continue;
                 const float normVel = cast(float)ev.velocity / 127.0f;
                 const int sy = stemBot - cast(int)(normVel * stemSpan);
-                buf.fillRect(Rect(sx - 1, sy, sx + 1, stemBot), pal.accentGreen);
-                drawFilledCircle(buf, sx, sy, 3.2f, pal.noteFill, pal.bgLcd);
+                buf.fillRect(Rect(sx - bw, sy, sx + bw, stemBot), pal.accentGreen);
+                drawFilledCircle(buf, sx, sy, dpf(3.2f), pal.noteFill, pal.bgLcd);
             }
         }
     }
@@ -289,7 +322,8 @@ class PianoRollCanvasWidget : Widget {
     override void onDraw(DrawBuf buf) {
         if (visibility != Visibility.Visible) return;
         drawPianoRollCanvas(buf, _pos, model_, pitchLow, pitchHigh,
-                            pixelsPerBeat, numBeats, KEY_WIDTH, ROW_HEIGHT, font, scrollBeats);
+                            pixelsPerBeat * uiScale(), numBeats,
+                            dp(KEY_WIDTH), dp(ROW_HEIGHT), safeWidgetFont(this), scrollBeats);
     }
 
     override bool onMouseEvent(MouseEvent event) {
@@ -298,11 +332,15 @@ class PianoRollCanvasWidget : Widget {
         }
         if (!model_) return super.onMouseEvent(event);
 
-        const int gridLeft = _pos.left + KEY_WIDTH;
-        const int rulerTop = _pos.top + PR_TOOLBAR_H;
-        const int gridTop = rulerTop + PR_RULER_H;
+        const int effKeyWidth = dp(KEY_WIDTH);
+        const int effRowHeight = dp(ROW_HEIGHT);
+        const double effPxPerBeat = pixelsPerBeat * uiScale();
         const bool velOn = model_.showVelocityLane;
-        const int velTop = (velOn && _pos.bottom - gridTop > PR_VEL_H + 60) ? (_pos.bottom - PR_VEL_H) : _pos.bottom;
+        const m = computePianoRollMetrics(_pos, effKeyWidth, velOn);
+        const int gridLeft = m.gridLeft;
+        const int rulerTop = m.rulerTop;
+        const int gridTop = m.gridTop;
+        const int velTop = m.velTop;
         const int res = (model_.activeMidi.resolution > 0) ? model_.activeMidi.resolution : 480;
         const long stepTicks = res / 4;
 
@@ -338,16 +376,14 @@ class PianoRollCanvasWidget : Widget {
                     EditorTool.SLICE, EditorTool.SELECT, EditorTool.ZOOM
                 ];
                 foreach (i, t; TOOL_ENUMS) {
-                    const int bx0 = _pos.left + 6 + cast(int)i * 24;
-                    if (event.x >= bx0 && event.x <= bx0 + 21) {
+                    if (m.toolBtns[i].isPointInside(event.x, event.y)) {
                         model_.pianoRollTool = t;
                         invalidate();
                         return true;
                     }
                 }
-                Rect tgtRc = Rect(_pos.left + 158, _pos.top + 4, _pos.left + 290, rulerTop - 4);
-                if (tgtRc.isPointInside(event.x, event.y) && model_.channels.length > 0) {
-                    const int dir = (event.x < tgtRc.left + tgtRc.width / 4) ? -1 : 1;
+                if (m.tgtRc.isPointInside(event.x, event.y) && model_.channels.length > 0) {
+                    const int dir = (event.x < m.tgtRc.left + m.tgtRc.width / 4) ? -1 : 1;
                     model_.selectPianoRollChannel(model_.activeMidi.channelIndex + dir);
                     if (onTargetChannelChanged !is null) {
                         onTargetChannelChanged(model_.activeMidi.channelIndex);
@@ -355,14 +391,12 @@ class PianoRollCanvasWidget : Widget {
                     invalidate();
                     return true;
                 }
-                Rect ghostRc = Rect(_pos.right - 104, _pos.top + 4, _pos.right - 54, rulerTop - 4);
-                Rect velRc = Rect(_pos.right - 50, _pos.top + 4, _pos.right - 6, rulerTop - 4);
-                if (ghostRc.isPointInside(event.x, event.y)) {
+                if (m.ghostRc.isPointInside(event.x, event.y)) {
                     model_.ghostNotesEnabled = !model_.ghostNotesEnabled;
                     invalidate();
                     return true;
                 }
-                if (velRc.isPointInside(event.x, event.y)) {
+                if (m.velRc.isPointInside(event.x, event.y)) {
                     model_.showVelocityLane = !model_.showVelocityLane;
                     invalidate();
                     return true;
@@ -372,7 +406,7 @@ class PianoRollCanvasWidget : Widget {
 
             // 2. Bottom Velocity Lane edit
             if (velOn && event.y >= velTop && event.x >= gridLeft) {
-                const double beat = scrollBeats + cast(double)(event.x - gridLeft) / pixelsPerBeat;
+                const double beat = scrollBeats + cast(double)(event.x - gridLeft) / effPxPerBeat;
                 const long clickTick = cast(long)(beat * res);
                 ptrdiff_t bestIdx = -1;
                 long bestDist = stepTicks * 2;
@@ -396,7 +430,7 @@ class PianoRollCanvasWidget : Widget {
 
             // 3. Piano Keys / Note Grid
             if (event.y < gridTop || event.y >= velTop) return true;
-            const int row = (event.y - gridTop) / ROW_HEIGHT;
+            const int row = (event.y - gridTop) / effRowHeight;
             const int pitch = pitchHigh - row;
             if (pitch < pitchLow || pitch > pitchHigh) return true;
 
@@ -413,7 +447,7 @@ class PianoRollCanvasWidget : Widget {
                 return true;
             }
 
-            const double beat = scrollBeats + cast(double)(event.x - gridLeft) / pixelsPerBeat;
+            const double beat = scrollBeats + cast(double)(event.x - gridLeft) / effPxPerBeat;
             if (beat < 0.0) return true;
             const long clickTick = cast(long)(beat * res);
 
@@ -454,8 +488,8 @@ class PianoRollCanvasWidget : Widget {
                     return true;
                 }
                 const auto ev = model_.activeMidi.events[hitIdx];
-                const int x1 = gridLeft + cast(int)((cast(double)(ev.tick + ev.duration_ticks) / res - scrollBeats) * pixelsPerBeat);
-                if (event.x >= x1 - 7) {
+                const int x1 = gridLeft + cast(int)((cast(double)(ev.tick + ev.duration_ticks) / res - scrollBeats) * effPxPerBeat);
+                if (event.x >= x1 - dp(7)) {
                     dragMode_ = DragMode.RESIZE_NOTE;
                 } else {
                     dragMode_ = DragMode.MOVE_NOTE;
@@ -496,12 +530,12 @@ class PianoRollCanvasWidget : Widget {
                 updateVelocityFromY(dragNoteIdx_, event.y, velTop);
                 return true;
             }
-            const double beat = scrollBeats + cast(double)(event.x - gridLeft) / pixelsPerBeat;
+            const double beat = scrollBeats + cast(double)(event.x - gridLeft) / effPxPerBeat;
             const long curTick = cast(long)(beat * res);
             auto ev = &model_.activeMidi.events[dragNoteIdx_];
 
             if (dragMode_ == DragMode.MOVE_NOTE) {
-                const int row = (event.y - gridTop) / ROW_HEIGHT;
+                const int row = (event.y - gridTop) / effRowHeight;
                 int newPitch = pitchHigh - row;
                 if (newPitch < pitchLow) newPitch = pitchLow;
                 if (newPitch > pitchHigh) newPitch = pitchHigh;
@@ -537,8 +571,8 @@ class PianoRollCanvasWidget : Widget {
     }
 
     private void updateVelocityFromY(ptrdiff_t noteIdx, int my, int velTop) {
-        const int stemBot = _pos.bottom - 5;
-        const int stemTopMax = velTop + 8;
+        const int stemBot = _pos.bottom - dp(5);
+        const int stemTopMax = velTop + dp(8);
         if (stemBot <= stemTopMax) return;
         float norm = cast(float)(stemBot - my) / cast(float)(stemBot - stemTopMax);
         if (norm < 0.05f) norm = 0.05f;

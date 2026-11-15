@@ -2,18 +2,97 @@ module gui_d.mixer_view;
 
 import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
+import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : drawCard, drawLevelMeter, drawRotaryKnob, drawThickLine, FlPalette, getFlPalette, truncateLabel;
+import gui_d.theme : dp, dpf, drawCard, drawCenteredText, drawLevelMeter, drawRotaryKnob, drawThickLine,
+    drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
 import gui_d.transport_model : PluginSlotState, TrackStripState, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import std.format : format;
 import std.utf : toUTF32;
 
-private enum int MIX_TOOLBAR_H = 26;
-private enum int STRIP_W = 66;
-private enum int CURRENT_W = 48;
-private enum int FX_RACK_W = 222;
 private enum int FX_SLOT_COUNT = 10;
+
+/// DPI-scaled layout geometry shared between `drawMixerCanvas` and `MixerCanvasWidget.onMouseEvent`.
+struct MixerMetrics {
+    int toolbarH;
+    int stripW;
+    int currentW;
+    int fxRackW;
+    int stripGap;
+    int bodyTop;
+    int bodyBot;
+    bool showFx;
+    int stripsRight;
+    Rect scrLeftRc;
+    Rect scrRightRc;
+    Rect fxToggleRc;
+    Rect curRc;
+    Rect masterRc;
+    int insStartX;
+    Rect fxRc;
+    int eqH;
+    int slotsTop;
+    int slotsBot;
+    int slotH;
+}
+
+MixerMetrics computeMixerMetrics(Rect rc, const(TransportModel)* model) nothrow @safe {
+    MixerMetrics m;
+    m.toolbarH = dp(26);
+    m.stripW = dp(66);
+    m.currentW = dp(48);
+    m.fxRackW = dp(222);
+    m.stripGap = dp(3);
+    m.bodyTop = rc.top + m.toolbarH + dp(4);
+    m.bodyBot = rc.bottom - dp(4);
+    m.showFx = (model ? model.showMixerFxRack : true) && rc.width > m.fxRackW + dp(280);
+    m.stripsRight = m.showFx ? (rc.right - m.fxRackW) : (rc.right - dp(4));
+    m.scrLeftRc = Rect(rc.right - dp(130), rc.top + dp(4), rc.right - dp(106), rc.top + m.toolbarH - dp(4));
+    m.scrRightRc = Rect(rc.right - dp(102), rc.top + dp(4), rc.right - dp(78), rc.top + m.toolbarH - dp(4));
+    m.fxToggleRc = Rect(rc.right - dp(74), rc.top + dp(4), rc.right - dp(8), rc.top + m.toolbarH - dp(4));
+    m.curRc = Rect(rc.left + dp(4), m.bodyTop, rc.left + dp(4) + m.currentW, m.bodyBot);
+    m.masterRc = Rect(m.curRc.right + dp(4), m.bodyTop, m.curRc.right + dp(4) + m.stripW, m.bodyBot);
+    m.insStartX = m.masterRc.right + dp(10);
+    m.fxRc = Rect(m.stripsRight + dp(2), m.bodyTop, rc.right - dp(4), m.bodyBot);
+    m.eqH = dp(92);
+    m.slotsTop = m.fxRc.top + dp(26);
+    m.slotsBot = m.fxRc.bottom - m.eqH - dp(4);
+    m.slotH = (m.slotsBot - m.slotsTop) / FX_SLOT_COUNT;
+    return m;
+}
+
+struct StripMetrics {
+    Rect muteRc;
+    Rect soloRc;
+    int panX;
+    int sepX;
+    int knobY;
+    int knobBandTop;
+    int knobBandBot;
+    int faderTop;
+    int faderBot;
+    Rect meterRc;
+    Rect grooveRc;
+    Rect routeRc;
+}
+
+StripMetrics computeStripMetrics(Rect stripRc) nothrow @safe {
+    StripMetrics sm;
+    sm.muteRc = Rect(stripRc.left + dp(6), stripRc.top + dp(38), stripRc.left + dp(28), stripRc.top + dp(50));
+    sm.soloRc = Rect(stripRc.left + dp(32), stripRc.top + dp(38), stripRc.left + dp(58), stripRc.top + dp(50));
+    sm.panX = stripRc.left + dp(18);
+    sm.sepX = stripRc.left + dp(46);
+    sm.knobY = stripRc.top + dp(66);
+    sm.knobBandTop = stripRc.top + dp(52);
+    sm.knobBandBot = stripRc.top + dp(80);
+    sm.faderTop = stripRc.top + dp(84);
+    sm.faderBot = stripRc.bottom - dp(24);
+    sm.meterRc = Rect(stripRc.right - dp(22), sm.faderTop, stripRc.right - dp(6), sm.faderBot);
+    sm.grooveRc = Rect(stripRc.left + dp(17), sm.faderTop + dp(4), stripRc.left + dp(23), sm.faderBot - dp(4));
+    sm.routeRc = Rect(stripRc.left + dp(6), stripRc.bottom - dp(20), stripRc.right - dp(6), stripRc.bottom - dp(4));
+    return sm;
+}
 
 /// Renders a single FL Studio Mixer Insert strip inside `stripRc`.
 private void drawMixerStrip(
@@ -24,76 +103,69 @@ private void drawMixerStrip(
     bool isMaster,
     bool isSelected,
     const ref FlPalette pal,
-    FontRef fnt
+    FontRef numFnt,
+    FontRef lblFnt,
+    FontRef smallFnt
 ) {
     const uint bg = isSelected ? pal.bgControl : (isMaster ? pal.bgPanelAlt : pal.bgPanel);
     drawCard(buf, stripRc, bg, isSelected ? pal.accentOrange : pal.borderStrong, 3.0f);
 
     const uint trkCol = trk ? trk.color : pal.clipPattern;
-    buf.fillRect(Rect(stripRc.left + 2, stripRc.top + 2, stripRc.right - 2, stripRc.top + 6), trkCol);
+    buf.fillRect(Rect(stripRc.left + dp(2), stripRc.top + dp(2), stripRc.right - dp(2), stripRc.top + dp(6)), trkCol);
 
     const string label = trk ? trk.name : (isMaster ? "Master" : format("Ins %d", displayIdx));
-    if (!fnt.isNull) {
-        const string numStr = isMaster ? "M" : format("%d", displayIdx);
-        fnt.drawText(buf, stripRc.left + 5, stripRc.top + 8, toUTF32(numStr),
-                     isSelected ? pal.accentOrange : pal.fgMuted);
-        fnt.drawText(buf, stripRc.left + 4, stripRc.top + 22,
-                     toUTF32(truncateLabel(label, 8)), pal.fgText);
-    }
+    const string numStr = isMaster ? "M" : format("%d", displayIdx);
+    drawVCenteredText(buf, numFnt, stripRc.left + dp(5),
+                      Rect(stripRc.left, stripRc.top + dp(7), stripRc.right, stripRc.top + dp(21)),
+                      toUTF32(numStr), isSelected ? pal.accentOrange : pal.fgMuted);
+    drawVCenteredText(buf, lblFnt, stripRc.left + dp(4),
+                      Rect(stripRc.left, stripRc.top + dp(21), stripRc.right, stripRc.top + dp(35)),
+                      toUTF32(truncateLabel(label, 8)), pal.fgText);
 
     const bool muted = trk ? trk.muted : false;
     const bool soloed = trk ? trk.soloed : false;
+    const sm = computeStripMetrics(stripRc);
 
     // Mute LED & Solo LED
-    Rect muteRc = Rect(stripRc.left + 6, stripRc.top + 38, stripRc.left + 28, stripRc.top + 50);
-    Rect soloRc = Rect(stripRc.left + 32, stripRc.top + 38, stripRc.left + 58, stripRc.top + 50);
-    drawCard(buf, muteRc, muted ? pal.ledOff : pal.accentGreen, pal.borderStrong, 3.0f);
-    drawCard(buf, soloRc, soloed ? pal.accentAmber : pal.bgControl, pal.borderStrong, 3.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, soloRc.left + 8, soloRc.top, "S"d, soloed ? pal.bgLcd : pal.fgMuted);
-    }
+    drawCard(buf, sm.muteRc, muted ? pal.ledOff : pal.accentGreen, pal.borderStrong, 3.0f);
+    drawCard(buf, sm.soloRc, soloed ? pal.accentAmber : pal.bgControl, pal.borderStrong, 3.0f);
+    drawCenteredText(buf, smallFnt, sm.soloRc, "S"d, soloed ? pal.bgLcd : pal.fgMuted);
 
     // Pan knob (left) & Stereo Separation knob (right)
     const float pan = trk ? trk.pan : 0.0f;
     const float sep = trk ? trk.stereoSep : 0.0f;
-    drawRotaryKnob(buf, stripRc.left + 18, stripRc.top + 66, 9, (pan + 1.0f) * 0.5f,
+    drawRotaryKnob(buf, sm.panX, sm.knobY, dp(9), (pan + 1.0f) * 0.5f,
                    pal.bgLcd, pal.accentCyan, pal.bgControl, pal.borderSubtle, true);
-    drawRotaryKnob(buf, stripRc.left + 46, stripRc.top + 66, 9, (sep + 1.0f) * 0.5f,
+    drawRotaryKnob(buf, sm.sepX, sm.knobY, dp(9), (sep + 1.0f) * 0.5f,
                    pal.bgLcd, pal.accentPurple, pal.bgControl, pal.borderSubtle, true);
 
     // Fader groove (left) & Stereo Meter (right)
-    const int faderTop = stripRc.top + 84;
-    const int faderBot = stripRc.bottom - 24;
-    if (faderBot - faderTop > 36) {
-        Rect meterRc = Rect(stripRc.right - 22, faderTop, stripRc.right - 6, faderBot);
+    if (sm.faderBot - sm.faderTop > dp(36)) {
         const float pL = trk ? trk.peakL : 0.0f;
         const float pR = trk ? trk.peakR : 0.0f;
-        drawLevelMeter(buf, meterRc, pL, pR, pal, 16);
+        drawLevelMeter(buf, sm.meterRc, pL, pR, pal, 16);
 
-        Rect grooveRc = Rect(stripRc.left + 17, faderTop + 4, stripRc.left + 23, faderBot - 4);
-        drawCard(buf, grooveRc, pal.bgLcd, pal.borderStrong, 2.0f);
+        drawCard(buf, sm.grooveRc, pal.bgLcd, pal.borderStrong, 2.0f);
 
+        const int capH = dp(16);
+        const int capHalf = dp(8);
         // Unity 0 dB tick mark (~80%)
-        const int zeroY = grooveRc.bottom - 8 - cast(int)(0.8f * (grooveRc.height - 16));
-        buf.fillRect(Rect(stripRc.left + 8, zeroY, stripRc.left + 32, zeroY + 1), pal.fgDim);
+        const int zeroY = sm.grooveRc.bottom - capHalf - cast(int)(0.8f * (sm.grooveRc.height - capH));
+        buf.fillRect(Rect(stripRc.left + dp(8), zeroY, stripRc.left + dp(32), zeroY + dp(1)), pal.fgDim);
 
         float vol = trk ? trk.volume : 0.8f;
         if (vol < 0.0f) vol = 0.0f;
         if (vol > 1.0f) vol = 1.0f;
-        const int capY = grooveRc.bottom - cast(int)(vol * (grooveRc.height - 16)) - 16;
-        Rect capRc = Rect(stripRc.left + 10, capY, stripRc.left + 30, capY + 16);
+        const int capY = sm.grooveRc.bottom - cast(int)(vol * (sm.grooveRc.height - capH)) - capH;
+        Rect capRc = Rect(stripRc.left + dp(10), capY, stripRc.left + dp(30), capY + capH);
         drawCard(buf, capRc, 0x008A94A3, pal.borderStrong, 3.0f);
-        buf.fillRect(Rect(capRc.left + 2, capRc.middley, capRc.right - 2, capRc.middley + 2),
+        buf.fillRect(Rect(capRc.left + dp(2), capRc.middley, capRc.right - dp(2), capRc.middley + dp(2)),
                      pal.bgLcd);
     }
 
     // Bottom routing badge
-    Rect routeRc = Rect(stripRc.left + 6, stripRc.bottom - 20, stripRc.right - 6, stripRc.bottom - 4);
-    drawCard(buf, routeRc, pal.bgLcd, pal.borderSubtle, 2.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, routeRc.left + 12, routeRc.top + 1,
-                     isMaster ? "OUT"d : "-> M"d, pal.accentOrange);
-    }
+    drawCard(buf, sm.routeRc, pal.bgLcd, pal.borderSubtle, 2.0f);
+    drawCenteredText(buf, smallFnt, sm.routeRc, isMaster ? "OUT"d : "-> M"d, pal.accentOrange);
 }
 
 /// Renders the complete FL Studio 2026 Mixer (Current, Master, Insert Strips, 10-Slot FX Rack, 3-Band EQ).
@@ -106,12 +178,17 @@ void drawMixerCanvas(
 ) {
     const pal = model ? model.palette() : getFlPalette();
     buf.fillRect(rc, pal.bgWindow);
-    if (rc.width < 260 || rc.height < 140) return;
+    if (rc.width < dp(260) || rc.height < dp(140)) return;
+
+    const m = computeMixerMetrics(rc, model);
+    FontRef hdrFnt = getDawFont(11, fnt, FontWeight.Bold);
+    FontRef lblFnt = getDawFont(10, fnt, FontWeight.Normal);
+    FontRef smallFnt = getDawFont(9, fnt, FontWeight.Bold);
 
     // 1. Top Mixer Toolbar
-    Rect tbRc = Rect(rc.left, rc.top, rc.right, rc.top + MIX_TOOLBAR_H);
+    Rect tbRc = Rect(rc.left, rc.top, rc.right, rc.top + m.toolbarH);
     buf.fillRect(tbRc, pal.bgPanelAlt);
-    buf.fillRect(Rect(tbRc.left, tbRc.bottom - 1, tbRc.right, tbRc.bottom), pal.borderStrong);
+    buf.fillRect(Rect(tbRc.left, tbRc.bottom - dp(1), tbRc.right, tbRc.bottom), pal.borderStrong);
 
     const int selIns = model ? model.selectedMixerInsert : 1;
     string selName = format("Insert %d", selIns);
@@ -123,32 +200,19 @@ void drawMixerCanvas(
             }
         }
     }
-    if (!fnt.isNull) {
-        fnt.drawText(buf, tbRc.left + 10, tbRc.top + 5,
-                     toUTF32("MIXER  |  " ~ selName), pal.accentOrange);
-    }
+    drawVCenteredText(buf, hdrFnt, tbRc.left + dp(10), tbRc,
+                      toUTF32("MIXER  |  " ~ selName), pal.accentOrange);
 
     // Horizontal insert scroll buttons (< >) and FX RACK toggle
-    Rect scrLeftRc  = Rect(tbRc.right - 130, tbRc.top + 4, tbRc.right - 106, tbRc.bottom - 4);
-    Rect scrRightRc = Rect(tbRc.right - 102, tbRc.top + 4, tbRc.right - 78, tbRc.bottom - 4);
-    drawCard(buf, scrLeftRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, scrRightRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, scrLeftRc.left + 7, scrLeftRc.top + 2, "<"d, pal.fgText);
-        fnt.drawText(buf, scrRightRc.left + 7, scrRightRc.top + 2, ">"d, pal.fgText);
-    }
+    drawCard(buf, m.scrLeftRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, m.scrRightRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCenteredText(buf, hdrFnt, m.scrLeftRc, "<"d, pal.fgText);
+    drawCenteredText(buf, hdrFnt, m.scrRightRc, ">"d, pal.fgText);
 
     const bool showFx = model ? model.showMixerFxRack : true;
-    Rect fxToggleRc = Rect(tbRc.right - 74, tbRc.top + 4, tbRc.right - 8, tbRc.bottom - 4);
-    drawCard(buf, fxToggleRc, showFx ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, fxToggleRc.left + 10, fxToggleRc.top + 2, "FX RACK"d,
+    drawCard(buf, m.fxToggleRc, showFx ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCenteredText(buf, smallFnt, m.fxToggleRc, "FX RACK"d,
                      showFx ? pal.bgLcd : pal.fgText);
-    }
-
-    const int bodyTop = tbRc.bottom + 4;
-    const int bodyBot = rc.bottom - 4;
-    const int stripsRight = (showFx && rc.width > FX_RACK_W + 280) ? (rc.right - FX_RACK_W) : rc.right - 4;
 
     // Find selected insert pointer & master pointer
     const(TrackStripState)* masterTrk = null;
@@ -164,61 +228,52 @@ void drawMixerCanvas(
     }
 
     // 2. Left Docked "C" (Current) big meter + "M" (Master) strip
-    Rect curRc = Rect(rc.left + 4, bodyTop, rc.left + 4 + CURRENT_W, bodyBot);
-    drawCard(buf, curRc, pal.bgPanelAlt, pal.borderStrong, 3.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, curRc.left + 18, curRc.top + 6, "C"d, pal.accentOrange);
-    }
-    if (curRc.height > 60) {
-        drawLevelMeter(buf, Rect(curRc.left + 8, curRc.top + 28, curRc.right - 8, curRc.bottom - 12),
+    drawCard(buf, m.curRc, pal.bgPanelAlt, pal.borderStrong, 3.0f);
+    drawCenteredText(buf, hdrFnt,
+                     Rect(m.curRc.left, m.curRc.top + dp(4), m.curRc.right, m.curRc.top + dp(22)),
+                     "C"d, pal.accentOrange);
+    if (m.curRc.height > dp(60)) {
+        drawLevelMeter(buf, Rect(m.curRc.left + dp(8), m.curRc.top + dp(28), m.curRc.right - dp(8), m.curRc.bottom - dp(12)),
                        selTrk ? selTrk.peakL : 0.0f, selTrk ? selTrk.peakR : 0.0f, pal, 24);
     }
 
-    Rect masterRc = Rect(curRc.right + 4, bodyTop, curRc.right + 4 + STRIP_W, bodyBot);
-    drawMixerStrip(buf, masterRc, masterTrk, 0, true, selIns == 0, pal, fnt);
+    drawMixerStrip(buf, m.masterRc, masterTrk, 0, true, selIns == 0, pal, hdrFnt, lblFnt, smallFnt);
 
     // Dock divider
-    const int divX = masterRc.right + 4;
-    buf.fillRect(Rect(divX, bodyTop, divX + 2, bodyBot), pal.borderSubtle);
+    const int divX = m.masterRc.right + dp(4);
+    buf.fillRect(Rect(divX, m.bodyTop, divX + dp(2), m.bodyBot), pal.borderSubtle);
 
     // 3. Insert Strips (scrolled starting from scrollInsert)
-    const int insStartX = divX + 6;
     const int insCount = (insTrackIndices.length > 0) ? cast(int)insTrackIndices.length : 8;
     int startIns = scrollInsert < 0 ? 0 : scrollInsert;
     if (startIns >= insCount) startIns = insCount > 0 ? insCount - 1 : 0;
     int visCol = 0;
     for (int i = startIns; i < insCount; ++i, ++visCol) {
-        const int x0 = insStartX + visCol * (STRIP_W + 3);
-        const int x1 = x0 + STRIP_W;
-        if (x1 > stripsRight - 2) break;
+        const int x0 = m.insStartX + visCol * (m.stripW + m.stripGap);
+        const int x1 = x0 + m.stripW;
+        if (x1 > m.stripsRight - dp(2)) break;
         const(TrackStripState)* tPtr = (model && i < cast(int)insTrackIndices.length)
             ? &model.tracks[insTrackIndices[i]]
             : null;
         const int tIdx = tPtr ? tPtr.index : (i + 1);
-        drawMixerStrip(buf, Rect(x0, bodyTop, x1, bodyBot), tPtr, tIdx, false,
-                       selIns == tIdx, pal, fnt);
+        drawMixerStrip(buf, Rect(x0, m.bodyTop, x1, m.bodyBot), tPtr, tIdx, false,
+                       selIns == tIdx, pal, hdrFnt, lblFnt, smallFnt);
     }
 
     // 4. Right Docked 10-Slot FX Rack + 3-Band EQ
-    if (showFx && rc.width > FX_RACK_W + 280) {
-        Rect fxRc = Rect(stripsRight + 2, bodyTop, rc.right - 4, bodyBot);
+    if (m.showFx) {
+        Rect fxRc = m.fxRc;
         drawCard(buf, fxRc, pal.bgPanelAlt, pal.borderStrong, 4.0f);
-        if (!fnt.isNull) {
-            fnt.drawText(buf, fxRc.left + 8, fxRc.top + 6,
-                         toUTF32(format("FX SLOTS - %s", truncateLabel(selTrk ? selTrk.name : "Insert", 12))),
-                         pal.accentOrange);
-        }
+        drawVCenteredText(buf, hdrFnt, fxRc.left + dp(8),
+                          Rect(fxRc.left, fxRc.top + dp(2), fxRc.right, fxRc.top + dp(24)),
+                          toUTF32(format("FX SLOTS - %s", truncateLabel(selTrk ? selTrk.name : "Insert", 12))),
+                          pal.accentOrange);
 
-        const int eqH = 92;
-        const int slotsTop = fxRc.top + 26;
-        const int slotsBot = fxRc.bottom - eqH - 4;
-        const int slotH = (slotsBot - slotsTop) / FX_SLOT_COUNT;
-
-        if (slotH >= 14) {
+        if (m.slotH >= dp(14)) {
             foreach (s; 0 .. FX_SLOT_COUNT) {
-                const int sy0 = slotsTop + s * slotH;
-                const int sy1 = sy0 + slotH - 2;
-                Rect sRc = Rect(fxRc.left + 6, sy0, fxRc.right - 6, sy1);
+                const int sy0 = m.slotsTop + s * m.slotH;
+                const int sy1 = sy0 + m.slotH - dp(2);
+                Rect sRc = Rect(fxRc.left + dp(6), sy0, fxRc.right - dp(6), sy1);
 
                 const(PluginSlotState)* plug = null;
                 if (selTrk) {
@@ -235,47 +290,46 @@ void drawMixerCanvas(
                          selSlot ? pal.accentOrange : pal.borderStrong, 3.0f);
 
                 // Slot index & name
-                if (!fnt.isNull) {
-                    const string sLbl = hasPlug
-                        ? format("%d  %s", s + 1, truncateLabel(plug.name, 14))
-                        : format("%d  (empty)", s + 1);
-                    fnt.drawText(buf, sRc.left + 6, sRc.top + 2, toUTF32(sLbl),
-                                 hasPlug ? pal.fgText : pal.fgDim);
-                }
+                const string sLbl = hasPlug
+                    ? format("%d  %s", s + 1, truncateLabel(plug.name, 14))
+                    : format("%d  (empty)", s + 1);
+                drawVCenteredText(buf, lblFnt, sRc.left + dp(6), sRc, toUTF32(sLbl),
+                                  hasPlug ? pal.fgText : pal.fgDim);
 
                 // Mix knob & Enable LED on right of slot
                 if (hasPlug) {
-                    drawRotaryKnob(buf, sRc.right - 28, sRc.middley, 6, plug.mix,
+                    drawRotaryKnob(buf, sRc.right - dp(28), sRc.middley, dp(6), plug.mix,
                                    pal.bgLcd, pal.accentCyan, pal.bgPanel, pal.borderSubtle);
-                    Rect enLed = Rect(sRc.right - 14, sRc.top + 4, sRc.right - 4, sRc.bottom - 4);
+                    Rect enLed = Rect(sRc.right - dp(14), sRc.top + dp(4), sRc.right - dp(4), sRc.bottom - dp(4));
                     drawCard(buf, enLed, plug.enabled ? pal.accentGreen : pal.ledOff, pal.borderStrong, 2.0f);
                 }
             }
         }
 
         // 3-Band Insert EQ Panel at bottom of FX Rack
-        if (fxRc.height > 150) {
-            Rect eqRc = Rect(fxRc.left + 6, fxRc.bottom - eqH, fxRc.right - 6, fxRc.bottom - 6);
+        if (fxRc.height > dp(150)) {
+            Rect eqRc = Rect(fxRc.left + dp(6), fxRc.bottom - m.eqH, fxRc.right - dp(6), fxRc.bottom - dp(6));
             drawCard(buf, eqRc, pal.bgLcd, pal.borderSubtle, 3.0f);
             const float low = selTrk ? selTrk.eqLow : 0.5f;
             const float mid = selTrk ? selTrk.eqMid : 0.5f;
             const float high = selTrk ? selTrk.eqHigh : 0.5f;
 
             // Mini EQ curve graphic
-            const int cy = eqRc.top + 24;
-            const float yL = cy + (0.5f - low) * 26.0f;
-            const float yM = cy + (0.5f - mid) * 26.0f;
-            const float yH = cy + (0.5f - high) * 26.0f;
-            buf.fillRect(Rect(eqRc.left + 6, cy, eqRc.right - 6, cy + 1), pal.borderSubtle);
-            drawThickLine(buf, eqRc.left + 8, yL, eqRc.middlex, yM, 2.0f, pal.accentCyan);
-            drawThickLine(buf, eqRc.middlex, yM, eqRc.right - 8, yH, 2.0f, pal.accentOrange);
+            const int cy = eqRc.top + dp(24);
+            const float ampPx = dpf(26.0f);
+            const float yL = cy + (0.5f - low) * ampPx;
+            const float yM = cy + (0.5f - mid) * ampPx;
+            const float yH = cy + (0.5f - high) * ampPx;
+            buf.fillRect(Rect(eqRc.left + dp(6), cy, eqRc.right - dp(6), cy + dp(1)), pal.borderSubtle);
+            drawThickLine(buf, eqRc.left + dp(8), yL, eqRc.middlex, yM, dpf(2.0f), pal.accentCyan);
+            drawThickLine(buf, eqRc.middlex, yM, eqRc.right - dp(8), yH, dpf(2.0f), pal.accentOrange);
 
             // Low / Mid / High rotary knobs
-            drawRotaryKnob(buf, eqRc.left + 34,  eqRc.bottom - 20, 10, low,
+            drawRotaryKnob(buf, eqRc.left + dp(34), eqRc.bottom - dp(20), dp(10), low,
                            pal.bgPanelAlt, pal.accentCyan, pal.bgControl, pal.borderSubtle, true);
-            drawRotaryKnob(buf, eqRc.middlex,    eqRc.bottom - 20, 10, mid,
+            drawRotaryKnob(buf, eqRc.middlex, eqRc.bottom - dp(20), dp(10), mid,
                            pal.bgPanelAlt, pal.accentGreen, pal.bgControl, pal.borderSubtle, true);
-            drawRotaryKnob(buf, eqRc.right - 34, eqRc.bottom - 20, 10, high,
+            drawRotaryKnob(buf, eqRc.right - dp(34), eqRc.bottom - dp(20), dp(10), high,
                            pal.bgPanelAlt, pal.accentOrange, pal.bgControl, pal.borderSubtle, true);
         }
     }
@@ -312,7 +366,7 @@ class MixerCanvasWidget : Widget {
 
     override void onDraw(DrawBuf buf) {
         if (visibility != Visibility.Visible) return;
-        drawMixerCanvas(buf, _pos, model_, font, scrollInsert);
+        drawMixerCanvas(buf, _pos, model_, safeWidgetFont(this), scrollInsert);
     }
 
     private size_t[] collectInsertIndices() const @safe {
@@ -330,10 +384,7 @@ class MixerCanvasWidget : Widget {
         }
         if (!model_) return super.onMouseEvent(event);
 
-        const int bodyTop = _pos.top + MIX_TOOLBAR_H + 4;
-        const int bodyBot = _pos.bottom - 4;
-        const bool showFx = model_.showMixerFxRack && _pos.width > FX_RACK_W + 280;
-        const int stripsRight = showFx ? (_pos.right - FX_RACK_W) : (_pos.right - 4);
+        const m = computeMixerMetrics(_pos, model_);
         const auto insTrackIndices = collectInsertIndices();
         const int insCount = (insTrackIndices.length > 0) ? cast(int)insTrackIndices.length : 8;
 
@@ -349,17 +400,14 @@ class MixerCanvasWidget : Widget {
             activateParentWindow(this);
 
             // 1. Toolbar scroll (< >) & FX Rack toggle
-            if (event.y >= _pos.top && event.y < _pos.top + MIX_TOOLBAR_H) {
-                Rect scrLeftRc  = Rect(_pos.right - 130, _pos.top + 4, _pos.right - 106, _pos.top + MIX_TOOLBAR_H - 4);
-                Rect scrRightRc = Rect(_pos.right - 102, _pos.top + 4, _pos.right - 78, _pos.top + MIX_TOOLBAR_H - 4);
-                Rect fxToggleRc = Rect(_pos.right - 74, _pos.top + 4, _pos.right - 8, _pos.top + MIX_TOOLBAR_H - 4);
-                if (scrLeftRc.isPointInside(event.x, event.y)) {
+            if (event.y >= _pos.top && event.y < _pos.top + m.toolbarH) {
+                if (m.scrLeftRc.isPointInside(event.x, event.y)) {
                     if (scrollInsert > 0) scrollInsert--;
                     invalidate();
-                } else if (scrRightRc.isPointInside(event.x, event.y)) {
+                } else if (m.scrRightRc.isPointInside(event.x, event.y)) {
                     if (scrollInsert + 1 < insCount) scrollInsert++;
                     invalidate();
-                } else if (fxToggleRc.isPointInside(event.x, event.y)) {
+                } else if (m.fxToggleRc.isPointInside(event.x, event.y)) {
                     model_.showMixerFxRack = !model_.showMixerFxRack;
                     invalidate();
                 }
@@ -367,22 +415,18 @@ class MixerCanvasWidget : Widget {
             }
 
             // 2. Right FX Rack & 3-Band EQ clicks
-            if (showFx && event.x >= stripsRight + 2) {
-                Rect fxRc = Rect(stripsRight + 2, bodyTop, _pos.right - 4, bodyBot);
-                const int eqH = 92;
-                const int slotsTop = fxRc.top + 26;
-                const int slotsBot = fxRc.bottom - eqH - 4;
-                const int slotH = (slotsBot - slotsTop) / FX_SLOT_COUNT;
+            if (m.showFx && event.x >= m.stripsRight + dp(2)) {
+                Rect fxRc = m.fxRc;
 
                 // 3-Band EQ knobs
-                if (event.y >= fxRc.bottom - eqH) {
+                if (event.y >= fxRc.bottom - m.eqH) {
                     const size_t tArr = model_.ensureTrackIndex(model_.selectedMixerInsert);
                     auto trk = &model_.tracks[tArr];
-                    const int midX = (fxRc.left + 6 + fxRc.right - 6) / 2;
-                    if (event.x < midX - 24) {
+                    const int midX = fxRc.middlex;
+                    if (event.x < midX - dp(24)) {
                         if (event.button == MouseButton.Right) trk.eqLow = 0.5f;
                         else { dragMode_ = DragMode.EQ_LOW; dragStartVal_ = trk.eqLow; }
-                    } else if (event.x > midX + 24) {
+                    } else if (event.x > midX + dp(24)) {
                         if (event.button == MouseButton.Right) trk.eqHigh = 0.5f;
                         else { dragMode_ = DragMode.EQ_HIGH; dragStartVal_ = trk.eqHigh; }
                     } else {
@@ -396,8 +440,8 @@ class MixerCanvasWidget : Widget {
                 }
 
                 // 10 FX Slots
-                if (slotH >= 14 && event.y >= slotsTop && event.y < slotsBot) {
-                    const int slotIdx = (event.y - slotsTop) / slotH;
+                if (m.slotH >= dp(14) && event.y >= m.slotsTop && event.y < m.slotsBot) {
+                    const int slotIdx = (event.y - m.slotsTop) / m.slotH;
                     if (slotIdx >= 0 && slotIdx < FX_SLOT_COUNT) {
                         model_.selectedFxSlot = slotIdx;
                         const size_t tArr = model_.ensureTrackIndex(model_.selectedMixerInsert);
@@ -416,11 +460,11 @@ class MixerCanvasWidget : Widget {
                                 trk.plugins = trk.plugins[0 .. plugArrIdx] ~ trk.plugins[plugArrIdx + 1 .. $];
                                 model_.hintText = format("Removed FX slot %d (%s)", slotIdx + 1, rName);
                                 if (onRemoveFxSlot !is null) onRemoveFxSlot(model_.selectedMixerInsert, slotIdx);
-                            } else if (event.x >= fxRc.right - 22) {
+                            } else if (event.x >= fxRc.right - dp(22)) {
                                 plug.enabled = !plug.enabled;
                                 model_.hintText = format("%s: %s", plug.name, plug.enabled ? "Active" : "Bypassed");
                                 if (onFxBypass !is null) onFxBypass(model_.selectedMixerInsert, slotIdx, plug.enabled);
-                            } else if (event.x >= fxRc.right - 44) {
+                            } else if (event.x >= fxRc.right - dp(44)) {
                                 dragMode_ = DragMode.FX_MIX;
                                 dragTrackIdx_ = model_.selectedMixerInsert;
                                 dragSlotIdx_ = slotIdx;
@@ -456,25 +500,20 @@ class MixerCanvasWidget : Widget {
             }
 
             // 3. Master & Insert Strips hit-test
-            Rect curRc = Rect(_pos.left + 4, bodyTop, _pos.left + 4 + CURRENT_W, bodyBot);
-            Rect masterRc = Rect(curRc.right + 4, bodyTop, curRc.right + 4 + STRIP_W, bodyBot);
-            const int insStartX = masterRc.right + 10;
-
             bool handleStripClick(Rect stripRc, int trackIdx) {
                 if (!stripRc.isPointInside(event.x, event.y)) return false;
                 model_.selectedMixerInsert = trackIdx;
                 const size_t arrIdx = model_.ensureTrackIndex(trackIdx);
                 auto trk = &model_.tracks[arrIdx];
+                const sm = computeStripMetrics(stripRc);
 
-                Rect muteRc = Rect(stripRc.left + 6, stripRc.top + 38, stripRc.left + 28, stripRc.top + 50);
-                Rect soloRc = Rect(stripRc.left + 32, stripRc.top + 38, stripRc.left + 58, stripRc.top + 50);
-                if (muteRc.isPointInside(event.x, event.y)) {
+                if (sm.muteRc.isPointInside(event.x, event.y)) {
                     trk.muted = !trk.muted;
                     if (onMuteToggle !is null) onMuteToggle(trackIdx, trk.muted);
                     invalidate();
                     return true;
                 }
-                if (soloRc.isPointInside(event.x, event.y)) {
+                if (sm.soloRc.isPointInside(event.x, event.y)) {
                     trk.soloed = !trk.soloed;
                     if (onSoloToggle !is null) onSoloToggle(trackIdx, trk.soloed);
                     invalidate();
@@ -482,7 +521,7 @@ class MixerCanvasWidget : Widget {
                 }
 
                 // Pan / Stereo Separation knobs
-                if (event.y >= stripRc.top + 52 && event.y <= stripRc.top + 80) {
+                if (event.y >= sm.knobBandTop && event.y <= sm.knobBandBot) {
                     dragTrackIdx_ = trackIdx;
                     dragStartY_ = event.y;
                     if (event.x < stripRc.middlex) {
@@ -508,16 +547,14 @@ class MixerCanvasWidget : Widget {
                 }
 
                 // Fader groove region
-                const int faderTop = stripRc.top + 84;
-                const int faderBot = stripRc.bottom - 24;
-                if (event.y >= faderTop && event.y <= faderBot && event.x < stripRc.right - 22) {
+                if (event.y >= sm.faderTop && event.y <= sm.faderBot && event.x < stripRc.right - dp(22)) {
                     if (event.button == MouseButton.Right) {
                         trk.volume = 0.8f;
                         if (onVolumeChange !is null) onVolumeChange(trackIdx, trk.volume);
                     } else {
                         dragMode_ = DragMode.FADER;
                         dragTrackIdx_ = trackIdx;
-                        updateFaderFromY(trackIdx, event.y, faderTop + 4, faderBot - 4);
+                        updateFaderFromY(trackIdx, event.y, sm.grooveRc.top, sm.grooveRc.bottom);
                     }
                     invalidate();
                     return true;
@@ -526,33 +563,34 @@ class MixerCanvasWidget : Widget {
                 return true;
             }
 
-            if (handleStripClick(masterRc, 0)) return true;
+            if (handleStripClick(m.masterRc, 0)) return true;
 
             int startIns = scrollInsert < 0 ? 0 : scrollInsert;
             if (startIns >= insCount) startIns = insCount > 0 ? insCount - 1 : 0;
             int visCol = 0;
             for (int i = startIns; i < insCount; ++i, ++visCol) {
-                const int x0 = insStartX + visCol * (STRIP_W + 3);
-                const int x1 = x0 + STRIP_W;
-                if (x1 > stripsRight - 2) break;
+                const int x0 = m.insStartX + visCol * (m.stripW + m.stripGap);
+                const int x1 = x0 + m.stripW;
+                if (x1 > m.stripsRight - dp(2)) break;
                 const int tIdx = (i < cast(int)insTrackIndices.length)
                     ? model_.tracks[insTrackIndices[i]].index
                     : (i + 1);
-                if (handleStripClick(Rect(x0, bodyTop, x1, bodyBot), tIdx)) return true;
+                if (handleStripClick(Rect(x0, m.bodyTop, x1, m.bodyBot), tIdx)) return true;
             }
             return true;
         }
 
         if (event.action == MouseAction.Move && dragMode_ != DragMode.NONE) {
-            const float delta = cast(float)(dragStartY_ - event.y) / 90.0f;
+            const float delta = cast(float)(dragStartY_ - event.y) / dpf(90.0f);
             const size_t arrIdx = model_.ensureTrackIndex(dragTrackIdx_);
             auto trk = &model_.tracks[arrIdx];
+            const sm = computeStripMetrics(m.masterRc);
 
             final switch (dragMode_) {
                 case DragMode.NONE:
                     break;
                 case DragMode.FADER:
-                    updateFaderFromY(dragTrackIdx_, event.y, bodyTop + 88, bodyBot - 28);
+                    updateFaderFromY(dragTrackIdx_, event.y, sm.grooveRc.top, sm.grooveRc.bottom);
                     break;
                 case DragMode.PAN:
                     float p = dragStartVal_ + delta * 2.0f;
@@ -609,9 +647,11 @@ class MixerCanvasWidget : Widget {
     }
 
     private void updateFaderFromY(int trackIdx, int y, int grooveTop, int grooveBot) {
-        if (grooveBot - grooveTop <= 16) return;
+        const int capH = dp(16);
+        const int capHalf = dp(8);
+        if (grooveBot - grooveTop <= capH) return;
         const size_t idx = model_.ensureTrackIndex(trackIdx);
-        float norm = cast(float)(grooveBot - 8 - y) / cast(float)(grooveBot - grooveTop - 16);
+        float norm = cast(float)(grooveBot - capHalf - y) / cast(float)(grooveBot - grooveTop - capH);
         if (norm < 0.0f) norm = 0.0f;
         if (norm > 1.0f) norm = 1.0f;
         model_.tracks[idx].volume = norm;

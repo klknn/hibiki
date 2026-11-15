@@ -2,10 +2,81 @@ module gui_d.theme;
 
 import core.math : fabs;
 import core.stdc.math : cosf, log10f, sinf, sqrtf;
-import dlangui.core.types : Point, Rect;
+import dlangui.core.types : BASE_DPI, Point, Rect, SCREEN_DPI;
 import dlangui.graphics.colors : COLOR_TRANSPARENT;
 import dlangui.graphics.drawbuf : DrawBuf;
+import dlangui.graphics.fonts : FontFamily, FontManager, FontRef, FontWeight;
+import dlangui.widgets.controls : Button;
+import dlangui.widgets.widget : State, Visibility, Widget;
 import std.format : format;
+
+/// Returns the active display scale factor relative to 96 DPI (e.g. 1.0 at 96 DPI, 2.0 on macOS Retina).
+float uiScale() nothrow @trusted {
+    try {
+        const float s = cast(float)SCREEN_DPI / cast(float)BASE_DPI;
+        return s > 1.0f ? s : 1.0f;
+    } catch (Throwable) {
+        return 1.0f;
+    }
+}
+
+/// Scales a logical 1x design pixel measurement to physical surface pixels.
+int dp(int px) nothrow @safe {
+    return cast(int)(cast(float)px * uiScale() + (px >= 0 ? 0.5f : -0.5f));
+}
+
+/// Scales a logical 1x floating-point measurement to physical surface pixels.
+float dpf(float px) nothrow @safe {
+    return px * uiScale();
+}
+
+/// Returns a DPI-scaled DAW UI font cleanly falling back to `fallback` in headless mode.
+FontRef getDawFont(int basePx, FontRef fallback = FontRef.init, int weight = FontWeight.Normal, bool mono = false) {
+    const int px = dp(basePx);
+    if (FontManager.instance !is null) {
+        FontFamily fam = mono ? FontFamily.MonoSpace : FontFamily.SansSerif;
+        string face = (!mono && !fallback.isNull) ? fallback.face : null;
+        auto f = FontManager.instance.getFont(px, weight, false, fam, face);
+        if (!f.isNull) return f;
+    }
+    return fallback;
+}
+
+/// Returns a DPI-scaled monospace font for numeric/timecode/dB readouts.
+FontRef getDawMonoFont(int basePx, FontRef fallback = FontRef.init, int weight = FontWeight.Normal) {
+    return getDawFont(basePx, fallback, weight, true);
+}
+
+/// Safely resolves `w.font` without dereferencing a null `FontManager.instance` in headless tests.
+FontRef safeWidgetFont(Widget w) {
+    return (FontManager.instance !is null && w !is null) ? w.font : FontRef.init;
+}
+
+/// Draws horizontally & vertically centered text inside `rc`.
+void drawCenteredText(DrawBuf buf, FontRef fnt, Rect rc, dstring text, uint color) {
+    if (fnt.isNull || text.length == 0 || rc.width <= 0 || rc.height <= 0) return;
+    const Point sz = fnt.textSize(text);
+    const int x = rc.left + (rc.width - sz.x) / 2;
+    const int y = rc.top + (rc.height - sz.y) / 2;
+    fnt.drawText(buf, x, y, text, color);
+}
+
+/// Draws vertically centered text inside `rc` starting at `x`.
+void drawVCenteredText(DrawBuf buf, FontRef fnt, int x, Rect rc, dstring text, uint color) {
+    if (fnt.isNull || text.length == 0 || rc.height <= 0) return;
+    const Point sz = fnt.textSize(text);
+    const int y = rc.top + (rc.height - sz.y) / 2;
+    fnt.drawText(buf, x, y, text, color);
+}
+
+/// Draws right-aligned vertically centered text inside `rc` with `rightPad`.
+void drawRightVCenteredText(DrawBuf buf, FontRef fnt, Rect rc, dstring text, uint color, int rightPad = 0) {
+    if (fnt.isNull || text.length == 0 || rc.height <= 0) return;
+    const Point sz = fnt.textSize(text);
+    const int x = rc.right - rightPad - sz.x;
+    const int y = rc.top + (rc.height - sz.y) / 2;
+    fnt.drawText(buf, x, y, text, color);
+}
 
 /// Available FL Studio 2026 UI theme presets (accessible via Options > Theme).
 enum FlThemeId {
@@ -217,20 +288,22 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
     }
 }
 
-/// Draws a flat-modern FL Studio card/panel with subtle 1px border and clipped corners.
+/// Draws a flat-modern FL Studio card/panel with subtle DPI-scaled border and clipped corners.
 /// Implemented with `fillRect` so it renders identically on both `ColorDrawBuf` and `GLDrawBuf`.
 void drawCard(DrawBuf buf, Rect rc, uint fillColor, uint borderColor, float radius = 4.0f) {
     if (rc.width <= 0 || rc.height <= 0) return;
-    const int r = (radius >= 3.0f && rc.width >= 10 && rc.height >= 10) ? 2 :
-                  ((radius >= 1.5f && rc.width >= 6 && rc.height >= 6) ? 1 : 0);
+    const int bw = dp(1);
+    const int baseR = (radius >= 3.0f && rc.width >= dp(10) && rc.height >= dp(10)) ? 2 :
+                      ((radius >= 1.5f && rc.width >= dp(6) && rc.height >= dp(6)) ? 1 : 0);
+    const int r = dp(baseR);
 
     if (r == 0) {
         buf.fillRect(rc, fillColor);
-        if (borderColor != COLOR_TRANSPARENT && rc.width >= 2 && rc.height >= 2) {
-            buf.fillRect(Rect(rc.left, rc.top, rc.right, rc.top + 1), borderColor);
-            buf.fillRect(Rect(rc.left, rc.bottom - 1, rc.right, rc.bottom), borderColor);
-            buf.fillRect(Rect(rc.left, rc.top, rc.left + 1, rc.bottom), borderColor);
-            buf.fillRect(Rect(rc.right - 1, rc.top, rc.right, rc.bottom), borderColor);
+        if (borderColor != COLOR_TRANSPARENT && rc.width >= bw * 2 && rc.height >= bw * 2) {
+            buf.fillRect(Rect(rc.left, rc.top, rc.right, rc.top + bw), borderColor);
+            buf.fillRect(Rect(rc.left, rc.bottom - bw, rc.right, rc.bottom), borderColor);
+            buf.fillRect(Rect(rc.left, rc.top, rc.left + bw, rc.bottom), borderColor);
+            buf.fillRect(Rect(rc.right - bw, rc.top, rc.right, rc.bottom), borderColor);
         }
         return;
     }
@@ -239,26 +312,26 @@ void drawCard(DrawBuf buf, Rect rc, uint fillColor, uint borderColor, float radi
     buf.fillRect(Rect(rc.left + r, rc.top, rc.right - r, rc.bottom), fillColor);
     buf.fillRect(Rect(rc.left, rc.top + r, rc.left + r, rc.bottom - r), fillColor);
     buf.fillRect(Rect(rc.right - r, rc.top + r, rc.right, rc.bottom - r), fillColor);
-    if (r == 2) {
-        buf.fillRect(Rect(rc.left + 1, rc.top + 1, rc.right - 1, rc.top + 2), fillColor);
-        buf.fillRect(Rect(rc.left + 1, rc.bottom - 2, rc.right - 1, rc.bottom - 1), fillColor);
+    if (baseR == 2) {
+        buf.fillRect(Rect(rc.left + bw, rc.top + bw, rc.right - bw, rc.top + r), fillColor);
+        buf.fillRect(Rect(rc.left + bw, rc.bottom - r, rc.right - bw, rc.bottom - bw), fillColor);
     }
 
     if (borderColor != COLOR_TRANSPARENT) {
-        buf.fillRect(Rect(rc.left + r, rc.top, rc.right - r, rc.top + 1), borderColor);
-        buf.fillRect(Rect(rc.left + r, rc.bottom - 1, rc.right - r, rc.bottom), borderColor);
-        buf.fillRect(Rect(rc.left, rc.top + r, rc.left + 1, rc.bottom - r), borderColor);
-        buf.fillRect(Rect(rc.right - 1, rc.top + r, rc.right, rc.bottom - r), borderColor);
-        if (r == 2) {
-            buf.drawPixel(rc.left + 1, rc.top + 1, borderColor);
-            buf.drawPixel(rc.right - 2, rc.top + 1, borderColor);
-            buf.drawPixel(rc.left + 1, rc.bottom - 2, borderColor);
-            buf.drawPixel(rc.right - 2, rc.bottom - 2, borderColor);
+        buf.fillRect(Rect(rc.left + r, rc.top, rc.right - r, rc.top + bw), borderColor);
+        buf.fillRect(Rect(rc.left + r, rc.bottom - bw, rc.right - r, rc.bottom), borderColor);
+        buf.fillRect(Rect(rc.left, rc.top + r, rc.left + bw, rc.bottom - r), borderColor);
+        buf.fillRect(Rect(rc.right - bw, rc.top + r, rc.right, rc.bottom - r), borderColor);
+        if (baseR == 2) {
+            buf.fillRect(Rect(rc.left + bw, rc.top + bw, rc.left + r, rc.top + r), borderColor);
+            buf.fillRect(Rect(rc.right - r, rc.top + bw, rc.right - bw, rc.top + r), borderColor);
+            buf.fillRect(Rect(rc.left + bw, rc.bottom - r, rc.left + r, rc.bottom - bw), borderColor);
+            buf.fillRect(Rect(rc.right - r, rc.bottom - r, rc.right - bw, rc.bottom - bw), borderColor);
         }
     }
 }
 
-/// Draws a 1px or 2px line using `DrawBuf.drawLine` (works on both `ColorDrawBuf` and `GLDrawBuf`).
+/// Draws a thickness-scaled line using `DrawBuf.drawLine` (works on both `ColorDrawBuf` and `GLDrawBuf`).
 void drawThickLine(DrawBuf buf, float x0, float y0, float x1, float y1, float width, uint color) {
     const int ix0 = cast(int)(x0 + 0.5f);
     const int iy0 = cast(int)(y0 + 0.5f);
@@ -266,10 +339,14 @@ void drawThickLine(DrawBuf buf, float x0, float y0, float x1, float y1, float wi
     const int iy1 = cast(int)(y1 + 0.5f);
     buf.drawLine(Point(ix0, iy0), Point(ix1, iy1), color);
     if (width >= 1.8f) {
-        if (fabs(x1 - x0) >= fabs(y1 - y0)) {
-            buf.drawLine(Point(ix0, iy0 + 1), Point(ix1, iy1 + 1), color);
-        } else {
-            buf.drawLine(Point(ix0 + 1, iy0), Point(ix1 + 1, iy1), color);
+        const int thickness = cast(int)(width + 0.3f);
+        const bool horizDominant = fabs(x1 - x0) >= fabs(y1 - y0);
+        foreach (d; 1 .. thickness) {
+            if (horizDominant) {
+                buf.drawLine(Point(ix0, iy0 + d), Point(ix1, iy1 + d), color);
+            } else {
+                buf.drawLine(Point(ix0 + d, iy0), Point(ix1 + d, iy1), color);
+            }
         }
     }
 }
@@ -350,30 +427,33 @@ void drawRotaryKnob(
     const float valDeg = START_DEG + v * (END_DEG - START_DEG);
 
     const float arcR = cast(float)radius;
-    drawOpenArc(buf, cx, cy, arcR, START_DEG, END_DEG, 2.0f, trackColor, 18);
+    const float trackW = dpf(1.8f);
+    const float arcW = dpf(2.2f);
+    drawOpenArc(buf, cx, cy, arcR, START_DEG, END_DEG, trackW, trackColor, 20);
 
     if (bipolar) {
         if (fabs(v - 0.5f) > 0.01f) {
             if (v >= 0.5f) {
-                drawOpenArc(buf, cx, cy, arcR, CENTER_DEG, valDeg, 2.2f, arcColor, 12);
+                drawOpenArc(buf, cx, cy, arcR, CENTER_DEG, valDeg, arcW, arcColor, 14);
             } else {
-                drawOpenArc(buf, cx, cy, arcR, valDeg, CENTER_DEG, 2.2f, arcColor, 12);
+                drawOpenArc(buf, cx, cy, arcR, valDeg, CENTER_DEG, arcW, arcColor, 14);
             }
         }
     } else if (v > 0.01f) {
-        drawOpenArc(buf, cx, cy, arcR, START_DEG, valDeg, 2.2f, arcColor, 16);
+        drawOpenArc(buf, cx, cy, arcR, START_DEG, valDeg, arcW, arcColor, 18);
     }
 
-    const float capR = arcR - 3.0f;
+    const float gap = dpf(3.0f);
+    const float capR = arcR > gap + 1.0f ? arcR - gap : arcR * 0.7f;
     drawFilledCircle(buf, cx, cy, capR, capColor, borderColor);
 
     enum float DEG2RAD = 3.14159265f / 180.0f;
     const float rad = valDeg * DEG2RAD;
     const float x0 = cx + cosf(rad) * (capR * 0.25f);
     const float y0 = cy + sinf(rad) * (capR * 0.25f);
-    const float x1 = cx + cosf(rad) * (capR - 1.0f);
-    const float y1 = cy + sinf(rad) * (capR - 1.0f);
-    drawThickLine(buf, x0, y0, x1, y1, 1.6f, arcColor);
+    const float x1 = cx + cosf(rad) * (capR - dpf(1.0f));
+    const float y1 = cy + sinf(rad) * (capR - dpf(1.0f));
+    drawThickLine(buf, x0, y0, x1, y1, dpf(1.6f), arcColor);
 }
 
 /// Draws a modern FL Studio stereo peak meter inside `rc` (`-60 dB .. 0 dB`).
@@ -386,23 +466,26 @@ void drawLevelMeter(
     int segments = 18
 ) {
     drawCard(buf, rc, pal.bgLcd, pal.borderStrong, 2.0f);
-    if (rc.width < 8 || rc.height < segments * 2) return;
-    const int innerLeft = rc.left + 2;
-    const int innerW = rc.width - 4;
-    const int innerH = rc.height - 4;
-    const int colW = (innerW - 2) / 2;
+    const int pad = dp(2);
+    if (rc.width < pad * 4 || rc.height < segments * 2) return;
+    const int innerLeft = rc.left + pad;
+    const int innerW = rc.width - pad * 2;
+    const int innerH = rc.height - pad * 2;
+    const int midGap = dp(2);
+    const int colW = (innerW - midGap) / 2;
     const int segH = innerH / segments;
+    const int segGap = segH >= dp(4) ? dp(1) : 0;
     const int litL = peakToMeterSegments(peakL, segments);
     const int litR = peakToMeterSegments(peakR, segments);
 
     foreach (s; 0 .. segments) {
-        const int y0 = rc.bottom - 2 - (s + 1) * segH + 1;
-        const int y1 = rc.bottom - 2 - s * segH - 1;
+        const int y0 = rc.bottom - pad - (s + 1) * segH + segGap;
+        const int y1 = rc.bottom - pad - s * segH - segGap;
         if (y1 <= y0) continue;
         const uint onCol = segmentColor(s, segments, pal);
         buf.fillRect(Rect(innerLeft, y0, innerLeft + colW, y1),
                      s < litL ? onCol : pal.ledOff);
-        buf.fillRect(Rect(innerLeft + colW + 2, y0, innerLeft + colW * 2 + 2, y1),
+        buf.fillRect(Rect(innerLeft + colW + midGap, y0, innerLeft + colW * 2 + midGap, y1),
                      s < litR ? onCol : pal.ledOff);
     }
 }
@@ -483,28 +566,109 @@ uint adjustColorBrightness(uint color, int delta) pure nothrow @safe {
     return alpha | (cast(uint)r << 16) | (cast(uint)g << 8) | cast(uint)b;
 }
 
-version (unittest) {
-    import dlangui.widgets.widget : Widget;
+/// Recursively removes and destroys a widget and its children prior to GC shutdown.
+void destroyWidgetTree(Widget w) {
+    if (w is null) return;
+    Widget[] children;
+    foreach (i; 0 .. w.childCount) {
+        if (auto c = w.child(i)) {
+            children ~= c;
+        }
+    }
+    w.removeAllChildren(false);
+    foreach_reverse (c; children) {
+        destroyWidgetTree(c);
+    }
+    destroy(w);
+}
 
-    /// Recursively removes and destroys a widget and its children prior to GC shutdown.
-    void destroyWidgetTree(Widget w) {
-        if (w is null) return;
-        Widget[] children;
-        foreach (i; 0 .. w.childCount) {
-            if (auto c = w.child(i)) {
-                children ~= c;
-            }
+/// Lightweight flat FL Studio 2026 vector button with exact DPI-scaled font and row height.
+class FlCompactButton : Button {
+    int baseFontPx = 11;
+    int baseHeightPx = 22;
+    bool centered = true;
+    bool bold = false;
+    uint customFillColor = COLOR_TRANSPARENT;
+    uint customBorderColor = COLOR_TRANSPARENT;
+    uint customTextColor = COLOR_TRANSPARENT;
+    private uint fallbackBg_;
+    private uint fallbackHover_;
+    private uint fallbackBorder_;
+    private uint fallbackFg_;
+
+    this(string id, dstring label, const ref FlPalette pal,
+         int baseFontPx = 11, int baseHeightPx = 22, bool centered = true, bool bold = false) {
+        super(id, label);
+        this.baseFontPx = baseFontPx;
+        this.baseHeightPx = baseHeightPx;
+        this.centered = centered;
+        this.bold = bold;
+        styleId = null;
+        backgroundImageId = null;
+        backgroundColor = COLOR_TRANSPARENT;
+        minWidth = 0;
+        minHeight = 0;
+        focusable = false;
+        updatePalette(pal);
+        margins = Rect(dp(1), 0, dp(1), 0);
+        padding = Rect(0, 0, 0, 0);
+    }
+
+    void updatePalette(const ref FlPalette pal) {
+        fallbackBg_ = pal.bgControl;
+        fallbackHover_ = pal.bgControlHover;
+        fallbackBorder_ = pal.borderSubtle;
+        fallbackFg_ = pal.fgText;
+    }
+
+    override void measure(int parentWidth, int parentHeight) {
+        auto f = getDawFont(baseFontPx, safeWidgetFont(this), bold ? FontWeight.Bold : FontWeight.Normal);
+        int textW = dp(20);
+        if (!f.isNull && text.length > 0) {
+            textW = f.textSize(text).x;
         }
-        w.removeAllChildren(false);
-        foreach_reverse (c; children) {
-            destroyWidgetTree(c);
+        const int h = dp(baseHeightPx);
+        const int w = textW + dp(12);
+        measuredContent(parentWidth, parentHeight, w, h);
+    }
+
+    override void onDraw(DrawBuf buf) {
+        if (visibility != Visibility.Visible) return;
+        const bool hovered = (state & State.Hovered) != 0;
+        const bool pressed = (state & State.Pressed) != 0;
+        uint bg = (customFillColor != COLOR_TRANSPARENT) ? customFillColor : fallbackBg_;
+        if (pressed) {
+            bg = adjustColorBrightness(bg, -18);
+        } else if (hovered) {
+            bg = (customFillColor != COLOR_TRANSPARENT)
+                ? adjustColorBrightness(bg, 16) : fallbackHover_;
         }
-        destroy(w);
+        const uint brd = (customBorderColor != COLOR_TRANSPARENT) ? customBorderColor : fallbackBorder_;
+        const uint fg = (customTextColor != COLOR_TRANSPARENT) ? customTextColor : fallbackFg_;
+        drawCard(buf, _pos, bg, brd, 3.0f);
+        auto f = getDawFont(baseFontPx, safeWidgetFont(this), bold ? FontWeight.Bold : FontWeight.Normal);
+        if (centered) {
+            drawCenteredText(buf, f, _pos, text, fg);
+        } else {
+            drawVCenteredText(buf, f, _pos.left + dp(6), _pos, text, fg);
+        }
     }
 }
 
 unittest {
     import dlangui.graphics.drawbuf : ColorDrawBuf;
+    import dlangui.core.types : overrideScreenDPI;
+
+    // Verify DPI scaling helper across 1x (96 DPI) and 2x (192 DPI)
+    overrideScreenDPI = 96;
+    assert(dp(12) == 12);
+    assert(dp(-4) == -4);
+    assert(dpf(1.5f) == 1.5f);
+    overrideScreenDPI = 192;
+    assert(dp(12) == 24);
+    assert(dp(-4) == -8);
+    assert(dpf(1.5f) == 3.0f);
+    overrideScreenDPI = 0;
 
     const pal = getFlPalette(FlThemeId.DEFAULT_DARK);
     assert(pal.accentOrange == 0x00FF8F2D);
@@ -535,4 +699,88 @@ unittest {
 
     drawRotaryKnob(buf, 50, 50, 14, 0.75f, pal.bgLcd, pal.accentOrange, pal.bgControl, pal.borderSubtle);
     drawLevelMeter(buf, Rect(85, 10, 110, 110), 1.0f, 0.0f, pal, 14);
+
+    // Exercise centered text helpers and FlCompactButton across 1x (96 DPI) and 2x (192 DPI)
+    import dlangui.graphics.fonts : Font, Glyph;
+
+    static class MockGlyphFont : Font {
+        Glyph _g;
+        int _sz;
+        this(int sz) {
+            _sz = sz;
+            _g.widthPixels = 7;
+            _g.widthScaled = 7 << 6;
+            _g.blackBoxX = 6;
+            _g.blackBoxY = 10;
+            _g.originY = 10;
+            _g.glyph = new ubyte[](_g.blackBoxX * _g.blackBoxY);
+            _g.glyph[] = 0xFF;
+        }
+        override @property int size() { return _sz; }
+        override @property int height() { return _sz + 2; }
+        override @property int weight() { return 400; }
+        override @property int baseline() { return _sz - 1; }
+        override @property bool italic() { return false; }
+        override @property string face() { return "mock"; }
+        override @property FontFamily family() { return FontFamily.SansSerif; }
+        override @property bool isNull() { return false; }
+        override Glyph* getCharGlyph(dchar ch, bool withImage = true) { return &_g; }
+        override void checkpoint() {}
+        override void cleanup() {}
+        override void clearGlyphCache() {}
+    }
+
+    auto mockFnt = FontRef(new MockGlyphFont(11));
+    auto textBuf = new ColorDrawBuf(200, 100);
+    textBuf.fill(pal.bgDesktop);
+    drawCenteredText(textBuf, mockFnt, Rect(10, 10, 110, 40), "PLAY"d, pal.accentOrange);
+    drawVCenteredText(textBuf, mockFnt, 12, Rect(10, 45, 110, 75), "BAR"d, pal.fgText);
+    drawRightVCenteredText(textBuf, mockFnt, Rect(10, 45, 110, 75), "120"d, pal.accentCyan, 4);
+
+    import dlangui.widgets.styles : createDefaultTheme, currentTheme;
+    const bool hadTheme = currentTheme !is null;
+    if (!hadTheme) {
+        currentTheme = createDefaultTheme();
+    }
+
+    FlCompactButton compactBtn;
+    const bool hadFontMgr = FontManager.instance !is null;
+    scope (exit) {
+        overrideScreenDPI = 0;
+        destroyWidgetTree(compactBtn);
+        compactBtn = null;
+        if (!hadFontMgr) FontManager.instance = null;
+        if (!hadTheme) currentTheme = null;
+    }
+    compactBtn = new FlCompactButton("cmp_btn", "FILE"d, pal, 11, 22, true, false);
+    // Reproduces headless crash if Widget.font was read directly while FontManager.instance is null
+    overrideScreenDPI = 96;
+    compactBtn.measure(200, 100);
+    assert(compactBtn.measuredHeight == 22);
+    const int w1 = compactBtn.measuredWidth;
+    overrideScreenDPI = 192;
+    compactBtn.measure(400, 200);
+    assert(compactBtn.measuredHeight == 44);
+    assert(compactBtn.measuredWidth >= w1);
+    compactBtn.layout(Rect(0, 0, compactBtn.measuredWidth, compactBtn.measuredHeight));
+    compactBtn.onDraw(textBuf);
+
+    static class MockFontMgr : FontManager {
+        FontRef _f;
+        this(FontRef f) { _f = f; }
+        override ref FontRef getFont(int size, int weight, bool italic, FontFamily family, string face) {
+            return _f;
+        }
+        override void checkpoint() {}
+        override void cleanup() {}
+    }
+
+    if (!hadFontMgr) {
+        FontManager.instance = new MockFontMgr(mockFnt);
+    }
+    overrideScreenDPI = 96;
+    compactBtn.measure(200, 100);
+    assert(compactBtn.measuredHeight == 22);
+    assert(compactBtn.measuredWidth == 42);
+    compactBtn.onDraw(textBuf);
 }

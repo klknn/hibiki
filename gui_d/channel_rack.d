@@ -2,12 +2,46 @@ module gui_d.channel_rack;
 
 import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
+import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : drawCard, drawRotaryKnob, FlPalette, getFlPalette, truncateLabel;
+import gui_d.theme : dp, dpf, drawCard, drawCenteredText, drawRotaryKnob, drawVCenteredText, FlPalette,
+    getDawFont, getDawMonoFont, getFlPalette, safeWidgetFont, truncateLabel;
 import gui_d.transport_model : ChannelFilterMode, ChannelState, GraphEditorMode, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import std.format : format;
 import std.utf : toUTF32;
+
+/// DPI-scaled geometry shared identically between `drawChannelRackCanvas` and `ChannelRackWidget.onMouseEvent`.
+struct ChannelRackMetrics {
+    int toolbarH;
+    int rowH;
+    int leftControlsW;
+    int graphH;
+    int bodyTop;
+    int graphAreaTop;
+    int stepAreaLeft;
+    int stepW;
+    Rect filterRc;
+    Rect graphBtnRc;
+    Rect addBtnRc;
+}
+
+ChannelRackMetrics computeChannelRackMetrics(Rect rc, const(TransportModel)* model) nothrow @safe {
+    ChannelRackMetrics m;
+    m.toolbarH = dp(28);
+    m.rowH = dp(34);
+    m.leftControlsW = dp(248);
+    m.graphH = dp(88);
+    m.bodyTop = rc.top + m.toolbarH + dp(4);
+    m.graphAreaTop = (model && model.graphEditorOpen) ? (rc.bottom - m.graphH) : rc.bottom;
+    m.stepAreaLeft = rc.left + m.leftControlsW;
+    const int stepAreaW = rc.right - m.stepAreaLeft - dp(10);
+    m.stepW = (stepAreaW > dp(160)) ? (stepAreaW / 16) : dp(14);
+    m.filterRc = Rect(rc.left + dp(8), rc.top + dp(4), rc.left + dp(68), rc.top + m.toolbarH - dp(4));
+    m.graphBtnRc = Rect(rc.right - dp(134), rc.top + dp(4), rc.right - dp(68), rc.top + m.toolbarH - dp(4));
+    m.addBtnRc = Rect(rc.right - dp(62), rc.top + dp(4), rc.right - dp(8), rc.top + m.toolbarH - dp(4));
+    return m;
+}
 
 /// Renders the FL Studio 2026 Channel Rack, Pan/Vol knobs, 16-Step Sequencer, and Graph Editor.
 void drawChannelRackCanvas(
@@ -19,66 +53,49 @@ void drawChannelRackCanvas(
 ) {
     const pal = model ? model.palette() : getFlPalette();
     buf.fillRect(rc, pal.bgWindow);
-    if (!model || rc.width < 300 || rc.height < 64) return;
+    if (!model || rc.width < dp(300) || rc.height < dp(64)) return;
 
-    enum int TOOLBAR_H = 28;
-    enum int ROW_H = 34;
-    enum int LEFT_CONTROLS_W = 248;
-    enum int GRAPH_H = 88;
+    const m = computeChannelRackMetrics(rc, model);
+    FontRef uiFnt = getDawFont(11, fnt, FontWeight.Normal);
+    FontRef boldFnt = getDawFont(11, fnt, FontWeight.Bold);
+    FontRef smallFnt = getDawFont(10, fnt, FontWeight.Normal);
+    FontRef monoFnt = getDawMonoFont(10, fnt, FontWeight.Bold);
 
     // 1. Top Channel Rack Toolbar
-    Rect tbRc = Rect(rc.left, rc.top, rc.right, rc.top + TOOLBAR_H);
+    Rect tbRc = Rect(rc.left, rc.top, rc.right, rc.top + m.toolbarH);
     buf.fillRect(tbRc, pal.bgPanelAlt);
-    buf.fillRect(Rect(tbRc.left, tbRc.bottom - 1, tbRc.right, tbRc.bottom), pal.borderStrong);
+    buf.fillRect(Rect(tbRc.left, tbRc.bottom - dp(1), tbRc.right, tbRc.bottom), pal.borderStrong);
 
     string filterLbl = "All";
     if (model.channelFilter == ChannelFilterMode.DRUMS) filterLbl = "Drums";
     else if (model.channelFilter == ChannelFilterMode.SYNTHS) filterLbl = "Synths";
     else if (model.channelFilter == ChannelFilterMode.AUDIO) filterLbl = "Audio";
 
-    Rect filterRc = Rect(tbRc.left + 8, tbRc.top + 4, tbRc.left + 68, tbRc.bottom - 4);
-    drawCard(buf, filterRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, filterRc.left + 8, filterRc.top + 2, toUTF32(filterLbl), pal.fgText);
-    }
+    drawCard(buf, m.filterRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCenteredText(buf, boldFnt, m.filterRc, toUTF32(filterLbl), pal.fgText);
 
     // Swing rotary knob
-    drawRotaryKnob(buf, tbRc.left + 92, tbRc.top + 14, 9, model.swingAmount,
+    drawRotaryKnob(buf, tbRc.left + dp(92), tbRc.middley, dp(9), model.swingAmount,
                    pal.bgLcd, pal.accentOrange, pal.bgControl, pal.borderSubtle);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, tbRc.left + 106, tbRc.top + 6,
-                     toUTF32(format("SWING %d%%", cast(int)(model.swingAmount * 100.0f + 0.5f))),
-                     pal.fgMuted);
-    }
+    drawVCenteredText(buf, smallFnt, tbRc.left + dp(106), tbRc,
+                      toUTF32(format("SWING %d%%", cast(int)(model.swingAmount * 100.0f + 0.5f))),
+                      pal.fgMuted);
 
     // Graph Editor toggle button
-    Rect graphBtnRc = Rect(tbRc.right - 134, tbRc.top + 4, tbRc.right - 68, tbRc.bottom - 4);
-    drawCard(buf, graphBtnRc, model.graphEditorOpen ? pal.accentOrange : pal.bgControl,
+    drawCard(buf, m.graphBtnRc, model.graphEditorOpen ? pal.accentOrange : pal.bgControl,
              pal.borderSubtle, 3.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, graphBtnRc.left + 10, graphBtnRc.top + 2, "GRAPH"d,
+    drawCenteredText(buf, boldFnt, m.graphBtnRc, "GRAPH"d,
                      model.graphEditorOpen ? pal.bgLcd : pal.fgText);
-    }
 
     // + Add Channel button
-    Rect addBtnRc = Rect(tbRc.right - 62, tbRc.top + 4, tbRc.right - 8, tbRc.bottom - 4);
-    drawCard(buf, addBtnRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, addBtnRc.left + 10, addBtnRc.top + 2, "+ ADD"d, pal.accentGreen);
-    }
-
-    // Compute visible area for channel rows vs optional Graph Editor drawer
-    const int bodyTop = tbRc.bottom + 4;
-    const int graphAreaTop = model.graphEditorOpen ? (rc.bottom - GRAPH_H) : rc.bottom;
-    const int stepAreaLeft = rc.left + LEFT_CONTROLS_W;
-    const int stepAreaW = rc.right - stepAreaLeft - 10;
-    const int stepW = (stepAreaW > 160) ? (stepAreaW / 16) : 14;
-    const int activeStep = model.currentStepIndex();
+    drawCard(buf, m.addBtnRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCenteredText(buf, boldFnt, m.addBtnRc, "+ ADD"d, pal.accentGreen);
 
     // Playhead step indicator strip
+    const int activeStep = model.currentStepIndex();
     if (activeStep >= 0 && activeStep < 16) {
-        const int sx0 = stepAreaLeft + activeStep * stepW + 2;
-        buf.fillRect(Rect(sx0, tbRc.bottom + 1, sx0 + stepW - 4, tbRc.bottom + 4), pal.accentGreen);
+        const int sx0 = m.stepAreaLeft + activeStep * m.stepW + dp(2);
+        buf.fillRect(Rect(sx0, tbRc.bottom + dp(1), sx0 + m.stepW - dp(4), tbRc.bottom + dp(4)), pal.accentGreen);
     }
 
     // 2. Channel Rows
@@ -93,86 +110,81 @@ void drawChannelRackCanvas(
             continue;
         }
 
-        const int y0 = bodyTop + visRow * ROW_H;
-        const int y1 = y0 + ROW_H - 4;
-        if (y1 >= graphAreaTop - 4) break;
+        const int y0 = m.bodyTop + visRow * m.rowH;
+        const int y1 = y0 + m.rowH - dp(4);
+        if (y1 >= m.graphAreaTop - dp(4)) break;
         visRow++;
 
         const bool isSel = (ch.index == model.selectedChannelIndex);
 
         // Mute / Solo LED pill
-        Rect ledRc = Rect(rc.left + 8, y0 + 9, rc.left + 20, y0 + 21);
+        Rect ledRc = Rect(rc.left + dp(8), y0 + dp(9), rc.left + dp(20), y0 + dp(21));
         const uint ledCol = ch.soloed ? pal.accentAmber : (ch.muted ? pal.ledOff : pal.accentGreen);
         drawCard(buf, ledRc, ledCol, pal.borderStrong, 3.0f);
 
         // Pan Knob (bipolar)
-        drawRotaryKnob(buf, rc.left + 36, y0 + 15, 10, (ch.pan + 1.0f) * 0.5f,
+        drawRotaryKnob(buf, rc.left + dp(36), y0 + dp(15), dp(10), (ch.pan + 1.0f) * 0.5f,
                        pal.bgLcd, pal.accentCyan, pal.bgControl, pal.borderSubtle, true);
 
         // Volume Knob (unipolar)
-        drawRotaryKnob(buf, rc.left + 64, y0 + 15, 10, ch.volume,
+        drawRotaryKnob(buf, rc.left + dp(64), y0 + dp(15), dp(10), ch.volume,
                        pal.bgLcd, pal.accentGreen, pal.bgControl, pal.borderSubtle, false);
 
         // Mixer Target Insert LCD
-        Rect mixRc = Rect(rc.left + 82, y0 + 4, rc.left + 112, y1 - 3);
+        Rect mixRc = Rect(rc.left + dp(82), y0 + dp(4), rc.left + dp(112), y1 - dp(3));
         drawCard(buf, mixRc, pal.bgLcd, pal.borderSubtle, 3.0f);
-        if (!fnt.isNull) {
-            fnt.drawText(buf, mixRc.left + 6, mixRc.top + 3,
+        drawCenteredText(buf, monoFnt, mixRc,
                          toUTF32(ch.mixerInsert == 0 ? "M" : format("%2d", ch.mixerInsert)),
                          pal.accentCyan);
-        }
 
         // Channel Name Pill
-        Rect pillRc = Rect(rc.left + 118, y0 + 2, stepAreaLeft - 8, y1 - 1);
+        Rect pillRc = Rect(rc.left + dp(118), y0 + dp(2), m.stepAreaLeft - dp(8), y1 - dp(1));
         drawCard(buf, pillRc, ch.color, isSel ? pal.accentOrange : pal.borderStrong, 4.0f);
         if (isSel) {
-            buf.fillRect(Rect(pillRc.left + 1, pillRc.top + 2, pillRc.left + 4, pillRc.bottom - 2),
+            buf.fillRect(Rect(pillRc.left + dp(1), pillRc.top + dp(2), pillRc.left + dp(4), pillRc.bottom - dp(2)),
                          pal.accentOrange);
         }
-        if (!fnt.isNull) {
-            fnt.drawText(buf, pillRc.left + 9, pillRc.top + 5,
-                         toUTF32(truncateLabel(ch.name, 14)), pal.fgText);
-        }
+        drawVCenteredText(buf, boldFnt, pillRc.left + dp(9), pillRc,
+                          toUTF32(truncateLabel(ch.name, 14)), pal.fgText);
 
         // 16-Step Sequencer Pads (4 groups of 4: cool slate vs warm muted slate)
         foreach (s; 0 .. 16) {
-            const int sx0 = stepAreaLeft + s * stepW + 1;
-            const int sx1 = sx0 + stepW - 3;
+            const int sx0 = m.stepAreaLeft + s * m.stepW + dp(1);
+            const int sx1 = sx0 + m.stepW - dp(3);
             const bool oddGroup = ((s / 4) % 2) == 1;
             const bool active = ch.steps[s];
             const uint padCol = active
                 ? pal.stepActive
                 : (oddGroup ? pal.stepGroupB : pal.stepGroupA);
             const uint padBorder = active ? pal.stepActiveLed : pal.borderStrong;
-            Rect padRc = Rect(sx0, y0 + 3, sx1, y1 - 2);
+            Rect padRc = Rect(sx0, y0 + dp(3), sx1, y1 - dp(2));
             drawCard(buf, padRc, padCol, padBorder, 3.0f);
             if (active) {
-                buf.fillRect(Rect(padRc.left + 3, padRc.bottom - 5, padRc.right - 3, padRc.bottom - 2),
+                buf.fillRect(Rect(padRc.left + dp(3), padRc.bottom - dp(5), padRc.right - dp(3), padRc.bottom - dp(2)),
                              pal.stepActiveLed);
             }
             if (s == activeStep) {
-                buf.fillRect(Rect(padRc.left + 2, padRc.top + 2, padRc.right - 2, padRc.top + 5),
+                buf.fillRect(Rect(padRc.left + dp(2), padRc.top + dp(2), padRc.right - dp(2), padRc.top + dp(5)),
                              pal.accentGreen);
             }
         }
     }
 
     // 3. Optional Bottom Graph Editor Drawer (Velocity / Pitch / Pan / Shift per step)
-    if (model.graphEditorOpen && graphAreaTop < rc.bottom - 20) {
-        Rect gRc = Rect(rc.left, graphAreaTop, rc.right, rc.bottom);
+    if (model.graphEditorOpen && m.graphAreaTop < rc.bottom - dp(20)) {
+        Rect gRc = Rect(rc.left, m.graphAreaTop, rc.right, rc.bottom);
         buf.fillRect(gRc, pal.bgPanelAlt);
-        buf.fillRect(Rect(gRc.left, gRc.top, gRc.right, gRc.top + 1), pal.borderSubtle);
+        buf.fillRect(Rect(gRc.left, gRc.top, gRc.right, gRc.top + dp(1)), pal.borderSubtle);
 
         // Mode tabs on left side
         static immutable string[4] MODE_LABELS = ["VEL", "PITCH", "PAN", "SHIFT"];
-        foreach (m; 0 .. 4) {
-            Rect mRc = Rect(gRc.left + 8 + m * 56, gRc.top + 4, gRc.left + 60 + m * 56, gRc.top + 22);
-            const bool mAct = (cast(int)model.graphEditorMode == m);
+        foreach (modeIdx; 0 .. 4) {
+            Rect mRc = Rect(gRc.left + dp(8 + modeIdx * 56), gRc.top + dp(4),
+                            gRc.left + dp(60 + modeIdx * 56), gRc.top + dp(22));
+            const bool mAct = (cast(int)model.graphEditorMode == modeIdx);
             drawCard(buf, mRc, mAct ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
-            if (!fnt.isNull) {
-                fnt.drawText(buf, mRc.left + 8, mRc.top + 2, toUTF32(MODE_LABELS[m]),
+            drawCenteredText(buf, smallFnt, mRc, toUTF32(MODE_LABELS[modeIdx]),
                              mAct ? pal.bgLcd : pal.fgText);
-            }
         }
 
         // Selected channel's 16 vertical parameter bars aligned with steps above
@@ -184,13 +196,13 @@ void drawChannelRackCanvas(
             }
         }
         if (selCh !is null) {
-            const int barsTop = gRc.top + 26;
-            const int barsBot = gRc.bottom - 6;
+            const int barsTop = gRc.top + dp(26);
+            const int barsBot = gRc.bottom - dp(6);
             const int barsH = barsBot - barsTop;
-            if (barsH > 8) {
+            if (barsH > dp(8)) {
                 foreach (s; 0 .. 16) {
-                    const int sx0 = stepAreaLeft + s * stepW + 2;
-                    const int sx1 = sx0 + stepW - 5;
+                    const int sx0 = m.stepAreaLeft + s * m.stepW + dp(2);
+                    const int sx1 = sx0 + m.stepW - dp(5);
                     drawCard(buf, Rect(sx0, barsTop, sx1, barsBot), pal.bgLcd, pal.borderStrong, 2.0f);
 
                     float val = 0.5f;
@@ -215,11 +227,12 @@ void drawChannelRackCanvas(
                     }
                     if (val < 0.0f) val = 0.0f;
                     if (val > 1.0f) val = 1.0f;
-                    const int h = cast(int)(val * (barsH - 2));
-                    if (h > 0 && selCh.steps[s]) {
-                        buf.fillRect(Rect(sx0 + 1, barsBot - 1 - h, sx1 - 1, barsBot - 1), barCol);
-                    } else if (h > 0) {
-                        buf.fillRect(Rect(sx0 + 1, barsBot - 1 - h, sx1 - 1, barsBot - 1), pal.fgDim);
+                    const int bh = cast(int)(val * (barsH - dp(2)));
+                    const int inset = dp(1);
+                    if (bh > 0 && selCh.steps[s]) {
+                        buf.fillRect(Rect(sx0 + inset, barsBot - inset - bh, sx1 - inset, barsBot - inset), barCol);
+                    } else if (bh > 0) {
+                        buf.fillRect(Rect(sx0 + inset, barsBot - inset - bh, sx1 - inset, barsBot - inset), pal.fgDim);
                     }
                 }
             }
@@ -256,7 +269,7 @@ class ChannelRackWidget : Widget {
 
     override void onDraw(DrawBuf buf) {
         if (visibility != Visibility.Visible) return;
-        drawChannelRackCanvas(buf, _pos, model_, font, scrollRow);
+        drawChannelRackCanvas(buf, _pos, model_, safeWidgetFont(this), scrollRow);
     }
 
     private int[] visibleChannelIndices() const @safe {
@@ -277,15 +290,7 @@ class ChannelRackWidget : Widget {
         }
         if (!model_) return super.onMouseEvent(event);
 
-        enum int TOOLBAR_H = 28;
-        enum int ROW_H = 34;
-        enum int LEFT_CONTROLS_W = 248;
-        enum int GRAPH_H = 88;
-
-        const int stepAreaLeft = _pos.left + LEFT_CONTROLS_W;
-        const int stepAreaW = _pos.right - stepAreaLeft - 10;
-        const int stepW = (stepAreaW > 160) ? (stepAreaW / 16) : 14;
-        const int graphAreaTop = model_.graphEditorOpen ? (_pos.bottom - GRAPH_H) : _pos.bottom;
+        const m = computeChannelRackMetrics(_pos, model_);
 
         if (event.action == MouseAction.Wheel) {
             const auto visIdx = visibleChannelIndices();
@@ -302,9 +307,8 @@ class ChannelRackWidget : Widget {
             activateParentWindow(this);
 
             // 1. Toolbar hit testing
-            if (event.y >= _pos.top && event.y < _pos.top + TOOLBAR_H) {
-                Rect filterRc = Rect(_pos.left + 8, _pos.top + 4, _pos.left + 68, _pos.top + TOOLBAR_H - 4);
-                if (filterRc.isPointInside(event.x, event.y)) {
+            if (event.y >= _pos.top && event.y < _pos.top + m.toolbarH) {
+                if (m.filterRc.isPointInside(event.x, event.y)) {
                     model_.channelFilter = cast(ChannelFilterMode)((cast(int)model_.channelFilter + 1) % 4);
                     scrollRow = 0;
                     static immutable string[4] F_NAMES = ["All", "Drums", "Synths", "Audio"];
@@ -312,7 +316,7 @@ class ChannelRackWidget : Widget {
                     invalidate();
                     return true;
                 }
-                if (event.x >= _pos.left + 76 && event.x <= _pos.left + 165) {
+                if (event.x >= _pos.left + dp(76) && event.x <= _pos.left + dp(170)) {
                     if (event.button == MouseButton.Right) {
                         model_.swingAmount = 0.0f;
                     } else {
@@ -323,8 +327,7 @@ class ChannelRackWidget : Widget {
                     invalidate();
                     return true;
                 }
-                Rect graphBtnRc = Rect(_pos.right - 134, _pos.top + 4, _pos.right - 68, _pos.top + TOOLBAR_H - 4);
-                if (graphBtnRc.isPointInside(event.x, event.y)) {
+                if (m.graphBtnRc.isPointInside(event.x, event.y)) {
                     model_.graphEditorOpen = !model_.graphEditorOpen;
                     model_.hintText = model_.graphEditorOpen
                         ? "Graph Editor opened — drag bars to edit per-step Velocity / Pitch / Pan / Shift"
@@ -332,8 +335,7 @@ class ChannelRackWidget : Widget {
                     invalidate();
                     return true;
                 }
-                Rect addBtnRc = Rect(_pos.right - 62, _pos.top + 4, _pos.right - 8, _pos.top + TOOLBAR_H - 4);
-                if (addBtnRc.isPointInside(event.x, event.y)) {
+                if (m.addBtnRc.isPointInside(event.x, event.y)) {
                     if (onAddChannelPrompt !is null) onAddChannelPrompt();
                     return true;
                 }
@@ -341,13 +343,13 @@ class ChannelRackWidget : Widget {
             }
 
             // 2. Graph Editor hit testing
-            if (model_.graphEditorOpen && event.y >= graphAreaTop) {
-                if (event.y < graphAreaTop + 24) {
-                    foreach (m; 0 .. 4) {
-                        Rect mRc = Rect(_pos.left + 8 + m * 56, graphAreaTop + 4,
-                                        _pos.left + 60 + m * 56, graphAreaTop + 22);
+            if (model_.graphEditorOpen && event.y >= m.graphAreaTop) {
+                if (event.y < m.graphAreaTop + dp(24)) {
+                    foreach (modeIdx; 0 .. 4) {
+                        Rect mRc = Rect(_pos.left + dp(8 + modeIdx * 56), m.graphAreaTop + dp(4),
+                                        _pos.left + dp(60 + modeIdx * 56), m.graphAreaTop + dp(22));
                         if (mRc.isPointInside(event.x, event.y)) {
-                            model_.graphEditorMode = cast(GraphEditorMode)m;
+                            model_.graphEditorMode = cast(GraphEditorMode)modeIdx;
                             invalidate();
                             return true;
                         }
@@ -355,20 +357,19 @@ class ChannelRackWidget : Widget {
                     return true;
                 }
                 dragTarget_ = DragTarget.GRAPH_BAR;
-                updateGraphBarAt(event.x, event.y, stepAreaLeft, stepW, graphAreaTop);
+                updateGraphBarAt(event.x, event.y, m.stepAreaLeft, m.stepW, m.graphAreaTop);
                 return true;
             }
 
             // 3. Channel Row hit testing
-            const int bodyTop = _pos.top + TOOLBAR_H + 4;
-            if (event.y < bodyTop) return true;
-            const int visRow = scrollRow + (event.y - bodyTop) / ROW_H;
+            if (event.y < m.bodyTop) return true;
+            const int visRow = scrollRow + (event.y - m.bodyTop) / m.rowH;
             const auto visIdx = visibleChannelIndices();
             if (visRow < 0 || visRow >= cast(int)visIdx.length) return true;
             auto ch = &model_.channels[visIdx[visRow]];
 
             // Mute/Solo LED
-            if (event.x >= _pos.left + 8 && event.x <= _pos.left + 22) {
+            if (event.x >= _pos.left + dp(8) && event.x <= _pos.left + dp(22)) {
                 if (event.button == MouseButton.Right) {
                     ch.soloed = !ch.soloed;
                 } else {
@@ -380,7 +381,7 @@ class ChannelRackWidget : Widget {
             }
 
             // Pan knob
-            if (event.x >= _pos.left + 24 && event.x <= _pos.left + 49) {
+            if (event.x >= _pos.left + dp(24) && event.x <= _pos.left + dp(49)) {
                 if (event.button == MouseButton.Right) {
                     ch.pan = 0.0f;
                     model_.hintText = format("%s Pan: Center", ch.name);
@@ -395,7 +396,7 @@ class ChannelRackWidget : Widget {
             }
 
             // Volume knob
-            if (event.x >= _pos.left + 50 && event.x <= _pos.left + 78) {
+            if (event.x >= _pos.left + dp(50) && event.x <= _pos.left + dp(78)) {
                 if (event.button == MouseButton.Right) {
                     ch.volume = 0.78f;
                     model_.hintText = format("%s Volume: 78%%", ch.name);
@@ -410,7 +411,7 @@ class ChannelRackWidget : Widget {
             }
 
             // Mixer Target Insert
-            if (event.x >= _pos.left + 80 && event.x <= _pos.left + 114) {
+            if (event.x >= _pos.left + dp(80) && event.x <= _pos.left + dp(114)) {
                 if (event.button == MouseButton.Right) {
                     ch.mixerInsert = (ch.mixerInsert > 0) ? ch.mixerInsert - 1 : 12;
                 } else {
@@ -423,7 +424,7 @@ class ChannelRackWidget : Widget {
             }
 
             // Channel Name Pill: single-click selects, double-click opens Plugin Wrapper, right-click opens Piano Roll
-            if (event.x < stepAreaLeft) {
+            if (event.x < m.stepAreaLeft) {
                 model_.selectPianoRollChannel(visIdx[visRow]);
                 if (event.button == MouseButton.Right) {
                     if (onSelectChannel !is null) onSelectChannel(ch.index);
@@ -440,7 +441,7 @@ class ChannelRackWidget : Widget {
             }
 
             // 16-Step Sequencer Pad
-            const int stepIdx = (event.x - stepAreaLeft) / stepW;
+            const int stepIdx = (event.x - m.stepAreaLeft) / m.stepW;
             if (stepIdx >= 0 && stepIdx < 16) {
                 dragTarget_ = DragTarget.STEP_PAINT;
                 dragChannelArrIdx_ = visIdx[visRow];
@@ -460,7 +461,7 @@ class ChannelRackWidget : Widget {
         }
 
         if (event.action == MouseAction.Move && dragTarget_ != DragTarget.NONE) {
-            const float delta = cast(float)(dragStartY_ - event.y) / 100.0f;
+            const float delta = cast(float)(dragStartY_ - event.y) / dpf(100.0f);
             final switch (dragTarget_) {
                 case DragTarget.NONE:
                     break;
@@ -498,7 +499,7 @@ class ChannelRackWidget : Widget {
                     return true;
                 case DragTarget.STEP_PAINT:
                     if (dragChannelArrIdx_ >= 0 && dragChannelArrIdx_ < cast(int)model_.channels.length) {
-                        const int stepIdx = (event.x - stepAreaLeft) / stepW;
+                        const int stepIdx = (event.x - m.stepAreaLeft) / m.stepW;
                         if (stepIdx >= 0 && stepIdx < 16 &&
                             model_.channels[dragChannelArrIdx_].steps[stepIdx] != dragStepPaintVal_) {
                             model_.channels[dragChannelArrIdx_].steps[stepIdx] = dragStepPaintVal_;
@@ -511,7 +512,7 @@ class ChannelRackWidget : Widget {
                     }
                     return true;
                 case DragTarget.GRAPH_BAR:
-                    updateGraphBarAt(event.x, event.y, stepAreaLeft, stepW, graphAreaTop);
+                    updateGraphBarAt(event.x, event.y, m.stepAreaLeft, m.stepW, m.graphAreaTop);
                     return true;
             }
         }
@@ -530,8 +531,8 @@ class ChannelRackWidget : Widget {
         if (!model_) return;
         const int stepIdx = (mx - stepAreaLeft) / stepW;
         if (stepIdx < 0 || stepIdx >= 16) return;
-        const int barsTop = graphAreaTop + 26;
-        const int barsBot = _pos.bottom - 6;
+        const int barsTop = graphAreaTop + dp(26);
+        const int barsBot = _pos.bottom - dp(6);
         if (barsBot <= barsTop) return;
         float norm = cast(float)(barsBot - my) / cast(float)(barsBot - barsTop);
         if (norm < 0.0f) norm = 0.0f;

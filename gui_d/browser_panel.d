@@ -1,13 +1,16 @@
 module gui_d.browser_panel;
 
 import dlangui;
+import dlangui.graphics.colors : COLOR_TRANSPARENT;
 import dlangui.graphics.drawbuf : DrawBuf;
+import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.controls : Button, TextWidget;
 import dlangui.widgets.editors : EditLine;
 import dlangui.widgets.layouts : HorizontalLayout, VerticalLayout;
 import dlangui.widgets.scroll : ScrollWidget;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : drawCard, FlPalette, getFlPalette, truncateLabel;
+import gui_d.theme : dp, drawCard, drawVCenteredText, FlCompactButton, FlPalette,
+    getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
 import gui_d.transport_model : BrowserCategory, PatternState, TransportModel;
 import std.algorithm : canFind;
 import std.conv : to;
@@ -73,17 +76,19 @@ void drawSampleWaveformPreview(
 ) {
     const pal = model ? model.palette() : getFlPalette();
     drawCard(buf, rc, pal.bgLcd, pal.borderSubtle, 3.0f);
-    if (rc.width < 24 || rc.height < 20) return;
+    if (rc.width < dp(24) || rc.height < dp(20)) return;
 
-    const int wfTop = rc.top + 18;
-    const int wfBot = rc.bottom - 4;
+    const int padX = dp(5);
+    const int hdrH = dp(16);
+    const int wfTop = rc.top + hdrH + dp(2);
+    const int wfBot = rc.bottom - dp(4);
     const int midY = (wfTop + wfBot) / 2;
     const int halfH = (wfBot - wfTop) / 2;
 
-    buf.fillRect(Rect(rc.left + 4, midY, rc.right - 4, midY + 1), pal.borderSubtle);
+    buf.fillRect(Rect(rc.left + dp(4), midY, rc.right - dp(4), midY + dp(1)), pal.borderSubtle);
 
-    if (model && model.samplePreview.waveform.length > 0 && halfH >= 3) {
-        const w = rc.width - 10;
+    if (model && model.samplePreview.waveform.length > 0 && halfH >= dp(3)) {
+        const w = rc.width - padX * 2;
         const wf = model.samplePreview.waveform;
         foreach (px; 0 .. w) {
             const size_t bucket = (cast(size_t)px * wf.length) / cast(size_t)w;
@@ -92,15 +97,17 @@ void drawSampleWaveformPreview(
             if (amp > 1.0f) amp = 1.0f;
             int barH = cast(int)(amp * halfH);
             if (barH < 1) barH = 1;
-            buf.fillRect(Rect(rc.left + 5 + px, midY - barH, rc.left + 6 + px, midY + barH),
+            buf.fillRect(Rect(rc.left + padX + px, midY - barH, rc.left + padX + px + 1, midY + barH),
                          pal.accentCyan);
         }
     }
 
-    if (!fnt.isNull && model) {
-        fnt.drawText(buf, rc.left + 6, rc.top + 3,
-                     toUTF32(truncateLabel(model.samplePreview.name, 18)),
-                     pal.accentOrange);
+    if (model) {
+        auto labelFnt = getDawFont(10, fnt, FontWeight.Bold);
+        drawVCenteredText(buf, labelFnt, rc.left + dp(6),
+                          Rect(rc.left, rc.top + dp(1), rc.right, rc.top + hdrH),
+                          toUTF32(truncateLabel(model.samplePreview.name, 18)),
+                          pal.accentOrange);
     }
 }
 
@@ -113,13 +120,20 @@ class BrowserPreviewWidget : Widget {
         super(id);
         model_ = model;
         layoutWidth = FILL_PARENT;
-        layoutHeight = 56;
-        minHeight = 56;
+        layoutHeight = dp(54);
+        minHeight = dp(54);
+    }
+
+    override void measure(int parentWidth, int parentHeight) {
+        const int h = dp(54);
+        minHeight = h;
+        layoutHeight = h;
+        measuredContent(parentWidth, parentHeight, parentWidth, h);
     }
 
     override void onDraw(DrawBuf buf) {
         if (visibility != Visibility.Visible) return;
-        drawSampleWaveformPreview(buf, _pos, model_, font);
+        drawSampleWaveformPreview(buf, _pos, model_, safeWidgetFont(this));
     }
 
     override bool onMouseEvent(MouseEvent event) {
@@ -138,6 +152,8 @@ class BrowserPanel : VerticalLayout {
     private EditLine edSearch_;
     private VerticalLayout listBody_;
     private BrowserPreviewWidget previewWidget_;
+    private FlCompactButton btnScan_;
+    private FlCompactButton[5] keyBtns_;
     private bool[string] collapsedSections_;
     private Button[5] tabBtns_;
 
@@ -152,23 +168,24 @@ class BrowserPanel : VerticalLayout {
     this(string id, TransportModel* model) {
         super(id);
         model_ = model;
-        layoutWidth = 250;
-        minWidth = 220;
-        maxWidth = 300;
+        layoutWidth = dp(248);
+        minWidth = dp(220);
+        maxWidth = dp(290);
         layoutHeight = FILL_PARENT;
         const pal = model_ ? model_.palette() : getFlPalette();
         backgroundColor = pal.bgWindowHeader;
-        padding = Rect(5, 5, 5, 5);
+        padding = Rect(dp(5), dp(5), dp(5), dp(5));
 
         auto hdrRow = new HorizontalLayout("br_hdr_row");
         hdrRow.layoutWidth = FILL_PARENT;
+        hdrRow.margins = Rect(0, 0, 0, dp(3));
         auto hdr = new TextWidget("br_hdr", "BROWSER"d);
         hdr.textColor = pal.accentOrange;
-        hdr.padding = Rect(4, 2, 4, 4);
+        hdr.fontSize = dp(11);
+        hdr.padding = Rect(dp(4), dp(2), dp(4), dp(2));
         hdr.layoutWidth = FILL_PARENT;
-        auto btnScan = new Button("br_scan", "SCAN VST3"d);
-        btnScan.focusable = false;
-        btnScan.click = (Widget s) {
+        btnScan_ = new FlCompactButton("br_scan", "SCAN VST3"d, pal, 10, 20, true, true);
+        btnScan_.click = (Widget s) {
             if (onScanVst3 !is null) {
                 onScanVst3("testdata");
                 onScanVst3("/Library/Audio/Plug-Ins/VST3");
@@ -176,17 +193,17 @@ class BrowserPanel : VerticalLayout {
             return true;
         };
         hdrRow.addChild(hdr);
-        hdrRow.addChild(btnScan);
+        hdrRow.addChild(btnScan_);
         addChild(hdrRow);
 
         // FL Studio 2026 Browser Tabs: ALL | PROJ | PLUG | SMP | REC
         auto tabs = new HorizontalLayout("br_tabs");
         tabs.layoutWidth = FILL_PARENT;
-        auto btnAll  = new Button("br_all",  "ALL"d);
-        auto btnProj = new Button("br_proj", "PROJ"d);
-        auto btnPlug = new Button("br_plug", "PLUG"d);
-        auto btnSmp  = new Button("br_smp",  "SMP"d);
-        auto btnRec  = new Button("br_rec",  "REC"d);
+        auto btnAll = new FlCompactButton("br_all", "ALL"d, pal, 10, 22, true, true);
+        auto btnProj = new FlCompactButton("br_proj", "PROJ"d, pal, 10, 22, true, true);
+        auto btnPlug = new FlCompactButton("br_plug", "PLUG"d, pal, 10, 22, true, true);
+        auto btnSmp = new FlCompactButton("br_smp", "SMP"d, pal, 10, 22, true, true);
+        auto btnRec = new FlCompactButton("br_rec", "REC"d, pal, 10, 22, true, true);
         tabBtns_ = [btnAll, btnProj, btnPlug, btnSmp, btnRec];
         foreach (b; tabBtns_) {
             b.layoutWidth = FILL_PARENT;
@@ -203,7 +220,9 @@ class BrowserPanel : VerticalLayout {
 
         edSearch_ = new EditLine("br_search", ""d);
         edSearch_.layoutWidth = FILL_PARENT;
-        edSearch_.margins = Rect(0, 3, 0, 3);
+        edSearch_.fontSize = dp(11);
+        edSearch_.minHeight = dp(22);
+        edSearch_.margins = Rect(0, dp(3), 0, dp(3));
         edSearch_.contentChange = (EditableContent content) {
             refresh();
         };
@@ -220,7 +239,7 @@ class BrowserPanel : VerticalLayout {
 
         // Bottom Sample Waveform Preview
         previewWidget_ = new BrowserPreviewWidget("br_preview", model_);
-        previewWidget_.margins = Rect(0, 4, 0, 3);
+        previewWidget_.margins = Rect(0, dp(4), 0, dp(3));
         previewWidget_.onAuditionClick = () {
             if (onPreviewNote !is null) onPreviewNote(60);
         };
@@ -233,13 +252,14 @@ class BrowserPanel : VerticalLayout {
         static immutable string[5] LABELS = ["C4", "D4", "E4", "G4", "C5"];
         foreach (i; 0 .. 5) {
             const uint n = NOTES[i];
-            auto bk = new Button(null, toUTF32(LABELS[i]));
+            auto bk = new FlCompactButton(null, toUTF32(LABELS[i]), pal, 10, 22, true, false);
             bk.layoutWidth = FILL_PARENT;
             bk.focusable = false;
             bk.click = (Widget s) {
                 if (onPreviewNote !is null) onPreviewNote(n);
                 return true;
             };
+            keyBtns_[i] = bk;
             keyRow.addChild(bk);
         }
         addChild(keyRow);
@@ -247,9 +267,27 @@ class BrowserPanel : VerticalLayout {
         refresh();
     }
 
+    override void measure(int parentWidth, int parentHeight) {
+        layoutWidth = dp(248);
+        minWidth = dp(220);
+        maxWidth = dp(290);
+        padding = Rect(dp(5), dp(5), dp(5), dp(5));
+        edSearch_.fontSize = dp(11);
+        edSearch_.minHeight = dp(22);
+        super.measure(parentWidth, parentHeight);
+    }
+
     void refresh() {
         const pal = model_ ? model_.palette() : getFlPalette();
         backgroundColor = pal.bgWindowHeader;
+        if (btnScan_ !is null) {
+            btnScan_.updatePalette(pal);
+            btnScan_.customFillColor = pal.bgPanelAlt;
+            btnScan_.customTextColor = pal.accentCyan;
+        }
+        foreach (bk; keyBtns_) {
+            if (bk !is null) bk.updatePalette(pal);
+        }
 
         static immutable BrowserCategory[5] CATS = [
             BrowserCategory.ALL,
@@ -261,8 +299,14 @@ class BrowserPanel : VerticalLayout {
         foreach (i; 0 .. 5) {
             if (tabBtns_[i] is null) continue;
             const bool active = activeCat_ == CATS[i];
-            tabBtns_[i].backgroundColor = active ? pal.accentOrange : pal.bgControl;
-            tabBtns_[i].textColor = active ? pal.bgLcd : pal.fgText;
+            if (auto fb = cast(FlCompactButton)tabBtns_[i]) {
+                fb.updatePalette(pal);
+                fb.customFillColor = active ? pal.accentOrange : pal.bgControl;
+                fb.customTextColor = active ? pal.bgLcd : pal.fgText;
+            } else {
+                tabBtns_[i].backgroundColor = active ? pal.accentOrange : pal.bgControl;
+                tabBtns_[i].textColor = active ? pal.bgLcd : pal.fgText;
+            }
         }
 
         listBody_.removeAllChildren();
@@ -305,11 +349,11 @@ class BrowserPanel : VerticalLayout {
         foreach (sec; sectionOrder) {
             const bool collapsed = (sec in collapsedSections_) !is null && collapsedSections_[sec];
             const string secPrefix = collapsed ? "> " : "v ";
-            auto secBtn = new Button(null, toUTF32(secPrefix ~ sec));
+            auto secBtn = new FlCompactButton(null, toUTF32(secPrefix ~ sec), pal, 10, 20, false, true);
             secBtn.layoutWidth = FILL_PARENT;
             secBtn.focusable = false;
-            secBtn.backgroundColor = pal.bgPanelAlt;
-            secBtn.textColor = pal.accentCyan;
+            secBtn.customFillColor = pal.bgPanelAlt;
+            secBtn.customTextColor = pal.accentCyan;
             const string secKey = sec;
             secBtn.click = (Widget s) {
                 collapsedSections_[secKey] = !collapsed;
@@ -320,9 +364,11 @@ class BrowserPanel : VerticalLayout {
 
             if (collapsed) continue;
             foreach (item; grouped[sec]) {
-                auto btn = new Button(null, toUTF32("  " ~ item.label));
+                auto btn = new FlCompactButton(null, toUTF32("  " ~ item.label), pal, 11, 20, false, false);
                 btn.layoutWidth = FILL_PARENT;
                 btn.focusable = false;
+                btn.customFillColor = pal.bgPanel;
+                btn.customBorderColor = COLOR_TRANSPARENT;
                 const auto entry = item;
                 btn.click = (Widget s) {
                     if (entry.category == BrowserCategory.PLUGINS) {
@@ -368,6 +414,8 @@ unittest {
             _glyph.blackBoxX = 6;
             _glyph.blackBoxY = 10;
             _glyph.originY = 10;
+            _glyph.glyph = new ubyte[](_glyph.blackBoxX * _glyph.blackBoxY);
+            _glyph.glyph[] = 0xC0;
         }
         override @property int size() { return 12; }
         override @property int height() { return 14; }
@@ -396,6 +444,14 @@ unittest {
     if (currentTheme is null) {
         currentTheme = createDefaultTheme();
     }
+    import dlangui.graphics.resources : drawableCache, DrawableCache, embedStandardDlangUIResources,
+        imageCache, ImageCache;
+    const bool hadDrawableCache = drawableCache !is null;
+    if (!hadDrawableCache) {
+        embedStandardDlangUIResources();
+        if (imageCache is null) imageCache = new ImageCache();
+        drawableCache = new DrawableCache();
+    }
     const bool hadFontMgr = FontManager.instance !is null;
     if (!hadFontMgr) {
         FontManager.instance = new HeadlessTestFontManager();
@@ -406,6 +462,10 @@ unittest {
         destroyWidgetTree(bp);
         bp = null;
         currentTheme = null;
+        if (!hadDrawableCache) {
+            drawableCache = null;
+            imageCache = null;
+        }
         if (!hadFontMgr) {
             FontManager.instance = null;
         }
@@ -413,10 +473,10 @@ unittest {
 
     TransportModel model;
     model.initDefaultTemplate();
-    auto buf = new ColorDrawBuf(220, 60);
+    auto buf = new ColorDrawBuf(480, 320);
     drawSampleWaveformPreview(buf, Rect(0, 0, 220, 60), &model);
     const pal = model.palette();
-    // Centerline should be present at midY
+    // Centerline and preview text should render safely via FontManager without crashing
     assert(buf.scanLine(5)[5] == pal.bgLcd || buf.scanLine(37)[20] == pal.accentCyan ||
            buf.scanLine(2)[10] == pal.borderSubtle);
 
@@ -434,4 +494,19 @@ unittest {
         }
     }
     assert(foundDynPattern);
+
+    // Reproduce 1x (96 DPI) and 2x (192 DPI) measure/layout/draw cycle
+    import dlangui.core.types : overrideScreenDPI;
+    scope (exit) overrideScreenDPI = 0;
+    overrideScreenDPI = 96;
+    bp.measure(248, 300);
+    const int w1x = bp.measuredWidth;
+    bp.layout(Rect(0, 0, 248, 300));
+    bp.onDraw(buf);
+
+    overrideScreenDPI = 192;
+    bp.measure(496, 600);
+    assert(bp.measuredWidth > w1x, "BrowserPanel width must scale cleanly at 192 DPI");
+    bp.layout(Rect(0, 0, 480, 320));
+    bp.onDraw(buf);
 }

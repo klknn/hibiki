@@ -5,7 +5,7 @@ import core.stdc.math : sinf;
 import core.thread : Thread;
 import core.time : msecs;
 import dlangui;
-import dlangui.widgets.controls : Button, TextWidget;
+import dlangui.widgets.controls : TextWidget;
 import dlangui.widgets.editors : EditLine;
 import dlangui.widgets.layouts : HorizontalLayout, VerticalLayout;
 import dlangui.widgets.menu : MenuItem, PopupMenu;
@@ -17,7 +17,7 @@ import gui_d.ipc_client;
 import gui_d.mixer_view : MixerCanvasWidget;
 import gui_d.piano_roll : PianoRollCanvasWidget;
 import gui_d.plugin_window : PluginWrapperWidget;
-import gui_d.theme : FlThemeId;
+import gui_d.theme : dp, FlCompactButton, FlThemeId;
 import gui_d.timeline_view : beatDurationSec, TimelineCanvasWidget;
 import gui_d.toolbar : FlToolbarWidget;
 import gui_d.transport_model;
@@ -94,18 +94,21 @@ extern (C) int UIAppMain(string[] args) {
     root.layoutWidth = FILL_PARENT;
     root.layoutHeight = FILL_PARENT;
 
+    const initPal = model.palette();
+
     // 1. Top FL Studio Menu Strip + Hint Panel + Theme Quick Toggle
     auto menuRow = new HorizontalLayout("menu_row");
-    menuRow.padding = Rect(6, 3, 6, 3);
+    menuRow.padding = Rect(dp(6), dp(3), dp(6), dp(3));
     menuRow.layoutWidth = FILL_PARENT;
     menuRow.layoutHeight = WRAP_CONTENT;
 
     auto hintBar = new TextWidget("hint_bar", toUTF32(model.hintText));
-    hintBar.padding = Rect(10, 4, 10, 4);
+    hintBar.padding = Rect(dp(10), dp(4), dp(10), dp(4));
+    hintBar.fontSize = dp(11);
     hintBar.layoutWidth = FILL_PARENT;
 
-    auto btnTheme = new Button("btn_theme", "Theme: FL Default Dark"d);
-    btnTheme.focusable = false;
+    auto btnTheme = new FlCompactButton("btn_theme", "Theme: FL Default Dark"d, initPal, 11, 22, true, false);
+    FlCompactButton[] menuBarButtons;
 
     // 2. Modular FL Studio 2026 Toolbar
     auto toolbar = new FlToolbarWidget("fl_toolbar", &model);
@@ -125,15 +128,15 @@ extern (C) int UIAppMain(string[] args) {
     auto pluginWrapper = new PluginWrapperWidget("plugin_wrapper", &model);
 
     auto winPlaylist = new FlWindowFrame("win_playlist", "Playlist - Arrangement 1",
-                                         &model, playlistCanvas, Rect(0, 0, 730, 430), 360, 200);
+                                         &model, playlistCanvas, Rect(0, 0, dp(730), dp(430)), 360, 200);
     auto winChannelRack = new FlWindowFrame("win_channel_rack", "Channel Rack - Pattern 1",
-                                            &model, channelRack, Rect(736, 0, 1180, 340), 420, 170);
+                                            &model, channelRack, Rect(dp(736), 0, dp(1180), dp(340)), 420, 170);
     auto winPianoRoll = new FlWindowFrame("win_piano_roll", "Piano roll - Acid Bass",
-                                          &model, pianoRollCanvas, Rect(0, 436, 610, 760), 340, 200);
+                                          &model, pianoRollCanvas, Rect(0, dp(436), dp(610), dp(760)), 340, 200);
     auto winMixer = new FlWindowFrame("win_mixer", "Mixer - Master",
-                                      &model, mixerCanvas, Rect(616, 346, 1180, 760), 440, 240);
+                                      &model, mixerCanvas, Rect(dp(616), dp(346), dp(1180), dp(760)), 440, 240);
     auto winPlugin = new FlWindowFrame("win_plugin", "Fruity Wrapper - Acid Bass",
-                                       &model, pluginWrapper, Rect(320, 160, 800, 480), 360, 240);
+                                       &model, pluginWrapper, Rect(dp(320), dp(160), dp(800), dp(480)), 360, 240);
     winPlugin.visibility = Visibility.Gone;
 
     // Add in initial Z-order (last added = topmost)
@@ -147,7 +150,8 @@ extern (C) int UIAppMain(string[] args) {
     workspace.addChild(desktop);
 
     auto statusBar = new TextWidget("status_bar", toUTF32(model.statusMessage));
-    statusBar.padding = Rect(10, 3, 10, 3);
+    statusBar.padding = Rect(dp(10), dp(3), dp(10), dp(3));
+    statusBar.fontSize = dp(11);
     statusBar.layoutWidth = FILL_PARENT;
 
     void applyThemeColors() {
@@ -159,6 +163,10 @@ extern (C) int UIAppMain(string[] args) {
         statusBar.backgroundColor = pal.bgWindowHeader;
         statusBar.textColor = pal.fgMuted;
         btnTheme.text = toUTF32("Theme: " ~ pal.name);
+        btnTheme.updatePalette(pal);
+        foreach (mb; menuBarButtons) {
+            mb.updatePalette(pal);
+        }
         browserPanel.refresh();
     }
 
@@ -220,13 +228,13 @@ extern (C) int UIAppMain(string[] args) {
     }
 
     // Top Main Menu Bar Buttons
-    auto btnFile = new Button("m_file", "FILE"d);
-    auto btnEdit = new Button("m_edit", "EDIT"d);
-    auto btnAdd  = new Button("m_add",  "ADD"d);
-    auto btnPat  = new Button("m_pat",  "PATTERNS"d);
-    auto btnView = new Button("m_view", "VIEW"d);
-    auto btnOpt  = new Button("m_opt",  "OPTIONS"d);
-    auto btnHelp = new Button("m_help", "HELP"d);
+    auto btnFile = new FlCompactButton("m_file", "FILE"d, initPal, 11, 22, true, false);
+    auto btnEdit = new FlCompactButton("m_edit", "EDIT"d, initPal, 11, 22, true, false);
+    auto btnAdd  = new FlCompactButton("m_add",  "ADD"d, initPal, 11, 22, true, false);
+    auto btnPat  = new FlCompactButton("m_pat",  "PATTERNS"d, initPal, 11, 22, true, false);
+    auto btnView = new FlCompactButton("m_view", "VIEW"d, initPal, 11, 22, true, false);
+    auto btnOpt  = new FlCompactButton("m_opt",  "OPTIONS"d, initPal, 11, 22, true, false);
+    auto btnHelp = new FlCompactButton("m_help", "HELP"d, initPal, 11, 22, true, false);
 
     btnFile.click = (Widget s) {
         auto m = new MenuItem();
@@ -380,6 +388,7 @@ extern (C) int UIAppMain(string[] args) {
 
     foreach (mb; [btnFile, btnEdit, btnAdd, btnPat, btnView, btnOpt, btnHelp]) {
         mb.focusable = false;
+        menuBarButtons ~= mb;
         menuRow.addChild(mb);
     }
     menuRow.addChild(hintBar);

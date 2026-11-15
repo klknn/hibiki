@@ -2,9 +2,10 @@ module gui_d.timeline_view;
 
 import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
+import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : adjustColorBrightness, drawCard, drawPlayheadTriangle, drawThickLine,
-    FlPalette, getFlPalette, truncateLabel;
+import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawPlayheadTriangle,
+    drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel, uiScale;
 import gui_d.transport_model : AutomationPoint, EditorTool, PlaylistClipKind,
     TimelineClipState, TransportModel;
 import gui_d.workspace : activateParentWindow;
@@ -34,6 +35,51 @@ private enum int HEADER_W = 132;
 private enum int RULER_H = 26;
 private enum int LANE_H = 50;
 
+/// DPI-scaled Playlist layout shared identically between `drawTimelineCanvas` and `TimelineCanvasWidget`.
+struct TimelineMetrics {
+    int toolbarH;
+    int pickerW;
+    int headerW;
+    int rulerH;
+    int laneH;
+    int contentTop;
+    int lanesTop;
+    bool hasPicker;
+    Rect pkrRc;
+    int tracksLeft;
+    Rect arrRc;
+    Rect pickToggleRc;
+    Rect[8] toolBtns;
+    Rect zoomOutRc;
+    Rect zoomInRc;
+}
+
+TimelineMetrics computeTimelineMetrics(Rect rc, const(TransportModel)* model) nothrow @safe {
+    TimelineMetrics m;
+    m.toolbarH = dp(TOOLBAR_H);
+    m.pickerW = dp(PICKER_W);
+    m.headerW = dp(HEADER_W);
+    m.rulerH = dp(RULER_H);
+    m.laneH = dp(LANE_H);
+    m.contentTop = rc.top + m.toolbarH;
+    m.lanesTop = m.contentTop + m.rulerH;
+
+    const bool showPicker = model ? model.showClipPicker : true;
+    m.hasPicker = showPicker && rc.width > m.pickerW + m.headerW + dp(140);
+    m.pkrRc = Rect(rc.left, m.contentTop, rc.left + m.pickerW, rc.bottom);
+    m.tracksLeft = m.hasPicker ? m.pkrRc.right : rc.left;
+    m.arrRc = Rect(m.tracksLeft + m.headerW, m.contentTop, rc.right, rc.bottom);
+
+    m.pickToggleRc = Rect(rc.left + dp(6), rc.top + dp(4), rc.left + dp(50), m.contentTop - dp(4));
+    foreach (i; 0 .. 8) {
+        const int bx0 = rc.left + dp(58 + cast(int)i * 25);
+        m.toolBtns[i] = Rect(bx0, rc.top + dp(4), bx0 + dp(22), m.contentTop - dp(4));
+    }
+    m.zoomOutRc = Rect(rc.right - dp(56), rc.top + dp(4), rc.right - dp(32), m.contentTop - dp(4));
+    m.zoomInRc = Rect(rc.right - dp(30), rc.top + dp(4), rc.right - dp(6), m.contentTop - dp(4));
+    return m;
+}
+
 private struct ToolButtonDef {
     EditorTool tool;
     string shortLbl;
@@ -62,122 +108,106 @@ void drawTimelineCanvas(
 ) {
     const pal = model ? model.palette() : getFlPalette();
     buf.fillRect(rc, pal.bgWindow);
-    if (rc.width < 220 || rc.height < 90) return;
+    if (rc.width < dp(220) || rc.height < dp(90)) return;
+
+    const m = computeTimelineMetrics(rc, model);
+    const int bw = dp(1);
+    FontRef boldFnt = getDawFont(10, fnt, FontWeight.Bold);
+    FontRef uiFnt = getDawFont(10, fnt, FontWeight.Normal);
+    FontRef smallFnt = getDawFont(9, fnt, FontWeight.Normal);
 
     // 1. Top Playlist Toolbar
-    Rect tbRc = Rect(rc.left, rc.top, rc.right, rc.top + TOOLBAR_H);
+    Rect tbRc = Rect(rc.left, rc.top, rc.right, m.contentTop);
     buf.fillRect(tbRc, pal.bgPanelAlt);
-    buf.fillRect(Rect(tbRc.left, tbRc.bottom - 1, tbRc.right, tbRc.bottom), pal.borderStrong);
+    buf.fillRect(Rect(tbRc.left, tbRc.bottom - bw, tbRc.right, tbRc.bottom), pal.borderStrong);
 
     const bool showPicker = model ? model.showClipPicker : true;
-    Rect pickToggleRc = Rect(tbRc.left + 6, tbRc.top + 4, tbRc.left + 50, tbRc.bottom - 4);
-    drawCard(buf, pickToggleRc, showPicker ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, pickToggleRc.left + 7, pickToggleRc.top + 2, "PICK"d,
-                     showPicker ? pal.bgLcd : pal.fgText);
-    }
+    drawCard(buf, m.pickToggleRc, showPicker ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCenteredText(buf, boldFnt, m.pickToggleRc, "PICK"d, showPicker ? pal.bgLcd : pal.fgText);
 
     foreach (i, const ref td; PLAYLIST_TOOLS) {
-        const int bx0 = tbRc.left + 58 + cast(int)i * 25;
-        Rect bRc = Rect(bx0, tbRc.top + 4, bx0 + 22, tbRc.bottom - 4);
+        Rect bRc = m.toolBtns[i];
         const bool active = model && model.playlistTool == td.tool;
         drawCard(buf, bRc, active ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
-        if (!fnt.isNull) {
-            fnt.drawText(buf, bRc.left + 7, bRc.top + 2, toUTF32(td.shortLbl),
-                         active ? pal.bgLcd : pal.fgText);
-        }
+        drawCenteredText(buf, boldFnt, bRc, toUTF32(td.shortLbl), active ? pal.bgLcd : pal.fgText);
     }
 
     // Zoom +/- buttons on right
-    Rect zoomOutRc = Rect(tbRc.right - 56, tbRc.top + 4, tbRc.right - 32, tbRc.bottom - 4);
-    Rect zoomInRc  = Rect(tbRc.right - 30, tbRc.top + 4, tbRc.right - 6,  tbRc.bottom - 4);
-    drawCard(buf, zoomOutRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, zoomInRc,  pal.bgControl, pal.borderSubtle, 3.0f);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, zoomOutRc.left + 8, zoomOutRc.top + 2, "-"d, pal.fgText);
-        fnt.drawText(buf, zoomInRc.left + 7,  zoomInRc.top + 2,  "+"d, pal.fgText);
-    }
+    drawCard(buf, m.zoomOutRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, m.zoomInRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCenteredText(buf, boldFnt, m.zoomOutRc, "-"d, pal.fgText);
+    drawCenteredText(buf, boldFnt, m.zoomInRc, "+"d, pal.fgText);
 
     // 2. Optional Left Clip Picker Panel (Pattern / Audio / Automation)
-    const int contentTop = tbRc.bottom;
-    int tracksLeft = rc.left;
-    if (showPicker && rc.width > PICKER_W + HEADER_W + 140) {
-        Rect pkrRc = Rect(rc.left, contentTop, rc.left + PICKER_W, rc.bottom);
+    const int contentTop = m.contentTop;
+    const int tracksLeft = m.tracksLeft;
+    if (m.hasPicker) {
+        Rect pkrRc = m.pkrRc;
         buf.fillRect(pkrRc, pal.bgPanelAlt);
-        buf.fillRect(Rect(pkrRc.right - 1, pkrRc.top, pkrRc.right, pkrRc.bottom), pal.borderStrong);
+        buf.fillRect(Rect(pkrRc.right - bw, pkrRc.top, pkrRc.right, pkrRc.bottom), pal.borderStrong);
 
         // 3 Kind Tabs: PAT | AUD | AUT
         static immutable string[3] K_LBLS = ["PAT", "AUD", "AUT"];
         static immutable PlaylistClipKind[3] KINDS = [
             PlaylistClipKind.PATTERN, PlaylistClipKind.AUDIO, PlaylistClipKind.AUTOMATION
         ];
-        const int tabW = (PICKER_W - 12) / 3;
+        const int tabW = (m.pickerW - dp(12)) / 3;
         foreach (k; 0 .. 3) {
-            Rect ktRc = Rect(pkrRc.left + 4 + k * (tabW + 2), pkrRc.top + 4,
-                             pkrRc.left + 4 + k * (tabW + 2) + tabW, pkrRc.top + 24);
+            Rect ktRc = Rect(pkrRc.left + dp(4) + k * (tabW + dp(2)), pkrRc.top + dp(4),
+                             pkrRc.left + dp(4) + k * (tabW + dp(2)) + tabW, pkrRc.top + dp(24));
             const bool kAct = model && model.activePickerKind == KINDS[k];
             drawCard(buf, ktRc, kAct ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
-            if (!fnt.isNull) {
-                fnt.drawText(buf, ktRc.left + 7, ktRc.top + 2, toUTF32(K_LBLS[k]),
-                             kAct ? pal.bgLcd : pal.fgText);
-            }
+            drawCenteredText(buf, boldFnt, ktRc, toUTF32(K_LBLS[k]), kAct ? pal.bgLcd : pal.fgText);
         }
 
         // Picker entries
         const PlaylistClipKind curKind = model ? model.activePickerKind : PlaylistClipKind.PATTERN;
         const int curIdx = model ? model.activePickerIndex : 0;
+        const int rowStep = dp(26);
+        const int itemH = dp(22);
         if (curKind == PlaylistClipKind.PATTERN && model) {
             foreach (i, const ref pat; model.patterns) {
-                const int py = pkrRc.top + 30 + cast(int)i * 26;
-                if (py + 22 > pkrRc.bottom) break;
-                Rect itemRc = Rect(pkrRc.left + 6, py, pkrRc.right - 6, py + 22);
+                const int py = pkrRc.top + dp(30) + cast(int)i * rowStep;
+                if (py + itemH > pkrRc.bottom) break;
+                Rect itemRc = Rect(pkrRc.left + dp(6), py, pkrRc.right - dp(6), py + itemH);
                 const bool sel = (cast(int)i == curIdx);
                 drawCard(buf, itemRc, pat.color, sel ? pal.accentOrange : pal.borderStrong, 3.0f);
-                if (!fnt.isNull) {
-                    fnt.drawText(buf, itemRc.left + 6, itemRc.top + 3,
-                                 toUTF32(truncateLabel(pat.name, 14)), pal.fgText);
-                }
+                drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc,
+                                  toUTF32(truncateLabel(pat.name, 14)), pal.fgText);
             }
         } else if (curKind == PlaylistClipKind.AUDIO) {
             static immutable string[3] AUD_NAMES = ["loop140.wav", "bb140.wav", "808_sub.wav"];
             foreach (i, nm; AUD_NAMES) {
-                const int py = pkrRc.top + 30 + cast(int)i * 26;
-                Rect itemRc = Rect(pkrRc.left + 6, py, pkrRc.right - 6, py + 22);
+                const int py = pkrRc.top + dp(30) + cast(int)i * rowStep;
+                Rect itemRc = Rect(pkrRc.left + dp(6), py, pkrRc.right - dp(6), py + itemH);
                 const bool sel = (cast(int)i == curIdx);
                 drawCard(buf, itemRc, pal.clipAudio, sel ? pal.accentCyan : pal.borderStrong, 3.0f);
-                if (!fnt.isNull) {
-                    fnt.drawText(buf, itemRc.left + 6, itemRc.top + 3, toUTF32(nm), pal.fgText);
-                }
+                drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc, toUTF32(nm), pal.fgText);
             }
         } else {
             static immutable string[2] AUT_NAMES = ["Acid Cutoff Env", "Master Volume Env"];
             foreach (i, nm; AUT_NAMES) {
-                const int py = pkrRc.top + 30 + cast(int)i * 26;
-                Rect itemRc = Rect(pkrRc.left + 6, py, pkrRc.right - 6, py + 22);
+                const int py = pkrRc.top + dp(30) + cast(int)i * rowStep;
+                Rect itemRc = Rect(pkrRc.left + dp(6), py, pkrRc.right - dp(6), py + itemH);
                 const bool sel = (cast(int)i == curIdx);
                 drawCard(buf, itemRc, pal.clipAutomation, sel ? pal.accentPurple : pal.borderStrong, 3.0f);
-                if (!fnt.isNull) {
-                    fnt.drawText(buf, itemRc.left + 6, itemRc.top + 3, toUTF32(nm), pal.fgText);
-                }
+                drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc, toUTF32(nm), pal.fgText);
             }
         }
-        tracksLeft = pkrRc.right;
     }
 
     // 3. Playlist Header Column & Arrangement Ruler
-    Rect arrRc = Rect(tracksLeft + HEADER_W, contentTop, rc.right, rc.bottom);
-    if (arrRc.width < 40) return;
+    Rect arrRc = m.arrRc;
+    if (arrRc.width < dp(40)) return;
 
-    Rect cornerRc = Rect(tracksLeft, contentTop, arrRc.left, contentTop + RULER_H);
+    Rect cornerRc = Rect(tracksLeft, contentTop, arrRc.left, m.lanesTop);
     buf.fillRect(cornerRc, pal.bgPanel);
-    buf.fillRect(Rect(cornerRc.left, cornerRc.bottom - 1, cornerRc.right, cornerRc.bottom), pal.borderStrong);
-    if (!fnt.isNull) {
-        fnt.drawText(buf, cornerRc.left + 8, cornerRc.top + 6, "Arrangement 1"d, pal.fgMuted);
-    }
+    buf.fillRect(Rect(cornerRc.left, cornerRc.bottom - bw, cornerRc.right, cornerRc.bottom), pal.borderStrong);
+    drawVCenteredText(buf, smallFnt, cornerRc.left + dp(8), cornerRc, "Arrangement 1"d, pal.fgMuted);
 
-    Rect rulerRc = Rect(arrRc.left, contentTop, arrRc.right, contentTop + RULER_H);
+    Rect rulerRc = Rect(arrRc.left, contentTop, arrRc.right, m.lanesTop);
     buf.fillRect(rulerRc, pal.bgLcd);
-    buf.fillRect(Rect(rulerRc.left, rulerRc.bottom - 1, rulerRc.right, rulerRc.bottom), pal.borderStrong);
+    buf.fillRect(Rect(rulerRc.left, rulerRc.bottom - bw, rulerRc.right, rulerRc.bottom), pal.borderStrong);
 
     // Loop region highlight on ruler
     if (model && model.loopEnabled && model.loopEndSec > model.loopStartSec) {
@@ -186,7 +216,7 @@ void drawTimelineCanvas(
         if (lx0 < rulerRc.left) lx0 = rulerRc.left;
         if (lx1 > rulerRc.right) lx1 = rulerRc.right;
         if (lx1 > lx0) {
-            buf.fillRect(Rect(lx0, rulerRc.top + 1, lx1, rulerRc.top + 6), pal.accentRed);
+            buf.fillRect(Rect(lx0, rulerRc.top + bw, lx1, rulerRc.top + dp(6)), pal.accentRed);
         }
     }
 
@@ -200,7 +230,7 @@ void drawTimelineCanvas(
         }
     }
     const int trackCount = laneTracks.length > 0 ? cast(int)laneTracks.length : 6;
-    const int lanesTop = contentTop + RULER_H;
+    const int lanesTop = m.lanesTop;
 
     // 4-bar alternating background shading
     for (int block = 0; ; ++block) {
@@ -218,16 +248,16 @@ void drawTimelineCanvas(
 
     // Track headers + lane dividers
     foreach (laneIdx; 0 .. trackCount) {
-        const int y0 = lanesTop + laneIdx * LANE_H;
-        int y1 = y0 + LANE_H;
-        if (y0 >= rc.bottom - 4) break;
+        const int y0 = lanesTop + laneIdx * m.laneH;
+        int y1 = y0 + m.laneH;
+        if (y0 >= rc.bottom - dp(4)) break;
         if (y1 > rc.bottom) y1 = rc.bottom;
 
         // Track Header
         Rect hdrRc = Rect(tracksLeft, y0, arrRc.left, y1);
         buf.fillRect(hdrRc, pal.bgPanel);
-        buf.fillRect(Rect(hdrRc.left, hdrRc.bottom - 1, hdrRc.right, hdrRc.bottom), pal.borderStrong);
-        buf.fillRect(Rect(hdrRc.right - 1, hdrRc.top, hdrRc.right, hdrRc.bottom), pal.borderStrong);
+        buf.fillRect(Rect(hdrRc.left, hdrRc.bottom - bw, hdrRc.right, hdrRc.bottom), pal.borderStrong);
+        buf.fillRect(Rect(hdrRc.right - bw, hdrRc.top, hdrRc.right, hdrRc.bottom), pal.borderStrong);
 
         const bool hasTrack = (model !is null && laneIdx < cast(int)laneTracks.length);
         const size_t tIdx = hasTrack ? laneTracks[laneIdx] : 0;
@@ -237,21 +267,19 @@ void drawTimelineCanvas(
         const bool soloed = hasTrack ? model.tracks[tIdx].soloed : false;
 
         // Track Color Bar on left
-        buf.fillRect(Rect(hdrRc.left, hdrRc.top, hdrRc.left + 4, hdrRc.bottom - 1), trkCol);
+        buf.fillRect(Rect(hdrRc.left, hdrRc.top, hdrRc.left + dp(4), hdrRc.bottom - bw), trkCol);
 
         // Mute LED on right of header
-        Rect mLed = Rect(hdrRc.right - 20, hdrRc.top + 8, hdrRc.right - 8, hdrRc.top + 20);
+        Rect mLed = Rect(hdrRc.right - dp(20), hdrRc.top + dp(8), hdrRc.right - dp(8), hdrRc.top + dp(20));
         drawCard(buf, mLed, soloed ? pal.accentAmber : (muted ? pal.ledOff : pal.accentGreen),
                  pal.borderStrong, 3.0f);
 
-        if (!fnt.isNull) {
-            fnt.drawText(buf, hdrRc.left + 10, hdrRc.top + 8,
-                         toUTF32(truncateLabel(title, 12)),
-                         muted ? pal.fgDim : pal.fgText);
-        }
+        drawVCenteredText(buf, uiFnt, hdrRc.left + dp(10), hdrRc,
+                          toUTF32(truncateLabel(title, 12)),
+                          muted ? pal.fgDim : pal.fgText);
 
         // Lane bottom divider
-        buf.fillRect(Rect(arrRc.left, y1 - 1, arrRc.right, y1), pal.borderStrong);
+        buf.fillRect(Rect(arrRc.left, y1 - bw, arrRc.right, y1), pal.borderStrong);
     }
 
     // Vertical Bar/Beat Grid Lines + Ruler Labels
@@ -261,12 +289,12 @@ void drawTimelineCanvas(
         if (gx >= arrRc.right) break;
         if (gx < arrRc.left) continue;
         const bool isBar = (beatIdx % 4) == 0;
-        buf.fillRect(Rect(gx, lanesTop, gx + 1, rc.bottom), isBar ? pal.borderSubtle : pal.borderStrong);
-        buf.fillRect(Rect(gx, isBar ? rulerRc.top + 8 : rulerRc.bottom - 6, gx + 1, rulerRc.bottom),
+        buf.fillRect(Rect(gx, lanesTop, gx + bw, rc.bottom), isBar ? pal.borderSubtle : pal.borderStrong);
+        buf.fillRect(Rect(gx, isBar ? rulerRc.top + dp(8) : rulerRc.bottom - dp(6), gx + bw, rulerRc.bottom),
                      isBar ? pal.accentCyan : pal.fgDim);
-        if (isBar && !fnt.isNull && gx + 16 < rulerRc.right) {
-            fnt.drawText(buf, gx + 3, rulerRc.top + 7,
-                         toUTF32(format("%d", (beatIdx / 4) + 1)), pal.fgText);
+        if (isBar && gx + dp(16) < rulerRc.right) {
+            drawVCenteredText(buf, smallFnt, gx + dp(3), rulerRc,
+                              toUTF32(format("%d", (beatIdx / 4) + 1)), pal.fgText);
         }
     }
 
@@ -274,23 +302,23 @@ void drawTimelineCanvas(
     if (model) {
         foreach (const ref mk; model.timeMarkers) {
             const int mx = secToPixelX(mk.timeSec, pixelsPerSec, arrRc.left, scrollSec);
-            if (mx < arrRc.left || mx >= arrRc.right - 20) continue;
-            buf.fillRect(Rect(mx, rulerRc.top + 1, mx + 2, rulerRc.bottom), mk.color);
-            if (!fnt.isNull) {
-                fnt.drawText(buf, mx + 4, rulerRc.top + 1, toUTF32(mk.label), mk.color);
-            }
+            if (mx < arrRc.left || mx >= arrRc.right - dp(20)) continue;
+            buf.fillRect(Rect(mx, rulerRc.top + bw, mx + dp(2), rulerRc.bottom), mk.color);
+            drawVCenteredText(buf, smallFnt, mx + dp(4),
+                              Rect(mx, rulerRc.top, arrRc.right, rulerRc.top + dp(14)),
+                              toUTF32(mk.label), mk.color);
         }
     }
 
     // Draw Clips on Lanes
     if (model) {
         foreach (laneIdx, tIdx; laneTracks) {
-            const int y0 = lanesTop + cast(int)laneIdx * LANE_H;
-            int y1 = y0 + LANE_H;
-            if (y0 >= rc.bottom - 4) break;
+            const int y0 = lanesTop + cast(int)laneIdx * m.laneH;
+            int y1 = y0 + m.laneH;
+            if (y0 >= rc.bottom - dp(4)) break;
             if (y1 > rc.bottom) y1 = rc.bottom;
             foreach (const ref clip; model.tracks[tIdx].clips) {
-                drawPlaylistClip(buf, arrRc, y0 + 3, y1 - 3, clip, pal, pixelsPerSec, scrollSec, fnt);
+                drawPlaylistClip(buf, arrRc, y0 + dp(3), y1 - dp(3), clip, pal, pixelsPerSec, scrollSec, smallFnt);
             }
         }
     }
@@ -299,8 +327,8 @@ void drawTimelineCanvas(
     const double phSec = model ? model.playheadPosSec : 0.0;
     const int phX = secToPixelX(phSec, pixelsPerSec, arrRc.left, scrollSec);
     if (phX >= arrRc.left && phX < arrRc.right) {
-        drawPlayheadTriangle(buf, phX, rulerRc.top + 2, 6, 9, pal.accentOrange);
-        buf.fillRect(Rect(phX, rulerRc.top + 8, phX + 2, rc.bottom), pal.accentOrange);
+        drawPlayheadTriangle(buf, phX, rulerRc.top + dp(2), dp(6), dp(9), pal.accentOrange);
+        buf.fillRect(Rect(phX, rulerRc.top + dp(8), phX + dp(2), rc.bottom), pal.accentOrange);
     }
 }
 
@@ -320,7 +348,7 @@ private void drawPlaylistClip(
     if (cx1 <= arrRc.left || cx0 >= arrRc.right) return;
     if (cx0 < arrRc.left) cx0 = arrRc.left;
     if (cx1 > arrRc.right) cx1 = arrRc.right;
-    if (cx1 - cx0 < 6 || botY - topY < 12) return;
+    if (cx1 - cx0 < dp(6) || botY - topY < dp(12)) return;
 
     uint baseCol = clip.color;
     if (baseCol == 0) {
@@ -334,18 +362,21 @@ private void drawPlaylistClip(
     drawCard(buf, clipRc, baseCol, clip.muted ? pal.fgDim : pal.borderSubtle, 4.0f);
 
     // Clip header bar
-    const int hdrBot = (topY + 15 < botY) ? (topY + 15) : botY;
-    buf.fillRect(Rect(cx0 + 2, topY + 1, cx1 - 2, hdrBot),
-                 clip.muted ? pal.bgPanel : adjustColorBrightness(baseCol, 18));
-    if (!fnt.isNull && cx1 - cx0 > 28) {
-        fnt.drawText(buf, cx0 + 5, topY + 1, toUTF32(truncateLabel(clip.name, 16)),
-                     clip.muted ? pal.fgDim : pal.fgText);
+    const int hdrH = dp(15);
+    const int hdrBot = (topY + hdrH < botY) ? (topY + hdrH) : botY;
+    Rect hdrBarRc = Rect(cx0 + dp(2), topY + dp(1), cx1 - dp(2), hdrBot);
+    buf.fillRect(hdrBarRc, clip.muted ? pal.bgPanel : adjustColorBrightness(baseCol, 18));
+    if (cx1 - cx0 > dp(28)) {
+        drawVCenteredText(buf, fnt, cx0 + dp(5), hdrBarRc,
+                          toUTF32(truncateLabel(clip.name, 16)),
+                          clip.muted ? pal.fgDim : pal.fgText);
     }
 
-    const int bodyTop = hdrBot + 2;
-    const int bodyBot = botY - 3;
-    const int bodyW = cx1 - cx0 - 6;
-    if (bodyBot - bodyTop < 6 || bodyW < 8) return;
+    const int bodyTop = hdrBot + dp(2);
+    const int bodyBot = botY - dp(3);
+    const int padX = dp(3);
+    const int bodyW = cx1 - cx0 - padX * 2;
+    if (bodyBot - bodyTop < dp(6) || bodyW < dp(8)) return;
 
     if (clip.kind == PlaylistClipKind.AUDIO && clip.waveform.length > 0) {
         const int midY = (bodyTop + bodyBot) / 2;
@@ -357,39 +388,43 @@ private void drawPlaylistClip(
             if (peak > 1.0f) peak = 1.0f;
             int barH = cast(int)(peak * halfH);
             if (barH < 1) barH = 1;
-            buf.fillRect(Rect(cx0 + 3 + px, midY - barH, cx0 + 4 + px, midY + barH),
+            buf.fillRect(Rect(cx0 + padX + px, midY - barH, cx0 + padX + px + 1, midY + barH),
                          clip.muted ? pal.fgDim : pal.accentCyan);
         }
     } else if (clip.kind == PlaylistClipKind.AUTOMATION) {
         // Draw smooth automation envelope curve + control nodes
         const int h = bodyBot - bodyTop;
+        const int nodeR = dp(2);
         if (clip.autoPoints.length >= 2) {
             foreach (i; 0 .. clip.autoPoints.length - 1) {
                 const auto p0 = clip.autoPoints[i];
                 const auto p1 = clip.autoPoints[i + 1];
-                const float x0 = cx0 + 3 + cast(float)(p0.normTime * bodyW);
+                const float x0 = cx0 + padX + cast(float)(p0.normTime * bodyW);
                 const float y0 = bodyBot - p0.value * h;
-                const float x1 = cx0 + 3 + cast(float)(p1.normTime * bodyW);
+                const float x1 = cx0 + padX + cast(float)(p1.normTime * bodyW);
                 const float y1 = bodyBot - p1.value * h;
-                drawThickLine(buf, x0, y0, x1, y1, 1.8f,
+                drawThickLine(buf, x0, y0, x1, y1, dpf(1.8f),
                               clip.muted ? pal.fgDim : pal.accentAmber);
-                buf.fillRect(Rect(cast(int)x0 - 2, cast(int)y0 - 2, cast(int)x0 + 3, cast(int)y0 + 3),
-                             pal.fgText);
+                buf.fillRect(Rect(cast(int)x0 - nodeR, cast(int)y0 - nodeR,
+                                  cast(int)x0 + nodeR + 1, cast(int)y0 + nodeR + 1), pal.fgText);
             }
             const auto plast = clip.autoPoints[$ - 1];
-            const int lx = cx0 + 3 + cast(int)(plast.normTime * bodyW);
+            const int lx = cx0 + padX + cast(int)(plast.normTime * bodyW);
             const int ly = bodyBot - cast(int)(plast.value * h);
-            buf.fillRect(Rect(lx - 2, ly - 2, lx + 3, ly + 3), pal.fgText);
+            buf.fillRect(Rect(lx - nodeR, ly - nodeR, lx + nodeR + 1, ly + nodeR + 1), pal.fgText);
         }
     } else if (clip.kind == PlaylistClipKind.PATTERN) {
         // Mini piano-roll / step preview bars inside pattern clip
         const uint noteCol = clip.muted ? pal.fgDim : pal.noteFill;
-        foreach (k; 0 .. 8) {
-            const int nx0 = cx0 + 4 + (k * bodyW) / 8;
-            const int nx1 = nx0 + (bodyW / 12) + 2;
-            const int ny = bodyTop + ((k * 5 + clip.patternIndex * 3) % (bodyBot - bodyTop - 3));
-            if (nx1 < cx1 - 2) {
-                buf.fillRect(Rect(nx0, ny, nx1, ny + 3), noteCol);
+        const int spanY = bodyBot - bodyTop - dp(3);
+        if (spanY > 0) {
+            foreach (k; 0 .. 8) {
+                const int nx0 = cx0 + dp(4) + (k * bodyW) / 8;
+                const int nx1 = nx0 + (bodyW / 12) + dp(2);
+                const int ny = bodyTop + (dp(k * 5 + clip.patternIndex * 3) % spanY);
+                if (nx1 < cx1 - dp(2)) {
+                    buf.fillRect(Rect(nx0, ny, nx1, ny + dp(3)), noteCol);
+                }
             }
         }
     }
@@ -420,15 +455,8 @@ class TimelineCanvasWidget : Widget {
         layoutHeight = FILL_PARENT;
     }
 
-    private int tracksLeftX() const @safe {
-        const bool showPicker = model_ ? model_.showClipPicker : true;
-        return (showPicker && _pos.width > PICKER_W + HEADER_W + 140)
-            ? (_pos.left + PICKER_W)
-            : _pos.left;
-    }
-
-    private Rect arrangementRect() const @safe {
-        return Rect(tracksLeftX() + HEADER_W, _pos.top + TOOLBAR_H, _pos.right, _pos.bottom);
+    private double effectivePxPerSec() const @safe {
+        return pixelsPerSec * uiScale();
     }
 
     private double snapSec(double sec) const @safe {
@@ -443,7 +471,7 @@ class TimelineCanvasWidget : Widget {
 
     private void handleSeekAtX(int x, Rect arrRc) {
         if (x < arrRc.left) x = arrRc.left;
-        double sec = pixelXToSec(x, pixelsPerSec, arrRc.left, scrollSec);
+        double sec = pixelXToSec(x, effectivePxPerSec(), arrRc.left, scrollSec);
         if (model_) model_.playheadPosSec = sec;
         if (onSeek !is null) onSeek(sec);
         invalidate();
@@ -455,9 +483,11 @@ class TimelineCanvasWidget : Widget {
         }
         if (!model_) return super.onMouseEvent(event);
 
-        Rect arrRc = arrangementRect();
-        const int contentTop = _pos.top + TOOLBAR_H;
-        const int lanesTop = contentTop + RULER_H;
+        const m = computeTimelineMetrics(_pos, model_);
+        Rect arrRc = m.arrRc;
+        const int contentTop = m.contentTop;
+        const int lanesTop = m.lanesTop;
+        const double effPxPerSec = effectivePxPerSec();
 
         if (event.action == MouseAction.Wheel) {
             if ((event.flags & MouseFlag.Control) != 0) {
@@ -477,30 +507,25 @@ class TimelineCanvasWidget : Widget {
 
             // 1. Toolbar clicks
             if (event.y >= _pos.top && event.y < contentTop) {
-                Rect pickToggleRc = Rect(_pos.left + 6, _pos.top + 4, _pos.left + 50, contentTop - 4);
-                if (pickToggleRc.isPointInside(event.x, event.y)) {
+                if (m.pickToggleRc.isPointInside(event.x, event.y)) {
                     model_.showClipPicker = !model_.showClipPicker;
                     invalidate();
                     return true;
                 }
                 foreach (i, const ref td; PLAYLIST_TOOLS) {
-                    const int bx0 = _pos.left + 58 + cast(int)i * 25;
-                    Rect bRc = Rect(bx0, _pos.top + 4, bx0 + 22, contentTop - 4);
-                    if (bRc.isPointInside(event.x, event.y)) {
+                    if (m.toolBtns[i].isPointInside(event.x, event.y)) {
                         model_.playlistTool = td.tool;
                         model_.hintText = "Playlist Tool: " ~ td.hint;
                         invalidate();
                         return true;
                     }
                 }
-                Rect zoomOutRc = Rect(_pos.right - 56, _pos.top + 4, _pos.right - 32, contentTop - 4);
-                Rect zoomInRc  = Rect(_pos.right - 30, _pos.top + 4, _pos.right - 6,  contentTop - 4);
-                if (zoomOutRc.isPointInside(event.x, event.y)) {
+                if (m.zoomOutRc.isPointInside(event.x, event.y)) {
                     pixelsPerSec = (pixelsPerSec > 20.0) ? pixelsPerSec * 0.8 : 20.0;
                     invalidate();
                     return true;
                 }
-                if (zoomInRc.isPointInside(event.x, event.y)) {
+                if (m.zoomInRc.isPointInside(event.x, event.y)) {
                     pixelsPerSec = (pixelsPerSec < 180.0) ? pixelsPerSec * 1.25 : 180.0;
                     invalidate();
                     return true;
@@ -509,14 +534,14 @@ class TimelineCanvasWidget : Widget {
             }
 
             // 2. Left Clip Picker clicks
-            if (model_.showClipPicker && event.x < tracksLeftX()) {
-                const int tabW = (PICKER_W - 12) / 3;
-                if (event.y < contentTop + 26) {
+            if (m.hasPicker && event.x < m.tracksLeft) {
+                const int tabW = (m.pickerW - dp(12)) / 3;
+                if (event.y < contentTop + dp(26)) {
                     static immutable PlaylistClipKind[3] KINDS = [
                         PlaylistClipKind.PATTERN, PlaylistClipKind.AUDIO, PlaylistClipKind.AUTOMATION
                     ];
                     foreach (k; 0 .. 3) {
-                        const int x0 = _pos.left + 4 + k * (tabW + 2);
+                        const int x0 = _pos.left + dp(4) + k * (tabW + dp(2));
                         if (event.x >= x0 && event.x <= x0 + tabW) {
                             model_.activePickerKind = KINDS[k];
                             model_.activePickerIndex = 0;
@@ -526,7 +551,7 @@ class TimelineCanvasWidget : Widget {
                     }
                     return true;
                 }
-                const int itemIdx = (event.y - (contentTop + 30)) / 26;
+                const int itemIdx = (event.y - (contentTop + dp(30))) / dp(26);
                 if (itemIdx >= 0) {
                     model_.activePickerIndex = itemIdx;
                     if (model_.activePickerKind == PlaylistClipKind.PATTERN &&
@@ -554,15 +579,15 @@ class TimelineCanvasWidget : Widget {
                 foreach (idx, ref t; model_.tracks) {
                     if (t.index != 0) laneTracks ~= idx;
                 }
-                const int laneIdx = (event.y - lanesTop) / LANE_H;
+                const int laneIdx = (event.y - lanesTop) / m.laneH;
                 if (laneIdx < 0 || laneIdx >= cast(int)laneTracks.length) return true;
                 const int tIdx = cast(int)laneTracks[laneIdx];
                 auto trk = &model_.tracks[tIdx];
 
                 // Track header mute LED
                 if (event.x < arrRc.left) {
-                    Rect mLed = Rect(arrRc.left - 22, lanesTop + laneIdx * LANE_H + 6,
-                                     arrRc.left - 6, lanesTop + laneIdx * LANE_H + 22);
+                    Rect mLed = Rect(arrRc.left - dp(22), lanesTop + laneIdx * m.laneH + dp(6),
+                                     arrRc.left - dp(6), lanesTop + laneIdx * m.laneH + dp(22));
                     if (mLed.isPointInside(event.x, event.y)) {
                         if (event.button == MouseButton.Right) trk.soloed = !trk.soloed;
                         else trk.muted = !trk.muted;
@@ -582,7 +607,7 @@ class TimelineCanvasWidget : Widget {
                 }
 
                 // Arrangement lane click
-                const double clickSec = pixelXToSec(event.x, pixelsPerSec, arrRc.left, scrollSec);
+                const double clickSec = pixelXToSec(event.x, effPxPerSec, arrRc.left, scrollSec);
                 int hitArrIdx = -1;
                 foreach (ci, const ref c; trk.clips) {
                     if (clickSec >= c.startTimeSec && clickSec <= c.startTimeSec + c.durationSec) {
@@ -623,9 +648,9 @@ class TimelineCanvasWidget : Widget {
                         }
                         return true;
                     }
-                    // Check right-edge resize (within 8px of clip right edge)
-                    const int cx1 = secToPixelX(clip.startTimeSec + clip.durationSec, pixelsPerSec, arrRc.left, scrollSec);
-                    if (event.x >= cx1 - 8) {
+                    // Check right-edge resize (within dp(8) of clip right edge)
+                    const int cx1 = secToPixelX(clip.startTimeSec + clip.durationSec, effPxPerSec, arrRc.left, scrollSec);
+                    if (event.x >= cx1 - dp(8)) {
                         dragMode_ = DragMode.RESIZE_CLIP;
                     } else {
                         dragMode_ = DragMode.MOVE_CLIP;
@@ -674,7 +699,7 @@ class TimelineCanvasWidget : Widget {
             }
             if (dragTrackArrIdx_ >= 0 && dragTrackArrIdx_ < cast(int)model_.tracks.length &&
                 dragClipArrIdx_ >= 0 && dragClipArrIdx_ < cast(int)model_.tracks[dragTrackArrIdx_].clips.length) {
-                const double curSec = pixelXToSec(event.x, pixelsPerSec, arrRc.left, scrollSec);
+                const double curSec = pixelXToSec(event.x, effPxPerSec, arrRc.left, scrollSec);
                 auto clip = &model_.tracks[dragTrackArrIdx_].clips[dragClipArrIdx_];
                 if (dragMode_ == DragMode.MOVE_CLIP) {
                     clip.startTimeSec = snapSec(curSec - dragOffsetSec_);
@@ -702,7 +727,7 @@ class TimelineCanvasWidget : Widget {
 
     override void onDraw(DrawBuf buf) {
         if (visibility != Visibility.Visible) return;
-        drawTimelineCanvas(buf, _pos, model_, pixelsPerSec, scrollSec, font);
+        drawTimelineCanvas(buf, _pos, model_, effectivePxPerSec(), scrollSec, safeWidgetFont(this));
     }
 }
 

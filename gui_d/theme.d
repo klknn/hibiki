@@ -217,7 +217,7 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
                 "FL Default Dark",
                 0x001B1F24, // bgDesktop
                 0x002D323A, // bgToolbar
-                0x00181C21, // bgToolbarWell
+                0x00242931, // bgToolbarWell
                 0x002A2F37, // bgWindow
                 0x00242930, // bgWindowHeader
                 0x00343B45, // bgWindowHeaderActive
@@ -225,7 +225,7 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
                 0x00272C34, // bgPanelAlt
                 0x003A414C, // bgControl
                 0x00464E5B, // bgControlHover
-                0x0013171C, // bgLcd
+                0x00242931, // bgLcd (harmonized with toolbar/panel slate)
                 0x00424A56, // borderSubtle
                 0x0015181C, // borderStrong
                 0x00FF8F2D, // borderAccent
@@ -255,7 +255,7 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
                 "Ultramarine",
                 0x00151926,
                 0x0022283A,
-                0x00111521,
+                0x001A2030,
                 0x00202636,
                 0x001A2030,
                 0x002B344D,
@@ -263,7 +263,7 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
                 0x001D2333,
                 0x00313A52,
                 0x003E4966,
-                0x000D111B,
+                0x001A2030,
                 0x003B4661,
                 0x000E121B,
                 0x005BA4FF,
@@ -293,7 +293,7 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
                 "Midnight Mint",
                 0x00141C1B,
                 0x00202B29,
-                0x00101716,
+                0x00192321,
                 0x001E2826,
                 0x00182220,
                 0x00273633,
@@ -301,7 +301,7 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
                 0x001B2523,
                 0x002D3C39,
                 0x00384A46,
-                0x000C1211,
+                0x00192321,
                 0x00374A46,
                 0x000E1413,
                 0x003EE6B5,
@@ -331,7 +331,7 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
                 "Warm Amber",
                 0x001E1B18,
                 0x002F2A25,
-                0x00171412,
+                0x0025211D,
                 0x002C2722,
                 0x0025211D,
                 0x0038312A,
@@ -339,7 +339,7 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
                 0x0029241F,
                 0x003F3831,
                 0x004C433B,
-                0x0014110E,
+                0x0025211D,
                 0x004D453C,
                 0x0014110F,
                 0x00FFA43B,
@@ -422,6 +422,48 @@ void drawCard(DrawBuf buf, Rect rc, uint fillColor, uint borderColor, float radi
             buf.fillRect(Rect(rc.left + cr, rc.bottom - cr, rc.right - cr, rc.bottom - bw),
                          adjustColorBrightness(fillColor, -8));
         }
+    }
+}
+
+/// Draws an FL Studio flush track-header / mixer-strip slab with zero external gap:
+/// top-right and bottom-left corners are subtly rounded and a soft vertical highlight/shadow
+/// gradient is applied across the corner depth so adjacent rows/strips separate cleanly without dividers.
+void drawBeveledTrackCard(DrawBuf buf, Rect rc, uint fillColor, uint cornerBgColor, float radius = 3.0f) {
+    if (rc.width <= 0 || rc.height <= 0) return;
+    int cr = cast(int)(dpf(radius) + 0.5f);
+    if (cr < 1) cr = 1;
+    if (cr * 3 > rc.height) cr = rc.height / 3;
+    if (cr * 3 > rc.width) cr = rc.width / 3;
+    if (cr <= 0) {
+        buf.fillRect(rc, fillColor);
+        return;
+    }
+
+    buf.fillRect(Rect(rc.left, rc.top + cr, rc.right, rc.bottom - cr), fillColor);
+
+    const float crF = cast(float)cr;
+    foreach (dy; 0 .. cr) {
+        const float distFromInner = crF - cast(float)dy - 0.5f;
+        const float chord = (distFromInner < crF) ? sqrtf(crF * crF - distFromInner * distFromInner) : crF;
+        int cut = cr - cast(int)(chord + 0.5f);
+        if (cut < 0) cut = 0;
+
+        // Top bevel: rounded at top-right corner
+        const int topBright = 11 - (8 * dy) / cr;
+        if (cornerBgColor != COLOR_TRANSPARENT && cut > 0) {
+            buf.fillRect(Rect(rc.right - cut, rc.top + dy, rc.right, rc.top + dy + 1), cornerBgColor);
+        }
+        buf.fillRect(Rect(rc.left, rc.top + dy, rc.right - cut, rc.top + dy + 1),
+                     adjustColorBrightness(fillColor, topBright));
+
+        // Bottom bevel: rounded at bottom-left corner
+        const int botRow = rc.bottom - 1 - dy;
+        const int botDark = -(11 - (8 * dy) / cr);
+        if (cornerBgColor != COLOR_TRANSPARENT && cut > 0) {
+            buf.fillRect(Rect(rc.left, botRow, rc.left + cut, botRow + 1), cornerBgColor);
+        }
+        buf.fillRect(Rect(rc.left + cut, botRow, rc.right, botRow + 1),
+                     adjustColorBrightness(fillColor, botDark));
     }
 }
 
@@ -866,6 +908,15 @@ unittest {
     assert(buf.scanLine(10)[50] == adjustColorBrightness(pal.bgPanel, 10), "Top edge should have faint highlight");
     assert(buf.scanLine(40)[50] == pal.bgPanel, "Center interior should stay flat fillColor");
     assert(buf.scanLine(79)[50] == adjustColorBrightness(pal.bgPanel, -10), "Bottom edge should have faint shade");
+
+    // Verify drawBeveledTrackCard rounds top-right and bottom-left corners with bevel gradient
+    buf.fill(pal.bgDesktop);
+    drawBeveledTrackCard(buf, Rect(10, 10, 110, 50), pal.bgPanel, pal.bgToolbarWell, 3.0f);
+    assert(buf.scanLine(10)[10] == adjustColorBrightness(pal.bgPanel, 11), "Top-left bevel stays square & highlighted");
+    assert(buf.scanLine(10)[109] == pal.bgToolbarWell, "Top-right corner should be rounded/recessed");
+    assert(buf.scanLine(49)[10] == pal.bgToolbarWell, "Bottom-left corner should be rounded/recessed");
+    assert(buf.scanLine(49)[109] == adjustColorBrightness(pal.bgPanel, -11), "Bottom-right bevel stays square & shaded");
+    assert(buf.scanLine(30)[60] == pal.bgPanel, "Track card center interior stays flat");
 
     drawRotaryKnob(buf, 50, 50, 14, 0.75f, pal.bgLcd, pal.accentOrange, pal.bgControl, pal.borderSubtle);
     drawLevelMeter(buf, Rect(85, 10, 110, 110), 1.0f, 0.0f, pal, 14);

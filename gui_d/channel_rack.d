@@ -5,8 +5,8 @@ import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
-import gui_d.theme : dp, dpf, drawCard, drawCenteredText, drawRotaryKnob, drawVCenteredText, FlPalette,
-    getDawFont, getDawMonoFont, getFlPalette, safeWidgetFont, truncateLabel;
+import gui_d.theme : dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText, drawRotaryKnob,
+    drawVCenteredText, FlPalette, getDawFont, getDawMonoFont, getFlPalette, safeWidgetFont, truncateLabel;
 import gui_d.transport_model : ChannelFilterMode, ChannelState, GraphEditorMode, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import std.format : format;
@@ -141,11 +141,11 @@ void drawChannelRackCanvas(
                          toUTF32(ch.mixerInsert == 0 ? "M" : format("%2d", ch.mixerInsert)),
                          pal.accentCyan);
 
-        // Channel Name Pill (subtle corner rounding + corner-width top/bottom gradient)
-        Rect pillRc = Rect(rc.left + dp(118), y0 + dp(2), m.stepAreaLeft - dp(8), y1 - dp(1));
-        drawCard(buf, pillRc, ch.color, isSel ? pal.accentOrange : pal.borderSubtle, 2.5f);
+        // Channel Name Pill (flush track bevel: rounded top-right/bottom-left corners + gradient)
+        Rect pillRc = Rect(rc.left + dp(118), y0, m.stepAreaLeft - dp(8), y0 + m.rowH);
+        drawBeveledTrackCard(buf, pillRc, ch.color, pal.bgWindow, 3.0f);
         if (isSel) {
-            buf.fillRect(Rect(pillRc.left + dp(1), pillRc.top + dp(2), pillRc.left + dp(4), pillRc.bottom - dp(2)),
+            buf.fillRect(Rect(pillRc.left + dp(1), pillRc.top + dp(2), pillRc.left + dp(4), pillRc.bottom - dp(3)),
                          pal.accentOrange);
         }
         drawVCenteredText(buf, boldFnt, pillRc.left + dp(9), pillRc,

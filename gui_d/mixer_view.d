@@ -5,8 +5,9 @@ import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
-import gui_d.theme : dp, dpf, drawCard, drawCenteredText, drawLevelMeter, drawRotaryKnob, drawThickLine,
-    drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
+import gui_d.theme : dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText, drawLevelMeter,
+    drawRotaryKnob, drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette,
+    safeWidgetFont, truncateLabel;
 import gui_d.transport_model : PluginSlotState, TrackStripState, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import std.format : format;
@@ -44,7 +45,7 @@ MixerMetrics computeMixerMetrics(Rect rc, const(TransportModel)* model) nothrow 
     m.stripW = dp(66);
     m.currentW = dp(48);
     m.fxRackW = dp(222);
-    m.stripGap = dp(3);
+    m.stripGap = 0;
     m.bodyTop = rc.top + m.toolbarH + dp(4);
     m.bodyBot = rc.bottom - dp(4);
     m.showFx = (model ? model.showMixerFxRack : true) && rc.width > m.fxRackW + dp(280);
@@ -54,7 +55,7 @@ MixerMetrics computeMixerMetrics(Rect rc, const(TransportModel)* model) nothrow 
     m.fxToggleRc = Rect(rc.right - dp(74), rc.top + dp(4), rc.right - dp(8), rc.top + m.toolbarH - dp(4));
     m.curRc = Rect(rc.left + dp(4), m.bodyTop, rc.left + dp(4) + m.currentW, m.bodyBot);
     m.masterRc = Rect(m.curRc.right + dp(4), m.bodyTop, m.curRc.right + dp(4) + m.stripW, m.bodyBot);
-    m.insStartX = m.masterRc.right + dp(10);
+    m.insStartX = m.masterRc.right + dp(8);
     m.fxRc = Rect(m.stripsRight + dp(2), m.bodyTop, rc.right - dp(4), m.bodyBot);
     m.eqH = dp(92);
     m.slotsTop = m.fxRc.top + dp(26);
@@ -109,7 +110,10 @@ private void drawMixerStrip(
     FontRef smallFnt
 ) {
     const uint bg = isSelected ? pal.bgControl : ((displayIdx % 2 == 1) || isMaster ? pal.bgPanelAlt : pal.bgPanel);
-    drawCard(buf, stripRc, bg, isSelected ? pal.accentOrange : COLOR_TRANSPARENT, 2.5f);
+    drawBeveledTrackCard(buf, stripRc, bg, pal.bgToolbarWell, 3.0f);
+    if (isSelected) {
+        buf.fillRect(Rect(stripRc.left, stripRc.top, stripRc.right - dp(3), stripRc.top + dp(2)), pal.accentOrange);
+    }
 
     const uint trkCol = trk ? trk.color : pal.clipPattern;
     buf.fillRect(Rect(stripRc.left + dp(2), stripRc.top + dp(2), stripRc.right - dp(2), stripRc.top + dp(6)), trkCol);

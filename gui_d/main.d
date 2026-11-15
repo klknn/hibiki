@@ -164,8 +164,8 @@ extern (C) int UIAppMain(string[] args) {
         applyFlatThemeOverrides(pal);
         root.backgroundColor = pal.bgDesktop;
         menuRow.backgroundColor = pal.bgWindowHeader;
-        hintBar.backgroundColor = pal.bgLcd;
-        hintBar.textColor = pal.accentOrange;
+        hintBar.backgroundColor = pal.bgPanelAlt;
+        hintBar.textColor = pal.fgMuted;
         statusBar.backgroundColor = pal.bgWindowHeader;
         statusBar.textColor = pal.fgMuted;
         const string fface = activeDawUiFontFace();

@@ -185,14 +185,14 @@ void drawToolbarCanvas(
     drawDawIcon(buf, Rect(tl.loopRc.left + dp(5), tl.loopRc.top + dp(9), tl.loopRc.right - dp(5), tl.loopRc.bottom - dp(9)),
                 DawIcon.LOOP, model.loopEnabled ? pal.bgLcd : pal.fgMuted);
 
-    // Unified BPM + Time LCD well inside Transport cluster
+    // Unified BPM + Time LCD well inside Transport cluster (cohesive tone with toolbar)
     Rect lcdGroup = Rect(tl.bpmRc.left, tl.bpmRc.top, tl.timeRc.right, tl.timeRc.bottom);
     drawCard(buf, lcdGroup, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
-    drawCenteredText(buf, lcdFnt, tl.bpmRc, toUTF32(format("%.1f", model.bpm)), pal.accentOrange);
+    drawCenteredText(buf, lcdFnt, tl.bpmRc, toUTF32(format("%.1f", model.bpm)), pal.fgText);
     const string timeStr = (model.timeDisplayMode == TimeDisplayMode.TIME_MS)
         ? formatTimecode(model.playheadPosSec)
         : formatBarBeat(model.playheadPosSec, model.bpm);
-    drawCenteredText(buf, lcdFnt, tl.timeRc, toUTF32(timeStr), pal.accentCyan);
+    drawCenteredText(buf, lcdFnt, tl.timeRc, toUTF32(timeStr), pal.fgText);
 
     // 3. Recording Helpers strip (single seamless strip of pictorial icons)
     drawCard(buf, tl.recOptsPanel, pal.bgControl, COLOR_TRANSPARENT, 2.0f);
@@ -235,7 +235,7 @@ void drawToolbarCanvas(
     drawDawIcon(buf, Rect(tl.pPrev.left + dp(3), tl.pPrev.top + dp(10), tl.pPrev.right - dp(3), tl.pPrev.bottom - dp(10)),
                 DawIcon.CHEVRON_LEFT, pal.fgText);
     drawVCenteredText(buf, patFnt, tl.pLbl.left + dp(6), tl.pLbl,
-                      toUTF32(truncateLabel(patName, 14)), pal.accentOrange);
+                      toUTF32(truncateLabel(patName, 14)), pal.fgText);
     drawDawIcon(buf, Rect(tl.pNext.left + dp(3), tl.pNext.top + dp(10), tl.pNext.right - dp(3), tl.pNext.bottom - dp(10)),
                 DawIcon.CHEVRON_RIGHT, pal.fgText);
     drawDawIcon(buf, Rect(tl.pAdd.left + dp(4), tl.pAdd.top + dp(10), tl.pAdd.right - dp(4), tl.pAdd.bottom - dp(10)),
@@ -266,7 +266,7 @@ void drawToolbarCanvas(
         }
     }
 
-    // 7. Live Oscilloscope & CPU Panel (fills remaining width on right if room)
+    // 7. Live Oscilloscope & CPU monitor (cohesive slate surface & calm readout)
     if (tl.hasScopePanel) {
         Rect scopePanel = tl.scopePanel;
         drawCard(buf, scopePanel, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
@@ -276,12 +276,13 @@ void drawToolbarCanvas(
         const float phase = cast(float)(model.playheadPosSec * 14.0);
         float prevX = scopePanel.left + dp(6);
         float prevY = midY;
+        const uint scopeTraceCol = model.isPlaying ? pal.fgText : pal.fgMuted;
         enum int PTS = 24;
         foreach (i; 1 .. PTS + 1) {
             const float t = cast(float)i / cast(float)PTS;
             const float sx = scopePanel.left + dp(6) + t * sw;
             const float sy = midY + sinf(t * 12.56f + phase) * amp * sinf(t * 3.14159f);
-            drawThickLine(buf, prevX, prevY, sx, sy, dpf(1.5f), pal.accentCyan);
+            drawThickLine(buf, prevX, prevY, sx, sy, dpf(1.5f), scopeTraceCol);
             prevX = sx;
             prevY = sy;
         }

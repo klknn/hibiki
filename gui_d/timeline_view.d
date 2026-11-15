@@ -5,8 +5,9 @@ import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
-import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawPlayheadTriangle,
-    drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel, uiScale;
+import gui_d.theme : adjustColorBrightness, dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText,
+    drawPlayheadTriangle, drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette,
+    safeWidgetFont, truncateLabel, uiScale;
 import gui_d.transport_model : AutomationPoint, EditorTool, PlaylistClipKind,
     TimelineClipState, TransportModel;
 import gui_d.workspace : activateParentWindow;
@@ -275,10 +276,9 @@ void drawTimelineCanvas(
         if (y0 >= rc.bottom - dp(4)) break;
         if (y1 > rc.bottom) y1 = rc.bottom;
 
-        // Track Header (slightly rounded card with subtle corner-width vertical gradient)
+        // Track Header (zero gap between tracks; top-right/bottom-left rounded + bevel gradient separation)
         Rect hdrRc = Rect(tracksLeft, y0, arrRc.left, y1);
-        Rect cardRc = Rect(hdrRc.left + dp(2), hdrRc.top + dp(1), hdrRc.right - dp(2), hdrRc.bottom - dp(1));
-        drawCard(buf, cardRc, pal.bgPanel, pal.borderSubtle, 2.5f);
+        drawBeveledTrackCard(buf, hdrRc, pal.bgPanel, pal.bgToolbarWell, 3.0f);
 
         const bool hasTrack = (model !is null && laneIdx < cast(int)laneTracks.length);
         const size_t tIdx = hasTrack ? laneTracks[laneIdx] : 0;
@@ -287,20 +287,20 @@ void drawTimelineCanvas(
         const bool muted = hasTrack ? model.tracks[tIdx].muted : false;
         const bool soloed = hasTrack ? model.tracks[tIdx].soloed : false;
 
-        // Track Color Bar on left
-        buf.fillRect(Rect(cardRc.left + dp(1), cardRc.top + dp(2), cardRc.left + dp(5), cardRc.bottom - dp(2)), trkCol);
+        // Track Color Bar on left (inset inside top/bottom bevel)
+        buf.fillRect(Rect(hdrRc.left + dp(1), hdrRc.top + dp(3), hdrRc.left + dp(5), hdrRc.bottom - dp(4)), trkCol);
 
         // Mute LED on right of header
         Rect mLed = Rect(hdrRc.right - dp(20), hdrRc.top + dp(8), hdrRc.right - dp(8), hdrRc.top + dp(20));
         drawCard(buf, mLed, soloed ? pal.accentAmber : (muted ? pal.ledOff : pal.accentGreen),
                  COLOR_TRANSPARENT, 1.5f);
 
-        drawVCenteredText(buf, uiFnt, cardRc.left + dp(9), cardRc,
+        drawVCenteredText(buf, uiFnt, hdrRc.left + dp(10), hdrRc,
                           toUTF32(truncateLabel(title, 12)),
                           muted ? pal.fgDim : pal.fgText);
 
-        // Subtle lane bottom divider
-        buf.fillRect(Rect(arrRc.left, y1 - bw, arrRc.right, y1), pal.borderSubtle);
+        // Subtle low-contrast lane seam (zero gap between lanes)
+        buf.fillRect(Rect(arrRc.left, y1 - bw, arrRc.right, y1), adjustColorBrightness(pal.bgWindow, -5));
     }
 
     // Vertical Bar/Beat Grid Lines + Ruler Labels
@@ -339,7 +339,7 @@ void drawTimelineCanvas(
             if (y0 >= rc.bottom - dp(4)) break;
             if (y1 > rc.bottom) y1 = rc.bottom;
             foreach (const ref clip; model.tracks[tIdx].clips) {
-                drawPlaylistClip(buf, arrRc, y0 + dp(3), y1 - dp(3), clip, pal, pixelsPerSec, scrollSec, smallFnt);
+                drawPlaylistClip(buf, arrRc, y0, y1, clip, pal, pixelsPerSec, scrollSec, smallFnt);
             }
         }
     }
@@ -380,13 +380,18 @@ private void drawPlaylistClip(
     if (clip.muted) baseCol = pal.bgPanelAlt;
 
     Rect clipRc = Rect(cx0, topY, cx1, botY);
-    drawCard(buf, clipRc, baseCol, clip.muted ? pal.fgDim : adjustColorBrightness(baseCol, -18), 2.5f);
+    const uint clipBodyCol = (baseCol & 0x00FFFFFF) | 0x62000000;
+    const uint clipBorderCol = clip.muted
+        ? ((pal.fgDim & 0x00FFFFFF) | 0x48000000)
+        : ((adjustColorBrightness(baseCol, -18) & 0x00FFFFFF) | 0x48000000);
+    drawCard(buf, clipRc, clipBodyCol, clipBorderCol, 2.5f);
 
-    // Clip header bar (inset below top corner gradient)
+    // Opaque clip header bar for high readability while body reveals background grid
     const int hdrH = dp(15);
     const int hdrBot = (topY + hdrH < botY) ? (topY + hdrH) : botY;
-    Rect hdrBarRc = Rect(cx0 + dp(2), topY + dp(2), cx1 - dp(2), hdrBot);
-    buf.fillRect(hdrBarRc, clip.muted ? pal.bgPanel : adjustColorBrightness(baseCol, 18));
+    Rect hdrBarRc = Rect(cx0 + dp(1), topY + dp(1), cx1 - dp(1), hdrBot);
+    const uint hdrCol = (clip.muted ? pal.bgPanel : adjustColorBrightness(baseCol, 18)) & 0x00FFFFFF;
+    buf.fillRect(hdrBarRc, hdrCol);
     if (cx1 - cx0 > dp(28)) {
         drawVCenteredText(buf, fnt, cx0 + dp(5), hdrBarRc,
                           toUTF32(truncateLabel(clip.name, 16)),
@@ -794,8 +799,17 @@ unittest {
     sparseClip.durationSec = 4.0;
     model.tracks[idx3].clips ~= sparseClip;
     drawTimelineCanvas(buf, Rect(0, 0, 900, 360), &model, 52.0, 0.0);
-    const uint sparsePx = buf.scanLine(TOOLBAR_H + RULER_H + 25)[PICKER_W + HEADER_W + 20];
-    assert(sparsePx == pal.clipPattern, "Expected sparse track 3 clip to render on lane 0");
+    const uint sparsePx = buf.scanLine(TOOLBAR_H + RULER_H + 25)[PICKER_W + HEADER_W + 80];
+    assert(sparsePx != pal.bgWindow, "Expected sparse track 3 clip to render on lane 0");
+    // Beat 3 grid line at beat3X (~66..78px, clear of text & playhead) shines through translucent clip body
+    const int beat3X = secToPixelX(3.0 * beatDurationSec(model.bpm), 52.0, PICKER_W + HEADER_W);
+    const uint gridThroughBody = buf.scanLine(TOOLBAR_H + RULER_H + 25)[beat3X];
+    assert(gridThroughBody != sparsePx, "Expected beat grid line to remain visible through translucent clip body");
+    // Meanwhile opaque clip header completely covers underlying grid lines for legible text
+    const uint hdrOverBg = buf.scanLine(TOOLBAR_H + RULER_H + 6)[PICKER_W + HEADER_W + 80];
+    const uint hdrOverGrid = buf.scanLine(TOOLBAR_H + RULER_H + 6)[beat3X];
+    assert(hdrOverBg == hdrOverGrid && (hdrOverBg >> 24) == 0,
+           "Expected clip header bar to stay opaque across grid lines");
 
     // Widget interaction: SLICE creates unique clipIndex, ZOOM zooms, Cancel ends drag
     import gui_d.theme : destroyWidgetTree;

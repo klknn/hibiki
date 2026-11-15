@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 d_library(
     name = "gui_model",
     srcs = [
+        "icons.d",
         "ipc_client.d",
         "theme.d",
         "transport_model.d",
@@ -23,6 +24,7 @@ d_test(
     srcs = [
         "browser_panel.d",
         "channel_rack.d",
+        "icons.d",
         "ipc_client.d",
         "mixer_view.d",
         "piano_roll.d",

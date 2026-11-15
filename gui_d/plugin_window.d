@@ -5,6 +5,7 @@ import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
+import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : dp, dpf, drawCard, drawCenteredText, drawRotaryKnob, drawThickLine,
     drawVCenteredText, FlPalette, getDawFont, getDawMonoFont, getFlPalette, safeWidgetFont, truncateLabel;
 import gui_d.transport_model : ParamItemState, PluginSlotState, TransportModel;
@@ -41,10 +42,10 @@ PluginWrapperMetrics computePluginWrapperMetrics(Rect rc) nothrow @safe {
     m.scopeH = dp(SCOPE_H);
     m.hdrRc = Rect(rc.left, rc.top, rc.right, rc.top + m.hdrH);
     m.prevRc = Rect(m.hdrRc.left + dp(150), m.hdrRc.top + dp(5), m.hdrRc.left + dp(172), m.hdrRc.bottom - dp(5));
-    m.presRc = Rect(m.hdrRc.left + dp(174), m.hdrRc.top + dp(5), m.hdrRc.left + dp(286), m.hdrRc.bottom - dp(5));
+    m.presRc = Rect(m.hdrRc.left + dp(172), m.hdrRc.top + dp(5), m.hdrRc.left + dp(288), m.hdrRc.bottom - dp(5));
     m.nextRc = Rect(m.hdrRc.left + dp(288), m.hdrRc.top + dp(5), m.hdrRc.left + dp(310), m.hdrRc.bottom - dp(5));
-    m.guiRc = Rect(m.hdrRc.right - dp(92), m.hdrRc.top + dp(5), m.hdrRc.right - dp(34), m.hdrRc.bottom - dp(5));
-    m.bypRc = Rect(m.hdrRc.right - dp(28), m.hdrRc.top + dp(7), m.hdrRc.right - dp(8), m.hdrRc.bottom - dp(7));
+    m.guiRc = Rect(m.hdrRc.right - dp(86), m.hdrRc.top + dp(5), m.hdrRc.right - dp(28), m.hdrRc.bottom - dp(5));
+    m.bypRc = Rect(m.hdrRc.right - dp(28), m.hdrRc.top + dp(5), m.hdrRc.right - dp(8), m.hdrRc.bottom - dp(5));
     m.scopeRc = Rect(rc.left + dp(10), m.hdrRc.bottom + dp(8), rc.right - dp(10), m.hdrRc.bottom + dp(8) + m.scopeH);
     m.gridTop = m.scopeRc.bottom + dp(10);
     m.gridH = rc.bottom - m.gridTop - dp(8);
@@ -102,23 +103,26 @@ void drawPluginWrapperCanvas(
     drawVCenteredText(buf, boldFnt, m.hdrRc.left + dp(10), m.hdrRc,
                       toUTF32(truncateLabel(plugTitle, 18)), pal.accentOrange);
 
-    // Preset selector < Preset >
-    drawCard(buf, m.prevRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
-    drawCard(buf, m.presRc, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
-    drawCard(buf, m.nextRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    // Unified flush Preset selector < Preset >
+    drawCard(buf, Rect(m.prevRc.left, m.prevRc.top, m.nextRc.right, m.nextRc.bottom),
+             pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawCard(buf, m.presRc, pal.bgLcd, COLOR_TRANSPARENT, 0.0f);
 
     string presetName = "Default";
     if (plug && plug.presets.length > 0) {
         const size_t pi = plug.presetIndex % plug.presets.length;
         presetName = plug.presets[pi];
     }
-    drawCenteredText(buf, boldFnt, m.prevRc, "<"d, pal.fgText);
+    drawDawIcon(buf, Rect(m.prevRc.left + dp(3), m.prevRc.top + dp(3), m.prevRc.right - dp(3), m.prevRc.bottom - dp(3)),
+                DawIcon.CHEVRON_LEFT, pal.fgText);
     drawVCenteredText(buf, uiFnt, m.presRc.left + dp(6), m.presRc,
                       toUTF32(truncateLabel(presetName, 14)), pal.accentCyan);
-    drawCenteredText(buf, boldFnt, m.nextRc, ">"d, pal.fgText);
+    drawDawIcon(buf, Rect(m.nextRc.left + dp(3), m.nextRc.top + dp(3), m.nextRc.right - dp(3), m.nextRc.bottom - dp(3)),
+                DawIcon.CHEVRON_RIGHT, pal.fgText);
 
-    // VST3 Native GUI button + Bypass LED
-    drawCard(buf, m.guiRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    // Unified flush VST3 GUI + Bypass strip
+    drawCard(buf, Rect(m.guiRc.left, m.guiRc.top, m.bypRc.right, m.bypRc.bottom),
+             pal.bgControl, COLOR_TRANSPARENT, 1.5f);
     drawCard(buf, m.bypRc, (plug && plug.enabled) ? pal.accentGreen : pal.ledOff, COLOR_TRANSPARENT, 1.5f);
     drawCenteredText(buf, uiFnt, m.guiRc, "EDITOR"d, pal.fgText);
 

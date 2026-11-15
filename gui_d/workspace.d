@@ -5,6 +5,7 @@ import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.layouts : WidgetGroupDefaultDrawing;
 import dlangui.widgets.widget : Visibility, Widget;
+import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawPlayheadTriangle,
                      drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette,
                      safeWidgetFont, truncateLabel;
@@ -273,9 +274,7 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
 
         // Top-left FL Studio Window Menu icon (▼) — borderless on caption bar
         Rect mRc = menuBtnRect();
-        drawCard(buf, mRc, hdrBg, COLOR_TRANSPARENT, 0.0f);
-        drawPlayheadTriangle(buf, mRc.middlex, mRc.middley - dp(2), dp(4), dp(5),
-                             isActive_ ? pal.accentOrange : pal.fgMuted);
+        drawDawIcon(buf, mRc, DawIcon.WINDOW_MENU, isActive_ ? pal.accentOrange : pal.fgMuted);
 
         // Title
         auto f = getDawFont(12, safeWidgetFont(this), FontWeight.Bold);
@@ -285,14 +284,12 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
 
         // Maximize / Restore button — borderless on caption bar
         Rect maxRc = maxBtnRect();
-        drawCard(buf, maxRc, hdrBg, COLOR_TRANSPARENT, 0.0f);
         const uint iconCol = pal.fgMuted;
         buf.drawFrame(Rect(maxRc.left + dp(5), maxRc.top + dp(4), maxRc.right - dp(5), maxRc.bottom - dp(4)),
                       iconCol, Rect(bw, dp(2), bw, bw), hdrBg);
 
         // Close button — borderless on caption bar
         Rect clsRc = closeBtnRect();
-        drawCard(buf, clsRc, hdrBg, COLOR_TRANSPARENT, 0.0f);
         drawThickLine(buf, clsRc.left + dp(5), clsRc.top + dp(5), clsRc.right - dp(5), clsRc.bottom - dp(5),
                       dpf(1.4f), pal.fgMuted);
         drawThickLine(buf, clsRc.right - dp(5), clsRc.top + dp(5), clsRc.left + dp(5), clsRc.bottom - dp(5),

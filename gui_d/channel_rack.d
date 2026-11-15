@@ -4,6 +4,7 @@ import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
+import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : dp, dpf, drawCard, drawCenteredText, drawRotaryKnob, drawVCenteredText, FlPalette,
     getDawFont, getDawMonoFont, getFlPalette, safeWidgetFont, truncateLabel;
 import gui_d.transport_model : ChannelFilterMode, ChannelState, GraphEditorMode, TransportModel;
@@ -38,8 +39,8 @@ ChannelRackMetrics computeChannelRackMetrics(Rect rc, const(TransportModel)* mod
     const int stepAreaW = rc.right - m.stepAreaLeft - dp(10);
     m.stepW = (stepAreaW > dp(160)) ? (stepAreaW / 16) : dp(14);
     m.filterRc = Rect(rc.left + dp(8), rc.top + dp(4), rc.left + dp(68), rc.top + m.toolbarH - dp(4));
-    m.graphBtnRc = Rect(rc.right - dp(134), rc.top + dp(4), rc.right - dp(68), rc.top + m.toolbarH - dp(4));
-    m.addBtnRc = Rect(rc.right - dp(62), rc.top + dp(4), rc.right - dp(8), rc.top + m.toolbarH - dp(4));
+    m.graphBtnRc = Rect(rc.right - dp(60), rc.top + dp(4), rc.right - dp(34), rc.top + m.toolbarH - dp(4));
+    m.addBtnRc = Rect(rc.right - dp(34), rc.top + dp(4), rc.right - dp(8), rc.top + m.toolbarH - dp(4));
     return m;
 }
 
@@ -81,15 +82,18 @@ void drawChannelRackCanvas(
                       toUTF32(format("SWING %d%%", cast(int)(model.swingAmount * 100.0f + 0.5f))),
                       pal.fgMuted);
 
-    // Graph Editor toggle button
-    drawCard(buf, m.graphBtnRc, model.graphEditorOpen ? pal.accentOrange : pal.bgControl,
-             COLOR_TRANSPARENT, 1.5f);
-    drawCenteredText(buf, boldFnt, m.graphBtnRc, "GRAPH"d,
-                     model.graphEditorOpen ? pal.bgLcd : pal.fgText);
-
-    // + Add Channel button
-    drawCard(buf, m.addBtnRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
-    drawCenteredText(buf, boldFnt, m.addBtnRc, "+ ADD"d, pal.accentGreen);
+    // Unified flush Graph Editor & Add Channel strip on right
+    Rect crToolsRc = Rect(m.graphBtnRc.left, m.graphBtnRc.top, m.addBtnRc.right, m.addBtnRc.bottom);
+    drawCard(buf, crToolsRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    if (model.graphEditorOpen) {
+        drawCard(buf, m.graphBtnRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+    }
+    drawDawIcon(buf, Rect(m.graphBtnRc.left + dp(3), m.graphBtnRc.top + dp(2),
+                          m.graphBtnRc.right - dp(3), m.graphBtnRc.bottom - dp(2)),
+                DawIcon.GRAPH_EDITOR, model.graphEditorOpen ? pal.bgLcd : pal.fgText);
+    drawDawIcon(buf, Rect(m.addBtnRc.left + dp(3), m.addBtnRc.top + dp(2),
+                          m.addBtnRc.right - dp(3), m.addBtnRc.bottom - dp(2)),
+                DawIcon.PLUS, pal.accentGreen);
 
     // Playhead step indicator strip
     const int activeStep = model.currentStepIndex();
@@ -176,13 +180,18 @@ void drawChannelRackCanvas(
         buf.fillRect(gRc, pal.bgPanelAlt);
         buf.fillRect(Rect(gRc.left, gRc.top, gRc.right, gRc.top + dp(1)), pal.borderSubtle);
 
-        // Mode tabs on left side
+        // Mode tabs on left side (flush segmented tab bar)
         static immutable string[4] MODE_LABELS = ["VEL", "PITCH", "PAN", "SHIFT"];
+        Rect modesStripRc = Rect(gRc.left + dp(8), gRc.top + dp(4),
+                                 gRc.left + dp(8 + 4 * 52), gRc.top + dp(22));
+        drawCard(buf, modesStripRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
         foreach (modeIdx; 0 .. 4) {
-            Rect mRc = Rect(gRc.left + dp(8 + modeIdx * 56), gRc.top + dp(4),
-                            gRc.left + dp(60 + modeIdx * 56), gRc.top + dp(22));
+            Rect mRc = Rect(gRc.left + dp(8 + modeIdx * 52), gRc.top + dp(4),
+                            gRc.left + dp(8 + (modeIdx + 1) * 52), gRc.top + dp(22));
             const bool mAct = (cast(int)model.graphEditorMode == modeIdx);
-            drawCard(buf, mRc, mAct ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
+            if (mAct) {
+                drawCard(buf, mRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+            }
             drawCenteredText(buf, smallFnt, mRc, toUTF32(MODE_LABELS[modeIdx]),
                              mAct ? pal.bgLcd : pal.fgText);
         }
@@ -346,8 +355,8 @@ class ChannelRackWidget : Widget {
             if (model_.graphEditorOpen && event.y >= m.graphAreaTop) {
                 if (event.y < m.graphAreaTop + dp(24)) {
                     foreach (modeIdx; 0 .. 4) {
-                        Rect mRc = Rect(_pos.left + dp(8 + modeIdx * 56), m.graphAreaTop + dp(4),
-                                        _pos.left + dp(60 + modeIdx * 56), m.graphAreaTop + dp(22));
+                        Rect mRc = Rect(_pos.left + dp(8 + modeIdx * 52), m.graphAreaTop + dp(4),
+                                        _pos.left + dp(8 + (modeIdx + 1) * 52), m.graphAreaTop + dp(22));
                         if (mRc.isPointInside(event.x, event.y)) {
                             model_.graphEditorMode = cast(GraphEditorMode)modeIdx;
                             invalidate();

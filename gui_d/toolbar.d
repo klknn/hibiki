@@ -5,7 +5,8 @@ import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : dp, dpf, drawCard, drawCenteredText, drawFilledCircle, drawRotaryKnob, drawThickLine,
+import gui_d.icons : DawIcon, drawDawIcon;
+import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawRotaryKnob, drawThickLine,
     drawVCenteredText, FlPalette, formatBarBeat, formatTimecode, getDawFont, getDawMonoFont,
     getFlPalette, safeWidgetFont, truncateLabel, uiScale;
 import gui_d.transport_model : PlaybackMode, SnapMode, TimeDisplayMode, TransportModel;
@@ -45,66 +46,64 @@ struct ToolbarLayout {
 
 ToolbarLayout computeToolbarLayout(Rect rc) nothrow @safe {
     ToolbarLayout tl;
-    const int top = rc.top + dp(4);
-    const int bot = rc.bottom - dp(4);
-    const int padY = dp(4);
-    const int btnY = dp(5);
+    const int top = rc.top + dp(5);
+    const int bot = rc.bottom - dp(5);
     const int gap = dp(6);
     int x = rc.left + gap;
 
-    // 1. Master Volume & Master Pitch Panel
-    tl.masterPanel = Rect(x, top, x + dp(76), bot);
-    tl.volKnobX = x + dp(22);
-    tl.pitchKnobX = x + dp(54);
+    // 1. Master Volume & Pitch knobs (no enclosing box)
+    tl.masterPanel = Rect(x, top, x + dp(66), bot);
+    tl.volKnobX = x + dp(17);
+    tl.pitchKnobX = x + dp(49);
     x = tl.masterPanel.right + gap;
 
-    // 2. Transport Panel (PAT/SONG, Play, Stop, Rec, Loop, BPM LCD, Time LCD)
-    tl.transPanel = Rect(x, top, x + dp(374), bot);
-    tl.patSongRc = Rect(x + dp(6), top + padY, x + dp(50), bot - padY);
-    tl.playRc = Rect(x + dp(56), top + btnY, x + dp(88), bot - btnY);
-    tl.stopRc = Rect(x + dp(92), top + btnY, x + dp(122), bot - btnY);
-    tl.recRc = Rect(x + dp(126), top + btnY, x + dp(156), bot - btnY);
-    tl.loopRc = Rect(x + dp(160), top + btnY, x + dp(196), bot - btnY);
-    tl.bpmRc = Rect(x + dp(200), top + padY, x + dp(268), bot - padY);
-    tl.timeRc = Rect(x + dp(272), top + padY, x + dp(368), bot - padY);
+    // 2. Unified Transport + Tempo/Time cluster (zero internal dividers between Play/Stop/Rec/Loop)
+    tl.transPanel = Rect(x, top, x + dp(354), bot);
+    tl.patSongRc = Rect(x, top, x + dp(60), bot);
+    tl.playRc = Rect(x + dp(60), top, x + dp(90), bot);
+    tl.stopRc = Rect(x + dp(90), top, x + dp(118), bot);
+    tl.recRc = Rect(x + dp(118), top, x + dp(146), bot);
+    tl.loopRc = Rect(x + dp(146), top, x + dp(176), bot);
+    tl.bpmRc = Rect(x + dp(180), top + dp(1), x + dp(248), bot - dp(1));
+    tl.timeRc = Rect(x + dp(248), top + dp(1), x + dp(350), bot - dp(1));
     x = tl.transPanel.right + gap;
 
-    // 3. Recording / Metronome / Typing Keyboard Panel
-    tl.recOptsPanel = Rect(x, top, x + dp(150), bot);
+    // 3. Recording Helpers strip (Metronome, Countdown, Overdub, Typing Keyboard — flush icons)
+    tl.recOptsPanel = Rect(x, top, x + dp(112), bot);
     foreach (i; 0 .. 4) {
-        const int bx = x + dp(5) + cast(int)i * dp(35);
-        tl.recToggles[i] = Rect(bx, top + btnY, bx + dp(32), bot - btnY);
+        const int bx = x + cast(int)i * dp(28);
+        tl.recToggles[i] = Rect(bx, top, bx + dp(28), bot);
     }
     x = tl.recOptsPanel.right + gap;
 
-    // 4. Snap & Undo/Redo Panel
-    tl.snapPanel = Rect(x, top, x + dp(152), bot);
-    tl.snapRc = Rect(x + dp(5), top + btnY, x + dp(78), bot - btnY);
-    tl.undoRc = Rect(x + dp(82), top + btnY, x + dp(113), bot - btnY);
-    tl.redoRc = Rect(x + dp(116), top + btnY, x + dp(147), bot - btnY);
+    // 4. Snap & History strip (Magnet + Snap label, Undo, Redo — flush)
+    tl.snapPanel = Rect(x, top, x + dp(132), bot);
+    tl.snapRc = Rect(x, top, x + dp(76), bot);
+    tl.undoRc = Rect(x + dp(76), top, x + dp(104), bot);
+    tl.redoRc = Rect(x + dp(104), top, x + dp(132), bot);
     x = tl.snapPanel.right + gap;
 
-    // 5. Pattern Selector Panel (< Pattern 1 > +)
-    tl.patPanel = Rect(x, top, x + dp(196), bot);
-    tl.pPrev = Rect(x + dp(5), top + btnY, x + dp(26), bot - btnY);
-    tl.pLbl = Rect(x + dp(28), top + btnY, x + dp(144), bot - btnY);
-    tl.pNext = Rect(x + dp(146), top + btnY, x + dp(167), bot - btnY);
-    tl.pAdd = Rect(x + dp(170), top + btnY, x + dp(191), bot - btnY);
+    // 5. Pattern Selector strip (< Pattern 1 > + — flush)
+    tl.patPanel = Rect(x, top, x + dp(184), bot);
+    tl.pPrev = Rect(x, top, x + dp(22), bot);
+    tl.pLbl = Rect(x + dp(22), top + dp(1), x + dp(138), bot - dp(1));
+    tl.pNext = Rect(x + dp(138), top, x + dp(160), bot);
+    tl.pAdd = Rect(x + dp(160), top, x + dp(184), bot);
     x = tl.patPanel.right + gap;
 
-    // 6. Window View Toggles Panel (PL, CR, PR, BR, MX, FX)
-    if (x + dp(206) <= rc.right - gap) {
+    // 6. Workspace Window Switchers strip (Playlist, Rack, PianoRoll, Browser, Mixer, Plugin — flush icons)
+    if (x + dp(168) <= rc.right - gap) {
         tl.hasWinPanel = true;
-        tl.winPanel = Rect(x, top, x + dp(204), bot);
+        tl.winPanel = Rect(x, top, x + dp(168), bot);
         foreach (i; 0 .. 6) {
-            const int wx = x + dp(5) + cast(int)i * dp(32);
-            tl.winBtns[i] = Rect(wx, top + btnY, wx + dp(29), bot - btnY);
+            const int wx = x + cast(int)i * dp(28);
+            tl.winBtns[i] = Rect(wx, top, wx + dp(28), bot);
         }
         x = tl.winPanel.right + gap;
     }
 
-    // 7. Live Oscilloscope & CPU Panel
-    if (rc.right - x > dp(90)) {
+    // 7. Live Oscilloscope & CPU monitor
+    if (rc.right - x > dp(80)) {
         tl.hasScopePanel = true;
         tl.scopePanel = Rect(x, top, rc.right - gap, bot);
     }
@@ -150,115 +149,120 @@ void drawToolbarCanvas(
     FontRef patFnt = getDawFont(11, fnt, FontWeight.Normal);
     FontRef lcdFnt = getDawMonoFont(12, fnt, FontWeight.Bold);
 
-    // 1. Master Volume & Master Pitch Panel
-    drawCard(buf, tl.masterPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
+    // 1. Master Volume & Master Pitch knobs directly on toolbar surface
     drawRotaryKnob(buf, tl.volKnobX, tl.masterPanel.middley, dp(12), model.masterVolume,
                    pal.bgLcd, pal.accentOrange, pal.bgControl, pal.borderSubtle);
     drawRotaryKnob(buf, tl.pitchKnobX, tl.masterPanel.middley, dp(11), (model.masterPitch + 1.0f) * 0.5f,
                    pal.bgLcd, pal.accentCyan, pal.bgControl, pal.borderSubtle, true);
 
-    // 2. Transport Panel (PAT/SONG, Play, Stop, Rec, Loop, BPM LCD, Time LCD)
-    drawCard(buf, tl.transPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
+    // 2. Unified Transport & Time cluster (single container, zero borders between buttons)
+    drawCard(buf, tl.transPanel, pal.bgControl, COLOR_TRANSPARENT, 2.0f);
 
     const bool isPat = model.playbackMode == PlaybackMode.PAT;
-    drawCard(buf, tl.patSongRc, isPat ? pal.accentOrange : pal.accentGreen, COLOR_TRANSPARENT, 2.5f);
-    drawCenteredText(buf, uiFnt, tl.patSongRc, isPat ? "PAT"d : "SONG"d, pal.bgLcd);
+    drawCard(buf, tl.patSongRc, isPat ? pal.accentOrange : pal.accentGreen, COLOR_TRANSPARENT, 2.0f);
+    Rect psIconRc = Rect(tl.patSongRc.left + dp(3), tl.patSongRc.top + dp(9),
+                         tl.patSongRc.left + dp(21), tl.patSongRc.bottom - dp(9));
+    drawDawIcon(buf, psIconRc, isPat ? DawIcon.PAT_MODE : DawIcon.SONG_MODE, pal.bgLcd);
+    drawVCenteredText(buf, uiFnt, psIconRc.right + dp(2), tl.patSongRc,
+                      isPat ? "PAT"d : "SONG"d, pal.bgLcd);
 
-    drawCard(buf, tl.playRc, model.isPlaying ? pal.accentGreen : pal.bgControl, COLOR_TRANSPARENT, 2.5f);
-    drawCard(buf, tl.stopRc, pal.bgControl, COLOR_TRANSPARENT, 2.5f);
-    drawCard(buf, tl.recRc, model.isRecording ? pal.accentRed : pal.bgControl, COLOR_TRANSPARENT, 2.5f);
-    drawCard(buf, tl.loopRc, model.loopEnabled ? pal.accentAmber : pal.bgControl, COLOR_TRANSPARENT, 2.5f);
-
-    // Vector transport glyphs
-    const uint playCol = model.isPlaying ? pal.bgLcd : pal.accentGreen;
-    const int playW = dp(10);
-    const int playMaxH = dp(6);
-    foreach (px; 0 .. playW) {
-        const int halfH = ((playW - px) * playMaxH) / playW;
-        buf.fillRect(Rect(tl.playRc.middlex - dp(4) + px, tl.playRc.middley - halfH,
-                          tl.playRc.middlex - dp(3) + px, tl.playRc.middley + halfH + dp(1)), playCol);
+    if (model.isPlaying) {
+        drawCard(buf, tl.playRc, pal.accentGreen, COLOR_TRANSPARENT, 1.5f);
     }
-    const int stopR = dp(5);
-    buf.fillRect(Rect(tl.stopRc.middlex - stopR, tl.stopRc.middley - stopR,
-                      tl.stopRc.middlex + stopR, tl.stopRc.middley + stopR),
-                 pal.fgText);
-    const uint recCol = model.isRecording ? pal.bgLcd : pal.accentRed;
-    drawFilledCircle(buf, tl.recRc.middlex, tl.recRc.middley, dpf(5.0f), recCol);
-    drawCenteredText(buf, uiFnt, tl.loopRc, "LOOP"d,
-                     model.loopEnabled ? pal.bgLcd : pal.fgMuted);
+    if (model.isRecording) {
+        drawCard(buf, tl.recRc, pal.accentRed, COLOR_TRANSPARENT, 1.5f);
+    }
+    if (model.loopEnabled) {
+        drawCard(buf, tl.loopRc, pal.accentAmber, COLOR_TRANSPARENT, 1.5f);
+    }
 
-    // BPM LCD (drag up/down)
-    drawCard(buf, tl.bpmRc, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
+    drawDawIcon(buf, Rect(tl.playRc.left + dp(5), tl.playRc.top + dp(9), tl.playRc.right - dp(5), tl.playRc.bottom - dp(9)),
+                DawIcon.PLAY, model.isPlaying ? pal.bgLcd : pal.accentGreen);
+    drawDawIcon(buf, Rect(tl.stopRc.left + dp(4), tl.stopRc.top + dp(9), tl.stopRc.right - dp(4), tl.stopRc.bottom - dp(9)),
+                DawIcon.STOP, pal.fgText);
+    drawDawIcon(buf, Rect(tl.recRc.left + dp(4), tl.recRc.top + dp(9), tl.recRc.right - dp(4), tl.recRc.bottom - dp(9)),
+                DawIcon.RECORD, model.isRecording ? pal.bgLcd : pal.accentRed);
+    drawDawIcon(buf, Rect(tl.loopRc.left + dp(5), tl.loopRc.top + dp(9), tl.loopRc.right - dp(5), tl.loopRc.bottom - dp(9)),
+                DawIcon.LOOP, model.loopEnabled ? pal.bgLcd : pal.fgMuted);
+
+    // Unified BPM + Time LCD well inside Transport cluster
+    Rect lcdGroup = Rect(tl.bpmRc.left, tl.bpmRc.top, tl.timeRc.right, tl.timeRc.bottom);
+    drawCard(buf, lcdGroup, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
     drawCenteredText(buf, lcdFnt, tl.bpmRc, toUTF32(format("%.1f", model.bpm)), pal.accentOrange);
-
-    // Time / Bar:Beat LCD
-    drawCard(buf, tl.timeRc, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
     const string timeStr = (model.timeDisplayMode == TimeDisplayMode.TIME_MS)
         ? formatTimecode(model.playheadPosSec)
         : formatBarBeat(model.playheadPosSec, model.bpm);
     drawCenteredText(buf, lcdFnt, tl.timeRc, toUTF32(timeStr), pal.accentCyan);
 
-    // 3. Recording / Metronome / Typing Keyboard Panel (seamless grouped buttons)
-    drawCard(buf, tl.recOptsPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
-    struct ToggleSpec { string lbl; bool on; uint col; }
-    ToggleSpec[4] specs = [
-        ToggleSpec("MET", model.metronomeEnabled, pal.accentOrange),
-        ToggleSpec("321", model.countdownEnabled, pal.accentAmber),
-        ToggleSpec("OVD", model.overdubEnabled, pal.accentGreen),
-        ToggleSpec("KB", model.typingKeyboardEnabled, pal.accentCyan),
+    // 3. Recording Helpers strip (single seamless strip of pictorial icons)
+    drawCard(buf, tl.recOptsPanel, pal.bgControl, COLOR_TRANSPARENT, 2.0f);
+    struct IconToggleSpec { DawIcon icon; bool on; uint col; }
+    IconToggleSpec[4] specs = [
+        IconToggleSpec(DawIcon.METRONOME, model.metronomeEnabled, pal.accentOrange),
+        IconToggleSpec(DawIcon.COUNTDOWN, model.countdownEnabled, pal.accentAmber),
+        IconToggleSpec(DawIcon.OVERDUB,   model.overdubEnabled, pal.accentGreen),
+        IconToggleSpec(DawIcon.TYPING_KB, model.typingKeyboardEnabled, pal.accentCyan),
     ];
     foreach (i, sp; specs) {
         Rect tRc = tl.recToggles[i];
-        drawCard(buf, tRc, sp.on ? sp.col : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
-        drawCenteredText(buf, uiFnt, tRc, toUTF32(sp.lbl), sp.on ? pal.bgLcd : pal.fgMuted);
+        if (sp.on) {
+            drawCard(buf, tRc, sp.col, COLOR_TRANSPARENT, 1.5f);
+        }
+        drawDawIcon(buf, Rect(tRc.left + dp(4), tRc.top + dp(9), tRc.right - dp(4), tRc.bottom - dp(9)),
+                    sp.icon, sp.on ? pal.bgLcd : pal.fgMuted,
+                    sp.on ? adjustColorBrightness(pal.bgLcd, 28) : pal.fgDim);
     }
 
-    // 4. Snap & Undo/Redo Panel (seamless grouped buttons)
-    drawCard(buf, tl.snapPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
-    drawCard(buf, tl.snapRc, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
-    drawCard(buf, tl.undoRc, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
-    drawCard(buf, tl.redoRc, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
-    drawCenteredText(buf, uiFnt, tl.snapRc, toUTF32(snapLabel(model.snapMode)), pal.fgText);
-    drawCenteredText(buf, uiFnt, tl.undoRc, "UND"d, pal.fgText);
-    drawCenteredText(buf, uiFnt, tl.redoRc, "RED"d, pal.fgText);
+    // 4. Snap & History strip (Magnet + Snap label, Undo, Redo — flush)
+    drawCard(buf, tl.snapPanel, pal.bgControl, COLOR_TRANSPARENT, 2.0f);
+    Rect snapIconRc = Rect(tl.snapRc.left + dp(4), tl.snapRc.top + dp(10),
+                           tl.snapRc.left + dp(22), tl.snapRc.bottom - dp(10));
+    drawDawIcon(buf, snapIconRc, DawIcon.SNAP_MAGNET, pal.accentCyan, pal.fgText);
+    drawVCenteredText(buf, patFnt, snapIconRc.right + dp(3), tl.snapRc,
+                      toUTF32(snapLabel(model.snapMode)), pal.fgText);
+    drawDawIcon(buf, Rect(tl.undoRc.left + dp(4), tl.undoRc.top + dp(9), tl.undoRc.right - dp(4), tl.undoRc.bottom - dp(9)),
+                DawIcon.UNDO, pal.fgText);
+    drawDawIcon(buf, Rect(tl.redoRc.left + dp(4), tl.redoRc.top + dp(9), tl.redoRc.right - dp(4), tl.redoRc.bottom - dp(9)),
+                DawIcon.REDO, pal.fgText);
 
-    // 5. Pattern Selector Panel (< Pattern 1 > +)
-    drawCard(buf, tl.patPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
-    drawCard(buf, tl.pPrev, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
+    // 5. Pattern Selector strip (< Pattern 1 > + — flush)
+    drawCard(buf, tl.patPanel, pal.bgControl, COLOR_TRANSPARENT, 2.0f);
     drawCard(buf, tl.pLbl, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
-    drawCard(buf, tl.pNext, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
-    drawCard(buf, tl.pAdd, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
     string patName = "Pattern 1";
     if (model.selectedPatternIndex >= 0 && model.selectedPatternIndex < cast(int)model.patterns.length) {
         patName = model.patterns[model.selectedPatternIndex].name;
     }
-    drawCenteredText(buf, uiFnt, tl.pPrev, "<"d, pal.fgText);
+    drawDawIcon(buf, Rect(tl.pPrev.left + dp(3), tl.pPrev.top + dp(10), tl.pPrev.right - dp(3), tl.pPrev.bottom - dp(10)),
+                DawIcon.CHEVRON_LEFT, pal.fgText);
     drawVCenteredText(buf, patFnt, tl.pLbl.left + dp(6), tl.pLbl,
                       toUTF32(truncateLabel(patName, 14)), pal.accentOrange);
-    drawCenteredText(buf, uiFnt, tl.pNext, ">"d, pal.fgText);
-    drawCenteredText(buf, uiFnt, tl.pAdd, "+"d, pal.accentGreen);
+    drawDawIcon(buf, Rect(tl.pNext.left + dp(3), tl.pNext.top + dp(10), tl.pNext.right - dp(3), tl.pNext.bottom - dp(10)),
+                DawIcon.CHEVRON_RIGHT, pal.fgText);
+    drawDawIcon(buf, Rect(tl.pAdd.left + dp(4), tl.pAdd.top + dp(10), tl.pAdd.right - dp(4), tl.pAdd.bottom - dp(10)),
+                DawIcon.PLUS, pal.accentGreen);
 
-    // 6. Window View Toggles Panel (PL, CR, PR, BR, MIX, PLUG) — seamless strip
+    // 6. Workspace Window Switchers strip (Playlist, Channel Rack, Piano Roll, Browser, Mixer, Plugin)
     if (tl.hasWinPanel) {
-        drawCard(buf, tl.winPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
-        struct WinSpec { string lbl; bool on; }
-        WinSpec[6] wspecs = [
-            WinSpec("PL", visPlaylist),
-            WinSpec("CR", visChannelRack),
-            WinSpec("PR", visPianoRoll),
-            WinSpec("BR", visBrowser),
-            WinSpec("MX", visMixer),
-            WinSpec("FX", visPlugin),
+        drawCard(buf, tl.winPanel, pal.bgControl, COLOR_TRANSPARENT, 2.0f);
+        struct WinIconSpec { DawIcon icon; bool on; }
+        WinIconSpec[6] wspecs = [
+            WinIconSpec(DawIcon.WIN_PLAYLIST,     visPlaylist),
+            WinIconSpec(DawIcon.WIN_CHANNEL_RACK, visChannelRack),
+            WinIconSpec(DawIcon.WIN_PIANO_ROLL,   visPianoRoll),
+            WinIconSpec(DawIcon.WIN_BROWSER,      visBrowser),
+            WinIconSpec(DawIcon.WIN_MIXER,        visMixer),
+            WinIconSpec(DawIcon.WIN_PLUGIN,       visPlugin),
         ];
         foreach (i, ws; wspecs) {
             Rect wRc = tl.winBtns[i];
-            drawCard(buf, wRc, ws.on ? pal.bgControlHover : pal.bgControl,
-                     COLOR_TRANSPARENT, 0.0f);
             if (ws.on) {
+                drawCard(buf, wRc, pal.bgControlHover, COLOR_TRANSPARENT, 0.0f);
                 buf.fillRect(Rect(wRc.left + dp(3), wRc.bottom - dp(3), wRc.right - dp(3), wRc.bottom - dp(1)),
                              pal.accentOrange);
             }
-            drawCenteredText(buf, uiFnt, wRc, toUTF32(ws.lbl), ws.on ? pal.fgText : pal.fgMuted);
+            drawDawIcon(buf, Rect(wRc.left + dp(4), wRc.top + dp(9), wRc.right - dp(4), wRc.bottom - dp(9)),
+                        ws.icon, ws.on ? pal.fgText : pal.fgMuted,
+                        ws.on ? pal.accentOrange : pal.fgDim);
         }
     }
 

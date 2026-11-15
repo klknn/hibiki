@@ -713,7 +713,7 @@ class FlCompactButton : Button {
         minHeight = 0;
         focusable = false;
         updatePalette(pal);
-        margins = Rect(dp(1), 0, dp(1), 0);
+        margins = Rect(0, 0, 0, 0);
         padding = Rect(0, 0, 0, 0);
     }
 
@@ -951,7 +951,7 @@ unittest {
     overrideScreenDPI = 96;
     compactBtn.measure(200, 100);
     assert(compactBtn.measuredHeight == 22);
-    assert(compactBtn.measuredWidth == 42);
+    assert(compactBtn.measuredWidth == 40);
     compactBtn.onDraw(textBuf);
 
     // Verify flat theme overrides strip 3D 9-patch textures on built-in styles

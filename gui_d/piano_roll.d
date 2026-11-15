@@ -4,6 +4,7 @@ import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
+import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawFilledCircle,
     drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel, uiScale;
 import gui_d.transport_model : EditorTool, TransportModel;
@@ -61,11 +62,11 @@ PianoRollMetrics computePianoRollMetrics(Rect rc, int effKeyWidth, bool velOn) n
     m.velTop = (velOn && rc.bottom - m.gridTop > m.velH + dp(60)) ? (rc.bottom - m.velH) : rc.bottom;
     foreach (i; 0 .. 6) {
         const int bx0 = rc.left + dp(6 + cast(int)i * 24);
-        m.toolBtns[i] = Rect(bx0, rc.top + dp(4), bx0 + dp(21), m.rulerTop - dp(4));
+        m.toolBtns[i] = Rect(bx0, rc.top + dp(4), bx0 + dp(24), m.rulerTop - dp(4));
     }
     m.tgtRc = Rect(rc.left + dp(158), rc.top + dp(4), rc.left + dp(290), m.rulerTop - dp(4));
-    m.ghostRc = Rect(rc.right - dp(104), rc.top + dp(4), rc.right - dp(54), m.rulerTop - dp(4));
-    m.velRc = Rect(rc.right - dp(50), rc.top + dp(4), rc.right - dp(6), m.rulerTop - dp(4));
+    m.ghostRc = Rect(rc.right - dp(58), rc.top + dp(4), rc.right - dp(32), m.rulerTop - dp(4));
+    m.velRc = Rect(rc.right - dp(32), rc.top + dp(4), rc.right - dp(6), m.rulerTop - dp(4));
     return m;
 }
 
@@ -100,33 +101,51 @@ void drawPianoRollCanvas(
     buf.fillRect(tbRc, pal.bgPanelAlt);
     buf.fillRect(Rect(tbRc.left, tbRc.bottom - dp(1), tbRc.right, tbRc.bottom), pal.borderStrong);
 
-    static immutable string[6] TOOLS = ["P", "B", "D", "C", "E", "Z"];
+    static immutable DawIcon[6] TOOL_ICONS = [
+        DawIcon.TOOL_DRAW, DawIcon.TOOL_PAINT, DawIcon.TOOL_DELETE,
+        DawIcon.TOOL_SLICE, DawIcon.TOOL_SELECT, DawIcon.TOOL_ZOOM
+    ];
     static immutable EditorTool[6] TOOL_ENUMS = [
         EditorTool.DRAW, EditorTool.PAINT, EditorTool.DELETE,
         EditorTool.SLICE, EditorTool.SELECT, EditorTool.ZOOM
     ];
-    foreach (i, lbl; TOOLS) {
+    Rect prToolsRc = Rect(m.toolBtns[0].left, m.toolBtns[0].top, m.toolBtns[5].right, m.toolBtns[5].bottom);
+    drawCard(buf, prToolsRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    foreach (i, ic; TOOL_ICONS) {
         Rect bRc = m.toolBtns[i];
         const bool active = model && model.pianoRollTool == TOOL_ENUMS[i];
-        drawCard(buf, bRc, active ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
-        drawCenteredText(buf, boldFnt, bRc, toUTF32(lbl), active ? pal.bgLcd : pal.fgText);
+        if (active) {
+            drawCard(buf, bRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+        }
+        drawDawIcon(buf, Rect(bRc.left + dp(2), bRc.top + dp(2), bRc.right - dp(2), bRc.bottom - dp(2)),
+                    ic, active ? pal.bgLcd : pal.fgText,
+                    active ? adjustColorBrightness(pal.bgLcd, 28) : pal.fgMuted);
     }
 
-    // Target Channel pill
+    // Target Channel pill (< Name >)
     string targetName = "Acid Bass";
     if (model && model.activeMidi.channelIndex >= 0 &&
         model.activeMidi.channelIndex < cast(int)model.channels.length) {
         targetName = model.channels[model.activeMidi.channelIndex].name;
     }
     drawCard(buf, m.tgtRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawDawIcon(buf, Rect(m.tgtRc.left + dp(3), m.tgtRc.top + dp(3), m.tgtRc.left + dp(17), m.tgtRc.bottom - dp(3)),
+                DawIcon.CHEVRON_LEFT, pal.accentOrange);
     drawCenteredText(buf, boldFnt, m.tgtRc,
-                     toUTF32("< " ~ truncateLabel(targetName, 12) ~ " >"), pal.accentOrange);
+                     toUTF32(truncateLabel(targetName, 12)), pal.accentOrange);
+    drawDawIcon(buf, Rect(m.tgtRc.right - dp(17), m.tgtRc.top + dp(3), m.tgtRc.right - dp(3), m.tgtRc.bottom - dp(3)),
+                DawIcon.CHEVRON_RIGHT, pal.accentOrange);
 
-    // Ghost Notes & Velocity Lane toggles
-    drawCard(buf, m.ghostRc, ghostOn ? pal.accentCyan : pal.bgControl, COLOR_TRANSPARENT, 1.5f);
-    drawCard(buf, m.velRc, velOn ? pal.accentGreen : pal.bgControl, COLOR_TRANSPARENT, 1.5f);
-    drawCenteredText(buf, boldFnt, m.ghostRc, "GHOST"d, ghostOn ? pal.bgLcd : pal.fgText);
-    drawCenteredText(buf, boldFnt, m.velRc, "VEL"d, velOn ? pal.bgLcd : pal.fgText);
+    // Ghost Notes & Velocity Lane toggles (flush 2-icon strip)
+    Rect viewStripRc = Rect(m.ghostRc.left, m.ghostRc.top, m.velRc.right, m.velRc.bottom);
+    drawCard(buf, viewStripRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    if (ghostOn) drawCard(buf, m.ghostRc, pal.accentCyan, COLOR_TRANSPARENT, 1.5f);
+    if (velOn) drawCard(buf, m.velRc, pal.accentGreen, COLOR_TRANSPARENT, 1.5f);
+    drawDawIcon(buf, Rect(m.ghostRc.left + dp(2), m.ghostRc.top + dp(2), m.ghostRc.right - dp(2), m.ghostRc.bottom - dp(2)),
+                DawIcon.GHOST_NOTES, ghostOn ? pal.bgLcd : pal.fgText,
+                ghostOn ? adjustColorBrightness(pal.bgLcd, 28) : pal.fgMuted);
+    drawDawIcon(buf, Rect(m.velRc.left + dp(2), m.velRc.top + dp(2), m.velRc.right - dp(2), m.velRc.bottom - dp(2)),
+                DawIcon.VELOCITY_LANE, velOn ? pal.bgLcd : pal.fgText);
 
     // 2. Beat Ruler & Piano Grid Geometry
     const int gridLeft = m.gridLeft;

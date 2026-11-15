@@ -4,6 +4,7 @@ import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
+import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : dp, dpf, drawCard, drawCenteredText, drawLevelMeter, drawRotaryKnob, drawThickLine,
     drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
 import gui_d.transport_model : PluginSlotState, TrackStripState, TransportModel;
@@ -48,8 +49,8 @@ MixerMetrics computeMixerMetrics(Rect rc, const(TransportModel)* model) nothrow 
     m.bodyBot = rc.bottom - dp(4);
     m.showFx = (model ? model.showMixerFxRack : true) && rc.width > m.fxRackW + dp(280);
     m.stripsRight = m.showFx ? (rc.right - m.fxRackW) : (rc.right - dp(4));
-    m.scrLeftRc = Rect(rc.right - dp(130), rc.top + dp(4), rc.right - dp(106), rc.top + m.toolbarH - dp(4));
-    m.scrRightRc = Rect(rc.right - dp(102), rc.top + dp(4), rc.right - dp(78), rc.top + m.toolbarH - dp(4));
+    m.scrLeftRc = Rect(rc.right - dp(126), rc.top + dp(4), rc.right - dp(100), rc.top + m.toolbarH - dp(4));
+    m.scrRightRc = Rect(rc.right - dp(100), rc.top + dp(4), rc.right - dp(74), rc.top + m.toolbarH - dp(4));
     m.fxToggleRc = Rect(rc.right - dp(74), rc.top + dp(4), rc.right - dp(8), rc.top + m.toolbarH - dp(4));
     m.curRc = Rect(rc.left + dp(4), m.bodyTop, rc.left + dp(4) + m.currentW, m.bodyBot);
     m.masterRc = Rect(m.curRc.right + dp(4), m.bodyTop, m.curRc.right + dp(4) + m.stripW, m.bodyBot);
@@ -79,7 +80,7 @@ struct StripMetrics {
 
 StripMetrics computeStripMetrics(Rect stripRc) nothrow @safe {
     StripMetrics sm;
-    sm.muteRc = Rect(stripRc.left + dp(6), stripRc.top + dp(38), stripRc.left + dp(28), stripRc.top + dp(50));
+    sm.muteRc = Rect(stripRc.left + dp(6), stripRc.top + dp(38), stripRc.left + dp(32), stripRc.top + dp(50));
     sm.soloRc = Rect(stripRc.left + dp(32), stripRc.top + dp(38), stripRc.left + dp(58), stripRc.top + dp(50));
     sm.panX = stripRc.left + dp(18);
     sm.sepX = stripRc.left + dp(46);
@@ -107,8 +108,8 @@ private void drawMixerStrip(
     FontRef lblFnt,
     FontRef smallFnt
 ) {
-    const uint bg = isSelected ? pal.bgControl : (isMaster ? pal.bgPanelAlt : pal.bgPanel);
-    drawCard(buf, stripRc, bg, isSelected ? pal.accentOrange : pal.borderStrong, 3.0f);
+    const uint bg = isSelected ? pal.bgControl : ((displayIdx % 2 == 1) || isMaster ? pal.bgPanelAlt : pal.bgPanel);
+    drawCard(buf, stripRc, bg, isSelected ? pal.accentOrange : COLOR_TRANSPARENT, 2.5f);
 
     const uint trkCol = trk ? trk.color : pal.clipPattern;
     buf.fillRect(Rect(stripRc.left + dp(2), stripRc.top + dp(2), stripRc.right - dp(2), stripRc.top + dp(6)), trkCol);
@@ -203,16 +204,24 @@ void drawMixerCanvas(
     drawVCenteredText(buf, hdrFnt, tbRc.left + dp(10), tbRc,
                       toUTF32("MIXER  |  " ~ selName), pal.accentOrange);
 
-    // Horizontal insert scroll buttons (< >) and FX RACK toggle
-    drawCard(buf, m.scrLeftRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
-    drawCard(buf, m.scrRightRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
-    drawCenteredText(buf, hdrFnt, m.scrLeftRc, "<"d, pal.fgText);
-    drawCenteredText(buf, hdrFnt, m.scrRightRc, ">"d, pal.fgText);
-
+    // Unified flush scroll (< >) + FX Rack toggle strip
     const bool showFx = model ? model.showMixerFxRack : true;
-    drawCard(buf, m.fxToggleRc, showFx ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 1.5f);
-    drawCenteredText(buf, smallFnt, m.fxToggleRc, "FX RACK"d,
-                     showFx ? pal.bgLcd : pal.fgText);
+    Rect mxToolStrip = Rect(m.scrLeftRc.left, m.scrLeftRc.top, m.fxToggleRc.right, m.fxToggleRc.bottom);
+    drawCard(buf, mxToolStrip, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawDawIcon(buf, Rect(m.scrLeftRc.left + dp(4), m.scrLeftRc.top + dp(2),
+                          m.scrLeftRc.right - dp(4), m.scrLeftRc.bottom - dp(2)),
+                DawIcon.CHEVRON_LEFT, pal.fgText);
+    drawDawIcon(buf, Rect(m.scrRightRc.left + dp(4), m.scrRightRc.top + dp(2),
+                          m.scrRightRc.right - dp(4), m.scrRightRc.bottom - dp(2)),
+                DawIcon.CHEVRON_RIGHT, pal.fgText);
+    if (showFx) {
+        drawCard(buf, m.fxToggleRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+    }
+    Rect fxIconRc = Rect(m.fxToggleRc.left + dp(4), m.fxToggleRc.top + dp(2),
+                         m.fxToggleRc.left + dp(20), m.fxToggleRc.bottom - dp(2));
+    drawDawIcon(buf, fxIconRc, DawIcon.FX_RACK, showFx ? pal.bgLcd : pal.fgText);
+    drawVCenteredText(buf, smallFnt, fxIconRc.right + dp(3), m.fxToggleRc, "RACK"d,
+                      showFx ? pal.bgLcd : pal.fgText);
 
     // Find selected insert pointer & master pointer
     const(TrackStripState)* masterTrk = null;

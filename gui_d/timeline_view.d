@@ -4,6 +4,7 @@ import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
+import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawPlayheadTriangle,
     drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel, uiScale;
 import gui_d.transport_model : AutomationPoint, EditorTool, PlaylistClipKind,
@@ -70,31 +71,31 @@ TimelineMetrics computeTimelineMetrics(Rect rc, const(TransportModel)* model) no
     m.tracksLeft = m.hasPicker ? m.pkrRc.right : rc.left;
     m.arrRc = Rect(m.tracksLeft + m.headerW, m.contentTop, rc.right, rc.bottom);
 
-    m.pickToggleRc = Rect(rc.left + dp(6), rc.top + dp(4), rc.left + dp(50), m.contentTop - dp(4));
+    m.pickToggleRc = Rect(rc.left + dp(6), rc.top + dp(4), rc.left + dp(32), m.contentTop - dp(4));
     foreach (i; 0 .. 8) {
-        const int bx0 = rc.left + dp(58 + cast(int)i * 25);
-        m.toolBtns[i] = Rect(bx0, rc.top + dp(4), bx0 + dp(22), m.contentTop - dp(4));
+        const int bx0 = rc.left + dp(38 + cast(int)i * 24);
+        m.toolBtns[i] = Rect(bx0, rc.top + dp(4), bx0 + dp(24), m.contentTop - dp(4));
     }
-    m.zoomOutRc = Rect(rc.right - dp(56), rc.top + dp(4), rc.right - dp(32), m.contentTop - dp(4));
+    m.zoomOutRc = Rect(rc.right - dp(54), rc.top + dp(4), rc.right - dp(30), m.contentTop - dp(4));
     m.zoomInRc = Rect(rc.right - dp(30), rc.top + dp(4), rc.right - dp(6), m.contentTop - dp(4));
     return m;
 }
 
 private struct ToolButtonDef {
     EditorTool tool;
-    string shortLbl;
+    DawIcon icon;
     string hint;
 }
 
 private immutable ToolButtonDef[8] PLAYLIST_TOOLS = [
-    ToolButtonDef(EditorTool.DRAW,   "P", "Draw (P) — click to add/move clip"),
-    ToolButtonDef(EditorTool.PAINT,  "B", "Paint (B) — click or drag to paint clips"),
-    ToolButtonDef(EditorTool.DELETE, "D", "Delete (D) — click clip to remove"),
-    ToolButtonDef(EditorTool.MUTE,   "T", "Mute (T) — click clip to mute/unmute"),
-    ToolButtonDef(EditorTool.SLIP,   "S", "Slip (S) — slip clip content"),
-    ToolButtonDef(EditorTool.SLICE,  "C", "Slice (C) — click clip to split in two"),
-    ToolButtonDef(EditorTool.SELECT, "E", "Select (E) — select clips"),
-    ToolButtonDef(EditorTool.ZOOM,   "Z", "Zoom (Z) — zoom arrangement"),
+    ToolButtonDef(EditorTool.DRAW,   DawIcon.TOOL_DRAW,   "Draw (P) — click to add/move clip"),
+    ToolButtonDef(EditorTool.PAINT,  DawIcon.TOOL_PAINT,  "Paint (B) — click or drag to paint clips"),
+    ToolButtonDef(EditorTool.DELETE, DawIcon.TOOL_DELETE, "Delete (D) — click clip to remove"),
+    ToolButtonDef(EditorTool.MUTE,   DawIcon.TOOL_MUTE,   "Mute (T) — click clip to mute/unmute"),
+    ToolButtonDef(EditorTool.SLIP,   DawIcon.TOOL_SLIP,   "Slip (S) — slip clip content"),
+    ToolButtonDef(EditorTool.SLICE,  DawIcon.TOOL_SLICE,  "Slice (C) — click clip to split in two"),
+    ToolButtonDef(EditorTool.SELECT, DawIcon.TOOL_SELECT, "Select (E) — select clips"),
+    ToolButtonDef(EditorTool.ZOOM,   DawIcon.TOOL_ZOOM,   "Zoom (Z) — zoom arrangement"),
 ];
 
 /// Renders the FL Studio 2026 Playlist (Tool Palette, Clip Picker, Ruler/Markers, Lanes & Clips).
@@ -122,21 +123,34 @@ void drawTimelineCanvas(
     buf.fillRect(Rect(tbRc.left, tbRc.bottom - bw, tbRc.right, tbRc.bottom), pal.borderStrong);
 
     const bool showPicker = model ? model.showClipPicker : true;
-    drawCard(buf, m.pickToggleRc, showPicker ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
-    drawCenteredText(buf, boldFnt, m.pickToggleRc, "PICK"d, showPicker ? pal.bgLcd : pal.fgText);
+    drawCard(buf, m.pickToggleRc, showPicker ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawDawIcon(buf, Rect(m.pickToggleRc.left + dp(2), m.pickToggleRc.top + dp(2),
+                          m.pickToggleRc.right - dp(2), m.pickToggleRc.bottom - dp(2)),
+                DawIcon.CLIP_PICKER, showPicker ? pal.bgLcd : pal.fgText,
+                showPicker ? adjustColorBrightness(pal.bgLcd, 28) : pal.fgMuted);
 
+    // Unified flush 8-tool icon strip (zero gaps between tools)
+    Rect toolStripRc = Rect(m.toolBtns[0].left, m.toolBtns[0].top,
+                            m.toolBtns[7].right, m.toolBtns[7].bottom);
+    drawCard(buf, toolStripRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
     foreach (i, const ref td; PLAYLIST_TOOLS) {
         Rect bRc = m.toolBtns[i];
         const bool active = model && model.playlistTool == td.tool;
-        drawCard(buf, bRc, active ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
-        drawCenteredText(buf, boldFnt, bRc, toUTF32(td.shortLbl), active ? pal.bgLcd : pal.fgText);
+        if (active) {
+            drawCard(buf, bRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+        }
+        drawDawIcon(buf, Rect(bRc.left + dp(2), bRc.top + dp(2), bRc.right - dp(2), bRc.bottom - dp(2)),
+                    td.icon, active ? pal.bgLcd : pal.fgText,
+                    active ? adjustColorBrightness(pal.bgLcd, 28) : pal.fgMuted);
     }
 
-    // Zoom +/- buttons on right
-    drawCard(buf, m.zoomOutRc, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
-    drawCard(buf, m.zoomInRc, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
-    drawCenteredText(buf, boldFnt, m.zoomOutRc, "-"d, pal.fgText);
-    drawCenteredText(buf, boldFnt, m.zoomInRc, "+"d, pal.fgText);
+    // Unified Zoom -/+ strip on right
+    Rect zoomStripRc = Rect(m.zoomOutRc.left, m.zoomOutRc.top, m.zoomInRc.right, m.zoomInRc.bottom);
+    drawCard(buf, zoomStripRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawDawIcon(buf, Rect(m.zoomOutRc.left + dp(2), m.zoomOutRc.top + dp(2), m.zoomOutRc.right - dp(2), m.zoomOutRc.bottom - dp(2)),
+                DawIcon.MINUS, pal.fgText);
+    drawDawIcon(buf, Rect(m.zoomInRc.left + dp(2), m.zoomInRc.top + dp(2), m.zoomInRc.right - dp(2), m.zoomInRc.bottom - dp(2)),
+                DawIcon.PLUS, pal.fgText);
 
     // 2. Optional Left Clip Picker Panel (Pattern / Audio / Automation)
     const int contentTop = m.contentTop;
@@ -146,18 +160,26 @@ void drawTimelineCanvas(
         buf.fillRect(pkrRc, pal.bgPanelAlt);
         buf.fillRect(Rect(pkrRc.right - bw, pkrRc.top, pkrRc.right, pkrRc.bottom), pal.borderStrong);
 
-        // 3 Kind Tabs: PAT | AUD | AUT
-        static immutable string[3] K_LBLS = ["PAT", "AUD", "AUT"];
+        // 3 Kind Tabs: Pattern / Audio / Automation (flush icon strip)
+        static immutable DawIcon[3] K_ICONS = [
+            DawIcon.KIND_PATTERN, DawIcon.KIND_AUDIO, DawIcon.KIND_AUTOMATION
+        ];
         static immutable PlaylistClipKind[3] KINDS = [
             PlaylistClipKind.PATTERN, PlaylistClipKind.AUDIO, PlaylistClipKind.AUTOMATION
         ];
-        const int tabW = (m.pickerW - dp(12)) / 3;
+        const int tabW = (m.pickerW - dp(8)) / 3;
+        Rect ktStrip = Rect(pkrRc.left + dp(4), pkrRc.top + dp(4),
+                            pkrRc.left + dp(4) + tabW * 3, pkrRc.top + dp(24));
+        drawCard(buf, ktStrip, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
         foreach (k; 0 .. 3) {
-            Rect ktRc = Rect(pkrRc.left + dp(4) + k * (tabW + dp(2)), pkrRc.top + dp(4),
-                             pkrRc.left + dp(4) + k * (tabW + dp(2)) + tabW, pkrRc.top + dp(24));
+            Rect ktRc = Rect(pkrRc.left + dp(4) + k * tabW, pkrRc.top + dp(4),
+                             pkrRc.left + dp(4) + (k + 1) * tabW, pkrRc.top + dp(24));
             const bool kAct = model && model.activePickerKind == KINDS[k];
-            drawCard(buf, ktRc, kAct ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
-            drawCenteredText(buf, boldFnt, ktRc, toUTF32(K_LBLS[k]), kAct ? pal.bgLcd : pal.fgText);
+            if (kAct) {
+                drawCard(buf, ktRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+            }
+            drawDawIcon(buf, Rect(ktRc.left + dp(2), ktRc.top + dp(2), ktRc.right - dp(2), ktRc.bottom - dp(2)),
+                        K_ICONS[k], kAct ? pal.bgLcd : pal.fgText);
         }
 
         // Picker entries
@@ -532,16 +554,16 @@ class TimelineCanvasWidget : Widget {
                 return true;
             }
 
-            // 2. Left Clip Picker clicks
+            // 2. Left Clip Picker clicks (flush 3-icon strip)
             if (m.hasPicker && event.x < m.tracksLeft) {
-                const int tabW = (m.pickerW - dp(12)) / 3;
+                const int tabW = (m.pickerW - dp(8)) / 3;
                 if (event.y < contentTop + dp(26)) {
                     static immutable PlaylistClipKind[3] KINDS = [
                         PlaylistClipKind.PATTERN, PlaylistClipKind.AUDIO, PlaylistClipKind.AUTOMATION
                     ];
                     foreach (k; 0 .. 3) {
-                        const int x0 = _pos.left + dp(4) + k * (tabW + dp(2));
-                        if (event.x >= x0 && event.x <= x0 + tabW) {
+                        const int x0 = _pos.left + dp(4) + k * tabW;
+                        if (event.x >= x0 && event.x < x0 + tabW) {
                             model_.activePickerKind = KINDS[k];
                             model_.activePickerIndex = 0;
                             invalidate();

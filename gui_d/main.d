@@ -108,6 +108,7 @@ extern (C) int UIAppMain(string[] args) {
 
     auto hintBar = new TextWidget("hint_bar", toUTF32(model.hintText));
     hintBar.padding = Rect(dp(10), dp(4), dp(10), dp(4));
+    hintBar.margins = Rect(dp(8), 0, dp(6), 0);
     hintBar.fontSize = dp(11);
     hintBar.layoutWidth = FILL_PARENT;
 

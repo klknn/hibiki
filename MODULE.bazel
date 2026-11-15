@@ -172,5 +172,12 @@ http_archive(
     url = "https://github.com/buggins/dlangui/archive/refs/heads/master.tar.gz",
 )
 
+http_archive(
+    name = "biz_ud_gothic",
+    build_file = "//third_party:biz_ud_gothic.BUILD",
+    sha256 = "30692df621b92df13b88f1360aed1ab6ae50de441bce751a396c6439045cd759",
+    url = "https://github.com/googlefonts/morisawa-biz-ud-gothic/releases/download/v1.051/BIZUDGothic.zip",
+)
+
 ldc_extension = use_extension("//tools/d_rules:extensions.bzl", "ldc_repositories")
 use_repo(ldc_extension, "ldc_toolchain")

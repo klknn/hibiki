@@ -63,7 +63,10 @@ d_library(
 d_binary(
     name = "hibiki_gui",
     srcs = ["main.d"],
-    data = ["//engine:hbk-play"],
+    data = [
+        "//engine:hbk-play",
+        "@biz_ud_gothic//:fonts",
+    ],
     linkopts = select({
         "@platforms//os:macos": [
             "-L/opt/homebrew/lib",

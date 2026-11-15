@@ -9,7 +9,7 @@ import dlangui.widgets.editors : EditLine;
 import dlangui.widgets.layouts : HorizontalLayout, VerticalLayout;
 import dlangui.widgets.scroll : ScrollWidget;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : dp, drawCard, drawVCenteredText, FlCompactButton, FlPalette,
+import gui_d.theme : activeDawUiFontFace, dp, drawCard, drawVCenteredText, FlCompactButton, FlPalette,
     getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
 import gui_d.transport_model : BrowserCategory, PatternState, TransportModel;
 import std.algorithm : canFind;
@@ -220,6 +220,10 @@ class BrowserPanel : VerticalLayout {
 
         edSearch_ = new EditLine("br_search", ""d);
         edSearch_.layoutWidth = FILL_PARENT;
+        edSearch_.backgroundImageId = null;
+        edSearch_.backgroundColor = pal.bgLcd;
+        edSearch_.textColor = pal.fgText;
+        edSearch_.padding = Rect(dp(6), dp(3), dp(6), dp(3));
         edSearch_.fontSize = dp(11);
         edSearch_.minHeight = dp(22);
         edSearch_.margins = Rect(0, dp(3), 0, dp(3));
@@ -307,6 +311,14 @@ class BrowserPanel : VerticalLayout {
                 tabBtns_[i].backgroundColor = active ? pal.accentOrange : pal.bgControl;
                 tabBtns_[i].textColor = active ? pal.bgLcd : pal.fgText;
             }
+        }
+
+        if (edSearch_ !is null) {
+            edSearch_.backgroundImageId = null;
+            edSearch_.backgroundColor = pal.bgLcd;
+            edSearch_.textColor = pal.fgText;
+            const string fface = activeDawUiFontFace();
+            if (fface.length > 0) edSearch_.fontFace = fface;
         }
 
         listBody_.removeAllChildren();

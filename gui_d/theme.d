@@ -2,13 +2,85 @@ module gui_d.theme;
 
 import core.math : fabs;
 import core.stdc.math : cosf, log10f, sinf, sqrtf;
+import dlangui.core.config : ENABLE_FREETYPE;
 import dlangui.core.types : BASE_DPI, Point, Rect, SCREEN_DPI;
 import dlangui.graphics.colors : COLOR_TRANSPARENT;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontFamily, FontManager, FontRef, FontWeight;
 import dlangui.widgets.controls : Button;
 import dlangui.widgets.widget : State, Visibility, Widget;
+import std.file : exists, thisExePath;
 import std.format : format;
+import std.path : buildPath, dirName;
+import std.process : environment;
+
+/// Free MS-Gothic-inspired open fonts (Morisawa BIZ UDGothic / UDPGothic, SIL OFL 1.1).
+enum string DAW_UI_FONT_FACE = "BIZ UDPGothic";
+enum string DAW_MONO_FONT_FACE = "BIZ UDGothic";
+
+private __gshared string activeUiFontFace_ = null;
+private __gshared string activeMonoFontFace_ = null;
+
+/// Searches Bazel runfiles and working tree for bundled `BIZ UDGothic` TTF fonts.
+string findDawFontDirectory() {
+    string[] dirs;
+    const string rfDir = environment.get("RUNFILES_DIR", "");
+    if (rfDir.length > 0) {
+        dirs ~= buildPath(rfDir, "+http_archive+biz_ud_gothic");
+        dirs ~= buildPath(rfDir, "_main", "external", "+http_archive+biz_ud_gothic");
+    }
+    try {
+        const string exeDir = dirName(thisExePath());
+        dirs ~= buildPath(exeDir, "hibiki_gui.runfiles", "+http_archive+biz_ud_gothic");
+        dirs ~= buildPath(exeDir, "..", "+http_archive+biz_ud_gothic");
+    } catch (Exception) {
+    }
+    dirs ~= [
+        buildPath("..", "+http_archive+biz_ud_gothic"),
+        buildPath("external", "+http_archive+biz_ud_gothic"),
+        "+http_archive+biz_ud_gothic",
+    ];
+    foreach (dir; dirs) {
+        if (exists(buildPath(dir, "BIZUDGothic-Regular.ttf")) &&
+            exists(buildPath(dir, "BIZUDPGothic-Regular.ttf"))) {
+            return dir;
+        }
+    }
+    return "";
+}
+
+/// Registers bundled MS-Gothic-style (`BIZ UDGothic` / `BIZ UDPGothic`) fonts into `FontManager`.
+bool registerBundledDawFonts() {
+    static if (ENABLE_FREETYPE) {
+        import dlangui.graphics.ftfonts : FreeTypeFontManager;
+        auto ft = cast(FreeTypeFontManager)FontManager.instance;
+        if (ft is null) return false;
+        const string dir = findDawFontDirectory();
+        if (dir.length == 0) return false;
+
+        bool ok = true;
+        ok &= ft.registerFont(buildPath(dir, "BIZUDPGothic-Regular.ttf"),
+                              FontFamily.SansSerif, DAW_UI_FONT_FACE, false, FontWeight.Normal, true);
+        ok &= ft.registerFont(buildPath(dir, "BIZUDPGothic-Bold.ttf"),
+                              FontFamily.SansSerif, DAW_UI_FONT_FACE, false, FontWeight.Bold, true);
+        ok &= ft.registerFont(buildPath(dir, "BIZUDGothic-Regular.ttf"),
+                              FontFamily.MonoSpace, DAW_MONO_FONT_FACE, false, FontWeight.Normal, true);
+        ok &= ft.registerFont(buildPath(dir, "BIZUDGothic-Bold.ttf"),
+                              FontFamily.MonoSpace, DAW_MONO_FONT_FACE, false, FontWeight.Bold, true);
+        if (ok) {
+            activeUiFontFace_ = DAW_UI_FONT_FACE;
+            activeMonoFontFace_ = DAW_MONO_FONT_FACE;
+        }
+        return ok;
+    } else {
+        return false;
+    }
+}
+
+/// Returns active UI font face name (`BIZ UDPGothic` when bundled fonts are loaded, else `null`).
+string activeDawUiFontFace() nothrow @trusted {
+    return activeUiFontFace_;
+}
 
 /// Returns the active display scale factor relative to 96 DPI (e.g. 1.0 at 96 DPI, 2.0 on macOS Retina).
 float uiScale() nothrow @trusted {
@@ -35,7 +107,14 @@ FontRef getDawFont(int basePx, FontRef fallback = FontRef.init, int weight = Fon
     const int px = dp(basePx);
     if (FontManager.instance !is null) {
         FontFamily fam = mono ? FontFamily.MonoSpace : FontFamily.SansSerif;
-        string face = (!mono && !fallback.isNull) ? fallback.face : null;
+        string face = null;
+        if (mono && activeMonoFontFace_.length > 0) {
+            face = activeMonoFontFace_;
+        } else if (!mono && activeUiFontFace_.length > 0) {
+            face = activeUiFontFace_;
+        } else if (!mono && !fallback.isNull) {
+            face = fallback.face;
+        }
         auto f = FontManager.instance.getFont(px, weight, false, fam, face);
         if (!f.isNull) return f;
     }
@@ -288,46 +367,17 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
     }
 }
 
-/// Draws a flat-modern FL Studio card/panel with subtle DPI-scaled border and clipped corners.
+/// Draws a crisp flat-rectangular FL Studio card/button with sharp 1px-scaled border.
 /// Implemented with `fillRect` so it renders identically on both `ColorDrawBuf` and `GLDrawBuf`.
-void drawCard(DrawBuf buf, Rect rc, uint fillColor, uint borderColor, float radius = 4.0f) {
+void drawCard(DrawBuf buf, Rect rc, uint fillColor, uint borderColor, float radius = 0.0f) {
     if (rc.width <= 0 || rc.height <= 0) return;
+    buf.fillRect(rc, fillColor);
     const int bw = dp(1);
-    const int baseR = (radius >= 3.0f && rc.width >= dp(10) && rc.height >= dp(10)) ? 2 :
-                      ((radius >= 1.5f && rc.width >= dp(6) && rc.height >= dp(6)) ? 1 : 0);
-    const int r = dp(baseR);
-
-    if (r == 0) {
-        buf.fillRect(rc, fillColor);
-        if (borderColor != COLOR_TRANSPARENT && rc.width >= bw * 2 && rc.height >= bw * 2) {
-            buf.fillRect(Rect(rc.left, rc.top, rc.right, rc.top + bw), borderColor);
-            buf.fillRect(Rect(rc.left, rc.bottom - bw, rc.right, rc.bottom), borderColor);
-            buf.fillRect(Rect(rc.left, rc.top, rc.left + bw, rc.bottom), borderColor);
-            buf.fillRect(Rect(rc.right - bw, rc.top, rc.right, rc.bottom), borderColor);
-        }
-        return;
-    }
-
-    // Fill body with rounded corner insets
-    buf.fillRect(Rect(rc.left + r, rc.top, rc.right - r, rc.bottom), fillColor);
-    buf.fillRect(Rect(rc.left, rc.top + r, rc.left + r, rc.bottom - r), fillColor);
-    buf.fillRect(Rect(rc.right - r, rc.top + r, rc.right, rc.bottom - r), fillColor);
-    if (baseR == 2) {
-        buf.fillRect(Rect(rc.left + bw, rc.top + bw, rc.right - bw, rc.top + r), fillColor);
-        buf.fillRect(Rect(rc.left + bw, rc.bottom - r, rc.right - bw, rc.bottom - bw), fillColor);
-    }
-
-    if (borderColor != COLOR_TRANSPARENT) {
-        buf.fillRect(Rect(rc.left + r, rc.top, rc.right - r, rc.top + bw), borderColor);
-        buf.fillRect(Rect(rc.left + r, rc.bottom - bw, rc.right - r, rc.bottom), borderColor);
-        buf.fillRect(Rect(rc.left, rc.top + r, rc.left + bw, rc.bottom - r), borderColor);
-        buf.fillRect(Rect(rc.right - bw, rc.top + r, rc.right, rc.bottom - r), borderColor);
-        if (baseR == 2) {
-            buf.fillRect(Rect(rc.left + bw, rc.top + bw, rc.left + r, rc.top + r), borderColor);
-            buf.fillRect(Rect(rc.right - r, rc.top + bw, rc.right - bw, rc.top + r), borderColor);
-            buf.fillRect(Rect(rc.left + bw, rc.bottom - r, rc.left + r, rc.bottom - bw), borderColor);
-            buf.fillRect(Rect(rc.right - r, rc.bottom - r, rc.right - bw, rc.bottom - bw), borderColor);
-        }
+    if (borderColor != COLOR_TRANSPARENT && rc.width >= bw * 2 && rc.height >= bw * 2) {
+        buf.fillRect(Rect(rc.left, rc.top, rc.right, rc.top + bw), borderColor);
+        buf.fillRect(Rect(rc.left, rc.bottom - bw, rc.right, rc.bottom), borderColor);
+        buf.fillRect(Rect(rc.left, rc.top, rc.left + bw, rc.bottom), borderColor);
+        buf.fillRect(Rect(rc.right - bw, rc.top, rc.right, rc.bottom), borderColor);
     }
 }
 
@@ -645,13 +695,71 @@ class FlCompactButton : Button {
         }
         const uint brd = (customBorderColor != COLOR_TRANSPARENT) ? customBorderColor : fallbackBorder_;
         const uint fg = (customTextColor != COLOR_TRANSPARENT) ? customTextColor : fallbackFg_;
-        drawCard(buf, _pos, bg, brd, 3.0f);
+        drawCard(buf, _pos, bg, brd, 0.0f);
         auto f = getDawFont(baseFontPx, safeWidgetFont(this), bold ? FontWeight.Bold : FontWeight.Normal);
         if (centered) {
             drawCenteredText(buf, f, _pos, text, fg);
         } else {
             drawVCenteredText(buf, f, _pos.left + dp(6), _pos, text, fg);
         }
+    }
+}
+
+/// Flattens `dlangui` built-in `currentTheme` widget styles (menus, edit boxes, scrollbars, fallback buttons)
+/// so no skeuomorphic 3D or rounded 9-patch textures remain anywhere in the UI.
+void applyFlatThemeOverrides(const ref FlPalette pal) {
+    import dlangui.widgets.styles : currentTheme, STYLE_BUTTON, STYLE_BUTTON_NOMARGINS,
+        STYLE_EDIT_BOX, STYLE_EDIT_LINE, STYLE_LIST_ITEM, STYLE_MAIN_MENU,
+        STYLE_MAIN_MENU_ITEM, STYLE_MENU_ITEM, STYLE_POPUP_MENU, STYLE_SCROLLBAR,
+        STYLE_SCROLLBAR_BUTTON, STYLE_SCROLLBAR_BUTTON_TRANSPARENT;
+
+    if (currentTheme is null) return;
+    if (activeUiFontFace_.length > 0) {
+        currentTheme.fontFace = activeUiFontFace_;
+    }
+
+    foreach (sid; [STYLE_BUTTON, STYLE_BUTTON_NOMARGINS]) {
+        auto st = currentTheme.createSubstyle(sid);
+        st.backgroundImageId = null;
+        st.backgroundColor = pal.bgControl;
+        st.textColor = pal.fgText;
+        st.getOrCreateState(State.Hovered, State.Hovered).backgroundColor = pal.bgControlHover;
+        st.getOrCreateState(State.Pressed, State.Pressed).backgroundColor = adjustColorBrightness(pal.bgControl, -16);
+    }
+    foreach (sid; [STYLE_EDIT_LINE, STYLE_EDIT_BOX]) {
+        auto st = currentTheme.createSubstyle(sid);
+        st.backgroundImageId = null;
+        st.backgroundColor = pal.bgLcd;
+        st.textColor = pal.fgText;
+        st.padding = Rect(dp(6), dp(3), dp(6), dp(3));
+    }
+    auto pop = currentTheme.createSubstyle(STYLE_POPUP_MENU);
+    pop.backgroundImageId = null;
+    pop.backgroundColor = pal.bgWindow;
+    pop.padding = Rect(dp(2), dp(2), dp(2), dp(2));
+
+    auto mm = currentTheme.createSubstyle(STYLE_MAIN_MENU);
+    mm.backgroundImageId = null;
+    mm.backgroundColor = pal.bgWindowHeader;
+
+    foreach (sid; [STYLE_MENU_ITEM, STYLE_MAIN_MENU_ITEM, STYLE_LIST_ITEM]) {
+        auto st = currentTheme.createSubstyle(sid);
+        st.backgroundImageId = null;
+        st.backgroundColor = COLOR_TRANSPARENT;
+        st.textColor = pal.fgText;
+        st.padding = Rect(dp(8), dp(4), dp(8), dp(4));
+        st.getOrCreateState(State.Hovered, State.Hovered).backgroundColor = pal.bgControlHover;
+        st.getOrCreateState(State.Selected, State.Selected).backgroundColor = pal.bgControlHover;
+    }
+
+    auto sb = currentTheme.createSubstyle(STYLE_SCROLLBAR);
+    sb.backgroundImageId = null;
+    sb.backgroundColor = pal.bgPanelAlt;
+    foreach (sid; [STYLE_SCROLLBAR_BUTTON, STYLE_SCROLLBAR_BUTTON_TRANSPARENT]) {
+        auto st = currentTheme.createSubstyle(sid);
+        st.backgroundImageId = null;
+        st.backgroundColor = pal.bgControl;
+        st.getOrCreateState(State.Hovered, State.Hovered).backgroundColor = pal.bgControlHover;
     }
 }
 
@@ -695,6 +803,7 @@ unittest {
     auto buf = new ColorDrawBuf(120, 120);
     buf.fill(pal.bgDesktop);
     drawCard(buf, Rect(10, 10, 100, 80), pal.bgPanel, pal.borderSubtle, 4.0f);
+    assert(buf.scanLine(10)[10] == pal.borderSubtle, "Card corners must be sharp rectangular flat UI");
     assert(buf.scanLine(40)[50] == pal.bgPanel);
 
     drawRotaryKnob(buf, 50, 50, 14, 0.75f, pal.bgLcd, pal.accentOrange, pal.bgControl, pal.borderSubtle);
@@ -783,4 +892,12 @@ unittest {
     assert(compactBtn.measuredHeight == 22);
     assert(compactBtn.measuredWidth == 42);
     compactBtn.onDraw(textBuf);
+
+    // Verify flat theme overrides strip 3D 9-patch textures on built-in styles
+    import dlangui.widgets.styles : STYLE_EDIT_LINE, STYLE_POPUP_MENU, STYLE_SCROLLBAR_BUTTON;
+    applyFlatThemeOverrides(pal);
+    assert(currentTheme.createSubstyle(STYLE_EDIT_LINE).backgroundImageId is null);
+    assert(currentTheme.createSubstyle(STYLE_EDIT_LINE).backgroundColor == pal.bgLcd);
+    assert(currentTheme.createSubstyle(STYLE_POPUP_MENU).backgroundImageId is null);
+    assert(currentTheme.createSubstyle(STYLE_SCROLLBAR_BUTTON).backgroundImageId is null);
 }

@@ -5,6 +5,7 @@ import core.stdc.math : sinf;
 import core.thread : Thread;
 import core.time : msecs;
 import dlangui;
+import dlangui.graphics.colors : COLOR_TRANSPARENT;
 import dlangui.widgets.controls : TextWidget;
 import dlangui.widgets.editors : EditLine;
 import dlangui.widgets.layouts : HorizontalLayout, VerticalLayout;
@@ -17,7 +18,8 @@ import gui_d.ipc_client;
 import gui_d.mixer_view : MixerCanvasWidget;
 import gui_d.piano_roll : PianoRollCanvasWidget;
 import gui_d.plugin_window : PluginWrapperWidget;
-import gui_d.theme : dp, FlCompactButton, FlThemeId;
+import gui_d.theme : activeDawUiFontFace, applyFlatThemeOverrides, dp, FlCompactButton, FlThemeId,
+    registerBundledDawFonts;
 import gui_d.timeline_view : beatDurationSec, TimelineCanvasWidget;
 import gui_d.toolbar : FlToolbarWidget;
 import gui_d.transport_model;
@@ -81,6 +83,7 @@ private class FlMainRootLayout : VerticalLayout {
 /// Entry point for the FL Studio 2026 DAW UI Prototype (`dlangui` + SDL2).
 extern (C) int UIAppMain(string[] args) {
     Platform.instance.uiTheme = "theme_dark";
+    registerBundledDawFonts();
 
     Window window = Platform.instance.createWindow(
         "Hibiki DAW — FL Studio 2026 Workspace",
@@ -90,11 +93,12 @@ extern (C) int UIAppMain(string[] args) {
     model.initDefaultTemplate();
     EngineProcessClient client;
 
+    const initPal = model.palette();
+    applyFlatThemeOverrides(initPal);
+
     auto root = new FlMainRootLayout("root");
     root.layoutWidth = FILL_PARENT;
     root.layoutHeight = FILL_PARENT;
-
-    const initPal = model.palette();
 
     // 1. Top FL Studio Menu Strip + Hint Panel + Theme Quick Toggle
     auto menuRow = new HorizontalLayout("menu_row");
@@ -156,16 +160,24 @@ extern (C) int UIAppMain(string[] args) {
 
     void applyThemeColors() {
         const pal = model.palette();
+        applyFlatThemeOverrides(pal);
         root.backgroundColor = pal.bgDesktop;
         menuRow.backgroundColor = pal.bgWindowHeader;
         hintBar.backgroundColor = pal.bgLcd;
         hintBar.textColor = pal.accentOrange;
         statusBar.backgroundColor = pal.bgWindowHeader;
         statusBar.textColor = pal.fgMuted;
+        const string fface = activeDawUiFontFace();
+        if (fface.length > 0) {
+            hintBar.fontFace = fface;
+            statusBar.fontFace = fface;
+        }
         btnTheme.text = toUTF32("Theme: " ~ pal.name);
         btnTheme.updatePalette(pal);
         foreach (mb; menuBarButtons) {
             mb.updatePalette(pal);
+            mb.customFillColor = pal.bgWindowHeader;
+            mb.customBorderColor = COLOR_TRANSPARENT;
         }
         browserPanel.refresh();
     }

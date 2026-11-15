@@ -5,9 +5,10 @@ import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
-import gui_d.theme : adjustColorBrightness, dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText,
-    drawDetailedWaveform, drawFilledCircle, drawPlayheadTriangle, drawThickLine, drawVCenteredText, FlPalette,
-    getDawFont, getFlPalette, safeWidgetFont, truncateLabel, uiScale;
+import gui_d.theme : adjustColorBrightness, contrastTextColor, dp, dpf, drawBeveledTrackCard, drawCard,
+    drawCenteredText, drawDetailedWaveform, drawFilledCircle, drawPlayheadTriangle, drawThemeCard,
+    drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont,
+    ScopedRetroAntialias, truncateLabel, uiScale;
 import gui_d.transport_model : AutomationPoint, EditorTool, PlaylistClipKind,
     TimelineClipState, TransportModel;
 import gui_d.workspace : activateParentWindow;
@@ -109,6 +110,7 @@ void drawTimelineCanvas(
     FontRef fnt = FontRef.init
 ) {
     const pal = model ? model.palette() : getFlPalette();
+    auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
     buf.fillRect(rc, pal.bgWindow);
     if (rc.width < dp(220) || rc.height < dp(90)) return;
 
@@ -124,7 +126,8 @@ void drawTimelineCanvas(
     buf.fillRect(Rect(tbRc.left, tbRc.bottom - bw, tbRc.right, tbRc.bottom), pal.borderStrong);
 
     const bool showPicker = model ? model.showClipPicker : true;
-    drawCard(buf, m.pickToggleRc, showPicker ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, m.pickToggleRc, showPicker ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT,
+                  pal, 1.5f, showPicker && pal.retroBevel);
     drawDawIcon(buf, Rect(m.pickToggleRc.left + dp(2), m.pickToggleRc.top + dp(2),
                           m.pickToggleRc.right - dp(2), m.pickToggleRc.bottom - dp(2)),
                 DawIcon.CLIP_PICKER, showPicker ? pal.bgLcd : pal.fgText,
@@ -133,12 +136,12 @@ void drawTimelineCanvas(
     // Unified flush 8-tool icon strip (zero gaps between tools)
     Rect toolStripRc = Rect(m.toolBtns[0].left, m.toolBtns[0].top,
                             m.toolBtns[7].right, m.toolBtns[7].bottom);
-    drawCard(buf, toolStripRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, toolStripRc, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
     foreach (i, const ref td; PLAYLIST_TOOLS) {
         Rect bRc = m.toolBtns[i];
         const bool active = model && model.playlistTool == td.tool;
         if (active) {
-            drawCard(buf, bRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+            drawThemeCard(buf, bRc, pal.accentOrange, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
         }
         drawDawIcon(buf, Rect(bRc.left + dp(2), bRc.top + dp(2), bRc.right - dp(2), bRc.bottom - dp(2)),
                     td.icon, active ? pal.bgLcd : pal.fgText,
@@ -147,7 +150,7 @@ void drawTimelineCanvas(
 
     // Unified Zoom -/+ strip on right
     Rect zoomStripRc = Rect(m.zoomOutRc.left, m.zoomOutRc.top, m.zoomInRc.right, m.zoomInRc.bottom);
-    drawCard(buf, zoomStripRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, zoomStripRc, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
     drawDawIcon(buf, Rect(m.zoomOutRc.left + dp(2), m.zoomOutRc.top + dp(2), m.zoomOutRc.right - dp(2), m.zoomOutRc.bottom - dp(2)),
                 DawIcon.MINUS, pal.fgText);
     drawDawIcon(buf, Rect(m.zoomInRc.left + dp(2), m.zoomInRc.top + dp(2), m.zoomInRc.right - dp(2), m.zoomInRc.bottom - dp(2)),
@@ -171,13 +174,13 @@ void drawTimelineCanvas(
         const int tabW = (m.pickerW - dp(8)) / 3;
         Rect ktStrip = Rect(pkrRc.left + dp(4), pkrRc.top + dp(4),
                             pkrRc.left + dp(4) + tabW * 3, pkrRc.top + dp(24));
-        drawCard(buf, ktStrip, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+        drawThemeCard(buf, ktStrip, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
         foreach (k; 0 .. 3) {
             Rect ktRc = Rect(pkrRc.left + dp(4) + k * tabW, pkrRc.top + dp(4),
                              pkrRc.left + dp(4) + (k + 1) * tabW, pkrRc.top + dp(24));
             const bool kAct = model && model.activePickerKind == KINDS[k];
             if (kAct) {
-                drawCard(buf, ktRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+                drawThemeCard(buf, ktRc, pal.accentOrange, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
             }
             drawDawIcon(buf, Rect(ktRc.left + dp(2), ktRc.top + dp(2), ktRc.right - dp(2), ktRc.bottom - dp(2)),
                         K_ICONS[k], kAct ? pal.bgLcd : pal.fgText);
@@ -194,9 +197,9 @@ void drawTimelineCanvas(
                 if (py + itemH > pkrRc.bottom) break;
                 Rect itemRc = Rect(pkrRc.left + dp(6), py, pkrRc.right - dp(6), py + itemH);
                 const bool sel = (cast(int)i == curIdx);
-                drawCard(buf, itemRc, pat.color, sel ? pal.accentOrange : COLOR_TRANSPARENT, 2.0f);
+                drawThemeCard(buf, itemRc, pat.color, sel ? pal.borderAccent : COLOR_TRANSPARENT, pal, 2.0f, false);
                 drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc,
-                                  toUTF32(truncateLabel(pat.name, 14)), pal.fgText);
+                                  toUTF32(truncateLabel(pat.name, 14)), contrastTextColor(pat.color));
             }
         } else if (curKind == PlaylistClipKind.AUDIO) {
             static immutable string[3] AUD_NAMES = ["loop140.wav", "bb140.wav", "808_sub.wav"];
@@ -204,8 +207,8 @@ void drawTimelineCanvas(
                 const int py = pkrRc.top + dp(30) + cast(int)i * rowStep;
                 Rect itemRc = Rect(pkrRc.left + dp(6), py, pkrRc.right - dp(6), py + itemH);
                 const bool sel = (cast(int)i == curIdx);
-                drawCard(buf, itemRc, pal.clipAudio, sel ? pal.accentCyan : COLOR_TRANSPARENT, 2.0f);
-                drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc, toUTF32(nm), pal.fgText);
+                drawThemeCard(buf, itemRc, pal.clipAudio, sel ? pal.borderAccent : COLOR_TRANSPARENT, pal, 2.0f, false);
+                drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc, toUTF32(nm), contrastTextColor(pal.clipAudio));
             }
         } else {
             static immutable string[2] AUT_NAMES = ["Acid Cutoff Env", "Master Volume Env"];
@@ -213,8 +216,8 @@ void drawTimelineCanvas(
                 const int py = pkrRc.top + dp(30) + cast(int)i * rowStep;
                 Rect itemRc = Rect(pkrRc.left + dp(6), py, pkrRc.right - dp(6), py + itemH);
                 const bool sel = (cast(int)i == curIdx);
-                drawCard(buf, itemRc, pal.clipAutomation, sel ? pal.accentPurple : COLOR_TRANSPARENT, 2.0f);
-                drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc, toUTF32(nm), pal.fgText);
+                drawThemeCard(buf, itemRc, pal.clipAutomation, sel ? pal.borderAccent : COLOR_TRANSPARENT, pal, 2.0f, false);
+                drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc, toUTF32(nm), contrastTextColor(pal.clipAutomation));
             }
         }
     }
@@ -278,7 +281,7 @@ void drawTimelineCanvas(
 
         // Track Header (zero gap between tracks; top-right/bottom-left rounded + bevel gradient separation)
         Rect hdrRc = Rect(tracksLeft, y0, arrRc.left, y1);
-        drawBeveledTrackCard(buf, hdrRc, pal.bgPanel, pal.bgToolbarWell, 3.0f);
+        drawBeveledTrackCard(buf, hdrRc, pal.bgPanel, pal.bgToolbarWell, 3.0f, pal.retroBevel);
 
         const bool hasTrack = (model !is null && laneIdx < cast(int)laneTracks.length);
         const size_t tIdx = hasTrack ? laneTracks[laneIdx] : 0;
@@ -292,8 +295,8 @@ void drawTimelineCanvas(
 
         // Mute LED on right of header
         Rect mLed = Rect(hdrRc.right - dp(20), hdrRc.top + dp(8), hdrRc.right - dp(8), hdrRc.top + dp(20));
-        drawCard(buf, mLed, soloed ? pal.accentAmber : (muted ? pal.ledOff : pal.accentGreen),
-                 COLOR_TRANSPARENT, 1.5f);
+        drawThemeCard(buf, mLed, soloed ? pal.accentAmber : (muted ? pal.ledOff : pal.accentGreen),
+                      COLOR_TRANSPARENT, pal, 1.5f, false);
 
         drawVCenteredText(buf, uiFnt, hdrRc.left + dp(10), hdrRc,
                           toUTF32(truncateLabel(title, 12)),
@@ -392,7 +395,7 @@ private void drawPlaylistClip(
     const uint clipBorderCol = clip.muted
         ? ((pal.fgDim & 0x00FFFFFF) | 0x48000000)
         : ((adjustColorBrightness(baseCol, -18) & 0x00FFFFFF) | 0x48000000);
-    drawCard(buf, clipRc, clipBodyCol, clipBorderCol, 2.5f);
+    drawThemeCard(buf, clipRc, clipBodyCol, clipBorderCol, pal, 2.5f, false);
 
     // Opaque clip header bar for high readability while body reveals background grid
     const int hdrH = dp(15);
@@ -407,7 +410,7 @@ private void drawPlaylistClip(
     if (cx1 - cx0 > dp(28)) {
         drawVCenteredText(buf, fnt, cx0 + dp(5), hdrBarRc,
                           toUTF32(truncateLabel(clip.name, 16)),
-                          clip.muted ? pal.fgDim : pal.fgText);
+                          clip.muted ? pal.fgDim : contrastTextColor(hdrCol));
     }
 
     const int bodyTop = hdrBot + dp(2);

@@ -165,11 +165,12 @@ extern (C) int UIAppMain(string[] args) {
         const pal = model.palette();
         applyFlatThemeOverrides(pal);
         root.backgroundColor = pal.bgDesktop;
-        menuRow.backgroundColor = pal.bgWindowHeader;
+        const uint barBg = pal.retroBevel ? pal.bgToolbar : pal.bgWindowHeader;
+        menuRow.backgroundColor = barBg;
         hintBar.backgroundColor = pal.bgPanelAlt;
-        hintBar.textColor = pal.fgMuted;
-        statusBar.backgroundColor = pal.bgWindowHeader;
-        statusBar.textColor = pal.fgMuted;
+        hintBar.textColor = pal.retroBevel ? pal.fgText : pal.fgMuted;
+        statusBar.backgroundColor = barBg;
+        statusBar.textColor = pal.retroBevel ? pal.fgText : pal.fgMuted;
         const string fface = activeDawUiFontFace();
         if (fface.length > 0) {
             hintBar.fontFace = fface;
@@ -179,10 +180,11 @@ extern (C) int UIAppMain(string[] args) {
         btnTheme.updatePalette(pal);
         foreach (mb; menuBarButtons) {
             mb.updatePalette(pal);
-            mb.customFillColor = pal.bgWindowHeader;
+            mb.customFillColor = barBg;
             mb.customBorderColor = COLOR_TRANSPARENT;
         }
         browserPanel.refresh();
+        root.invalidate();
     }
 
     void refreshUi(bool refreshBrowser = false) {
@@ -376,7 +378,8 @@ extern (C) int UIAppMain(string[] args) {
             new Action(602, "Theme: Ultramarine"d),
             new Action(603, "Theme: Midnight Mint"d),
             new Action(604, "Theme: Warm Amber"d),
-            new Action(605, "Theme: Royal Violet"d)
+            new Action(605, "Theme: Royal Violet"d),
+            new Action(606, "Theme: Windows 95"d)
         );
         showMenuPopup(s, m, (int id) {
             if (id == 601) model.themeId = FlThemeId.DEFAULT_DARK;
@@ -384,6 +387,7 @@ extern (C) int UIAppMain(string[] args) {
             else if (id == 603) model.themeId = FlThemeId.MIDNIGHT_MINT;
             else if (id == 604) model.themeId = FlThemeId.WARM_AMBER;
             else if (id == 605) model.themeId = FlThemeId.ROYAL_VIOLET;
+            else if (id == 606) model.themeId = FlThemeId.WIN95;
             applyThemeColors();
             refreshUi();
         });

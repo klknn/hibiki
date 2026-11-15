@@ -6,8 +6,9 @@ import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
-import gui_d.theme : dp, dpf, drawCard, drawCenteredText, drawRotaryKnob, drawThickLine,
-    drawVCenteredText, FlPalette, getDawFont, getDawMonoFont, getFlPalette, safeWidgetFont, truncateLabel;
+import gui_d.theme : dp, dpf, drawCard, drawCenteredText, drawRotaryKnob, drawThemeCard, drawThickLine,
+    drawVCenteredText, FlPalette, getDawFont, getDawMonoFont, getFlPalette, safeWidgetFont,
+    ScopedRetroAntialias, truncateLabel;
 import gui_d.transport_model : ParamItemState, PluginSlotState, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import std.format : format;
@@ -87,6 +88,7 @@ void drawPluginWrapperCanvas(
     FontRef fnt = FontRef.init
 ) {
     const pal = model ? model.palette() : getFlPalette();
+    auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
     buf.fillRect(rc, pal.bgWindow);
     if (rc.width < dp(260) || rc.height < dp(160)) return;
 
@@ -104,9 +106,9 @@ void drawPluginWrapperCanvas(
                       toUTF32(truncateLabel(plugTitle, 18)), pal.accentOrange);
 
     // Unified flush Preset selector < Preset >
-    drawCard(buf, Rect(m.prevRc.left, m.prevRc.top, m.nextRc.right, m.nextRc.bottom),
-             pal.bgControl, COLOR_TRANSPARENT, 1.5f);
-    drawCard(buf, m.presRc, pal.bgLcd, COLOR_TRANSPARENT, 0.0f);
+    drawThemeCard(buf, Rect(m.prevRc.left, m.prevRc.top, m.nextRc.right, m.nextRc.bottom),
+                  pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
+    drawThemeCard(buf, m.presRc, pal.bgLcd, COLOR_TRANSPARENT, pal, 0.0f, true);
 
     string presetName = "Default";
     if (plug && plug.presets.length > 0) {
@@ -121,16 +123,17 @@ void drawPluginWrapperCanvas(
                 DawIcon.CHEVRON_RIGHT, pal.fgText);
 
     // Unified flush VST3 GUI + Bypass strip
-    drawCard(buf, Rect(m.guiRc.left, m.guiRc.top, m.bypRc.right, m.bypRc.bottom),
-             pal.bgControl, COLOR_TRANSPARENT, 1.5f);
-    drawCard(buf, m.bypRc, (plug && plug.enabled) ? pal.accentGreen : pal.ledOff, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, Rect(m.guiRc.left, m.guiRc.top, m.bypRc.right, m.bypRc.bottom),
+                  pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
+    drawThemeCard(buf, m.bypRc, (plug && plug.enabled) ? pal.accentGreen : pal.ledOff,
+                  COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
     drawCenteredText(buf, uiFnt, m.guiRc, "EDITOR"d, pal.fgText);
 
     if (!plug) return;
 
     // 2. DSP Visual Response Curve Box
     Rect scopeRc = m.scopeRc;
-    drawCard(buf, scopeRc, pal.bgLcd, pal.borderSubtle, 2.0f);
+    drawThemeCard(buf, scopeRc, pal.bgLcd, pal.borderSubtle, pal, 2.0f, true);
 
     const float p0 = (plug.params.length > 0) ? plug.params[0].currentValue : 0.65f;
     const float p1 = (plug.params.length > 1) ? plug.params[1].currentValue : 0.35f;

@@ -6,9 +6,9 @@ import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.layouts : WidgetGroupDefaultDrawing;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
-import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawPlayheadTriangle,
-                     drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette,
-                     safeWidgetFont, truncateLabel;
+import gui_d.theme : adjustColorBrightness, contrastTextColor, dp, dpf, drawCard, drawPlayheadTriangle,
+                     drawRetroBevelFrame, drawThickLine, drawVCenteredText, FlPalette, getDawFont,
+                     getFlPalette, safeWidgetFont, ScopedRetroAntialias, truncateLabel;
 import gui_d.transport_model : TransportModel;
 import std.algorithm : canFind;
 import std.math : abs;
@@ -245,55 +245,83 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
     override void onDraw(DrawBuf buf) {
         if (visibility != Visibility.Visible) return;
         const pal = model_ ? model_.palette() : getFlPalette();
+        auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
         const int bw = dp(1);
         const int hh = headerH();
 
-        // Subtle outer drop-shadow frame
-        Rect shadowRc = Rect(_pos.left + bw, _pos.top + bw, _pos.right + bw * 2, _pos.bottom + bw * 2);
-        buf.fillRect(shadowRc, 0xBA000000);
+        // Subtle outer drop-shadow frame (suppressed on crisp retro Win95 3D frame)
+        if (!pal.retroBevel) {
+            Rect shadowRc = Rect(_pos.left + bw, _pos.top + bw, _pos.right + bw * 2, _pos.bottom + bw * 2);
+            buf.fillRect(shadowRc, 0xBA000000);
+        }
 
         // Window body frame & border
-        const uint borderCol = isActive_ ? pal.borderAccent : pal.borderSubtle;
         buf.fillRect(_pos, pal.bgWindow);
-        buf.fillRect(Rect(_pos.left, _pos.top, _pos.right, _pos.top + bw), borderCol);
-        buf.fillRect(Rect(_pos.left, _pos.bottom - bw, _pos.right, _pos.bottom), pal.borderStrong);
-        buf.fillRect(Rect(_pos.left, _pos.top, _pos.left + bw, _pos.bottom), borderCol);
-        buf.fillRect(Rect(_pos.right - bw, _pos.top, _pos.right, _pos.bottom), pal.borderStrong);
+        if (pal.retroBevel) {
+            drawRetroBevelFrame(buf, _pos, false, true);
+        } else {
+            const uint borderCol = isActive_ ? pal.borderAccent : pal.borderSubtle;
+            buf.fillRect(Rect(_pos.left, _pos.top, _pos.right, _pos.top + bw), borderCol);
+            buf.fillRect(Rect(_pos.left, _pos.bottom - bw, _pos.right, _pos.bottom), pal.borderStrong);
+            buf.fillRect(Rect(_pos.left, _pos.top, _pos.left + bw, _pos.bottom), borderCol);
+            buf.fillRect(Rect(_pos.right - bw, _pos.top, _pos.right, _pos.bottom), pal.borderStrong);
+        }
 
         // Caption header bar
-        Rect hdr = Rect(_pos.left + bw, _pos.top + bw, _pos.right - bw, _pos.top + hh);
+        const int capPad = pal.retroBevel ? dp(2) : bw;
+        Rect hdr = Rect(_pos.left + capPad, _pos.top + capPad, _pos.right - capPad, _pos.top + hh);
         const uint hdrBg = isActive_ ? pal.bgWindowHeaderActive : pal.bgWindowHeader;
         buf.fillRect(hdr, hdrBg);
-        if (isActive_) {
-            buf.fillRect(Rect(hdr.left, hdr.top, hdr.right, hdr.top + dp(2)), pal.accentOrange);
-        } else {
-            buf.fillRect(Rect(hdr.left, hdr.top, hdr.right, hdr.top + dp(1)),
-                         adjustColorBrightness(hdrBg, 6));
+        if (!pal.retroBevel) {
+            if (isActive_) {
+                buf.fillRect(Rect(hdr.left, hdr.top, hdr.right, hdr.top + dp(2)), pal.accentOrange);
+            } else {
+                buf.fillRect(Rect(hdr.left, hdr.top, hdr.right, hdr.top + dp(1)),
+                             adjustColorBrightness(hdrBg, 6));
+            }
+            buf.fillRect(Rect(hdr.left, hdr.bottom - bw, hdr.right, hdr.bottom), pal.borderStrong);
         }
-        buf.fillRect(Rect(hdr.left, hdr.bottom - bw, hdr.right, hdr.bottom), pal.borderStrong);
+
+        const uint hdrTextCol = pal.retroBevel
+            ? contrastTextColor(hdrBg, 0x00000000, isActive_ ? 0x00FFFFFF : 0x00D4D4D4)
+            : (isActive_ ? pal.fgText : pal.fgMuted);
 
         // Top-left FL Studio Window Menu icon (▼) — borderless on caption bar
         Rect mRc = menuBtnRect();
-        drawDawIcon(buf, mRc, DawIcon.WINDOW_MENU, isActive_ ? pal.accentOrange : pal.fgMuted);
+        drawDawIcon(buf, mRc, DawIcon.WINDOW_MENU,
+                    pal.retroBevel ? hdrTextCol : (isActive_ ? pal.accentOrange : pal.fgMuted));
 
         // Title (clean Regular weight matching top menu strip)
         auto f = getDawFont(11, safeWidgetFont(this), FontWeight.Normal);
         drawVCenteredText(buf, f, mRc.right + dp(8), hdr,
-                          toUTF32(truncateLabel(title_, 48)),
-                          isActive_ ? pal.fgText : pal.fgMuted);
+                          toUTF32(truncateLabel(title_, 48)), hdrTextCol);
 
-        // Maximize / Restore button — borderless on caption bar
+        // Maximize / Restore button & Close button (3D raised boxes in retro Win95 mode)
         Rect maxRc = maxBtnRect();
-        const uint iconCol = pal.fgMuted;
-        buf.drawFrame(Rect(maxRc.left + dp(5), maxRc.top + dp(4), maxRc.right - dp(5), maxRc.bottom - dp(4)),
-                      iconCol, Rect(bw, dp(2), bw, bw), hdrBg);
-
-        // Close button — borderless on caption bar
         Rect clsRc = closeBtnRect();
-        drawThickLine(buf, clsRc.left + dp(5), clsRc.top + dp(5), clsRc.right - dp(5), clsRc.bottom - dp(5),
-                      dpf(1.4f), pal.fgMuted);
-        drawThickLine(buf, clsRc.right - dp(5), clsRc.top + dp(5), clsRc.left + dp(5), clsRc.bottom - dp(5),
-                      dpf(1.4f), pal.fgMuted);
+        if (pal.retroBevel) {
+            Rect mbBox = Rect(maxRc.left + dp(2), maxRc.top + dp(2), maxRc.right - dp(2), maxRc.bottom - dp(2));
+            buf.fillRect(mbBox, pal.bgToolbar);
+            drawRetroBevelFrame(buf, mbBox, false, false);
+            buf.drawFrame(Rect(mbBox.left + dp(3), mbBox.top + dp(3), mbBox.right - dp(3), mbBox.bottom - dp(3)),
+                          0x00000000, Rect(bw, dp(2), bw, bw), pal.bgToolbar);
+
+            Rect cbBox = Rect(clsRc.left + dp(2), clsRc.top + dp(2), clsRc.right - dp(2), clsRc.bottom - dp(2));
+            buf.fillRect(cbBox, pal.bgToolbar);
+            drawRetroBevelFrame(buf, cbBox, false, false);
+            drawThickLine(buf, cbBox.left + dp(4), cbBox.top + dp(4), cbBox.right - dp(4), cbBox.bottom - dp(4),
+                          dpf(1.4f), 0x00000000);
+            drawThickLine(buf, cbBox.right - dp(4), cbBox.top + dp(4), cbBox.left + dp(4), cbBox.bottom - dp(4),
+                          dpf(1.4f), 0x00000000);
+        } else {
+            const uint iconCol = pal.fgMuted;
+            buf.drawFrame(Rect(maxRc.left + dp(5), maxRc.top + dp(4), maxRc.right - dp(5), maxRc.bottom - dp(4)),
+                          iconCol, Rect(bw, dp(2), bw, bw), hdrBg);
+            drawThickLine(buf, clsRc.left + dp(5), clsRc.top + dp(5), clsRc.right - dp(5), clsRc.bottom - dp(5),
+                          dpf(1.4f), pal.fgMuted);
+            drawThickLine(buf, clsRc.right - dp(5), clsRc.top + dp(5), clsRc.left + dp(5), clsRc.bottom - dp(5),
+                          dpf(1.4f), pal.fgMuted);
+        }
 
         // Body widget
         if (bodyWidget_ !is null && bodyWidget_.visibility == Visibility.Visible) {

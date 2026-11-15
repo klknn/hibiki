@@ -6,7 +6,7 @@ import dlangui.core.config : ENABLE_FREETYPE;
 import dlangui.core.types : BASE_DPI, Point, Rect, SCREEN_DPI;
 import dlangui.graphics.colors : COLOR_TRANSPARENT;
 import dlangui.graphics.drawbuf : DrawBuf;
-import dlangui.graphics.fonts : FontFamily, FontManager, FontRef, FontWeight, HintingMode;
+import dlangui.graphics.fonts : FontFamily, FontManager, FontRef, FontWeight, HintingMode, SubpixelRenderingMode;
 import dlangui.widgets.controls : Button;
 import dlangui.widgets.widget : State, Visibility, Widget;
 import std.file : exists, getSize, mkdirRecurse, tempDir, thisExePath, write;
@@ -188,6 +188,7 @@ enum FlThemeId {
     MIDNIGHT_MINT,
     WARM_AMBER,
     ROYAL_VIOLET,
+    WIN95,
 }
 
 /// FL Studio 2026 color palette (`0x00RRGGBB` opaque, `0xAARRGGBB` translucent in `dlangui`).
@@ -232,6 +233,7 @@ struct FlPalette {
     uint clipAutomation;
     uint noteFill;
     uint noteGhost;
+    bool retroBevel = false;
 }
 
 /// Returns the FL Studio 2026 palette for `id`.
@@ -427,7 +429,55 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
                 0x00A88BFF,
                 0x805C5275
             );
+        case FlThemeId.WIN95:
+            return FlPalette(
+                "Windows 95",
+                0x00008080, // bgDesktop (Classic Win95 Teal)
+                0x00C0C0C0, // bgToolbar (Classic Silver Gray)
+                0x00B4B4B4, // bgToolbarWell
+                0x00C0C0C0, // bgWindow (Classic Window Face)
+                0x00808080, // bgWindowHeader (Inactive Caption Gray)
+                0x00000080, // bgWindowHeaderActive (Active Caption Navy)
+                0x00C0C0C0, // bgPanel
+                0x00B0B0B0, // bgPanelAlt
+                0x00CECECE, // bgControl (Button Face)
+                0x00DFDFDF, // bgControlHover (3D Light)
+                0x00FFFFFF, // bgLcd (Edit/LCD Window White)
+                0x00808080, // borderSubtle (Button Shadow)
+                0x00000000, // borderStrong (3D Dark Shadow / Crisp Black)
+                0x00000080, // borderAccent (Win95 Navy)
+                0x00000000, // fgText
+                0x00404040, // fgMuted
+                0x00787878, // fgDim
+                0x00000080, // accentOrange (Classic Win95 Active Navy)
+                0x00008000, // accentGreen (Classic Green)
+                0x00B80000, // accentRed (Classic Crimson)
+                0x00006680, // accentCyan (Deep Teal)
+                0x009A5800, // accentAmber (Retro Ochre)
+                0x00800080, // accentPurple (Classic Purple)
+                0x000000C8, // accentBlue
+                0x00B2B2B2, // stepGroupA
+                0x009A9A9A, // stepGroupB
+                0x00FFFFFF, // stepActive
+                0x00000080, // stepActiveLed (Navy LED)
+                0x00909090, // ledOff
+                0x00334E7A, // clipPattern
+                0x00007070, // clipAudio
+                0x006E306E, // clipAutomation
+                0x00008848, // noteFill
+                0x80606060, // noteGhost
+                true        // retroBevel
+            );
     }
+}
+
+/// Returns `darkText` on light backgrounds and `lightText` on dark backgrounds (ITU-R BT.601 luma).
+uint contrastTextColor(uint bg, uint darkText = 0x00101214, uint lightText = 0x00F4F6FA) pure nothrow @safe {
+    const uint r = (bg >> 16) & 0xFF;
+    const uint g = (bg >> 8) & 0xFF;
+    const uint b = bg & 0xFF;
+    const uint luma = (299u * r + 587u * g + 114u * b) / 1000u;
+    return luma >= 132u ? darkText : lightText;
 }
 
 /// Draws an FL Studio 2026 card/button surface.
@@ -488,11 +538,72 @@ void drawCard(DrawBuf buf, Rect rc, uint fillColor, uint borderColor, float radi
     }
 }
 
+/// Draws a classic Windows 95 3D raised or sunken bevel border around `rc`.
+void drawRetroBevelFrame(DrawBuf buf, Rect rc, bool sunken = false, bool thick = true) {
+    if (rc.width < 4 || rc.height < 4) return;
+    const int bw = dp(1);
+    const uint outerTL = sunken ? 0x00808080 : 0x00FFFFFF;
+    const uint outerBR = sunken ? 0x00FFFFFF : 0x00000000;
+    buf.fillRect(Rect(rc.left, rc.top, rc.right, rc.top + bw), outerTL);
+    buf.fillRect(Rect(rc.left, rc.top, rc.left + bw, rc.bottom), outerTL);
+    buf.fillRect(Rect(rc.left, rc.bottom - bw, rc.right, rc.bottom), outerBR);
+    buf.fillRect(Rect(rc.right - bw, rc.top, rc.right, rc.bottom), outerBR);
+
+    if (thick && rc.width >= bw * 6 && rc.height >= bw * 6) {
+        const uint innerTL = sunken ? 0x00000000 : 0x00DFDFDF;
+        const uint innerBR = sunken ? 0x00DFDFDF : 0x00808080;
+        buf.fillRect(Rect(rc.left + bw, rc.top + bw, rc.right - bw, rc.top + bw * 2), innerTL);
+        buf.fillRect(Rect(rc.left + bw, rc.top + bw, rc.left + bw * 2, rc.bottom - bw), innerTL);
+        buf.fillRect(Rect(rc.left + bw, rc.bottom - bw * 2, rc.right - bw, rc.bottom - bw), innerBR);
+        buf.fillRect(Rect(rc.right - bw * 2, rc.top + bw, rc.right - bw, rc.bottom - bw), innerBR);
+    }
+}
+
+/// Draws a palette-aware card/well surface: FL 2026 flat card by default, or Win95 3D bevel when `pal.retroBevel`.
+void drawThemeCard(
+    DrawBuf buf,
+    Rect rc,
+    uint fillColor,
+    uint borderColor,
+    const ref FlPalette pal,
+    float radius = 0.0f,
+    bool sunken = false
+) {
+    if (!pal.retroBevel) {
+        drawCard(buf, rc, fillColor, borderColor, radius);
+        return;
+    }
+    if (rc.width <= 0 || rc.height <= 0) return;
+    buf.fillRect(rc, fillColor);
+    const bool large = rc.width >= dp(14) && rc.height >= dp(12);
+    drawRetroBevelFrame(buf, rc, sunken, large);
+    if (borderColor == pal.borderAccent && rc.width >= dp(6) && rc.height >= dp(6)) {
+        const int bw = dp(1);
+        buf.fillRect(Rect(rc.left, rc.top, rc.right, rc.top + bw), borderColor);
+        buf.fillRect(Rect(rc.left, rc.bottom - bw, rc.right, rc.bottom), borderColor);
+        buf.fillRect(Rect(rc.left, rc.top, rc.left + bw, rc.bottom), borderColor);
+        buf.fillRect(Rect(rc.right - bw, rc.top, rc.right, rc.bottom), borderColor);
+    }
+}
+
 /// Draws an FL Studio flush track-header / mixer-strip slab with zero external gap:
 /// top-right and bottom-left corners are subtly rounded and a soft vertical highlight/shadow
 /// gradient is applied across the corner depth so adjacent rows/strips separate cleanly without dividers.
-void drawBeveledTrackCard(DrawBuf buf, Rect rc, uint fillColor, uint cornerBgColor, float radius = 3.0f) {
+/// When `retroBevel` is true, renders a crisp Win95 3D raised slab instead.
+void drawBeveledTrackCard(
+    DrawBuf buf,
+    Rect rc,
+    uint fillColor,
+    uint cornerBgColor,
+    float radius = 3.0f,
+    bool retroBevel = false
+) {
     if (rc.width <= 0 || rc.height <= 0) return;
+    if (retroBevel) {
+        buf.fillRect(rc, fillColor);
+        drawRetroBevelFrame(buf, rc, false, rc.width >= dp(14) && rc.height >= dp(12));
+        return;
+    }
     int cr = cast(int)(dpf(radius) + 0.5f);
     if (cr < 1) cr = 1;
     if (cr * 3 > rc.height) cr = rc.height / 3;
@@ -530,9 +641,40 @@ void drawBeveledTrackCard(DrawBuf buf, Rect rc, uint fillColor, uint cornerBgCol
     }
 }
 
+private __gshared bool retroNoAntialias_ = false;
+
+/// Returns `true` when vector/waveform anti-aliasing is disabled for classic retro themes (e.g. Windows 95).
+bool isRetroNoAntialias() nothrow @trusted {
+    return retroNoAntialias_;
+}
+
+/// RAII guard that switches vector rasterization between smooth SDF AA and hard 1-bit retro pixels.
+struct ScopedRetroAntialias {
+    private bool prev_ = false;
+    private bool active_ = false;
+
+    this(bool disableAa) nothrow @trusted {
+        prev_ = retroNoAntialias_;
+        retroNoAntialias_ = disableAa;
+        active_ = true;
+    }
+
+    ~this() nothrow @trusted {
+        if (active_) {
+            retroNoAntialias_ = prev_;
+            active_ = false;
+        }
+    }
+}
+
 /// Modulates `color`'s opacity by `cov` in `[0, 1]` using `dlangui` inverted-alpha ARGB (`0x00` = opaque, `0xFF` = transparent).
-uint colorWithCoverage(uint color, float cov) pure nothrow @safe {
-    if (color == COLOR_TRANSPARENT || cov <= 0.004f) return COLOR_TRANSPARENT;
+/// When `isRetroNoAntialias()` is active, snaps coverage to hard 1-bit edges (`cov >= 0.5`).
+uint colorWithCoverage(uint color, float cov) nothrow @trusted {
+    if (color == COLOR_TRANSPARENT) return COLOR_TRANSPARENT;
+    if (retroNoAntialias_) {
+        return (cov >= 0.5f) ? color : COLOR_TRANSPARENT;
+    }
+    if (cov <= 0.004f) return COLOR_TRANSPARENT;
     if (cov >= 0.996f) return color;
     const uint baseAlpha = (color >> 24) & 0xFF;
     const float baseOpacity = 1.0f - cast(float)baseAlpha / 255.0f;
@@ -790,13 +932,15 @@ void drawDetailedWaveform(
                 buf.fillRect(Rect(x, cBot0, x + 1, cBot1 + 1), contourCol);
             }
         }
-        const float topFrac = cast(float)iy0 - topF;
-        if (iy0 - 1 >= rc.top && topFrac > 0.04f) {
-            buf.fillRect(Rect(x, iy0 - 1, x + 1, iy0), aaPixelColor(topFrac));
-        }
-        const float botFrac = botF - cast(float)iy1;
-        if (iy1 + 1 < rc.bottom && botFrac > 0.04f) {
-            buf.fillRect(Rect(x, iy1 + 1, x + 1, iy1 + 2), aaPixelColor(botFrac));
+        if (!retroNoAntialias_) {
+            const float topFrac = cast(float)iy0 - topF;
+            if (iy0 - 1 >= rc.top && topFrac > 0.04f) {
+                buf.fillRect(Rect(x, iy0 - 1, x + 1, iy0), aaPixelColor(topFrac));
+            }
+            const float botFrac = botF - cast(float)iy1;
+            if (iy1 + 1 < rc.bottom && botFrac > 0.04f) {
+                buf.fillRect(Rect(x, iy1 + 1, x + 1, iy1 + 2), aaPixelColor(botFrac));
+            }
         }
 
         // 3. Crisp inner RMS core
@@ -1062,7 +1206,7 @@ void drawLevelMeter(
     const ref FlPalette pal,
     int segments = 18
 ) {
-    drawCard(buf, rc, pal.bgLcd, pal.borderStrong, 2.0f);
+    drawThemeCard(buf, rc, pal.bgLcd, pal.borderStrong, pal, 2.0f, true);
     const int pad = dp(2);
     if (rc.width < pad * 4 || rc.height < segments * 2) return;
     const int innerLeft = rc.left + pad;
@@ -1205,6 +1349,9 @@ class FlCompactButton : Button {
     private uint fallbackHover_;
     private uint fallbackBorder_;
     private uint fallbackFg_;
+    private bool retroBevel_ = false;
+    private uint retroToolbarBg_ = 0;
+    private uint retroPanelBg_ = 0;
 
     this(string id, dstring label, const ref FlPalette pal,
          int baseFontPx = 11, int baseHeightPx = 22, bool centered = true, bool bold = false) {
@@ -1229,6 +1376,9 @@ class FlCompactButton : Button {
         fallbackHover_ = pal.bgControlHover;
         fallbackBorder_ = COLOR_TRANSPARENT;
         fallbackFg_ = pal.fgText;
+        retroBevel_ = pal.retroBevel;
+        retroToolbarBg_ = pal.bgToolbar;
+        retroPanelBg_ = pal.bgPanel;
     }
 
     override void measure(int parentWidth, int parentHeight) {
@@ -1244,6 +1394,7 @@ class FlCompactButton : Button {
 
     override void onDraw(DrawBuf buf) {
         if (visibility != Visibility.Visible) return;
+        auto aaGuard = ScopedRetroAntialias(retroBevel_);
         const bool hovered = (state & State.Hovered) != 0;
         const bool pressed = (state & State.Pressed) != 0;
         uint bg = (customFillColor != COLOR_TRANSPARENT) ? customFillColor : fallbackBg_;
@@ -1255,12 +1406,25 @@ class FlCompactButton : Button {
         }
         const uint brd = (customBorderColor != COLOR_TRANSPARENT) ? customBorderColor : fallbackBorder_;
         const uint fg = (customTextColor != COLOR_TRANSPARENT) ? customTextColor : fallbackFg_;
-        drawCard(buf, _pos, bg, brd, cornerRadius);
-        auto f = getDawFont(baseFontPx, safeWidgetFont(this), bold ? FontWeight.Bold : FontWeight.Normal);
-        if (centered) {
-            drawCenteredText(buf, f, _pos, text, fg);
+        if (retroBevel_) {
+            buf.fillRect(_pos, bg);
+            const bool flatMenuOrList = (customFillColor == retroToolbarBg_ || customFillColor == retroPanelBg_);
+            if (pressed) {
+                drawRetroBevelFrame(buf, _pos, true, false);
+            } else if (!flatMenuOrList || hovered) {
+                drawRetroBevelFrame(buf, _pos, false, !flatMenuOrList);
+            }
         } else {
-            drawVCenteredText(buf, f, _pos.left + dp(6), _pos, text, fg);
+            drawCard(buf, _pos, bg, brd, cornerRadius);
+        }
+        auto f = getDawFont(baseFontPx, safeWidgetFont(this), bold ? FontWeight.Bold : FontWeight.Normal);
+        const uint drawFg = retroBevel_
+            ? contrastTextColor(bg, (fg == fallbackFg_ ? fg : 0x00000000), 0x00FFFFFF)
+            : fg;
+        if (centered) {
+            drawCenteredText(buf, f, _pos, text, drawFg);
+        } else {
+            drawVCenteredText(buf, f, _pos.left + dp(6), _pos, text, drawFg);
         }
     }
 }
@@ -1272,6 +1436,20 @@ void applyFlatThemeOverrides(const ref FlPalette pal) {
         STYLE_EDIT_BOX, STYLE_EDIT_LINE, STYLE_LIST_ITEM, STYLE_MAIN_MENU,
         STYLE_MAIN_MENU_ITEM, STYLE_MENU_ITEM, STYLE_POPUP_MENU, STYLE_SCROLLBAR,
         STYLE_SCROLLBAR_BUTTON, STYLE_SCROLLBAR_BUTTON_TRANSPARENT;
+
+    retroNoAntialias_ = pal.retroBevel;
+    if (pal.retroBevel) {
+        FontManager.minAnitialiasedFontSize = 512;
+        FontManager.hintingMode = HintingMode.Normal;
+        FontManager.subpixelRenderingMode = SubpixelRenderingMode.None;
+    } else {
+        FontManager.minAnitialiasedFontSize = 0;
+        FontManager.hintingMode = HintingMode.Light;
+        FontManager.subpixelRenderingMode = SubpixelRenderingMode.Auto;
+    }
+    if (FontManager.instance !is null) {
+        FontManager.instance.clearGlyphCaches();
+    }
 
     if (currentTheme is null) return;
     currentTheme.fontSize = dp(11);
@@ -1310,8 +1488,12 @@ void applyFlatThemeOverrides(const ref FlPalette pal) {
         st.backgroundColor = COLOR_TRANSPARENT;
         st.textColor = pal.fgText;
         st.padding = Rect(dp(8), dp(4), dp(8), dp(4));
-        st.getOrCreateState(State.Hovered, State.Hovered).backgroundColor = pal.bgControlHover;
-        st.getOrCreateState(State.Selected, State.Selected).backgroundColor = pal.bgControlHover;
+        const uint hiBg = pal.retroBevel ? pal.accentOrange : pal.bgControlHover;
+        const uint hiFg = pal.retroBevel ? pal.bgLcd : pal.fgText;
+        st.getOrCreateState(State.Hovered, State.Hovered).backgroundColor = hiBg;
+        st.getOrCreateState(State.Hovered, State.Hovered).textColor = hiFg;
+        st.getOrCreateState(State.Selected, State.Selected).backgroundColor = hiBg;
+        st.getOrCreateState(State.Selected, State.Selected).textColor = hiFg;
     }
 
     auto sb = currentTheme.createSubstyle(STYLE_SCROLLBAR);
@@ -1347,6 +1529,18 @@ unittest {
     assert(violetPal.name == "Royal Violet");
     assert(violetPal.bgLcd == violetPal.bgToolbarWell);
     assert((violetPal.borderAccent & 0x00FFFFFF) == 0x00B47CFF);
+    assert(!violetPal.retroBevel);
+
+    const win95Pal = getFlPalette(FlThemeId.WIN95);
+    assert(win95Pal.name == "Windows 95");
+    assert(win95Pal.bgDesktop == 0x00008080);
+    assert(win95Pal.bgWindow == 0x00C0C0C0);
+    assert(win95Pal.bgWindowHeaderActive == 0x00000080);
+    assert(win95Pal.fgText == 0x00000000);
+    assert(win95Pal.bgLcd == 0x00FFFFFF);
+    assert(win95Pal.retroBevel);
+    assert(contrastTextColor(0x00000080) == 0x00F4F6FA);
+    assert(contrastTextColor(0x00FFFFFF) == 0x00101214);
 
     // Verify adjustColorBrightness clamps RGB without overflowing into adjacent bytes or alpha
     const uint clampedBright = adjustColorBrightness(0x00FF8F2D, 0x20);
@@ -1533,4 +1727,30 @@ unittest {
     aaBuf.fill(pal.bgLcd);
     drawPlayheadTriangle(aaBuf, 24, 4, 6, 10, pal.accentOrange);
     assert(aaBuf.scanLine(6)[24] == pal.accentOrange, "Playhead interior must be opaque");
+
+    // Verify retro mode completely disables vector/font anti-aliasing (hard 1-bit pixel edges)
+    applyFlatThemeOverrides(win95Pal);
+    assert(isRetroNoAntialias());
+    assert(FontManager.minAnitialiasedFontSize >= 256);
+    assert(FontManager.hintingMode == HintingMode.Normal);
+    assert(colorWithCoverage(0x00000080, 0.49f) == COLOR_TRANSPARENT);
+    assert(colorWithCoverage(0x00000080, 0.51f) == 0x00000080);
+    {
+        auto retroGuard = ScopedRetroAntialias(true);
+        aaBuf.fill(win95Pal.bgLcd);
+        drawThickLine(aaBuf, 4.0f, 4.0f, 42.0f, 36.0f, 2.0f, win95Pal.fgText);
+        int retroBlended = 0;
+        int retroOpaque = 0;
+        foreach (y; 0 .. 48) {
+            auto row = aaBuf.scanLine(y);
+            foreach (x; 0 .. 48) {
+                if (row[x] == win95Pal.fgText) retroOpaque++;
+                else if (row[x] != win95Pal.bgLcd) retroBlended++;
+            }
+        }
+        assert(retroOpaque > 10 && retroBlended == 0, "Retro mode must emit zero AA blended pixels");
+    }
+    applyFlatThemeOverrides(pal);
+    assert(!isRetroNoAntialias());
+    assert(FontManager.minAnitialiasedFontSize == 0);
 }

@@ -7,8 +7,8 @@ import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : adjustColorBrightness, dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText,
-    drawFilledCircle, drawLevelMeter, drawRotaryKnob, drawThickLine, drawVCenteredText, FlPalette,
-    getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
+    drawFilledCircle, drawLevelMeter, drawRotaryKnob, drawThemeCard, drawThickLine, drawVCenteredText, FlPalette,
+    getDawFont, getFlPalette, safeWidgetFont, ScopedRetroAntialias, truncateLabel;
 import gui_d.transport_model : PluginSlotState, TrackStripState, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import std.format : format;
@@ -111,7 +111,7 @@ private void drawMixerStrip(
     FontRef smallFnt
 ) {
     const uint bg = isSelected ? pal.bgControl : ((displayIdx % 2 == 1) || isMaster ? pal.bgPanelAlt : pal.bgPanel);
-    drawBeveledTrackCard(buf, stripRc, bg, pal.bgToolbarWell, 3.0f);
+    drawBeveledTrackCard(buf, stripRc, bg, pal.bgToolbarWell, 3.0f, pal.retroBevel);
     if (isSelected) {
         buf.fillRect(Rect(stripRc.left, stripRc.top, stripRc.right - dp(3), stripRc.top + dp(2)), pal.accentOrange);
     }
@@ -133,8 +133,8 @@ private void drawMixerStrip(
     const sm = computeStripMetrics(stripRc);
 
     // Mute LED & Solo LED
-    drawCard(buf, sm.muteRc, muted ? pal.ledOff : pal.accentGreen, COLOR_TRANSPARENT, 1.5f);
-    drawCard(buf, sm.soloRc, soloed ? pal.accentAmber : pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, sm.muteRc, muted ? pal.ledOff : pal.accentGreen, COLOR_TRANSPARENT, pal, 1.5f, false);
+    drawThemeCard(buf, sm.soloRc, soloed ? pal.accentAmber : pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, soloed && pal.retroBevel);
     drawCenteredText(buf, smallFnt, sm.soloRc, "S"d, soloed ? pal.bgLcd : pal.fgMuted);
 
     // Pan knob (left) & Stereo Separation knob (right)
@@ -151,7 +151,7 @@ private void drawMixerStrip(
         const float pR = trk ? trk.peakR : 0.0f;
         drawLevelMeter(buf, sm.meterRc, pL, pR, pal, 16);
 
-        drawCard(buf, sm.grooveRc, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
+        drawThemeCard(buf, sm.grooveRc, pal.bgLcd, COLOR_TRANSPARENT, pal, 1.5f, true);
 
         const int capH = dp(16);
         const int capHalf = dp(8);
@@ -173,7 +173,7 @@ private void drawMixerStrip(
         const int capY = sm.grooveRc.bottom - cast(int)(vol * trackTravel) - capH;
         Rect capRc = Rect(stripRc.left + dp(10), capY, stripRc.left + dp(30), capY + capH);
         const uint capBase = 0x008A94A3;
-        drawCard(buf, capRc, capBase, pal.borderStrong, 2.0f);
+        drawThemeCard(buf, capRc, capBase, pal.borderStrong, pal, 2.0f, false);
         if (capRc.height >= dp(8)) {
             buf.fillRect(Rect(capRc.left + dp(2), capRc.top + dp(1), capRc.right - dp(2), capRc.top + dp(3)),
                          adjustColorBrightness(capBase, 22));
@@ -187,7 +187,7 @@ private void drawMixerStrip(
     }
 
     // Bottom routing badge + subtle active status dot
-    drawCard(buf, sm.routeRc, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, sm.routeRc, pal.bgLcd, COLOR_TRANSPARENT, pal, 1.5f, true);
     drawFilledCircle(buf, sm.routeRc.left + dpf(7.5f), cast(float)sm.routeRc.middley + 0.5f,
                      dpf(2.2f), isMaster ? pal.accentCyan : pal.accentOrange);
     drawCenteredText(buf, smallFnt, sm.routeRc, isMaster ? "OUT"d : "-> M"d, pal.accentOrange);
@@ -202,6 +202,7 @@ void drawMixerCanvas(
     int scrollInsert = 0
 ) {
     const pal = model ? model.palette() : getFlPalette();
+    auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
     buf.fillRect(rc, pal.bgWindow);
     if (rc.width < dp(260) || rc.height < dp(140)) return;
 
@@ -231,7 +232,7 @@ void drawMixerCanvas(
     // Unified flush scroll (< >) + FX Rack toggle strip
     const bool showFx = model ? model.showMixerFxRack : true;
     Rect mxToolStrip = Rect(m.scrLeftRc.left, m.scrLeftRc.top, m.fxToggleRc.right, m.fxToggleRc.bottom);
-    drawCard(buf, mxToolStrip, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, mxToolStrip, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
     drawDawIcon(buf, Rect(m.scrLeftRc.left + dp(4), m.scrLeftRc.top + dp(2),
                           m.scrLeftRc.right - dp(4), m.scrLeftRc.bottom - dp(2)),
                 DawIcon.CHEVRON_LEFT, pal.fgText);
@@ -239,7 +240,7 @@ void drawMixerCanvas(
                           m.scrRightRc.right - dp(4), m.scrRightRc.bottom - dp(2)),
                 DawIcon.CHEVRON_RIGHT, pal.fgText);
     if (showFx) {
-        drawCard(buf, m.fxToggleRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+        drawThemeCard(buf, m.fxToggleRc, pal.accentOrange, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
     }
     Rect fxIconRc = Rect(m.fxToggleRc.left + dp(4), m.fxToggleRc.top + dp(2),
                          m.fxToggleRc.left + dp(20), m.fxToggleRc.bottom - dp(2));
@@ -296,7 +297,7 @@ void drawMixerCanvas(
     // 4. Right Docked 10-Slot FX Rack + 3-Band EQ
     if (m.showFx) {
         Rect fxRc = m.fxRc;
-        drawCard(buf, fxRc, pal.bgPanelAlt, pal.borderSubtle, 2.0f);
+        drawThemeCard(buf, fxRc, pal.bgPanelAlt, pal.borderSubtle, pal, 2.0f, false);
         drawVCenteredText(buf, hdrFnt, fxRc.left + dp(8),
                           Rect(fxRc.left, fxRc.top + dp(2), fxRc.right, fxRc.top + dp(24)),
                           toUTF32(format("FX SLOTS - %s", truncateLabel(selTrk ? selTrk.name : "Insert", 12))),
@@ -319,8 +320,8 @@ void drawMixerCanvas(
                 }
                 const bool hasPlug = plug !is null;
                 const bool selSlot = model && model.selectedFxSlot == s;
-                drawCard(buf, sRc, hasPlug ? pal.bgControl : pal.bgLcd,
-                         selSlot ? pal.accentOrange : COLOR_TRANSPARENT, 1.5f);
+                drawThemeCard(buf, sRc, hasPlug ? pal.bgControl : pal.bgLcd,
+                              selSlot ? pal.borderAccent : COLOR_TRANSPARENT, pal, 1.5f, !hasPlug);
 
                 // Slot index & name
                 const string sLbl = hasPlug
@@ -342,7 +343,7 @@ void drawMixerCanvas(
         // 3-Band Insert EQ Panel at bottom of FX Rack
         if (fxRc.height > dp(150)) {
             Rect eqRc = Rect(fxRc.left + dp(6), fxRc.bottom - m.eqH, fxRc.right - dp(6), fxRc.bottom - dp(6));
-            drawCard(buf, eqRc, pal.bgLcd, pal.borderSubtle, 2.0f);
+            drawThemeCard(buf, eqRc, pal.bgLcd, pal.borderSubtle, pal, 2.0f, true);
             const float low = selTrk ? selTrk.eqLow : 0.5f;
             const float mid = selTrk ? selTrk.eqMid : 0.5f;
             const float high = selTrk ? selTrk.eqHigh : 0.5f;

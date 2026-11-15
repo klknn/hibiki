@@ -9,8 +9,8 @@ import dlangui.widgets.editors : EditLine;
 import dlangui.widgets.layouts : HorizontalLayout, VerticalLayout;
 import dlangui.widgets.scroll : ScrollWidget;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : activeDawUiFontFace, dp, drawCard, drawDetailedWaveform, drawVCenteredText,
-    FlCompactButton, FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
+import gui_d.theme : activeDawUiFontFace, dp, drawCard, drawDetailedWaveform, drawThemeCard, drawVCenteredText,
+    FlCompactButton, FlPalette, getDawFont, getFlPalette, safeWidgetFont, ScopedRetroAntialias, truncateLabel;
 import gui_d.transport_model : BrowserCategory, generateSampleWaveform, PatternState, TransportModel;
 import std.algorithm : canFind;
 import std.conv : to;
@@ -75,7 +75,8 @@ void drawSampleWaveformPreview(
     FontRef fnt = FontRef.init
 ) {
     const pal = model ? model.palette() : getFlPalette();
-    drawCard(buf, rc, pal.bgLcd, pal.borderSubtle, 3.0f);
+    auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
+    drawThemeCard(buf, rc, pal.bgLcd, pal.borderSubtle, pal, 3.0f, true);
     if (rc.width < dp(24) || rc.height < dp(20)) return;
 
     const int padX = dp(5);
@@ -143,6 +144,7 @@ class BrowserPanel : VerticalLayout {
     private EditLine edSearch_;
     private VerticalLayout listBody_;
     private BrowserPreviewWidget previewWidget_;
+    private TextWidget hdr_;
     private FlCompactButton btnScan_;
     private FlCompactButton[5] keyBtns_;
     private bool[string] collapsedSections_;
@@ -164,20 +166,20 @@ class BrowserPanel : VerticalLayout {
         maxWidth = dp(290);
         layoutHeight = FILL_PARENT;
         const pal = model_ ? model_.palette() : getFlPalette();
-        backgroundColor = pal.bgWindowHeader;
+        backgroundColor = pal.retroBevel ? pal.bgPanel : pal.bgWindowHeader;
         padding = Rect(dp(5), dp(5), dp(5), dp(5));
 
         auto hdrRow = new HorizontalLayout("br_hdr_row");
         hdrRow.layoutWidth = FILL_PARENT;
         hdrRow.margins = Rect(0, 0, 0, dp(3));
-        auto hdr = new TextWidget("br_hdr", "BROWSER"d);
-        hdr.textColor = pal.accentOrange;
-        hdr.fontSize = dp(11);
-        hdr.fontWeight = FontWeight.Normal;
+        hdr_ = new TextWidget("br_hdr", "BROWSER"d);
+        hdr_.textColor = pal.accentOrange;
+        hdr_.fontSize = dp(11);
+        hdr_.fontWeight = FontWeight.Normal;
         const string hdrFace = activeDawUiFontFace();
-        if (hdrFace.length > 0) hdr.fontFace = hdrFace;
-        hdr.padding = Rect(dp(4), dp(2), dp(4), dp(2));
-        hdr.layoutWidth = FILL_PARENT;
+        if (hdrFace.length > 0) hdr_.fontFace = hdrFace;
+        hdr_.padding = Rect(dp(4), dp(2), dp(4), dp(2));
+        hdr_.layoutWidth = FILL_PARENT;
         btnScan_ = new FlCompactButton("br_scan", "SCAN VST3"d, pal, 10, 20, true, false);
         btnScan_.click = (Widget s) {
             if (onScanVst3 !is null) {
@@ -186,7 +188,7 @@ class BrowserPanel : VerticalLayout {
             }
             return true;
         };
-        hdrRow.addChild(hdr);
+        hdrRow.addChild(hdr_);
         hdrRow.addChild(btnScan_);
         addChild(hdrRow);
 
@@ -277,7 +279,10 @@ class BrowserPanel : VerticalLayout {
 
     void refresh() {
         const pal = model_ ? model_.palette() : getFlPalette();
-        backgroundColor = pal.bgWindowHeader;
+        backgroundColor = pal.retroBevel ? pal.bgPanel : pal.bgWindowHeader;
+        if (hdr_ !is null) {
+            hdr_.textColor = pal.accentOrange;
+        }
         if (btnScan_ !is null) {
             btnScan_.updatePalette(pal);
             btnScan_.customFillColor = pal.bgPanelAlt;

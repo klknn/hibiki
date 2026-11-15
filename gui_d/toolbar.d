@@ -6,9 +6,9 @@ import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
-import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawRotaryKnob, drawThickLine,
-    drawVCenteredText, FlPalette, formatBarBeat, formatTimecode, getDawFont,
-    getFlPalette, safeWidgetFont, truncateLabel, uiScale;
+import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawRotaryKnob, drawThemeCard,
+    drawThickLine, drawVCenteredText, FlPalette, formatBarBeat, formatTimecode, getDawFont,
+    getFlPalette, safeWidgetFont, ScopedRetroAntialias, truncateLabel, uiScale;
 import gui_d.transport_model : PlaybackMode, SnapMode, TimeDisplayMode, TransportModel;
 import std.format : format;
 import std.utf : toUTF32;
@@ -140,6 +140,7 @@ void drawToolbarCanvas(
     FontRef fnt = FontRef.init
 ) {
     const pal = model ? model.palette() : getFlPalette();
+    auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
     buf.fillRect(rc, pal.bgToolbar);
     buf.fillRect(Rect(rc.left, rc.bottom - dp(1), rc.right, rc.bottom), pal.borderStrong);
     if (!model || rc.width < dp(600) || rc.height < dp(42)) return;
@@ -156,10 +157,10 @@ void drawToolbarCanvas(
                    pal.bgLcd, pal.accentCyan, pal.bgControl, pal.borderSubtle, true);
 
     // 2. Unified Transport & Time cluster (single container, zero borders between buttons)
-    drawCard(buf, tl.transPanel, pal.bgControl, COLOR_TRANSPARENT, 2.0f);
+    drawThemeCard(buf, tl.transPanel, pal.bgControl, COLOR_TRANSPARENT, pal, 2.0f, false);
 
     const bool isPat = model.playbackMode == PlaybackMode.PAT;
-    drawCard(buf, tl.patSongRc, isPat ? pal.accentOrange : pal.accentGreen, COLOR_TRANSPARENT, 2.0f);
+    drawThemeCard(buf, tl.patSongRc, isPat ? pal.accentOrange : pal.accentGreen, COLOR_TRANSPARENT, pal, 2.0f, false);
     Rect psIconRc = Rect(tl.patSongRc.left + dp(3), tl.patSongRc.top + dp(9),
                          tl.patSongRc.left + dp(21), tl.patSongRc.bottom - dp(9));
     drawDawIcon(buf, psIconRc, isPat ? DawIcon.PAT_MODE : DawIcon.SONG_MODE, pal.bgLcd);
@@ -167,13 +168,13 @@ void drawToolbarCanvas(
                       isPat ? "PAT"d : "SONG"d, pal.bgLcd);
 
     if (model.isPlaying) {
-        drawCard(buf, tl.playRc, pal.accentGreen, COLOR_TRANSPARENT, 1.5f);
+        drawThemeCard(buf, tl.playRc, pal.accentGreen, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
     }
     if (model.isRecording) {
-        drawCard(buf, tl.recRc, pal.accentRed, COLOR_TRANSPARENT, 1.5f);
+        drawThemeCard(buf, tl.recRc, pal.accentRed, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
     }
     if (model.loopEnabled) {
-        drawCard(buf, tl.loopRc, pal.accentAmber, COLOR_TRANSPARENT, 1.5f);
+        drawThemeCard(buf, tl.loopRc, pal.accentAmber, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
     }
 
     drawDawIcon(buf, Rect(tl.playRc.left + dp(5), tl.playRc.top + dp(9), tl.playRc.right - dp(5), tl.playRc.bottom - dp(9)),
@@ -187,11 +188,13 @@ void drawToolbarCanvas(
 
     // Unified BPM + Time LCD well inside Transport cluster (cohesive tone with toolbar)
     Rect lcdGroup = Rect(tl.bpmRc.left, tl.bpmRc.top, tl.timeRc.right, tl.timeRc.bottom);
-    drawCard(buf, lcdGroup, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
-    buf.fillRect(Rect(lcdGroup.left + dp(1), lcdGroup.top, lcdGroup.right - dp(1), lcdGroup.top + dp(1)),
-                 adjustColorBrightness(pal.bgLcd, -6));
+    drawThemeCard(buf, lcdGroup, pal.bgLcd, COLOR_TRANSPARENT, pal, 1.5f, true);
+    if (!pal.retroBevel) {
+        buf.fillRect(Rect(lcdGroup.left + dp(1), lcdGroup.top, lcdGroup.right - dp(1), lcdGroup.top + dp(1)),
+                     adjustColorBrightness(pal.bgLcd, -6));
+    }
     buf.fillRect(Rect(tl.bpmRc.right, lcdGroup.top + dp(6), tl.bpmRc.right + dp(1), lcdGroup.bottom - dp(6)),
-                 adjustColorBrightness(pal.bgLcd, 14));
+                 pal.retroBevel ? pal.borderSubtle : adjustColorBrightness(pal.bgLcd, 14));
     drawCenteredText(buf, lcdFnt, tl.bpmRc, toUTF32(format("%.1f", model.bpm)), pal.fgText);
     const string timeStr = (model.timeDisplayMode == TimeDisplayMode.TIME_MS)
         ? formatTimecode(model.playheadPosSec)
@@ -199,7 +202,7 @@ void drawToolbarCanvas(
     drawCenteredText(buf, lcdFnt, tl.timeRc, toUTF32(timeStr), pal.fgText);
 
     // 3. Recording Helpers strip (single seamless strip of pictorial icons)
-    drawCard(buf, tl.recOptsPanel, pal.bgControl, COLOR_TRANSPARENT, 2.0f);
+    drawThemeCard(buf, tl.recOptsPanel, pal.bgControl, COLOR_TRANSPARENT, pal, 2.0f, false);
     struct IconToggleSpec { DawIcon icon; bool on; uint col; }
     IconToggleSpec[4] specs = [
         IconToggleSpec(DawIcon.METRONOME, model.metronomeEnabled, pal.accentOrange),
@@ -210,7 +213,7 @@ void drawToolbarCanvas(
     foreach (i, sp; specs) {
         Rect tRc = tl.recToggles[i];
         if (sp.on) {
-            drawCard(buf, tRc, sp.col, COLOR_TRANSPARENT, 1.5f);
+            drawThemeCard(buf, tRc, sp.col, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
         }
         drawDawIcon(buf, Rect(tRc.left + dp(4), tRc.top + dp(9), tRc.right - dp(4), tRc.bottom - dp(9)),
                     sp.icon, sp.on ? pal.bgLcd : pal.fgMuted,
@@ -218,7 +221,7 @@ void drawToolbarCanvas(
     }
 
     // 4. Snap & History strip (Magnet + Snap label, Undo, Redo — flush)
-    drawCard(buf, tl.snapPanel, pal.bgControl, COLOR_TRANSPARENT, 2.0f);
+    drawThemeCard(buf, tl.snapPanel, pal.bgControl, COLOR_TRANSPARENT, pal, 2.0f, false);
     Rect snapIconRc = Rect(tl.snapRc.left + dp(4), tl.snapRc.top + dp(10),
                            tl.snapRc.left + dp(22), tl.snapRc.bottom - dp(10));
     drawDawIcon(buf, snapIconRc, DawIcon.SNAP_MAGNET, pal.accentCyan, pal.fgText);
@@ -230,8 +233,8 @@ void drawToolbarCanvas(
                 DawIcon.REDO, pal.fgText);
 
     // 5. Pattern Selector strip (< Pattern 1 > + — flush)
-    drawCard(buf, tl.patPanel, pal.bgControl, COLOR_TRANSPARENT, 2.0f);
-    drawCard(buf, tl.pLbl, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, tl.patPanel, pal.bgControl, COLOR_TRANSPARENT, pal, 2.0f, false);
+    drawThemeCard(buf, tl.pLbl, pal.bgLcd, COLOR_TRANSPARENT, pal, 1.5f, true);
     string patName = "Pattern 1";
     if (model.selectedPatternIndex >= 0 && model.selectedPatternIndex < cast(int)model.patterns.length) {
         patName = model.patterns[model.selectedPatternIndex].name;
@@ -247,7 +250,7 @@ void drawToolbarCanvas(
 
     // 6. Workspace Window Switchers strip (Playlist, Channel Rack, Piano Roll, Browser, Mixer, Plugin)
     if (tl.hasWinPanel) {
-        drawCard(buf, tl.winPanel, pal.bgControl, COLOR_TRANSPARENT, 2.0f);
+        drawThemeCard(buf, tl.winPanel, pal.bgControl, COLOR_TRANSPARENT, pal, 2.0f, false);
         struct WinIconSpec { DawIcon icon; bool on; }
         WinIconSpec[6] wspecs = [
             WinIconSpec(DawIcon.WIN_PLAYLIST,     visPlaylist),
@@ -260,7 +263,7 @@ void drawToolbarCanvas(
         foreach (i, ws; wspecs) {
             Rect wRc = tl.winBtns[i];
             if (ws.on) {
-                drawCard(buf, wRc, pal.bgControlHover, COLOR_TRANSPARENT, 0.0f);
+                drawThemeCard(buf, wRc, pal.bgControlHover, COLOR_TRANSPARENT, pal, 0.0f, pal.retroBevel);
                 buf.fillRect(Rect(wRc.left + dp(3), wRc.bottom - dp(3), wRc.right - dp(3), wRc.bottom - dp(1)),
                              pal.accentOrange);
             }
@@ -273,9 +276,11 @@ void drawToolbarCanvas(
     // 7. Live Oscilloscope & CPU monitor (cohesive slate surface & smooth AA trace)
     if (tl.hasScopePanel) {
         Rect scopePanel = tl.scopePanel;
-        drawCard(buf, scopePanel, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
-        buf.fillRect(Rect(scopePanel.left + dp(1), scopePanel.top, scopePanel.right - dp(1), scopePanel.top + dp(1)),
-                     adjustColorBrightness(pal.bgLcd, -6));
+        drawThemeCard(buf, scopePanel, pal.bgLcd, COLOR_TRANSPARENT, pal, 1.5f, true);
+        if (!pal.retroBevel) {
+            buf.fillRect(Rect(scopePanel.left + dp(1), scopePanel.top, scopePanel.right - dp(1), scopePanel.top + dp(1)),
+                         adjustColorBrightness(pal.bgLcd, -6));
+        }
         const int sw = scopePanel.width - dp(12);
         const int midY = scopePanel.middley + dp(3);
         buf.fillRect(Rect(scopePanel.left + dp(6), midY, scopePanel.right - dp(6), midY + dp(1)),

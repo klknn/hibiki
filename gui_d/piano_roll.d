@@ -5,9 +5,10 @@ import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
-import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawFilledCircle,
-    drawPlayheadTriangle, drawRightVCenteredText, drawThickLine, drawVCenteredText, FlPalette, getDawFont,
-    getFlPalette, safeWidgetFont, truncateLabel, uiScale;
+import gui_d.theme : adjustColorBrightness, contrastTextColor, dp, dpf, drawCard, drawCenteredText,
+    drawFilledCircle, drawPlayheadTriangle, drawRightVCenteredText, drawThemeCard, drawThickLine,
+    drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont, ScopedRetroAntialias,
+    truncateLabel, uiScale;
 import gui_d.transport_model : EditorTool, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import pb.core : MidiEvent;
@@ -86,6 +87,7 @@ void drawPianoRollCanvas(
     double scrollBeats = 0.0
 ) {
     const pal = model ? model.palette() : getFlPalette();
+    auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
     buf.fillRect(rc, pal.bgWindow);
     if (rc.width < dp(180) || rc.height < dp(90)) return;
 
@@ -111,12 +113,12 @@ void drawPianoRollCanvas(
         EditorTool.SLICE, EditorTool.SELECT, EditorTool.ZOOM
     ];
     Rect prToolsRc = Rect(m.toolBtns[0].left, m.toolBtns[0].top, m.toolBtns[5].right, m.toolBtns[5].bottom);
-    drawCard(buf, prToolsRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, prToolsRc, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
     foreach (i, ic; TOOL_ICONS) {
         Rect bRc = m.toolBtns[i];
         const bool active = model && model.pianoRollTool == TOOL_ENUMS[i];
         if (active) {
-            drawCard(buf, bRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+            drawThemeCard(buf, bRc, pal.accentOrange, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
         }
         drawDawIcon(buf, Rect(bRc.left + dp(2), bRc.top + dp(2), bRc.right - dp(2), bRc.bottom - dp(2)),
                     ic, active ? pal.bgLcd : pal.fgText,
@@ -129,7 +131,7 @@ void drawPianoRollCanvas(
         model.activeMidi.channelIndex < cast(int)model.channels.length) {
         targetName = model.channels[model.activeMidi.channelIndex].name;
     }
-    drawCard(buf, m.tgtRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, m.tgtRc, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
     drawDawIcon(buf, Rect(m.tgtRc.left + dp(3), m.tgtRc.top + dp(3), m.tgtRc.left + dp(17), m.tgtRc.bottom - dp(3)),
                 DawIcon.CHEVRON_LEFT, pal.accentOrange);
     drawCenteredText(buf, boldFnt, m.tgtRc,
@@ -139,9 +141,9 @@ void drawPianoRollCanvas(
 
     // Ghost Notes & Velocity Lane toggles (flush 2-icon strip)
     Rect viewStripRc = Rect(m.ghostRc.left, m.ghostRc.top, m.velRc.right, m.velRc.bottom);
-    drawCard(buf, viewStripRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
-    if (ghostOn) drawCard(buf, m.ghostRc, pal.accentCyan, COLOR_TRANSPARENT, 1.5f);
-    if (velOn) drawCard(buf, m.velRc, pal.accentGreen, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, viewStripRc, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
+    if (ghostOn) drawThemeCard(buf, m.ghostRc, pal.accentCyan, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
+    if (velOn) drawThemeCard(buf, m.velRc, pal.accentGreen, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
     drawDawIcon(buf, Rect(m.ghostRc.left + dp(2), m.ghostRc.top + dp(2), m.ghostRc.right - dp(2), m.ghostRc.bottom - dp(2)),
                 DawIcon.GHOST_NOTES, ghostOn ? pal.bgLcd : pal.fgText,
                 ghostOn ? adjustColorBrightness(pal.bgLcd, 28) : pal.fgMuted);
@@ -191,7 +193,8 @@ void drawPianoRollCanvas(
             }
         } else if (((pitch % 12) + 12) % 12 == 0 && (y1 - y0) >= dp(10)) {
             drawRightVCenteredText(buf, noteFnt, Rect(rc.left, y0, gridLeft, y1),
-                                   toUTF32(noteName(pitch)), pal.bgLcd, dp(5));
+                                   toUTF32(noteName(pitch)),
+                                   contrastTextColor(whiteBg, 0x001C2026, 0x00EAEFF5), dp(5));
         }
 
         // Scale-highlighted row lane
@@ -267,12 +270,13 @@ void drawPianoRollCanvas(
         if (x1 > gridRight) x1 = gridRight;
 
         Rect noteRc = Rect(x0, y0, x1, y1);
-        drawCard(buf, noteRc, pal.noteFill, pal.borderStrong, 2.5f);
+        drawThemeCard(buf, noteRc, pal.noteFill, pal.borderStrong, pal, 2.5f, false);
         // Brighter left attack bar
         const int attackW = dp(4);
         buf.fillRect(Rect(x0 + bw, y0 + bw, x0 + attackW < x1 ? x0 + attackW : x1, y1 - bw), pal.accentGreen);
         if ((x1 - x0) >= dp(24) && (y1 - y0) >= dp(11)) {
-            drawVCenteredText(buf, noteFnt, x0 + dp(5), noteRc, toUTF32(noteName(p)), pal.bgLcd);
+            drawVCenteredText(buf, noteFnt, x0 + dp(5), noteRc, toUTF32(noteName(p)),
+                              contrastTextColor(pal.noteFill));
         }
     }
 

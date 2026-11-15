@@ -5,9 +5,9 @@ import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.icons : DawIcon, drawDawIcon;
-import gui_d.theme : adjustColorBrightness, dp, dpf, drawBeveledTrackCard, drawCard, drawCenteredText,
-    drawRotaryKnob, drawVCenteredText, FlPalette, getDawFont, getDawMonoFont, getFlPalette, safeWidgetFont,
-    truncateLabel;
+import gui_d.theme : adjustColorBrightness, contrastTextColor, dp, dpf, drawBeveledTrackCard, drawCard,
+    drawCenteredText, drawRotaryKnob, drawThemeCard, drawVCenteredText, FlPalette, getDawFont,
+    getDawMonoFont, getFlPalette, safeWidgetFont, ScopedRetroAntialias, truncateLabel;
 import gui_d.transport_model : ChannelFilterMode, ChannelState, GraphEditorMode, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import std.format : format;
@@ -54,6 +54,7 @@ void drawChannelRackCanvas(
     int scrollRow = 0
 ) {
     const pal = model ? model.palette() : getFlPalette();
+    auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
     buf.fillRect(rc, pal.bgWindow);
     if (!model || rc.width < dp(300) || rc.height < dp(64)) return;
 
@@ -73,7 +74,7 @@ void drawChannelRackCanvas(
     else if (model.channelFilter == ChannelFilterMode.SYNTHS) filterLbl = "Synths";
     else if (model.channelFilter == ChannelFilterMode.AUDIO) filterLbl = "Audio";
 
-    drawCard(buf, m.filterRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, m.filterRc, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
     drawCenteredText(buf, boldFnt, m.filterRc, toUTF32(filterLbl), pal.fgText);
 
     // Swing rotary knob
@@ -85,9 +86,9 @@ void drawChannelRackCanvas(
 
     // Unified flush Graph Editor & Add Channel strip on right
     Rect crToolsRc = Rect(m.graphBtnRc.left, m.graphBtnRc.top, m.addBtnRc.right, m.addBtnRc.bottom);
-    drawCard(buf, crToolsRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawThemeCard(buf, crToolsRc, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
     if (model.graphEditorOpen) {
-        drawCard(buf, m.graphBtnRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+        drawThemeCard(buf, m.graphBtnRc, pal.accentOrange, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
     }
     drawDawIcon(buf, Rect(m.graphBtnRc.left + dp(3), m.graphBtnRc.top + dp(2),
                           m.graphBtnRc.right - dp(3), m.graphBtnRc.bottom - dp(2)),
@@ -125,7 +126,7 @@ void drawChannelRackCanvas(
         // Mute / Solo LED pill
         Rect ledRc = Rect(rc.left + dp(8), y0 + dp(9), rc.left + dp(20), y0 + dp(21));
         const uint ledCol = ch.soloed ? pal.accentAmber : (ch.muted ? pal.ledOff : pal.accentGreen);
-        drawCard(buf, ledRc, ledCol, COLOR_TRANSPARENT, 1.5f);
+        drawThemeCard(buf, ledRc, ledCol, COLOR_TRANSPARENT, pal, 1.5f, false);
 
         // Pan Knob (bipolar)
         drawRotaryKnob(buf, rc.left + dp(36), y0 + dp(15), dp(10), (ch.pan + 1.0f) * 0.5f,
@@ -137,20 +138,20 @@ void drawChannelRackCanvas(
 
         // Mixer Target Insert LCD
         Rect mixRc = Rect(rc.left + dp(82), y0 + dp(4), rc.left + dp(112), y1 - dp(3));
-        drawCard(buf, mixRc, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
+        drawThemeCard(buf, mixRc, pal.bgLcd, COLOR_TRANSPARENT, pal, 1.5f, true);
         drawCenteredText(buf, monoFnt, mixRc,
                          toUTF32(ch.mixerInsert == 0 ? "M" : format("%2d", ch.mixerInsert)),
                          pal.accentCyan);
 
         // Channel Name Pill (flush track bevel: rounded top-right/bottom-left corners + gradient)
         Rect pillRc = Rect(rc.left + dp(118), y0, m.stepAreaLeft - dp(8), y0 + m.rowH);
-        drawBeveledTrackCard(buf, pillRc, ch.color, pal.bgWindow, 3.0f);
+        drawBeveledTrackCard(buf, pillRc, ch.color, pal.bgWindow, 3.0f, pal.retroBevel);
         if (isSel) {
             buf.fillRect(Rect(pillRc.left + dp(1), pillRc.top + dp(2), pillRc.left + dp(4), pillRc.bottom - dp(3)),
                          pal.accentOrange);
         }
         drawVCenteredText(buf, boldFnt, pillRc.left + dp(9), pillRc,
-                          toUTF32(truncateLabel(ch.name, 14)), pal.fgText);
+                          toUTF32(truncateLabel(ch.name, 14)), contrastTextColor(ch.color));
 
         // 16-Step Sequencer Pads (4 groups of 4: cool slate vs warm muted slate)
         foreach (s; 0 .. 16) {
@@ -163,10 +164,12 @@ void drawChannelRackCanvas(
                 : (oddGroup ? pal.stepGroupB : pal.stepGroupA);
             const uint padBorder = active ? pal.stepActiveLed : COLOR_TRANSPARENT;
             Rect padRc = Rect(sx0, y0 + dp(3), sx1, y1 - dp(2));
-            drawCard(buf, padRc, padCol, padBorder, 2.0f);
+            drawThemeCard(buf, padRc, padCol, padBorder, pal, 2.0f, active && pal.retroBevel);
             if (active) {
-                buf.fillRect(Rect(padRc.left + dp(3), padRc.top + dp(1), padRc.right - dp(3), padRc.top + dp(2)),
-                             adjustColorBrightness(padCol, 14));
+                if (!pal.retroBevel) {
+                    buf.fillRect(Rect(padRc.left + dp(3), padRc.top + dp(1), padRc.right - dp(3), padRc.top + dp(2)),
+                                 adjustColorBrightness(padCol, 14));
+                }
                 buf.fillRect(Rect(padRc.left + dp(3), padRc.bottom - dp(5), padRc.right - dp(3), padRc.bottom - dp(2)),
                              pal.stepActiveLed);
             }
@@ -187,13 +190,13 @@ void drawChannelRackCanvas(
         static immutable string[4] MODE_LABELS = ["VEL", "PITCH", "PAN", "SHIFT"];
         Rect modesStripRc = Rect(gRc.left + dp(8), gRc.top + dp(4),
                                  gRc.left + dp(8 + 4 * 52), gRc.top + dp(22));
-        drawCard(buf, modesStripRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+        drawThemeCard(buf, modesStripRc, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
         foreach (modeIdx; 0 .. 4) {
             Rect mRc = Rect(gRc.left + dp(8 + modeIdx * 52), gRc.top + dp(4),
                             gRc.left + dp(8 + (modeIdx + 1) * 52), gRc.top + dp(22));
             const bool mAct = (cast(int)model.graphEditorMode == modeIdx);
             if (mAct) {
-                drawCard(buf, mRc, pal.accentOrange, COLOR_TRANSPARENT, 1.5f);
+                drawThemeCard(buf, mRc, pal.accentOrange, COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
             }
             drawCenteredText(buf, smallFnt, mRc, toUTF32(MODE_LABELS[modeIdx]),
                              mAct ? pal.bgLcd : pal.fgText);
@@ -215,7 +218,7 @@ void drawChannelRackCanvas(
                 foreach (s; 0 .. 16) {
                     const int sx0 = m.stepAreaLeft + s * m.stepW + dp(2);
                     const int sx1 = sx0 + m.stepW - dp(5);
-                    drawCard(buf, Rect(sx0, barsTop, sx1, barsBot), pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
+                    drawThemeCard(buf, Rect(sx0, barsTop, sx1, barsBot), pal.bgLcd, COLOR_TRANSPARENT, pal, 1.5f, true);
 
                     float val = 0.5f;
                     uint barCol = pal.accentOrange;

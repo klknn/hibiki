@@ -151,23 +151,23 @@ void drawToolbarCanvas(
     FontRef lcdFnt = getDawMonoFont(12, fnt, FontWeight.Bold);
 
     // 1. Master Volume & Master Pitch Panel
-    drawCard(buf, tl.masterPanel, pal.bgToolbarWell, pal.borderSubtle, 4.0f);
+    drawCard(buf, tl.masterPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
     drawRotaryKnob(buf, tl.volKnobX, tl.masterPanel.middley, dp(12), model.masterVolume,
                    pal.bgLcd, pal.accentOrange, pal.bgControl, pal.borderSubtle);
     drawRotaryKnob(buf, tl.pitchKnobX, tl.masterPanel.middley, dp(11), (model.masterPitch + 1.0f) * 0.5f,
                    pal.bgLcd, pal.accentCyan, pal.bgControl, pal.borderSubtle, true);
 
     // 2. Transport Panel (PAT/SONG, Play, Stop, Rec, Loop, BPM LCD, Time LCD)
-    drawCard(buf, tl.transPanel, pal.bgToolbarWell, pal.borderSubtle, 4.0f);
+    drawCard(buf, tl.transPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
 
     const bool isPat = model.playbackMode == PlaybackMode.PAT;
-    drawCard(buf, tl.patSongRc, isPat ? pal.accentOrange : pal.accentGreen, pal.borderStrong, 3.0f);
+    drawCard(buf, tl.patSongRc, isPat ? pal.accentOrange : pal.accentGreen, COLOR_TRANSPARENT, 2.5f);
     drawCenteredText(buf, uiFnt, tl.patSongRc, isPat ? "PAT"d : "SONG"d, pal.bgLcd);
 
-    drawCard(buf, tl.playRc, model.isPlaying ? pal.accentGreen : pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, tl.stopRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, tl.recRc, model.isRecording ? pal.accentRed : pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, tl.loopRc, model.loopEnabled ? pal.accentAmber : pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, tl.playRc, model.isPlaying ? pal.accentGreen : pal.bgControl, COLOR_TRANSPARENT, 2.5f);
+    drawCard(buf, tl.stopRc, pal.bgControl, COLOR_TRANSPARENT, 2.5f);
+    drawCard(buf, tl.recRc, model.isRecording ? pal.accentRed : pal.bgControl, COLOR_TRANSPARENT, 2.5f);
+    drawCard(buf, tl.loopRc, model.loopEnabled ? pal.accentAmber : pal.bgControl, COLOR_TRANSPARENT, 2.5f);
 
     // Vector transport glyphs
     const uint playCol = model.isPlaying ? pal.bgLcd : pal.accentGreen;
@@ -188,18 +188,18 @@ void drawToolbarCanvas(
                      model.loopEnabled ? pal.bgLcd : pal.fgMuted);
 
     // BPM LCD (drag up/down)
-    drawCard(buf, tl.bpmRc, pal.bgLcd, pal.borderStrong, 3.0f);
+    drawCard(buf, tl.bpmRc, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
     drawCenteredText(buf, lcdFnt, tl.bpmRc, toUTF32(format("%.1f", model.bpm)), pal.accentOrange);
 
     // Time / Bar:Beat LCD
-    drawCard(buf, tl.timeRc, pal.bgLcd, pal.borderStrong, 3.0f);
+    drawCard(buf, tl.timeRc, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
     const string timeStr = (model.timeDisplayMode == TimeDisplayMode.TIME_MS)
         ? formatTimecode(model.playheadPosSec)
         : formatBarBeat(model.playheadPosSec, model.bpm);
     drawCenteredText(buf, lcdFnt, tl.timeRc, toUTF32(timeStr), pal.accentCyan);
 
-    // 3. Recording / Metronome / Typing Keyboard Panel
-    drawCard(buf, tl.recOptsPanel, pal.bgToolbarWell, pal.borderSubtle, 4.0f);
+    // 3. Recording / Metronome / Typing Keyboard Panel (seamless grouped buttons)
+    drawCard(buf, tl.recOptsPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
     struct ToggleSpec { string lbl; bool on; uint col; }
     ToggleSpec[4] specs = [
         ToggleSpec("MET", model.metronomeEnabled, pal.accentOrange),
@@ -209,25 +209,25 @@ void drawToolbarCanvas(
     ];
     foreach (i, sp; specs) {
         Rect tRc = tl.recToggles[i];
-        drawCard(buf, tRc, sp.on ? sp.col : pal.bgControl, pal.borderSubtle, 3.0f);
+        drawCard(buf, tRc, sp.on ? sp.col : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
         drawCenteredText(buf, uiFnt, tRc, toUTF32(sp.lbl), sp.on ? pal.bgLcd : pal.fgMuted);
     }
 
-    // 4. Snap & Undo/Redo Panel
-    drawCard(buf, tl.snapPanel, pal.bgToolbarWell, pal.borderSubtle, 4.0f);
-    drawCard(buf, tl.snapRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, tl.undoRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, tl.redoRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    // 4. Snap & Undo/Redo Panel (seamless grouped buttons)
+    drawCard(buf, tl.snapPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
+    drawCard(buf, tl.snapRc, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
+    drawCard(buf, tl.undoRc, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
+    drawCard(buf, tl.redoRc, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
     drawCenteredText(buf, uiFnt, tl.snapRc, toUTF32(snapLabel(model.snapMode)), pal.fgText);
     drawCenteredText(buf, uiFnt, tl.undoRc, "UND"d, pal.fgText);
     drawCenteredText(buf, uiFnt, tl.redoRc, "RED"d, pal.fgText);
 
     // 5. Pattern Selector Panel (< Pattern 1 > +)
-    drawCard(buf, tl.patPanel, pal.bgToolbarWell, pal.borderSubtle, 4.0f);
-    drawCard(buf, tl.pPrev, pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, tl.pLbl, pal.bgLcd, pal.borderStrong, 3.0f);
-    drawCard(buf, tl.pNext, pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, tl.pAdd, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, tl.patPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
+    drawCard(buf, tl.pPrev, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
+    drawCard(buf, tl.pLbl, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
+    drawCard(buf, tl.pNext, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
+    drawCard(buf, tl.pAdd, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
     string patName = "Pattern 1";
     if (model.selectedPatternIndex >= 0 && model.selectedPatternIndex < cast(int)model.patterns.length) {
         patName = model.patterns[model.selectedPatternIndex].name;
@@ -238,9 +238,9 @@ void drawToolbarCanvas(
     drawCenteredText(buf, uiFnt, tl.pNext, ">"d, pal.fgText);
     drawCenteredText(buf, uiFnt, tl.pAdd, "+"d, pal.accentGreen);
 
-    // 6. Window View Toggles Panel (PL, CR, PR, BR, MIX, PLUG)
+    // 6. Window View Toggles Panel (PL, CR, PR, BR, MIX, PLUG) — seamless strip
     if (tl.hasWinPanel) {
-        drawCard(buf, tl.winPanel, pal.bgToolbarWell, pal.borderSubtle, 4.0f);
+        drawCard(buf, tl.winPanel, pal.bgToolbarWell, COLOR_TRANSPARENT, 2.0f);
         struct WinSpec { string lbl; bool on; }
         WinSpec[6] wspecs = [
             WinSpec("PL", visPlaylist),
@@ -253,7 +253,7 @@ void drawToolbarCanvas(
         foreach (i, ws; wspecs) {
             Rect wRc = tl.winBtns[i];
             drawCard(buf, wRc, ws.on ? pal.bgControlHover : pal.bgControl,
-                     ws.on ? pal.accentOrange : pal.borderStrong, 3.0f);
+                     COLOR_TRANSPARENT, 0.0f);
             if (ws.on) {
                 buf.fillRect(Rect(wRc.left + dp(3), wRc.bottom - dp(3), wRc.right - dp(3), wRc.bottom - dp(1)),
                              pal.accentOrange);
@@ -265,7 +265,7 @@ void drawToolbarCanvas(
     // 7. Live Oscilloscope & CPU Panel (fills remaining width on right if room)
     if (tl.hasScopePanel) {
         Rect scopePanel = tl.scopePanel;
-        drawCard(buf, scopePanel, pal.bgLcd, pal.borderSubtle, 4.0f);
+        drawCard(buf, scopePanel, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
         const int sw = scopePanel.width - dp(12);
         const int midY = scopePanel.middley;
         const float amp = dpf(model.isPlaying ? 9.0f : 2.0f);

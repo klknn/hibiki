@@ -71,7 +71,7 @@ void drawChannelRackCanvas(
     else if (model.channelFilter == ChannelFilterMode.SYNTHS) filterLbl = "Synths";
     else if (model.channelFilter == ChannelFilterMode.AUDIO) filterLbl = "Audio";
 
-    drawCard(buf, m.filterRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, m.filterRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
     drawCenteredText(buf, boldFnt, m.filterRc, toUTF32(filterLbl), pal.fgText);
 
     // Swing rotary knob
@@ -83,12 +83,12 @@ void drawChannelRackCanvas(
 
     // Graph Editor toggle button
     drawCard(buf, m.graphBtnRc, model.graphEditorOpen ? pal.accentOrange : pal.bgControl,
-             pal.borderSubtle, 3.0f);
+             COLOR_TRANSPARENT, 1.5f);
     drawCenteredText(buf, boldFnt, m.graphBtnRc, "GRAPH"d,
                      model.graphEditorOpen ? pal.bgLcd : pal.fgText);
 
     // + Add Channel button
-    drawCard(buf, m.addBtnRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, m.addBtnRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
     drawCenteredText(buf, boldFnt, m.addBtnRc, "+ ADD"d, pal.accentGreen);
 
     // Playhead step indicator strip
@@ -120,7 +120,7 @@ void drawChannelRackCanvas(
         // Mute / Solo LED pill
         Rect ledRc = Rect(rc.left + dp(8), y0 + dp(9), rc.left + dp(20), y0 + dp(21));
         const uint ledCol = ch.soloed ? pal.accentAmber : (ch.muted ? pal.ledOff : pal.accentGreen);
-        drawCard(buf, ledRc, ledCol, pal.borderStrong, 3.0f);
+        drawCard(buf, ledRc, ledCol, COLOR_TRANSPARENT, 1.5f);
 
         // Pan Knob (bipolar)
         drawRotaryKnob(buf, rc.left + dp(36), y0 + dp(15), dp(10), (ch.pan + 1.0f) * 0.5f,
@@ -132,14 +132,14 @@ void drawChannelRackCanvas(
 
         // Mixer Target Insert LCD
         Rect mixRc = Rect(rc.left + dp(82), y0 + dp(4), rc.left + dp(112), y1 - dp(3));
-        drawCard(buf, mixRc, pal.bgLcd, pal.borderSubtle, 3.0f);
+        drawCard(buf, mixRc, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
         drawCenteredText(buf, monoFnt, mixRc,
                          toUTF32(ch.mixerInsert == 0 ? "M" : format("%2d", ch.mixerInsert)),
                          pal.accentCyan);
 
-        // Channel Name Pill
+        // Channel Name Pill (subtle corner rounding + corner-width top/bottom gradient)
         Rect pillRc = Rect(rc.left + dp(118), y0 + dp(2), m.stepAreaLeft - dp(8), y1 - dp(1));
-        drawCard(buf, pillRc, ch.color, isSel ? pal.accentOrange : pal.borderStrong, 4.0f);
+        drawCard(buf, pillRc, ch.color, isSel ? pal.accentOrange : pal.borderSubtle, 2.5f);
         if (isSel) {
             buf.fillRect(Rect(pillRc.left + dp(1), pillRc.top + dp(2), pillRc.left + dp(4), pillRc.bottom - dp(2)),
                          pal.accentOrange);
@@ -156,9 +156,9 @@ void drawChannelRackCanvas(
             const uint padCol = active
                 ? pal.stepActive
                 : (oddGroup ? pal.stepGroupB : pal.stepGroupA);
-            const uint padBorder = active ? pal.stepActiveLed : pal.borderStrong;
+            const uint padBorder = active ? pal.stepActiveLed : COLOR_TRANSPARENT;
             Rect padRc = Rect(sx0, y0 + dp(3), sx1, y1 - dp(2));
-            drawCard(buf, padRc, padCol, padBorder, 3.0f);
+            drawCard(buf, padRc, padCol, padBorder, 2.0f);
             if (active) {
                 buf.fillRect(Rect(padRc.left + dp(3), padRc.bottom - dp(5), padRc.right - dp(3), padRc.bottom - dp(2)),
                              pal.stepActiveLed);
@@ -182,7 +182,7 @@ void drawChannelRackCanvas(
             Rect mRc = Rect(gRc.left + dp(8 + modeIdx * 56), gRc.top + dp(4),
                             gRc.left + dp(60 + modeIdx * 56), gRc.top + dp(22));
             const bool mAct = (cast(int)model.graphEditorMode == modeIdx);
-            drawCard(buf, mRc, mAct ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
+            drawCard(buf, mRc, mAct ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
             drawCenteredText(buf, smallFnt, mRc, toUTF32(MODE_LABELS[modeIdx]),
                              mAct ? pal.bgLcd : pal.fgText);
         }
@@ -203,7 +203,7 @@ void drawChannelRackCanvas(
                 foreach (s; 0 .. 16) {
                     const int sx0 = m.stepAreaLeft + s * m.stepW + dp(2);
                     const int sx1 = sx0 + m.stepW - dp(5);
-                    drawCard(buf, Rect(sx0, barsTop, sx1, barsBot), pal.bgLcd, pal.borderStrong, 2.0f);
+                    drawCard(buf, Rect(sx0, barsTop, sx1, barsBot), pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
 
                     float val = 0.5f;
                     uint barCol = pal.accentOrange;

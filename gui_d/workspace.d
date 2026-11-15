@@ -5,8 +5,9 @@ import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.layouts : WidgetGroupDefaultDrawing;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.theme : dp, dpf, drawCard, drawPlayheadTriangle, drawThickLine, drawVCenteredText,
-                     FlPalette, getDawFont, getFlPalette, safeWidgetFont, truncateLabel;
+import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawPlayheadTriangle,
+                     drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette,
+                     safeWidgetFont, truncateLabel;
 import gui_d.transport_model : TransportModel;
 import std.algorithm : canFind;
 import std.math : abs;
@@ -260,17 +261,19 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
 
         // Caption header bar
         Rect hdr = Rect(_pos.left + bw, _pos.top + bw, _pos.right - bw, _pos.top + hh);
-        buf.fillRect(hdr, isActive_ ? pal.bgWindowHeaderActive : pal.bgWindowHeader);
-        buf.fillRect(Rect(hdr.left, hdr.bottom - bw, hdr.right, hdr.bottom), pal.borderStrong);
-
-        // Active top indicator strip
+        const uint hdrBg = isActive_ ? pal.bgWindowHeaderActive : pal.bgWindowHeader;
+        buf.fillRect(hdr, hdrBg);
         if (isActive_) {
             buf.fillRect(Rect(hdr.left, hdr.top, hdr.right, hdr.top + dp(2)), pal.accentOrange);
+        } else {
+            buf.fillRect(Rect(hdr.left, hdr.top, hdr.right, hdr.top + dp(1)),
+                         adjustColorBrightness(hdrBg, 6));
         }
+        buf.fillRect(Rect(hdr.left, hdr.bottom - bw, hdr.right, hdr.bottom), pal.borderStrong);
 
-        // Top-left FL Studio Window Menu icon (▼)
+        // Top-left FL Studio Window Menu icon (▼) — borderless on caption bar
         Rect mRc = menuBtnRect();
-        drawCard(buf, mRc, pal.bgControl, pal.borderSubtle, 3.0f);
+        drawCard(buf, mRc, hdrBg, COLOR_TRANSPARENT, 0.0f);
         drawPlayheadTriangle(buf, mRc.middlex, mRc.middley - dp(2), dp(4), dp(5),
                              isActive_ ? pal.accentOrange : pal.fgMuted);
 
@@ -280,16 +283,16 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
                           toUTF32(truncateLabel(title_, 48)),
                           isActive_ ? pal.fgText : pal.fgMuted);
 
-        // Maximize / Restore button
+        // Maximize / Restore button — borderless on caption bar
         Rect maxRc = maxBtnRect();
-        drawCard(buf, maxRc, pal.bgControl, pal.borderSubtle, 3.0f);
+        drawCard(buf, maxRc, hdrBg, COLOR_TRANSPARENT, 0.0f);
         const uint iconCol = pal.fgMuted;
         buf.drawFrame(Rect(maxRc.left + dp(5), maxRc.top + dp(4), maxRc.right - dp(5), maxRc.bottom - dp(4)),
-                      iconCol, Rect(bw, dp(2), bw, bw), pal.bgControl);
+                      iconCol, Rect(bw, dp(2), bw, bw), hdrBg);
 
-        // Close button
+        // Close button — borderless on caption bar
         Rect clsRc = closeBtnRect();
-        drawCard(buf, clsRc, pal.bgControl, pal.borderSubtle, 3.0f);
+        drawCard(buf, clsRc, hdrBg, COLOR_TRANSPARENT, 0.0f);
         drawThickLine(buf, clsRc.left + dp(5), clsRc.top + dp(5), clsRc.right - dp(5), clsRc.bottom - dp(5),
                       dpf(1.4f), pal.fgMuted);
         drawThickLine(buf, clsRc.right - dp(5), clsRc.top + dp(5), clsRc.left + dp(5), clsRc.bottom - dp(5),

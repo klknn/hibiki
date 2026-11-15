@@ -122,19 +122,19 @@ void drawTimelineCanvas(
     buf.fillRect(Rect(tbRc.left, tbRc.bottom - bw, tbRc.right, tbRc.bottom), pal.borderStrong);
 
     const bool showPicker = model ? model.showClipPicker : true;
-    drawCard(buf, m.pickToggleRc, showPicker ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, m.pickToggleRc, showPicker ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
     drawCenteredText(buf, boldFnt, m.pickToggleRc, "PICK"d, showPicker ? pal.bgLcd : pal.fgText);
 
     foreach (i, const ref td; PLAYLIST_TOOLS) {
         Rect bRc = m.toolBtns[i];
         const bool active = model && model.playlistTool == td.tool;
-        drawCard(buf, bRc, active ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
+        drawCard(buf, bRc, active ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
         drawCenteredText(buf, boldFnt, bRc, toUTF32(td.shortLbl), active ? pal.bgLcd : pal.fgText);
     }
 
     // Zoom +/- buttons on right
-    drawCard(buf, m.zoomOutRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, m.zoomInRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, m.zoomOutRc, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
+    drawCard(buf, m.zoomInRc, pal.bgControl, COLOR_TRANSPARENT, 0.0f);
     drawCenteredText(buf, boldFnt, m.zoomOutRc, "-"d, pal.fgText);
     drawCenteredText(buf, boldFnt, m.zoomInRc, "+"d, pal.fgText);
 
@@ -156,7 +156,7 @@ void drawTimelineCanvas(
             Rect ktRc = Rect(pkrRc.left + dp(4) + k * (tabW + dp(2)), pkrRc.top + dp(4),
                              pkrRc.left + dp(4) + k * (tabW + dp(2)) + tabW, pkrRc.top + dp(24));
             const bool kAct = model && model.activePickerKind == KINDS[k];
-            drawCard(buf, ktRc, kAct ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
+            drawCard(buf, ktRc, kAct ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
             drawCenteredText(buf, boldFnt, ktRc, toUTF32(K_LBLS[k]), kAct ? pal.bgLcd : pal.fgText);
         }
 
@@ -171,7 +171,7 @@ void drawTimelineCanvas(
                 if (py + itemH > pkrRc.bottom) break;
                 Rect itemRc = Rect(pkrRc.left + dp(6), py, pkrRc.right - dp(6), py + itemH);
                 const bool sel = (cast(int)i == curIdx);
-                drawCard(buf, itemRc, pat.color, sel ? pal.accentOrange : pal.borderStrong, 3.0f);
+                drawCard(buf, itemRc, pat.color, sel ? pal.accentOrange : COLOR_TRANSPARENT, 2.0f);
                 drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc,
                                   toUTF32(truncateLabel(pat.name, 14)), pal.fgText);
             }
@@ -181,7 +181,7 @@ void drawTimelineCanvas(
                 const int py = pkrRc.top + dp(30) + cast(int)i * rowStep;
                 Rect itemRc = Rect(pkrRc.left + dp(6), py, pkrRc.right - dp(6), py + itemH);
                 const bool sel = (cast(int)i == curIdx);
-                drawCard(buf, itemRc, pal.clipAudio, sel ? pal.accentCyan : pal.borderStrong, 3.0f);
+                drawCard(buf, itemRc, pal.clipAudio, sel ? pal.accentCyan : COLOR_TRANSPARENT, 2.0f);
                 drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc, toUTF32(nm), pal.fgText);
             }
         } else {
@@ -190,7 +190,7 @@ void drawTimelineCanvas(
                 const int py = pkrRc.top + dp(30) + cast(int)i * rowStep;
                 Rect itemRc = Rect(pkrRc.left + dp(6), py, pkrRc.right - dp(6), py + itemH);
                 const bool sel = (cast(int)i == curIdx);
-                drawCard(buf, itemRc, pal.clipAutomation, sel ? pal.accentPurple : pal.borderStrong, 3.0f);
+                drawCard(buf, itemRc, pal.clipAutomation, sel ? pal.accentPurple : COLOR_TRANSPARENT, 2.0f);
                 drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc, toUTF32(nm), pal.fgText);
             }
         }
@@ -253,11 +253,10 @@ void drawTimelineCanvas(
         if (y0 >= rc.bottom - dp(4)) break;
         if (y1 > rc.bottom) y1 = rc.bottom;
 
-        // Track Header
+        // Track Header (slightly rounded card with subtle corner-width vertical gradient)
         Rect hdrRc = Rect(tracksLeft, y0, arrRc.left, y1);
-        buf.fillRect(hdrRc, pal.bgPanel);
-        buf.fillRect(Rect(hdrRc.left, hdrRc.bottom - bw, hdrRc.right, hdrRc.bottom), pal.borderStrong);
-        buf.fillRect(Rect(hdrRc.right - bw, hdrRc.top, hdrRc.right, hdrRc.bottom), pal.borderStrong);
+        Rect cardRc = Rect(hdrRc.left + dp(2), hdrRc.top + dp(1), hdrRc.right - dp(2), hdrRc.bottom - dp(1));
+        drawCard(buf, cardRc, pal.bgPanel, pal.borderSubtle, 2.5f);
 
         const bool hasTrack = (model !is null && laneIdx < cast(int)laneTracks.length);
         const size_t tIdx = hasTrack ? laneTracks[laneIdx] : 0;
@@ -267,19 +266,19 @@ void drawTimelineCanvas(
         const bool soloed = hasTrack ? model.tracks[tIdx].soloed : false;
 
         // Track Color Bar on left
-        buf.fillRect(Rect(hdrRc.left, hdrRc.top, hdrRc.left + dp(4), hdrRc.bottom - bw), trkCol);
+        buf.fillRect(Rect(cardRc.left + dp(1), cardRc.top + dp(2), cardRc.left + dp(5), cardRc.bottom - dp(2)), trkCol);
 
         // Mute LED on right of header
         Rect mLed = Rect(hdrRc.right - dp(20), hdrRc.top + dp(8), hdrRc.right - dp(8), hdrRc.top + dp(20));
         drawCard(buf, mLed, soloed ? pal.accentAmber : (muted ? pal.ledOff : pal.accentGreen),
-                 pal.borderStrong, 3.0f);
+                 COLOR_TRANSPARENT, 1.5f);
 
-        drawVCenteredText(buf, uiFnt, hdrRc.left + dp(10), hdrRc,
+        drawVCenteredText(buf, uiFnt, cardRc.left + dp(9), cardRc,
                           toUTF32(truncateLabel(title, 12)),
                           muted ? pal.fgDim : pal.fgText);
 
-        // Lane bottom divider
-        buf.fillRect(Rect(arrRc.left, y1 - bw, arrRc.right, y1), pal.borderStrong);
+        // Subtle lane bottom divider
+        buf.fillRect(Rect(arrRc.left, y1 - bw, arrRc.right, y1), pal.borderSubtle);
     }
 
     // Vertical Bar/Beat Grid Lines + Ruler Labels
@@ -359,12 +358,12 @@ private void drawPlaylistClip(
     if (clip.muted) baseCol = pal.bgPanelAlt;
 
     Rect clipRc = Rect(cx0, topY, cx1, botY);
-    drawCard(buf, clipRc, baseCol, clip.muted ? pal.fgDim : pal.borderSubtle, 4.0f);
+    drawCard(buf, clipRc, baseCol, clip.muted ? pal.fgDim : adjustColorBrightness(baseCol, -18), 2.5f);
 
-    // Clip header bar
+    // Clip header bar (inset below top corner gradient)
     const int hdrH = dp(15);
     const int hdrBot = (topY + hdrH < botY) ? (topY + hdrH) : botY;
-    Rect hdrBarRc = Rect(cx0 + dp(2), topY + dp(1), cx1 - dp(2), hdrBot);
+    Rect hdrBarRc = Rect(cx0 + dp(2), topY + dp(2), cx1 - dp(2), hdrBot);
     buf.fillRect(hdrBarRc, clip.muted ? pal.bgPanel : adjustColorBrightness(baseCol, 18));
     if (cx1 - cx0 > dp(28)) {
         drawVCenteredText(buf, fnt, cx0 + dp(5), hdrBarRc,

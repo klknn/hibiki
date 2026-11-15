@@ -367,17 +367,61 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
     }
 }
 
-/// Draws a crisp flat-rectangular FL Studio card/button with sharp 1px-scaled border.
-/// Implemented with `fillRect` so it renders identically on both `ColorDrawBuf` and `GLDrawBuf`.
+/// Draws an FL Studio 2026 card/button surface.
+/// When `radius == 0`, draws a pure sharp flat rectangle (no dividers when `borderColor == COLOR_TRANSPARENT`).
+/// When `radius > 0`, slightly rounds the corners (`1-2dp`) and applies a subtle vertical edge gradient across
+/// the corner width while keeping the main interior flat.
 void drawCard(DrawBuf buf, Rect rc, uint fillColor, uint borderColor, float radius = 0.0f) {
     if (rc.width <= 0 || rc.height <= 0) return;
-    buf.fillRect(rc, fillColor);
     const int bw = dp(1);
-    if (borderColor != COLOR_TRANSPARENT && rc.width >= bw * 2 && rc.height >= bw * 2) {
-        buf.fillRect(Rect(rc.left, rc.top, rc.right, rc.top + bw), borderColor);
-        buf.fillRect(Rect(rc.left, rc.bottom - bw, rc.right, rc.bottom), borderColor);
-        buf.fillRect(Rect(rc.left, rc.top, rc.left + bw, rc.bottom), borderColor);
-        buf.fillRect(Rect(rc.right - bw, rc.top, rc.right, rc.bottom), borderColor);
+    const int cr = (radius >= 2.5f && rc.width >= dp(12) && rc.height >= dp(10))
+        ? dp(2)
+        : ((radius >= 1.2f && rc.width >= dp(8) && rc.height >= dp(6)) ? dp(1) : 0);
+
+    if (cr == 0) {
+        buf.fillRect(rc, fillColor);
+        if (borderColor != COLOR_TRANSPARENT && rc.width >= bw * 2 && rc.height >= bw * 2) {
+            buf.fillRect(Rect(rc.left, rc.top, rc.right, rc.top + bw), borderColor);
+            buf.fillRect(Rect(rc.left, rc.bottom - bw, rc.right, rc.bottom), borderColor);
+            buf.fillRect(Rect(rc.left, rc.top, rc.left + bw, rc.bottom), borderColor);
+            buf.fillRect(Rect(rc.right - bw, rc.top, rc.right, rc.bottom), borderColor);
+        }
+        return;
+    }
+
+    // Flat main interior between the top/bottom rounded corner bands
+    buf.fillRect(Rect(rc.left, rc.top + cr, rc.right, rc.bottom - cr), fillColor);
+
+    // Subtle vertical gradient spanning only the rounded corner width
+    const uint topOuterCol = adjustColorBrightness(fillColor, 10);
+    const uint botOuterCol = adjustColorBrightness(fillColor, -10);
+    if (cr > bw) {
+        buf.fillRect(Rect(rc.left + cr, rc.top, rc.right - cr, rc.top + bw), topOuterCol);
+        buf.fillRect(Rect(rc.left + bw, rc.top + bw, rc.right - bw, rc.top + cr),
+                     adjustColorBrightness(fillColor, 4));
+        buf.fillRect(Rect(rc.left + bw, rc.bottom - cr, rc.right - bw, rc.bottom - bw),
+                     adjustColorBrightness(fillColor, -4));
+        buf.fillRect(Rect(rc.left + cr, rc.bottom - bw, rc.right - cr, rc.bottom), botOuterCol);
+    } else {
+        buf.fillRect(Rect(rc.left + cr, rc.top, rc.right - cr, rc.top + cr), topOuterCol);
+        buf.fillRect(Rect(rc.left + cr, rc.bottom - cr, rc.right - cr, rc.bottom), botOuterCol);
+    }
+
+    if (borderColor != COLOR_TRANSPARENT && rc.width >= bw * 3 && rc.height >= bw * 3) {
+        buf.fillRect(Rect(rc.left + cr, rc.top, rc.right - cr, rc.top + bw), borderColor);
+        buf.fillRect(Rect(rc.left + cr, rc.bottom - bw, rc.right - cr, rc.bottom), borderColor);
+        buf.fillRect(Rect(rc.left, rc.top + cr, rc.left + bw, rc.bottom - cr), borderColor);
+        buf.fillRect(Rect(rc.right - bw, rc.top + cr, rc.right, rc.bottom - cr), borderColor);
+        if (cr > bw) {
+            buf.fillRect(Rect(rc.left + bw, rc.top + bw, rc.left + cr, rc.top + cr), borderColor);
+            buf.fillRect(Rect(rc.right - cr, rc.top + bw, rc.right - bw, rc.top + cr), borderColor);
+            buf.fillRect(Rect(rc.left + bw, rc.bottom - cr, rc.left + cr, rc.bottom - bw), borderColor);
+            buf.fillRect(Rect(rc.right - cr, rc.bottom - cr, rc.right - bw, rc.bottom - bw), borderColor);
+            buf.fillRect(Rect(rc.left + cr, rc.top + bw, rc.right - cr, rc.top + cr),
+                         adjustColorBrightness(fillColor, 8));
+            buf.fillRect(Rect(rc.left + cr, rc.bottom - cr, rc.right - cr, rc.bottom - bw),
+                         adjustColorBrightness(fillColor, -8));
+        }
     }
 }
 
@@ -495,7 +539,15 @@ void drawRotaryKnob(
 
     const float gap = dpf(3.0f);
     const float capR = arcR > gap + 1.0f ? arcR - gap : arcR * 0.7f;
-    drawFilledCircle(buf, cx, cy, capR, capColor, borderColor);
+    drawFilledCircle(buf, cx, cy, capR, capColor, COLOR_TRANSPARENT);
+    if (capR >= dpf(4.0f)) {
+        const float rimR = capR - dpf(0.6f);
+        drawOpenArc(buf, cx, cy, rimR, 195.0f, 345.0f, dpf(1.1f), adjustColorBrightness(capColor, 16), 12);
+        drawOpenArc(buf, cx, cy, rimR, 15.0f, 165.0f, dpf(1.1f), adjustColorBrightness(capColor, -14), 12);
+    }
+    if (borderColor != COLOR_TRANSPARENT) {
+        drawOpenArc(buf, cx, cy, capR, 0.0f, 360.0f, 1.0f, borderColor, 18);
+    }
 
     enum float DEG2RAD = 3.14159265f / 180.0f;
     const float rad = valDeg * DEG2RAD;
@@ -638,6 +690,7 @@ class FlCompactButton : Button {
     int baseHeightPx = 22;
     bool centered = true;
     bool bold = false;
+    float cornerRadius = 0.0f;
     uint customFillColor = COLOR_TRANSPARENT;
     uint customBorderColor = COLOR_TRANSPARENT;
     uint customTextColor = COLOR_TRANSPARENT;
@@ -667,7 +720,7 @@ class FlCompactButton : Button {
     void updatePalette(const ref FlPalette pal) {
         fallbackBg_ = pal.bgControl;
         fallbackHover_ = pal.bgControlHover;
-        fallbackBorder_ = pal.borderSubtle;
+        fallbackBorder_ = COLOR_TRANSPARENT;
         fallbackFg_ = pal.fgText;
     }
 
@@ -695,7 +748,7 @@ class FlCompactButton : Button {
         }
         const uint brd = (customBorderColor != COLOR_TRANSPARENT) ? customBorderColor : fallbackBorder_;
         const uint fg = (customTextColor != COLOR_TRANSPARENT) ? customTextColor : fallbackFg_;
-        drawCard(buf, _pos, bg, brd, 0.0f);
+        drawCard(buf, _pos, bg, brd, cornerRadius);
         auto f = getDawFont(baseFontPx, safeWidgetFont(this), bold ? FontWeight.Bold : FontWeight.Normal);
         if (centered) {
             drawCenteredText(buf, f, _pos, text, fg);
@@ -802,9 +855,17 @@ unittest {
 
     auto buf = new ColorDrawBuf(120, 120);
     buf.fill(pal.bgDesktop);
-    drawCard(buf, Rect(10, 10, 100, 80), pal.bgPanel, pal.borderSubtle, 4.0f);
-    assert(buf.scanLine(10)[10] == pal.borderSubtle, "Card corners must be sharp rectangular flat UI");
+    drawCard(buf, Rect(10, 10, 100, 80), pal.bgPanel, pal.borderSubtle, 0.0f);
+    assert(buf.scanLine(10)[10] == pal.borderSubtle, "Zero-radius card corners must be sharp rectangular");
     assert(buf.scanLine(40)[50] == pal.bgPanel);
+
+    // Slightly rounded card (`radius = 2.5f`) clips outer corner pixels and applies faint edge gradient
+    buf.fill(pal.bgDesktop);
+    drawCard(buf, Rect(10, 10, 100, 80), pal.bgPanel, COLOR_TRANSPARENT, 2.5f);
+    assert(buf.scanLine(10)[10] == pal.bgDesktop, "Rounded corner outer pixel should be transparent/unfilled");
+    assert(buf.scanLine(10)[50] == adjustColorBrightness(pal.bgPanel, 10), "Top edge should have faint highlight");
+    assert(buf.scanLine(40)[50] == pal.bgPanel, "Center interior should stay flat fillColor");
+    assert(buf.scanLine(79)[50] == adjustColorBrightness(pal.bgPanel, -10), "Bottom edge should have faint shade");
 
     drawRotaryKnob(buf, 50, 50, 14, 0.75f, pal.bgLcd, pal.accentOrange, pal.bgControl, pal.borderSubtle);
     drawLevelMeter(buf, Rect(85, 10, 110, 110), 1.0f, 0.0f, pal, 14);

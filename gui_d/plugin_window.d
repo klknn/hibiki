@@ -103,9 +103,9 @@ void drawPluginWrapperCanvas(
                       toUTF32(truncateLabel(plugTitle, 18)), pal.accentOrange);
 
     // Preset selector < Preset >
-    drawCard(buf, m.prevRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, m.presRc, pal.bgLcd, pal.borderSubtle, 3.0f);
-    drawCard(buf, m.nextRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, m.prevRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawCard(buf, m.presRc, pal.bgLcd, COLOR_TRANSPARENT, 1.5f);
+    drawCard(buf, m.nextRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
 
     string presetName = "Default";
     if (plug && plug.presets.length > 0) {
@@ -118,15 +118,15 @@ void drawPluginWrapperCanvas(
     drawCenteredText(buf, boldFnt, m.nextRc, ">"d, pal.fgText);
 
     // VST3 Native GUI button + Bypass LED
-    drawCard(buf, m.guiRc, pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, m.bypRc, (plug && plug.enabled) ? pal.accentGreen : pal.ledOff, pal.borderStrong, 3.0f);
+    drawCard(buf, m.guiRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawCard(buf, m.bypRc, (plug && plug.enabled) ? pal.accentGreen : pal.ledOff, COLOR_TRANSPARENT, 1.5f);
     drawCenteredText(buf, uiFnt, m.guiRc, "EDITOR"d, pal.fgText);
 
     if (!plug) return;
 
     // 2. DSP Visual Response Curve Box
     Rect scopeRc = m.scopeRc;
-    drawCard(buf, scopeRc, pal.bgLcd, pal.borderSubtle, 4.0f);
+    drawCard(buf, scopeRc, pal.bgLcd, pal.borderSubtle, 2.0f);
 
     const float p0 = (plug.params.length > 0) ? plug.params[0].currentValue : 0.65f;
     const float p1 = (plug.params.length > 1) ? plug.params[1].currentValue : 0.35f;

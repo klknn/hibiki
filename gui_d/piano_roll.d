@@ -108,7 +108,7 @@ void drawPianoRollCanvas(
     foreach (i, lbl; TOOLS) {
         Rect bRc = m.toolBtns[i];
         const bool active = model && model.pianoRollTool == TOOL_ENUMS[i];
-        drawCard(buf, bRc, active ? pal.accentOrange : pal.bgControl, pal.borderSubtle, 3.0f);
+        drawCard(buf, bRc, active ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, 0.0f);
         drawCenteredText(buf, boldFnt, bRc, toUTF32(lbl), active ? pal.bgLcd : pal.fgText);
     }
 
@@ -118,13 +118,13 @@ void drawPianoRollCanvas(
         model.activeMidi.channelIndex < cast(int)model.channels.length) {
         targetName = model.channels[model.activeMidi.channelIndex].name;
     }
-    drawCard(buf, m.tgtRc, pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, m.tgtRc, pal.bgControl, COLOR_TRANSPARENT, 1.5f);
     drawCenteredText(buf, boldFnt, m.tgtRc,
                      toUTF32("< " ~ truncateLabel(targetName, 12) ~ " >"), pal.accentOrange);
 
     // Ghost Notes & Velocity Lane toggles
-    drawCard(buf, m.ghostRc, ghostOn ? pal.accentCyan : pal.bgControl, pal.borderSubtle, 3.0f);
-    drawCard(buf, m.velRc, velOn ? pal.accentGreen : pal.bgControl, pal.borderSubtle, 3.0f);
+    drawCard(buf, m.ghostRc, ghostOn ? pal.accentCyan : pal.bgControl, COLOR_TRANSPARENT, 1.5f);
+    drawCard(buf, m.velRc, velOn ? pal.accentGreen : pal.bgControl, COLOR_TRANSPARENT, 1.5f);
     drawCenteredText(buf, boldFnt, m.ghostRc, "GHOST"d, ghostOn ? pal.bgLcd : pal.fgText);
     drawCenteredText(buf, boldFnt, m.velRc, "VEL"d, velOn ? pal.bgLcd : pal.fgText);
 

@@ -375,13 +375,15 @@ extern (C) int UIAppMain(string[] args) {
             new Action(601, "Theme: FL Default Dark"d),
             new Action(602, "Theme: Ultramarine"d),
             new Action(603, "Theme: Midnight Mint"d),
-            new Action(604, "Theme: Warm Amber"d)
+            new Action(604, "Theme: Warm Amber"d),
+            new Action(605, "Theme: Royal Violet"d)
         );
         showMenuPopup(s, m, (int id) {
             if (id == 601) model.themeId = FlThemeId.DEFAULT_DARK;
             else if (id == 602) model.themeId = FlThemeId.ULTRAMARINE;
             else if (id == 603) model.themeId = FlThemeId.MIDNIGHT_MINT;
             else if (id == 604) model.themeId = FlThemeId.WARM_AMBER;
+            else if (id == 605) model.themeId = FlThemeId.ROYAL_VIOLET;
             applyThemeColors();
             refreshUi();
         });
@@ -395,7 +397,8 @@ extern (C) int UIAppMain(string[] args) {
     };
 
     btnTheme.click = (Widget s) {
-        model.themeId = cast(FlThemeId)((cast(int)model.themeId + 1) % 4);
+        enum int NUM_THEMES = cast(int)(FlThemeId.max) + 1;
+        model.themeId = cast(FlThemeId)((cast(int)model.themeId + 1) % NUM_THEMES);
         applyThemeColors();
         refreshUi();
         return true;

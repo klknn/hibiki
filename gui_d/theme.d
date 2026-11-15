@@ -187,6 +187,7 @@ enum FlThemeId {
     ULTRAMARINE,
     MIDNIGHT_MINT,
     WARM_AMBER,
+    ROYAL_VIOLET,
 }
 
 /// FL Studio 2026 color palette (`0x00RRGGBB` opaque, `0xAARRGGBB` translucent in `dlangui`).
@@ -387,6 +388,44 @@ FlPalette getFlPalette(FlThemeId id = FlThemeId.DEFAULT_DARK) pure nothrow @safe
                 0x005C4461,
                 0x007DE072,
                 0x806B6054
+            );
+        case FlThemeId.ROYAL_VIOLET:
+            return FlPalette(
+                "Royal Violet",
+                0x00171421,
+                0x00252034,
+                0x001D1929,
+                0x00221D30,
+                0x001C1828,
+                0x002E2742,
+                0x0029233A,
+                0x001F1A2C,
+                0x00342C4A,
+                0x0041385C,
+                0x001D1929,
+                0x003E3557,
+                0x00110E18,
+                0x00B47CFF,
+                0x00EDEAF6,
+                0x009B93B3,
+                0x00655E7A,
+                0x00FF944D,
+                0x004FE08A,
+                0x00F25574,
+                0x0052D6EB,
+                0x00FFC857,
+                0x00B47CFF,
+                0x006F8EFF,
+                0x0037304D,
+                0x004F3957,
+                0x00E4DCF5,
+                0x00B47CFF,
+                0x00181422,
+                0x00493B70,
+                0x0033566B,
+                0x006B4378,
+                0x00A88BFF,
+                0x805C5275
             );
     }
 }
@@ -902,6 +941,10 @@ unittest {
     const pal = getFlPalette(FlThemeId.DEFAULT_DARK);
     assert(pal.accentOrange == 0x00FF8F2D);
     assert(getFlPalette(FlThemeId.ULTRAMARINE).name == "Ultramarine");
+    const violetPal = getFlPalette(FlThemeId.ROYAL_VIOLET);
+    assert(violetPal.name == "Royal Violet");
+    assert(violetPal.bgLcd == violetPal.bgToolbarWell);
+    assert((violetPal.borderAccent & 0x00FFFFFF) == 0x00B47CFF);
 
     // Verify adjustColorBrightness clamps RGB without overflowing into adjacent bytes or alpha
     const uint clampedBright = adjustColorBrightness(0x00FF8F2D, 0x20);

@@ -12,10 +12,11 @@ import dlangui.widgets.layouts : HorizontalLayout, VerticalLayout;
 import dlangui.widgets.menu : MenuItem, PopupMenu;
 import dlangui.widgets.popup : PopupAlign, PopupFlags;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.browser_panel : BrowserPanel;
+import gui_d.browser_panel : BrowserPanel, loadWavPreviewPeaks, scanBrowserDirectory;
 import gui_d.channel_rack : ChannelRackWidget;
 import gui_d.ipc_client;
 import gui_d.mixer_view : MixerCanvasWidget;
+import gui_d.modals : FlSettingsDialog, FlTextPromptDialog;
 import gui_d.piano_roll : PianoRollCanvasWidget;
 import gui_d.plugin_window : PluginWrapperWidget, resolveActiveWrapperPlugin;
 import gui_d.theme : activeDawUiFontFace, applyFlatThemeOverrides, dp, FlCompactButton, FlThemeId,
@@ -24,7 +25,7 @@ import gui_d.timeline_view : beatDurationSec, TimelineCanvasWidget;
 import gui_d.toolbar : FlToolbarWidget;
 import gui_d.transport_model;
 import gui_d.workspace : DesktopLayoutPreset, FlDesktopCanvas, FlWindowFrame;
-import pb.commands : TransportCmd;
+import pb.commands : PluginHostMode, TransportCmd;
 import pb.core : MidiEvent, PbAutoPoint = AutomationPoint, PbPlaybackMode = PlaybackMode, TrackType;
 import pb.notifications : Notification;
 import std.file : exists, thisExePath;
@@ -412,8 +413,11 @@ extern (C) int UIAppMain(string[] args) {
         auto m = new MenuItem();
         m.add(
             new Action(101, "New from FL Studio Template"d),
-            new Action(102, "Open Project (testdata/acid.hbk)"d),
-            new Action(103, "Save Project (build/hibiki_save.hbk)"d)
+            new Action(102, "Open Project..."d),
+            new Action(103, "Save Project"d),
+            new Action(104, "Save Project As..."d),
+            new Action(105, "Export / Bounce WAV..."d),
+            new Action(106, "Collect Project Files..."d)
         );
         showMenuPopup(s, m, (int id) {
             if (id == 101) {
@@ -427,24 +431,81 @@ extern (C) int UIAppMain(string[] args) {
                         model.statusMessage = "New template synced to engine";
                     }
                 }
+                refreshUi(true);
             } else if (id == 102) {
-                client.sendRequest(makeProjectLoadRequest("testdata/acid.hbk"));
-                model.hintText = "Loading project: testdata/acid.hbk";
+                string[] picks;
+                foreach (dir; model.sampleScanDirs) {
+                    foreach (e; scanBrowserDirectory(dir)) {
+                        if (e.uri.length > 4 && e.uri[$ - 4 .. $] == ".hbk") picks ~= e.uri;
+                    }
+                }
+                if (exists(model.currentProjectPath)) picks ~= model.currentProjectPath;
+                auto dlg = new FlTextPromptDialog(
+                    window, &model, "Open Hibiki Project (.hbk)",
+                    "Enter project file path or click a Quick Pick:",
+                    picks.length > 0 ? picks[0] : model.currentProjectPath,
+                    picks,
+                    (string path) {
+                        model.currentProjectPath = path;
+                        client.sendRequest(makeProjectLoadRequest(path));
+                        model.hintText = "Loading project: " ~ path;
+                        refreshUi(true);
+                    });
+                dlg.show();
             } else if (id == 103) {
-                client.sendRequest(makeProjectSaveRequest("build/hibiki_save.hbk"));
-                model.hintText = "Saved project to build/hibiki_save.hbk";
+                client.sendRequest(makeProjectSaveRequest(model.currentProjectPath));
+                model.hintText = "Saved project to " ~ model.currentProjectPath;
+                refreshUi();
+            } else if (id == 104) {
+                auto dlg = new FlTextPromptDialog(
+                    window, &model, "Save Project As (.hbk)",
+                    "Save project snapshot to:",
+                    model.currentProjectPath, null,
+                    (string path) {
+                        model.currentProjectPath = path;
+                        client.sendRequest(makeProjectSaveRequest(path));
+                        model.hintText = "Saved project to " ~ path;
+                        refreshUi();
+                    });
+                dlg.show();
+            } else if (id == 105) {
+                auto dlg = new FlTextPromptDialog(
+                    window, &model, "Bounce / Export Stereo WAV",
+                    "Output WAV file path:",
+                    model.lastBouncePath, null,
+                    (string wavPath) {
+                        model.lastBouncePath = wavPath;
+                        client.sendRequest(makeProjectBounceRequest(wavPath));
+                        model.hintText = "Bouncing WAV -> " ~ wavPath;
+                        model.statusMessage = "Offline WAV bounce started...";
+                        refreshUi();
+                    });
+                dlg.show();
+            } else if (id == 106) {
+                const string defDir = model.currentProjectDir.length > 0
+                    ? model.currentProjectDir : dirName(model.currentProjectPath);
+                auto dlg = new FlTextPromptDialog(
+                    window, &model, "Collect External Project Files",
+                    "Target directory to gather WAV/media files:",
+                    defDir, null,
+                    (string targetDir) {
+                        client.sendRequest(makeProjectCollectFilesRequest(targetDir));
+                        model.hintText = "Collecting project media files into " ~ targetDir;
+                        refreshUi();
+                    });
+                dlg.show();
             }
-            refreshUi(true);
         });
         return true;
     };
 
     btnEdit.click = (Widget s) {
         auto m = new MenuItem();
-        m.add(new Action(201, "Undo"d), new Action(202, "Redo"d));
+        m.add(new Action(201, "Undo [Ctrl+Z]"d), new Action(202, "Redo [Ctrl+Shift+Z]"d));
         showMenuPopup(s, m, (int id) {
             client.sendRequest(makeUndoRedoRequest(id == 202));
-            refreshUi();
+            model.hintText = (id == 202) ? "Redo requested (syncing state...)" : "Undo requested (syncing state...)";
+            refreshUi(true);
         });
         return true;
     };
@@ -565,6 +626,7 @@ extern (C) int UIAppMain(string[] args) {
     btnOpt.click = (Widget s) {
         auto m = new MenuItem();
         m.add(
+            new Action(610, "Audio & Plugin Settings..."d),
             new Action(601, "Theme: FL Default Dark"d),
             new Action(602, "Theme: Ultramarine"d),
             new Action(603, "Theme: Midnight Mint"d),
@@ -573,6 +635,45 @@ extern (C) int UIAppMain(string[] args) {
             new Action(606, "Theme: Windows 95"d)
         );
         showMenuPopup(s, m, (int id) {
+            if (id == 610) {
+                client.sendRequest(makeListAudioInputsRequest());
+                client.sendRequest(makeListMidiInputsRequest());
+                auto dlg = new FlSettingsDialog(window, &model);
+                dlg.onRefreshDevices = () {
+                    client.sendRequest(makeListAudioInputsRequest());
+                    client.sendRequest(makeListMidiInputsRequest());
+                };
+                dlg.onScanVst3Path = (string sp) {
+                    client.sendRequest(makePluginListRequest(sp));
+                    model.hintText = "Scanning VST3 in: " ~ sp;
+                    refreshUi();
+                };
+                dlg.onAddSampleDir = (string dp) {
+                    bool dup = false;
+                    foreach (ex; model.sampleScanDirs) if (ex == dp) dup = true;
+                    if (!dup) model.sampleScanDirs ~= dp;
+                    model.hintText = "Added Browser folder: " ~ dp;
+                    refreshUi(true);
+                };
+                dlg.onApplySettings = (int latMs, bool dbl, bool sb, bool ov, bool cd) {
+                    model.bufferLatencyMs = latMs;
+                    model.useDoublePrecision = dbl;
+                    model.sandboxPlugins = sb;
+                    model.overdubEnabled = ov;
+                    model.countdownEnabled = cd;
+                    client.sendRequest(makeSetAudioBufferSizeRequest(latMs));
+                    client.sendRequest(makeSetProcessingPrecisionRequest(dbl));
+                    client.sendRequest(makeSetPluginHostModeRequest(
+                        sb ? PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX
+                           : PluginHostMode.PLUGIN_HOST_IN_PROCESS,
+                        model.remotePluginHosts));
+                    model.hintText = format("Applied Settings: %dms | %s | %s",
+                                            latMs, dbl ? "64-bit" : "32-bit", sb ? "Sandbox" : "In-Proc");
+                    refreshUi();
+                };
+                dlg.show();
+                return;
+            }
             if (id == 601) model.themeId = FlThemeId.DEFAULT_DARK;
             else if (id == 602) model.themeId = FlThemeId.ULTRAMARINE;
             else if (id == 603) model.themeId = FlThemeId.MIDNIGHT_MINT;
@@ -665,11 +766,19 @@ extern (C) int UIAppMain(string[] args) {
     toolbar.onRecordToggle = () {
         model.isRecording = !model.isRecording;
         if (model.isRecording) {
+            if (model.countdownEnabled && !model.metronomeEnabled) {
+                model.metronomeEnabled = true;
+                client.sendRequest(makeSetMetronomeRequest(true));
+            }
             model.isPlaying = true;
             client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_RECORD));
+            model.hintText = model.overdubEnabled
+                ? (model.countdownEnabled ? "Recording (Overdub + Pre-count active)" : "Recording (Overdub active)")
+                : "Recording live input...";
         } else {
             model.isPlaying = false;
             client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_STOP));
+            model.hintText = "Recording stopped — saved take to timeline";
         }
         refreshUi();
     };
@@ -695,7 +804,8 @@ extern (C) int UIAppMain(string[] args) {
     };
     toolbar.onUndoRedo = (bool redo) {
         client.sendRequest(makeUndoRedoRequest(redo));
-        refreshUi();
+        model.hintText = redo ? "Redo requested (re-syncing project...)" : "Undo requested (re-syncing project...)";
+        refreshUi(true);
     };
     toolbar.onPatternStep = (int delta) {
         if (model.patterns.length == 0) return;
@@ -811,6 +921,28 @@ extern (C) int UIAppMain(string[] args) {
         client.sendRequest(makePluginListRequest(searchPath));
         model.hintText = "Scanning VST3 plugins in: " ~ searchPath;
         refreshUi();
+    };
+    browserPanel.onAuditionSample = (string wavPath) {
+        if (client.isRunning()) {
+            client.sendRequest(makeAudioEditorLoadRequest(wavPath));
+            client.sendRequest(makeAudioEditorPreviewPlayRequest());
+        }
+        model.hintText = "Auditioning: " ~ baseName(wavPath);
+        refreshUi();
+    };
+    browserPanel.onAddSampleDir = () {
+        auto dlg = new FlTextPromptDialog(
+            window, &model, "Add Sample / VST3 Folder",
+            "Directory path to scan for .wav, .hbk, and .vst3 files:",
+            "testdata", null,
+            (string dp) {
+                bool dup = false;
+                foreach (ex; model.sampleScanDirs) if (ex == dp) dup = true;
+                if (!dup) model.sampleScanDirs ~= dp;
+                model.hintText = "Scanning Browser folder: " ~ dp;
+                refreshUi(true);
+            });
+        dlg.show();
     };
     browserPanel.onPreviewNote = (uint note) {
         const int targetTrk = (model.selectedChannelIndex >= 0 &&
@@ -929,16 +1061,13 @@ extern (C) int UIAppMain(string[] args) {
             client.sendRequest(makeAddPatternTimelineClipRequest(
                 trackIdx, clip.patternIndex, cast(float)startSec, durBeats));
         } else if (clip.kind == PlaylistClipKind.AUDIO) {
-            static immutable string[4] AUDIO_NAMES = ["loop140.wav", "bb140.wav", "kick_punch.wav", "snare_crisp.wav"];
-            static immutable string[4] AUDIO_PATHS = [
-                "testdata/loop140.wav", "testdata/bb140.wav",
-                "testdata/kick_punch.wav", "testdata/snare_crisp.wav"
-            ];
-            const size_t ai = (model.activePickerIndex >= 0 && model.activePickerIndex < 4)
-                ? cast(size_t)model.activePickerIndex : 0;
+            static immutable string[2] AUDIO_NAMES = ["loop140.wav", "bb140.wav"];
+            static immutable string[2] AUDIO_PATHS = ["testdata/loop140.wav", "testdata/bb140.wav"];
+            const size_t ai = (model.activePickerIndex >= 0) ? (cast(size_t)model.activePickerIndex % 2) : 0;
             clip.name = AUDIO_NAMES[ai];
             clip.color = model.palette().clipAudio;
-            clip.waveform = model.samplePreview.waveform.dup;
+            auto realPeaks = loadWavPreviewPeaks(AUDIO_PATHS[ai], 512);
+            clip.waveform = realPeaks.length > 0 ? realPeaks : model.samplePreview.waveform.dup;
             client.sendRequest(makeAddTimelineClipRequest(trackIdx, AUDIO_PATHS[ai], cast(float)startSec, 8.0f));
         } else {
             static immutable string[2] AUTO_NAMES = ["Acid Cutoff Env", "Master Volume Env"];
@@ -1240,6 +1369,11 @@ extern (C) int UIAppMain(string[] args) {
 
     // Global Keyboard Shortcuts (Space, F5..F9, Typing Keyboard to Piano)
     root.onGlobalKey = (uint keyCode, uint flags) {
+        if ((flags & (KeyFlag.Control | KeyFlag.Command)) != 0 && keyCode == KeyCode.KEY_Z) {
+            const bool isRedo = (flags & KeyFlag.Shift) != 0;
+            toolbar.onUndoRedo(isRedo);
+            return true;
+        }
         if (keyCode == KeyCode.SPACE) {
             toolbar.onPlayToggle();
             return true;

@@ -2,8 +2,10 @@ module gui_d.ipc_client;
 
 import core.stdc.string : memcpy;
 import dproto.proto : decodeProto, encodeProto;
-import pb.commands : AutomationCmd, DrumPadCmd, MidiCmd, PluginCmd, ProjectCmd, Request, SendVirtualMidi,
-                       SequencerCmd, TrackCmd, TransportCmd;
+import pb.commands : AudioEditorCmd, AutomationCmd, DrumPadCmd, ListAudioInputs, ListMidiInputs,
+                       MidiCmd, PluginCmd, PluginHostMode, ProjectCmd, Request, ScanRemotePlugins,
+                       SendVirtualMidi, SequencerCmd, SetAudioBufferSize, SetPluginHostMode,
+                       SetProcessingPrecision, TrackCmd, TransportCmd;
 import pb.core : Clip, EntityRef, MidiEvent, PbAutoPoint = AutomationPoint,
                    PbPlaybackMode = PlaybackMode, TrackType;
 import pb.notifications : Notification;
@@ -796,6 +798,94 @@ Request makeDrumPadSetSoloRequest(int trackIdx, int pluginIdx, int padIdx, bool 
     return req;
 }
 
+Request makeProjectBounceRequest(string path) @safe {
+    Request req;
+    ProjectCmd cmd;
+    cmd.action = ProjectCmd.Action.ACTION_BOUNCE;
+    cmd.path = path;
+    req.project.set(cmd);
+    return req;
+}
+
+Request makeProjectCollectFilesRequest(string dirPath = "") @safe {
+    Request req;
+    ProjectCmd cmd;
+    cmd.action = ProjectCmd.Action.ACTION_COLLECT_FILES;
+    cmd.path = dirPath;
+    req.project.set(cmd);
+    return req;
+}
+
+Request makeSetPluginHostModeRequest(PluginHostMode mode, const(string)[] remoteHosts = null) @safe {
+    Request req;
+    SetPluginHostMode cmd;
+    cmd.mode = mode;
+    if (remoteHosts.length > 0) cmd.remote_hosts = remoteHosts.dup;
+    req.set_plugin_host_mode.set(cmd);
+    return req;
+}
+
+Request makeSetAudioBufferSizeRequest(int bufferMs) @safe {
+    Request req;
+    SetAudioBufferSize cmd;
+    cmd.buffer_size_ms = bufferMs;
+    req.set_audio_buffer_size.set(cmd);
+    return req;
+}
+
+Request makeSetProcessingPrecisionRequest(bool useDouble) @safe {
+    Request req;
+    SetProcessingPrecision cmd;
+    cmd.use_double = useDouble;
+    req.set_processing_precision.set(cmd);
+    return req;
+}
+
+Request makeListAudioInputsRequest() @safe {
+    Request req;
+    req.list_audio_inputs.set(ListAudioInputs.init);
+    return req;
+}
+
+Request makeListMidiInputsRequest() @safe {
+    Request req;
+    req.list_midi_inputs.set(ListMidiInputs.init);
+    return req;
+}
+
+Request makeScanRemotePluginsRequest(const(string)[] hosts) @safe {
+    Request req;
+    ScanRemotePlugins cmd;
+    cmd.remote_hosts = hosts.dup;
+    req.scan_remote_plugins.set(cmd);
+    return req;
+}
+
+Request makeAudioEditorLoadRequest(string path) @safe {
+    Request req;
+    AudioEditorCmd cmd;
+    cmd.action = AudioEditorCmd.Action.AE_ACTION_LOAD;
+    cmd.path = path;
+    req.audio_editor.set(cmd);
+    return req;
+}
+
+Request makeAudioEditorPreviewPlayRequest() @safe {
+    Request req;
+    AudioEditorCmd cmd;
+    cmd.action = AudioEditorCmd.Action.AE_ACTION_PREVIEW_PLAY;
+    req.audio_editor.set(cmd);
+    return req;
+}
+
+Request makeAudioEditorPreviewStopRequest() @safe {
+    Request req;
+    AudioEditorCmd cmd;
+    cmd.action = AudioEditorCmd.Action.AE_ACTION_PREVIEW_STOP;
+    req.audio_editor.set(cmd);
+    return req;
+}
+
 /// Manages the `hbk-play` child process and its binary Protobuf IPC pipes.
 class EngineProcessClient {
     import core.atomic : atomicLoad, atomicStore;
@@ -1087,4 +1177,36 @@ unittest {
     assert(decodeProto(encodeLengthPrefixedRequest(rDp)[4 .. $], dpDec));
     assert(dpDec.drum_pad.hasValue && dpDec.drum_pad.value.pad_index == 2);
     assert(dpDec.drum_pad.value.sample_path == "testdata/snare.wav");
+
+    // 8. Test Phase 5 bounce, collect, settings, device list, and sample preview requests
+    auto rBounce = makeProjectBounceRequest("out/mix.wav");
+    Request bncDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rBounce)[4 .. $], bncDec));
+    assert(bncDec.project.hasValue && bncDec.project.value.action == ProjectCmd.Action.ACTION_BOUNCE);
+    assert(bncDec.project.value.path == "out/mix.wav");
+
+    auto rCol = makeProjectCollectFilesRequest("proj/collected");
+    Request colDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rCol)[4 .. $], colDec));
+    assert(colDec.project.hasValue && colDec.project.value.action == ProjectCmd.Action.ACTION_COLLECT_FILES);
+
+    auto rBuf = makeSetAudioBufferSizeRequest(20);
+    Request bufDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rBuf)[4 .. $], bufDec));
+    assert(bufDec.set_audio_buffer_size.hasValue && bufDec.set_audio_buffer_size.value.buffer_size_ms == 20);
+
+    auto rPrec = makeSetProcessingPrecisionRequest(true);
+    Request precDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rPrec)[4 .. $], precDec));
+    assert(precDec.set_processing_precision.hasValue && precDec.set_processing_precision.value.use_double);
+
+    auto rModeHost = makeSetPluginHostModeRequest(PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX, ["127.0.0.1:9000"]);
+    Request mhDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rModeHost)[4 .. $], mhDec));
+    assert(mhDec.set_plugin_host_mode.hasValue && mhDec.set_plugin_host_mode.value.remote_hosts.length == 1);
+
+    auto rAud = makeAudioEditorLoadRequest("testdata/loop140.wav");
+    Request audDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rAud)[4 .. $], audDec));
+    assert(audDec.audio_editor.hasValue && audDec.audio_editor.value.action == AudioEditorCmd.Action.AE_ACTION_LOAD);
 }

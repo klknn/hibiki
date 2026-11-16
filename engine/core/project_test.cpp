@@ -2058,4 +2058,69 @@ TEST_F(ProjectTest, BounceProjectAppliesEqStereoSepAndFxMix) {
   std::remove(out_wav.c_str());
 }
 
+TEST_F(ProjectTest, SaveClearLoadAndUndoRedoFullProjectRoundTrip) {
+  hibiki::ProjectState state;
+  hibiki::HistoryManager history;
+  state.bpm = 132.0;
+  state.sample_rate = 44100.0;
+  state.playback_mode = hibiki::SequencerPlaybackMode::SONG;
+  state.swing_amount = 0.25f;
+
+  auto* t1 = hibiki::GetOrCreateTrack(state, 1);
+  t1->track_type = hibiki::Track::TrackType::GROUP;
+  t1->output_track_index = 0;
+  t1->eq_low = 0.7f;
+  t1->eq_mid = 0.4f;
+  t1->eq_high = 0.8f;
+  t1->stereo_sep = 0.3f;
+  ASSERT_GE(t1->LoadPlugin("builtin://eq", 0, state.sample_rate).index, 0);
+  t1->plugin_mix[0] = 0.65f;
+
+  hibiki::SequencerChannel ch;
+  ch.channel_index = 0;
+  ch.name = "Bass";
+  ch.uri = "builtin://acid_bass";
+  ch.mixer_insert = 1;
+  state.sequencer_channels.push_back(ch);
+
+  hibiki::SequencerPattern pat;
+  pat.pattern_index = 0;
+  pat.name = "Pattern 1";
+  pat.length_steps = 16;
+  hibiki::ChannelPatternStepData cpd;
+  cpd.steps[0] = true;
+  cpd.steps[8] = true;
+  pat.channels[0] = cpd;
+  state.sequencer_patterns.push_back(pat);
+
+  const std::string proj_path = "test_phase5_roundtrip.hbk";
+  ASSERT_THAT(hibiki::SaveProject(state, proj_path), IsOk());
+
+  // Undoable edit: boost EQ low + add channel, then undo and redo
+  history.pushState(hibiki::CaptureProjectState(state));
+  t1->eq_low = 0.95f;
+  EXPECT_FLOAT_EQ(state.tracks[1]->eq_low, 0.95f);
+  ASSERT_TRUE(hibiki::test::UndoOnce(history, state));
+  EXPECT_FLOAT_EQ(state.tracks[1]->eq_low, 0.7f);
+  ASSERT_TRUE(hibiki::test::RedoOnce(history, state));
+  EXPECT_FLOAT_EQ(state.tracks[1]->eq_low, 0.95f);
+
+  // Clear and reload from .hbk file
+  hibiki::ProjectState loaded;
+  loaded.sample_rate = 44100.0;
+  ASSERT_THAT(hibiki::LoadProject(loaded, proj_path), IsOk());
+  EXPECT_DOUBLE_EQ(loaded.bpm, 132.0);
+  EXPECT_FLOAT_EQ(loaded.swing_amount, 0.25f);
+  ASSERT_EQ(loaded.sequencer_channels.size(), 1u);
+  EXPECT_EQ(loaded.sequencer_channels[0].mixer_insert, 1);
+  ASSERT_EQ(loaded.sequencer_patterns.size(), 1u);
+  EXPECT_TRUE(loaded.sequencer_patterns[0].channels[0].steps[8]);
+  ASSERT_NE(loaded.tracks.find(1), loaded.tracks.end());
+  EXPECT_FLOAT_EQ(loaded.tracks[1]->eq_low, 0.7f);
+  EXPECT_FLOAT_EQ(loaded.tracks[1]->stereo_sep, 0.3f);
+  EXPECT_FLOAT_EQ(loaded.tracks[1]->GetPluginMix(0), 0.65f);
+
+  std::remove(proj_path.c_str());
+}
+
 }  // namespace hibiki

@@ -362,6 +362,23 @@ struct TransportModel {
     PluginDescription[] scannedPlugins;
     SamplePreviewState samplePreview;
 
+    // Phase 5 Project Paths, Audio/Plugin Settings, and Input Devices
+    struct InputDeviceInfo {
+        string id;
+        string name;
+        int channelCount = 2;
+    }
+    string currentProjectPath = "build/hibiki_save.hbk";
+    string currentProjectDir;
+    string lastBouncePath = "build/hibiki_bounce.wav";
+    string[] sampleScanDirs = ["testdata"];
+    int bufferLatencyMs = 10;
+    bool useDoublePrecision = false;
+    bool sandboxPlugins = false;
+    string[] remotePluginHosts;
+    InputDeviceInfo[] audioInputs;
+    InputDeviceInfo[] midiInputs;
+
     /// Returns the active FL Studio 2026 color palette.
     FlPalette palette() const pure nothrow @safe {
         return getFlPalette(themeId);
@@ -1153,6 +1170,47 @@ struct TransportModel {
                 }
             }
         }
+        if (notif.config.hasValue) {
+            const cfg = notif.config.value;
+            sandboxPlugins = (cast(int)cfg.plugin_host_mode == 1);
+            if (cfg.buffer_latency_ms > 0) bufferLatencyMs = cfg.buffer_latency_ms;
+            useDoublePrecision = cfg.use_double_precision;
+            remotePluginHosts.length = 0;
+            foreach (h; cfg.remote_hosts) remotePluginHosts ~= h.idup;
+        }
+        if (notif.audio_input_list.hasValue) {
+            audioInputs.length = 0;
+            foreach (d; notif.audio_input_list.value.devices) {
+                audioInputs ~= InputDeviceInfo(d.id.idup, d.name.idup, d.channel_count);
+            }
+        }
+        if (notif.midi_input_list.hasValue) {
+            midiInputs.length = 0;
+            foreach (d; notif.midi_input_list.value.devices) {
+                midiInputs ~= InputDeviceInfo(d.id.idup, d.name.idup, d.port_count);
+            }
+        }
+        if (notif.bounce_finished.hasValue) {
+            const bf = notif.bounce_finished.value;
+            if (bf.path.length > 0) lastBouncePath = bf.path.idup;
+            statusMessage = bf.success ? ("Bounced WAV: " ~ bf.path.idup) : ("Bounce FAILED: " ~ bf.path.idup);
+            hintText = statusMessage;
+        }
+        if (notif.recording_finished.hasValue) {
+            const rf = notif.recording_finished.value;
+            isRecording = false;
+            statusMessage = format("Recorded clip %d -> %s", rf.clip_index, rf.path);
+            hintText = statusMessage;
+        }
+        if (notif.project_info.hasValue) {
+            currentProjectDir = notif.project_info.value.project_dir.idup;
+        }
+        if (notif.audio_editor_data.hasValue) {
+            const aed = notif.audio_editor_data.value;
+            if (aed.waveform.length > 0) samplePreview.waveform = aed.waveform.dup;
+            if (aed.file_name.length > 0) samplePreview.name = aed.file_name.idup;
+            samplePreview.info = format("%d Hz | %.2fs", aed.sample_rate, aed.duration_sec);
+        }
         if (notif.clear_project.hasValue) {
             tracks.length = 0;
             channels.length = 0;
@@ -1477,4 +1535,43 @@ unittest {
     model.applyNotification(nPad);
     assert(model.channels[0].generatorPlugin.drumPads.length == 1);
     assert(model.channels[0].generatorPlugin.drumPads[0].triggerNote == 38u);
+
+    // Phase 5: Config, Audio/MIDI Input Lists, BounceFinished, RecordingFinished, AudioEditorData
+    import pb.commands : HibikiConfig, PluginHostMode;
+    import pb.notifications : AudioEditorData, AudioInputDevice, AudioInputList, BounceFinished,
+        MidiInputDevice, MidiInputList, ProjectInfo, RecordingFinished;
+
+    Notification nCfg;
+    HibikiConfig cfg;
+    cfg.plugin_host_mode = PluginHostMode.PLUGIN_HOST_LOCAL_SANDBOX;
+    cfg.buffer_latency_ms = 20;
+    cfg.use_double_precision = true;
+    nCfg.config.set(cfg);
+    model.applyNotification(nCfg);
+    assert(model.sandboxPlugins && model.bufferLatencyMs == 20 && model.useDoublePrecision);
+
+    Notification nAIn;
+    AudioInputList ail;
+    ail.devices ~= AudioInputDevice("dev0", "Built-in Mic", 2);
+    nAIn.audio_input_list.set(ail);
+    model.applyNotification(nAIn);
+    assert(model.audioInputs.length == 1 && model.audioInputs[0].name == "Built-in Mic");
+
+    Notification nBnc;
+    BounceFinished bf;
+    bf.path = "build/master.wav";
+    bf.success = true;
+    nBnc.bounce_finished.set(bf);
+    model.applyNotification(nBnc);
+    assert(model.lastBouncePath == "build/master.wav");
+
+    Notification nAe;
+    AudioEditorData aed;
+    aed.file_name = "loop140.wav";
+    aed.sample_rate = 44100;
+    aed.duration_sec = 3.43f;
+    aed.waveform = [0.2f, -0.5f, 0.9f];
+    nAe.audio_editor_data.set(aed);
+    model.applyNotification(nAe);
+    assert(model.samplePreview.name == "loop140.wav" && model.samplePreview.waveform.length == 3);
 }

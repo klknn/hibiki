@@ -77,18 +77,24 @@ int BuiltinSylph::getParameterCount() const { return kTotalParams; }
 bool BuiltinSylph::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
   static const char* kParamNames[kTotalParams] = {
-      "Osc1 Wave",     "Osc1 Octave",   "Osc1 Semi",      "Osc1 Unison",
-      "Osc1 Detune",   "Osc1 Stereo",   "Osc1 Retrig",    "Osc1 Vol",
-      "Osc2 Wave",     "Osc2 Octave",   "Osc2 Semi",      "Osc2 Unison",
-      "Osc2 Detune",   "Osc2 Stereo",   "Osc2 Retrig",    "Osc2 Vol",
-      "Sub Wave",      "Sub Octave",    "Sub Vol",        "Click / Noise",
-      "Pitch Env Amt", "Pitch Decay",   "Pitch Curve",    "Amp Attack",
-      "Amp Decay",     "Amp Sustain",   "Amp Release",    "Play Mode",
-      "Filter Type",   "Cutoff",        "Resonance",      "Filter Env Amt",
-      "Filter Attack", "Filter Decay",  "Filter Sustain", "Filter Release",
-      "Drive",         "LFO Rate",      "LFO -> Pitch",   "LFO -> Cutoff",
-      "Chorus Mix",    "Delay Mix",     "Delay Time",     "Reverb Mix",
-      "Glide",         "Master Volume",
+      "OscA Wave",     "OscA Octave",   "OscA Semi",     "OscA Unison",
+      "OscA Detune",   "OscA Stereo",   "OscA Retrig",   "OscA Vol",
+      "FiltA Type",    "FiltA Cutoff",  "FiltA Reso",    "FiltA Drive",
+      "FiltA EnvAmt",  "AmpA Attack",   "AmpA Decay",    "AmpA Sustain",
+      "AmpA Release",  "FiltA Attack",  "FiltA Decay",   "FiltA Sustain",
+      "FiltA Release", "OscB Wave",     "OscB Octave",   "OscB Semi",
+      "OscB Unison",   "OscB Detune",   "OscB Stereo",   "OscB Retrig",
+      "OscB Vol",      "FiltB Type",    "FiltB Cutoff",  "FiltB Reso",
+      "FiltB Drive",   "FiltB EnvAmt",  "AmpB Attack",   "AmpB Decay",
+      "AmpB Sustain",  "AmpB Release",  "FiltB Attack",  "FiltB Decay",
+      "FiltB Sustain", "FiltB Release", "Sub Wave",      "Sub Octave",
+      "Sub Vol",       "Click / Noise", "Pitch Env Amt", "Pitch Decay",
+      "Pitch Curve",   "LFO Rate",      "LFO -> Pitch",  "LFO -> Cutoff",
+      "Play Mode",     "Glide",         "Master Volume", "Dist On",
+      "Dist Drive",    "Dist Tone",     "Dist Mix",      "Chorus On",
+      "Chorus Rate",   "Chorus Depth",  "Chorus Mix",    "Delay On",
+      "Delay Time",    "Delay Fdbk",    "Delay Mix",     "Reverb On",
+      "Reverb Size",   "Reverb Damp",   "Reverb Mix",
   };
   info.id = index;
   info.name = kParamNames[index];

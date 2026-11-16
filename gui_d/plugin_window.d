@@ -5,9 +5,9 @@ import dlangui;
 import dlangui.graphics.drawbuf : ColorDrawBuf, DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.device_panels : buildBuiltinDeviceLayout, BuiltinDeviceUiState, drawBuiltinDevicePanel,
-    handleBuiltinDeviceMouse, hasCustomBuiltinDeviceUi, preferredDeviceBodySize,
-    resolveBuiltinDeviceKind;
+import gui_d.device_panels : applyBuiltinDevicePreset, buildBuiltinDeviceLayout, BuiltinDeviceUiState,
+    drawBuiltinDevicePanel, handleBuiltinDeviceMouse, hasCustomBuiltinDeviceUi,
+    preferredDeviceBodySize, resolveBuiltinDeviceKind;
 import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawRotaryKnob,
     drawThemeCard, drawThickLine, drawVCenteredText, FlPalette, getDawFont, getDawMonoFont,
@@ -249,8 +249,10 @@ void drawPluginWrapperCanvas(
     }
     drawDawIcon(buf, Rect(m.prevRc.left + dp(3), m.prevRc.top + dp(3), m.prevRc.right - dp(3), m.prevRc.bottom - dp(3)),
                 DawIcon.CHEVRON_LEFT, pal.fgText);
-    drawVCenteredText(buf, uiFnt, m.presRc.left + dp(6), m.presRc,
+    drawVCenteredText(buf, uiFnt, m.presRc.left + dp(6), Rect(m.presRc.left, m.presRc.top, m.presRc.right - dp(14), m.presRc.bottom),
                       toUTF32(truncateLabel(presetName, 14)), pal.accentCyan);
+    drawCenteredText(buf, uiFnt, Rect(m.presRc.right - dp(14), m.presRc.top, m.presRc.right - dp(2), m.presRc.bottom),
+                     "▾"d, pal.fgMuted);
     drawDawIcon(buf, Rect(m.nextRc.left + dp(3), m.nextRc.top + dp(3), m.nextRc.right - dp(3), m.nextRc.bottom - dp(3)),
                 DawIcon.CHEVRON_RIGHT, pal.fgText);
 
@@ -587,6 +589,23 @@ class PluginWrapperWidget : Widget {
         return super.onKeyEvent(event);
     }
 
+    private void applySelectedPreset(PluginSlotState* plug, int trk, int presetIdx) {
+        if (!plug || plug.presets.length == 0) return;
+        const int n = cast(int)plug.presets.length;
+        const int idx = ((presetIdx % n) + n) % n;
+        plug.presetIndex = idx;
+        if (!applyBuiltinDevicePreset(plug, builtinUi_, idx)) {
+            applyPluginPresetValues(*plug, idx);
+        }
+        if (onSetParam !is null) {
+            foreach (const ref pm; plug.params) {
+                onSetParam(trk, plug.pluginIndex, pm.id, pm.currentValue);
+            }
+        }
+        if (model_) model_.hintText = format("%s Preset: %s", plug.name, plug.presets[idx]);
+        invalidate();
+    }
+
     override bool onMouseEvent(MouseEvent event) {
         const bool hasCustomDrag = builtinUi_.activeDragParamId >= 0 ||
                                    builtinUi_.eqDragBand >= 0 ||
@@ -608,27 +627,35 @@ class PluginWrapperWidget : Widget {
             if (event.y >= m.hdrRc.top && event.y < m.hdrRc.bottom) {
                 const int trk = resolveTargetMixerTrack();
                 if (m.prevRc.isPointInside(event.x, event.y) && plug.presets.length > 0) {
-                    plug.presetIndex = (plug.presetIndex + cast(int)plug.presets.length - 1) % cast(int)plug.presets.length;
-                    applyPluginPresetValues(*plug, plug.presetIndex);
-                    if (onSetParam !is null) {
-                        foreach (const ref pm; plug.params) {
-                            onSetParam(trk, plug.pluginIndex, pm.id, pm.currentValue);
-                        }
-                    }
-                    model_.hintText = format("%s Preset: %s", plug.name, plug.presets[plug.presetIndex]);
-                    invalidate();
+                    applySelectedPreset(plug, trk, plug.presetIndex - 1);
                     return true;
                 }
                 if (m.nextRc.isPointInside(event.x, event.y) && plug.presets.length > 0) {
-                    plug.presetIndex = (plug.presetIndex + 1) % cast(int)plug.presets.length;
-                    applyPluginPresetValues(*plug, plug.presetIndex);
-                    if (onSetParam !is null) {
-                        foreach (const ref pm; plug.params) {
-                            onSetParam(trk, plug.pluginIndex, pm.id, pm.currentValue);
+                    applySelectedPreset(plug, trk, plug.presetIndex + 1);
+                    return true;
+                }
+                if (m.presRc.isPointInside(event.x, event.y) && plug.presets.length > 0) {
+                    if (window !is null) {
+                        auto rootItem = new MenuItem();
+                        foreach (i, pname; plug.presets) {
+                            const string itemLbl = (cast(int)i == plug.presetIndex)
+                                ? ("● " ~ pname) : ("  " ~ pname);
+                            rootItem.add(new Action(1200 + cast(int)i, toUTF32(itemLbl)));
                         }
+                        auto pop = new PopupMenu(rootItem);
+                        pop.menuItemClick = delegate(MenuItem item) {
+                            const int chosen = item.id - 1200;
+                            if (chosen >= 0 && chosen < cast(int)plug.presets.length) {
+                                applySelectedPreset(plug, trk, chosen);
+                            }
+                            return true;
+                        };
+                        auto pw = window.showPopup(pop, this, PopupAlign.Point | PopupAlign.Right,
+                                                   m.presRc.left, m.presRc.bottom);
+                        pw.flags = PopupFlags.CloseOnClickOutside;
+                    } else {
+                        applySelectedPreset(plug, trk, plug.presetIndex + 1);
                     }
-                    model_.hintText = format("%s Preset: %s", plug.name, plug.presets[plug.presetIndex]);
-                    invalidate();
                     return true;
                 }
                 if (m.guiRc.isPointInside(event.x, event.y)) {
@@ -943,4 +970,13 @@ unittest {
     assert(plug.editorRevision == revBefore + 1);
     pw.syncRemoteFrameBuffer(plug);
     assert(pw.lastSyncedRevision_ == revBefore + 1);
+
+    // Unified wrapper header preset selector drives Sylph's 71 parameters cleanly without a duplicate bar
+    auto sylphSlot = TransportModel.makeDefaultPluginSlot("Sylph", "builtin://sylph", true, 0);
+    assert(sylphSlot.presets.length == 6 && sylphSlot.presets[1] == "Hard Kick");
+    int sylphUpdates = 0;
+    pw.onSetParam = (int t, int p, uint pid, float v) { ++sylphUpdates; };
+    pw.applySelectedPreset(&sylphSlot, 100, 1);
+    assert(sylphSlot.presetIndex == 1 && sylphUpdates == 71,
+           "Expected unified wrapper preset selector to apply all 71 Sylph preset parameters");
 }

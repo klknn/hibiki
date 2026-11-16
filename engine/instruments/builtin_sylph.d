@@ -10,7 +10,7 @@ enum kSylphMaxVoices = 8;
 enum kSylphMaxUnison = 7;
 enum kSylphDelayMax = 49152;
 enum kSylphChorusMax = 4096;
-enum kSylphNumParams = 46;
+enum kSylphNumParams = 71;
 enum kSylphNumPresets = 6;
 
 enum SylphWaveform {
@@ -34,6 +34,7 @@ enum SylphFilterType {
 }
 
 enum SylphParamId {
+    // Part A: Osc A (0..7)
     P_OSC1_WAVE = 0,
     P_OSC1_OCT = 1,
     P_OSC1_SEMI = 2,
@@ -43,48 +44,82 @@ enum SylphParamId {
     P_OSC1_RETRIG = 6,
     P_OSC1_VOL = 7,
 
-    P_OSC2_WAVE = 8,
-    P_OSC2_OCT = 9,
-    P_OSC2_SEMI = 10,
-    P_OSC2_UNISON = 11,
-    P_OSC2_DETUNE = 12,
-    P_OSC2_STEREO = 13,
-    P_OSC2_RETRIG = 14,
-    P_OSC2_VOL = 15,
+    // Part A: Filter A (8..12)
+    P_FILTA_TYPE = 8,
+    P_FILTA_CUT = 9,
+    P_FILTA_RES = 10,
+    P_FILTA_DRIVE = 11,
+    P_FILTA_ENV_AMT = 12,
 
-    P_SUB_WAVE = 16,
-    P_SUB_OCT = 17,
-    P_SUB_VOL = 18,
-    P_CLICK_NOISE = 19,
-    P_PITCH_AMT = 20,
-    P_PITCH_DECAY = 21,
-    P_PITCH_CURVE = 22,
+    // Part A: Envelopes A (13..20)
+    P_AMPA_A = 13,
+    P_AMPA_D = 14,
+    P_AMPA_S = 15,
+    P_AMPA_R = 16,
+    P_FILTA_A = 17,
+    P_FILTA_D = 18,
+    P_FILTA_S = 19,
+    P_FILTA_R = 20,
 
-    P_AMP_A = 23,
-    P_AMP_D = 24,
-    P_AMP_S = 25,
-    P_AMP_R = 26,
-    P_PLAY_MODE = 27,
+    // Part B: Osc B (21..28)
+    P_OSC2_WAVE = 21,
+    P_OSC2_OCT = 22,
+    P_OSC2_SEMI = 23,
+    P_OSC2_UNISON = 24,
+    P_OSC2_DETUNE = 25,
+    P_OSC2_STEREO = 26,
+    P_OSC2_RETRIG = 27,
+    P_OSC2_VOL = 28,
 
-    P_FILT_TYPE = 28,
-    P_FILT_CUT = 29,
-    P_FILT_RES = 30,
-    P_FILT_ENV_AMT = 31,
-    P_FILT_A = 32,
-    P_FILT_D = 33,
-    P_FILT_S = 34,
-    P_FILT_R = 35,
+    // Part B: Filter B (29..33)
+    P_FILTB_TYPE = 29,
+    P_FILTB_CUT = 30,
+    P_FILTB_RES = 31,
+    P_FILTB_DRIVE = 32,
+    P_FILTB_ENV_AMT = 33,
 
-    P_DRIVE = 36,
-    P_LFO_RATE = 37,
-    P_LFO_PITCH = 38,
-    P_LFO_CUT = 39,
-    P_CHORUS_MIX = 40,
-    P_DELAY_MIX = 41,
-    P_DELAY_TIME = 42,
-    P_REVERB_MIX = 43,
-    P_GLIDE = 44,
-    P_VOLUME = 45,
+    // Part B: Envelopes B (34..41)
+    P_AMPB_A = 34,
+    P_AMPB_D = 35,
+    P_AMPB_S = 36,
+    P_AMPB_R = 37,
+    P_FILTB_A = 38,
+    P_FILTB_D = 39,
+    P_FILTB_S = 40,
+    P_FILTB_R = 41,
+
+    // Sub / Punch / LFO / Global (42..54)
+    P_SUB_WAVE = 42,
+    P_SUB_OCT = 43,
+    P_SUB_VOL = 44,
+    P_CLICK_NOISE = 45,
+    P_PITCH_AMT = 46,
+    P_PITCH_DECAY = 47,
+    P_PITCH_CURVE = 48,
+    P_LFO_RATE = 49,
+    P_LFO_PITCH = 50,
+    P_LFO_CUT = 51,
+    P_PLAY_MODE = 52,
+    P_GLIDE = 53,
+    P_VOLUME = 54,
+
+    // Serial FX Chain (55..70)
+    P_DIST_ON = 55,
+    P_DIST_DRIVE = 56,
+    P_DIST_TONE = 57,
+    P_DIST_MIX = 58,
+    P_CHORUS_ON = 59,
+    P_CHORUS_RATE = 60,
+    P_CHORUS_DEPTH = 61,
+    P_CHORUS_MIX = 62,
+    P_DELAY_ON = 63,
+    P_DELAY_TIME = 64,
+    P_DELAY_FB = 65,
+    P_DELAY_MIX = 66,
+    P_REVERB_ON = 67,
+    P_REVERB_SIZE = 68,
+    P_REVERB_DAMP = 69,
+    P_REVERB_MIX = 70,
 }
 
 struct SylphMidiEvent {
@@ -133,17 +168,26 @@ struct SylphVoice {
     double sub_phase = 0.0;
     float pitch_env = 0.0f;
     float click_env = 0.0f;
-    Adsr amp_env;
-    Adsr filt_env;
-    SylphZdfSvf filt1_l;
-    SylphZdfSvf filt2_l;
-    SylphZdfSvf filt1_r;
-    SylphZdfSvf filt2_r;
+    Adsr ampa_env;
+    Adsr filta_env;
+    Adsr ampb_env;
+    Adsr filtb_env;
+    SylphZdfSvf filta1_l;
+    SylphZdfSvf filta2_l;
+    SylphZdfSvf filta1_r;
+    SylphZdfSvf filta2_r;
+    SylphZdfSvf filtb1_l;
+    SylphZdfSvf filtb2_l;
+    SylphZdfSvf filtb1_r;
+    SylphZdfSvf filtb2_r;
     ulong age = 0;
 }
 
-/// Fixed-size Schroeder stereo reverb + chorus + ping-pong delay FX state.
+/// Fixed-size Serial Master FX Rack state (Dist Tone + Chorus + Ping-Pong Delay + Schroeder Reverb).
 struct SylphFxState {
+    float dist_lp_l = 0.0f;
+    float dist_lp_r = 0.0f;
+
     float[kSylphChorusMax] chorus_l = 0.0f;
     float[kSylphChorusMax] chorus_r = 0.0f;
     int chorus_write = 0;
@@ -153,7 +197,7 @@ struct SylphFxState {
     float[kSylphDelayMax] delay_r = 0.0f;
     int delay_write = 0;
 
-    // 4 parallel stereo combs + 2 series allpasses per side (prime tap lengths at 44.1kHz)
+    // 4 parallel stereo combs + 2 series allpasses per side (prime tap lengths)
     float[1557] c1_l = 0.0f;
     float[1617] c2_l = 0.0f;
     float[1491] c3_l = 0.0f;
@@ -172,6 +216,8 @@ struct SylphFxState {
     int[2] ap_idx_r = 0;
 
     void reset() nothrow @nogc @safe {
+        dist_lp_l = 0.0f;
+        dist_lp_r = 0.0f;
         chorus_l[] = 0.0f;
         chorus_r[] = 0.0f;
         chorus_write = 0;
@@ -223,7 +269,6 @@ struct SylphDspState {
     }
 }
 
-// Asymmetric JP-8000 / Sylenth1-inspired unison detune multipliers around center.
 extern (D) private immutable float[kSylphMaxUnison] UNISON_DETUNE_OFFSETS = [
     0.0f, -0.214f, 0.214f, -0.517f, 0.517f, -1.0f, 1.0f,
 ];
@@ -234,73 +279,102 @@ extern (D) private immutable float[kSylphMaxUnison] UNISON_PHASE_SEED = [
     0.0f, 0.173f, 0.618f, 0.341f, 0.829f, 0.487f, 0.913f,
 ];
 
-/// Curated factory patch values (`6 x 46`):
+/// Curated factory patch values (`6 x 71`):
 /// 0 = Trance Anthem Lead, 1 = Hard EDM Kick, 2 = Tight 909 Punch,
 /// 3 = Euphoric Pluck, 4 = Hive Supersaw Pad, 5 = Rolling Psy Bass.
 extern (D) private immutable float[kSylphNumParams][kSylphNumPresets] SYLPH_PRESETS = [
-    // 0: Trance Anthem Lead — lush wide dual hypersaw + LP24 + chorus + ping-pong delay + reverb
+    // 0: Trance Anthem Lead — Dual hypersaw + independent Filter A (LP24) & Filter B (LP12) + Chorus->Delay->Reverb
     [
-        0.00f, 0.50f, 0.50f, 1.00f, 0.38f, 0.88f, 0.00f, 0.86f, // Osc1: Saw 7-unison
-        0.00f, 0.75f, 0.50f, 0.67f, 0.46f, 0.92f, 0.00f, 0.56f, // Osc2: Saw +1 oct 5-unison
+        0.00f, 0.50f, 0.50f, 1.00f, 0.38f, 0.88f, 0.00f, 0.86f, // Osc A: Saw 7-unison
+        0.00f, 0.70f, 0.22f, 0.18f, 0.72f,                      // Filter A: LP24 warm drive sweep
+        0.15f, 0.72f, 0.78f, 0.58f, 0.10f, 0.70f, 0.44f, 0.58f, // Amp Env A + Filt Env A
+        0.00f, 0.75f, 0.50f, 0.67f, 0.46f, 0.92f, 0.00f, 0.58f, // Osc B: Saw +1 oct 5-unison
+        0.35f, 0.84f, 0.28f, 0.12f, 0.64f,                      // Filter B: LP12 airy top cut
+        0.12f, 0.68f, 0.72f, 0.56f, 0.08f, 0.66f, 0.40f, 0.56f, // Amp Env B + Filt Env B
         0.00f, 0.50f, 0.24f, 0.08f, 0.50f, 0.25f, 0.25f,        // Sub + slight air + 0 pitch snap
-        0.15f, 0.72f, 0.78f, 0.58f, 0.00f,                      // Amp ADSR (4ms A, 460ms D, 0.78 S, 210ms R) + Poly
-        0.00f, 0.72f, 0.22f, 0.72f, 0.10f, 0.70f, 0.44f, 0.58f, // LP24 Filter + Env
-        0.22f, 0.32f, 0.05f, 0.12f, 0.36f, 0.32f, 0.58f, 0.30f, // Drive, LFO, Chorus, Delay, Reverb
-        0.06f, 0.75f,                                           // Glide, Volume
+        0.32f, 0.05f, 0.12f, 0.00f, 0.06f, 0.75f,               // LFO + Poly + Glide + Vol
+        0.00f, 0.20f, 0.60f, 0.25f,                             // DIST (off by default, pre-dialed)
+        1.00f, 0.35f, 0.55f, 0.36f,                             // CHORUS ON
+        1.00f, 0.58f, 0.44f, 0.32f,                             // DELAY ON
+        1.00f, 0.72f, 0.28f, 0.30f,                             // REVERB ON
     ],
-    // 1: Hard EDM Kick — phase-retriggered sine+tri+click with fast +42st punch & tight low-end drive
+    // 1: Hard EDM Kick — Part A Retrig Sub/Sine Body (LP24) + Part B Short Mid Punch (BP12) + Pitch +42st + Dist ON
     [
-        0.85f, 0.50f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.95f, // Osc1: Sine 1-voice RETRIG
-        0.55f, 0.50f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.24f, // Osc2: Tri harmonic punch RETRIG
-        0.00f, 0.85f, 0.55f, 0.58f, 0.94f, 0.36f, 0.16f,        // Sub locked, Click 0.58, Pitch +42st ~23ms whip
-        0.00f, 0.64f, 0.00f, 0.44f, 0.50f,                      // Tight 233ms EDM kick body + 58ms rel + Mono
-        0.00f, 0.42f, 0.18f, 0.82f, 0.00f, 0.55f, 0.12f, 0.42f, // LP24 transient snap (~108ms sweep)
-        0.58f, 0.20f, 0.00f, 0.00f, 0.00f, 0.00f, 0.40f, 0.00f, // Tight Drive, zero stereo mud
-        0.00f, 0.84f,                                           // Glide, Volume
+        0.85f, 0.50f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.96f, // Osc A: Sine 1-voice RETRIG
+        0.00f, 0.42f, 0.18f, 0.54f, 0.82f,                      // Filter A: LP24 sub grip + punch drive
+        0.00f, 0.64f, 0.00f, 0.44f, 0.00f, 0.55f, 0.10f, 0.42f, // Tight 233ms sub body AmpA + FiltA
+        0.55f, 0.50f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.42f, // Osc B: Tri transient knock RETRIG
+        0.62f, 0.56f, 0.34f, 0.62f, 0.78f,                      // Filter B: BP12 mid-transient focus
+        0.00f, 0.38f, 0.00f, 0.30f, 0.00f, 0.36f, 0.00f, 0.28f, // Ultra-fast 26ms knock AmpB
+        0.00f, 0.85f, 0.56f, 0.58f, 0.94f, 0.36f, 0.16f,        // Locked sub + Click + +42st Pitch Snap
+        0.20f, 0.00f, 0.00f, 0.50f, 0.00f, 0.84f,               // LFO off + Mono + Vol
+        1.00f, 0.52f, 0.42f, 0.58f,                             // DIST ON (tight punch drive)
+        0.00f, 0.30f, 0.40f, 0.20f,                             // CHORUS OFF
+        0.00f, 0.40f, 0.30f, 0.20f,                             // DELAY OFF
+        0.00f, 0.40f, 0.50f, 0.15f,                             // REVERB OFF
     ],
-    // 2: Tight 909 Punch — -1 oct tuned for C2/C3 MIDI triggers, snappy click + thick warm body
+    // 2: Tight 909 Punch — -1 oct tuned for C2/C3 MIDI notes, warm saturation + sub lock
     [
-        0.85f, 0.25f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.92f, // Osc1: Sine -1 oct RETRIG
-        0.28f, 0.25f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.18f, // Osc2: Square subtle saturation body
-        0.00f, 0.50f, 0.38f, 0.46f, 0.88f, 0.44f, 0.28f,        // Sub -1 oct, click 0.46, ~33ms pitch whip
-        0.00f, 0.68f, 0.00f, 0.48f, 0.50f,                      // 327ms 909 kick decay + Mono
-        0.00f, 0.36f, 0.24f, 0.84f, 0.00f, 0.58f, 0.08f, 0.45f, // LP24 sweep
-        0.66f, 0.18f, 0.00f, 0.00f, 0.00f, 0.00f, 0.40f, 0.00f, // Punchy warm drive
-        0.00f, 0.84f,                                           // Glide, Volume
+        0.85f, 0.25f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.94f, // Osc A: Sine -1 oct RETRIG
+        0.00f, 0.38f, 0.24f, 0.64f, 0.84f,                      // Filter A: LP24 warm drive
+        0.00f, 0.68f, 0.00f, 0.48f, 0.00f, 0.58f, 0.08f, 0.45f, // 327ms 909 body
+        0.28f, 0.25f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.32f, // Osc B: Square punch layer
+        0.62f, 0.52f, 0.30f, 0.68f, 0.76f,                      // Filter B: BP12 beater focus
+        0.00f, 0.42f, 0.00f, 0.32f, 0.00f, 0.40f, 0.00f, 0.30f, // Short transient AmpB
+        0.00f, 0.50f, 0.38f, 0.48f, 0.88f, 0.44f, 0.28f,        // Sub -1 oct + click + whip
+        0.18f, 0.00f, 0.00f, 0.50f, 0.00f, 0.84f,               // Mono + Vol
+        1.00f, 0.58f, 0.38f, 0.62f,                             // DIST ON
+        0.00f, 0.30f, 0.40f, 0.20f,
+        0.00f, 0.40f, 0.30f, 0.20f,
+        0.00f, 0.40f, 0.50f, 0.15f,
     ],
-    // 3: Euphoric Pluck — bright 5-voice saw+square pluck with dotted stereo delay
+    // 3: Euphoric Pluck — bright dual-filter pluck + dotted delay + shimmer reverb
     [
-        0.00f, 0.50f, 0.50f, 0.67f, 0.32f, 0.78f, 0.00f, 0.82f, // Osc1: Saw 5-unison
-        0.28f, 0.75f, 0.50f, 0.50f, 0.38f, 0.82f, 0.00f, 0.48f, // Osc2: Square +1 oct
-        0.00f, 0.50f, 0.18f, 0.05f, 0.54f, 0.18f, 0.10f,        // Tiny pitch click
-        0.00f, 0.68f, 0.08f, 0.56f, 0.00f,                      // Pluck Amp ADSR (~327ms decay) + Poly
-        0.00f, 0.28f, 0.26f, 0.90f, 0.00f, 0.62f, 0.10f, 0.54f, // Bright LP24 pluck sweep (~200ms)
-        0.16f, 0.38f, 0.00f, 0.08f, 0.30f, 0.46f, 0.62f, 0.34f, // Dotted delay + reverb
-        0.00f, 0.78f,                                           // Glide, Volume
+        0.00f, 0.50f, 0.50f, 0.67f, 0.32f, 0.78f, 0.00f, 0.82f, // Osc A: Saw 5-unison
+        0.00f, 0.28f, 0.26f, 0.16f, 0.90f,                      // Filter A: LP24 snappy sweep
+        0.00f, 0.68f, 0.08f, 0.56f, 0.00f, 0.62f, 0.10f, 0.54f, // Pluck AmpA + FiltA
+        0.28f, 0.75f, 0.50f, 0.50f, 0.38f, 0.82f, 0.00f, 0.48f, // Osc B: Square +1 oct
+        0.35f, 0.42f, 0.22f, 0.14f, 0.86f,                      // Filter B: LP12 crisp transient
+        0.00f, 0.58f, 0.04f, 0.48f, 0.00f, 0.54f, 0.06f, 0.46f, // Fast top pluck AmpB
+        0.00f, 0.50f, 0.18f, 0.05f, 0.54f, 0.18f, 0.10f,
+        0.38f, 0.00f, 0.08f, 0.00f, 0.00f, 0.78f,
+        0.00f, 0.20f, 0.55f, 0.20f,
+        1.00f, 0.30f, 0.48f, 0.30f,                             // CHORUS ON
+        1.00f, 0.62f, 0.48f, 0.46f,                             // DELAY ON (dotted)
+        1.00f, 0.76f, 0.26f, 0.34f,                             // REVERB ON
     ],
-    // 4: Hive Supersaw Pad — lush 7-voice detuned stereosphere + slow swell + shimmer reverb
+    // 4: Hive Supersaw Pad — lush slow-attack stereosphere across Filter A & B
     [
-        0.00f, 0.50f, 0.50f, 1.00f, 0.54f, 1.00f, 0.00f, 0.76f, // Osc1: Wide 7-unison Saw
-        0.00f, 0.50f, 0.65f, 1.00f, 0.48f, 1.00f, 0.00f, 0.62f, // Osc2: 7-unison +7 semitone fifth/warmth
-        0.35f, 0.50f, 0.30f, 0.12f, 0.50f, 0.20f, 0.25f,        // Tri sub + air
-        0.68f, 0.80f, 0.84f, 0.72f, 0.00f,                      // Slow pad Amp ADSR (~327ms A, ~750ms R)
-        0.00f, 0.54f, 0.18f, 0.64f, 0.64f, 0.78f, 0.52f, 0.70f, // Lush moving LP24
-        0.12f, 0.24f, 0.08f, 0.28f, 0.52f, 0.26f, 0.55f, 0.52f, // Wide Chorus + Reverb
-        0.18f, 0.72f,                                           // Glide, Volume
+        0.00f, 0.50f, 0.50f, 1.00f, 0.54f, 1.00f, 0.00f, 0.76f, // Osc A: Wide 7-unison Saw
+        0.00f, 0.54f, 0.18f, 0.12f, 0.64f,                      // Filter A: LP24
+        0.68f, 0.80f, 0.84f, 0.72f, 0.64f, 0.78f, 0.52f, 0.70f, // Slow pad AmpA + FiltA
+        0.00f, 0.50f, 0.65f, 1.00f, 0.48f, 1.00f, 0.00f, 0.62f, // Osc B: 7-unison +7st shimmer
+        0.62f, 0.66f, 0.28f, 0.10f, 0.58f,                      // Filter B: BP12 lush air band
+        0.74f, 0.82f, 0.80f, 0.74f, 0.68f, 0.80f, 0.48f, 0.72f, // Swelling AmpB + FiltB
+        0.35f, 0.50f, 0.30f, 0.12f, 0.50f, 0.20f, 0.25f,
+        0.24f, 0.08f, 0.28f, 0.00f, 0.18f, 0.72f,
+        0.00f, 0.15f, 0.50f, 0.15f,
+        1.00f, 0.28f, 0.68f, 0.52f,                             // CHORUS ON wide
+        1.00f, 0.55f, 0.40f, 0.26f,                             // DELAY ON
+        1.00f, 0.86f, 0.22f, 0.52f,                             // REVERB ON hall
     ],
-    // 5: Rolling Psy Bass — mono phase-locked -1 oct saw + sub + fast zap envelope
+    // 5: Rolling Psy Bass — mono Retrig Saw+Square -1 oct + dual zap filter + tight Dist ON
     [
-        0.00f, 0.25f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.88f, // Osc1: Tight RETRIG Saw -1 oct
-        0.00f, 0.25f, 0.50f, 0.17f, 0.10f, 0.18f, 1.00f, 0.30f, // Osc2: Tight subtle thickness
-        0.00f, 0.25f, 0.45f, 0.04f, 0.50f, 0.22f, 0.15f,        // Clean sub anchor
-        0.00f, 0.54f, 0.32f, 0.40f, 0.80f,                      // Tight ~100ms bass envelope + Legato
-        0.00f, 0.24f, 0.34f, 0.86f, 0.00f, 0.52f, 0.05f, 0.40f, // Snappy ~85ms LP24 psy zap
-        0.40f, 0.30f, 0.00f, 0.00f, 0.00f, 0.00f, 0.40f, 0.00f, // Tight saturated low-end
-        0.12f, 0.80f,                                           // Fast glide, Volume
+        0.00f, 0.25f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.88f, // Osc A: Retrig Saw -1 oct
+        0.00f, 0.24f, 0.34f, 0.38f, 0.86f,                      // Filter A: LP24 psy zap
+        0.00f, 0.54f, 0.32f, 0.40f, 0.00f, 0.52f, 0.05f, 0.40f,
+        0.28f, 0.25f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.28f, // Osc B: Retrig Square snap
+        0.62f, 0.48f, 0.28f, 0.42f, 0.78f,                      // Filter B: BP12 acid edge
+        0.00f, 0.42f, 0.15f, 0.30f, 0.00f, 0.44f, 0.00f, 0.32f,
+        0.00f, 0.25f, 0.45f, 0.04f, 0.50f, 0.22f, 0.15f,
+        0.30f, 0.00f, 0.00f, 0.80f, 0.12f, 0.80f,               // Legato rolling bass
+        1.00f, 0.38f, 0.46f, 0.42f,                             // DIST ON tight grit
+        0.00f, 0.30f, 0.40f, 0.20f,
+        0.00f, 0.40f, 0.30f, 0.20f,
+        0.00f, 0.40f, 0.50f, 0.15f,
     ],
 ];
 
-/// Copies factory preset `preset_idx` into `state.params` and returns the count of params updated.
 int d_sylph_apply_preset(ref SylphDspState state, int preset_idx) nothrow @nogc @safe {
     int idx = preset_idx;
     if (idx < 0 || idx >= kSylphNumPresets) idx = 0;
@@ -392,6 +466,33 @@ private float nextNoise(ref uint rng) nothrow @nogc @safe {
     return (cast(float)(rng & 0xFFFFu) / 32768.0f) - 1.0f;
 }
 
+private void syncVoiceEnvs(const ref SylphDspState state, ref SylphVoice v) nothrow @nogc @safe {
+    v.ampa_env.setNormalized(
+        state.params[SylphParamId.P_AMPA_A],
+        state.params[SylphParamId.P_AMPA_D],
+        state.params[SylphParamId.P_AMPA_S],
+        state.params[SylphParamId.P_AMPA_R]
+    );
+    v.filta_env.setNormalized(
+        state.params[SylphParamId.P_FILTA_A],
+        state.params[SylphParamId.P_FILTA_D],
+        state.params[SylphParamId.P_FILTA_S],
+        state.params[SylphParamId.P_FILTA_R]
+    );
+    v.ampb_env.setNormalized(
+        state.params[SylphParamId.P_AMPB_A],
+        state.params[SylphParamId.P_AMPB_D],
+        state.params[SylphParamId.P_AMPB_S],
+        state.params[SylphParamId.P_AMPB_R]
+    );
+    v.filtb_env.setNormalized(
+        state.params[SylphParamId.P_FILTB_A],
+        state.params[SylphParamId.P_FILTB_D],
+        state.params[SylphParamId.P_FILTB_S],
+        state.params[SylphParamId.P_FILTB_R]
+    );
+}
+
 private void initVoiceTrigger(ref SylphDspState state, ref SylphVoice v, int pitch, float velocity, float pan, bool is_legato_slur) nothrow @nogc @safe {
     const float newFreq = midiNoteToHz(cast(float)pitch);
     v.active = true;
@@ -416,30 +517,23 @@ private void initVoiceTrigger(ref SylphDspState state, ref SylphVoice v, int pit
         v.sub_phase = 0.0;
         v.pitch_env = 1.0f;
         v.click_env = 1.0f;
-        v.filt1_l.reset();
-        v.filt2_l.reset();
-        v.filt1_r.reset();
-        v.filt2_r.reset();
+        v.filta1_l.reset();
+        v.filta2_l.reset();
+        v.filta1_r.reset();
+        v.filta2_r.reset();
+        v.filtb1_l.reset();
+        v.filtb2_l.reset();
+        v.filtb1_r.reset();
+        v.filtb2_r.reset();
 
-        v.amp_env.setNormalized(
-            state.params[SylphParamId.P_AMP_A],
-            state.params[SylphParamId.P_AMP_D],
-            state.params[SylphParamId.P_AMP_S],
-            state.params[SylphParamId.P_AMP_R]
-        );
-        v.filt_env.setNormalized(
-            state.params[SylphParamId.P_FILT_A],
-            state.params[SylphParamId.P_FILT_D],
-            state.params[SylphParamId.P_FILT_S],
-            state.params[SylphParamId.P_FILT_R]
-        );
-        v.amp_env.noteOn();
-        v.filt_env.noteOn();
+        syncVoiceEnvs(state, v);
+        v.ampa_env.noteOn();
+        v.filta_env.noteOn();
+        v.ampb_env.noteOn();
+        v.filtb_env.noteOn();
     } else {
         state.last_mono_freq = newFreq;
         state.has_last_freq = true;
-        v.age = ++state.voice_counter;
-        return;
     }
     v.age = ++state.voice_counter;
 }
@@ -447,7 +541,6 @@ private void initVoiceTrigger(ref SylphDspState state, ref SylphVoice v, int pit
 void d_sylph_note_on(ref SylphDspState state, int pitch, float velocity, float pan = 0.0f) nothrow @nogc @safe {
     const mode = d_sylph_norm_to_play_mode(state.params[SylphParamId.P_PLAY_MODE]);
     if (mode != SylphPlayMode.POLY) {
-        // Mono / Legato always routes onto voice 0 cleanly
         foreach (i; 1 .. kSylphMaxVoices) {
             state.voices[i].active = false;
             state.voices[i].held = false;
@@ -460,7 +553,7 @@ void d_sylph_note_on(ref SylphDspState state, int pitch, float velocity, float p
 
     int target = -1;
     foreach (i; 0 .. kSylphMaxVoices) {
-        if (!state.voices[i].active && state.voices[i].amp_env.isIdle()) {
+        if (!state.voices[i].active && state.voices[i].ampa_env.isIdle() && state.voices[i].ampb_env.isIdle()) {
             target = cast(int)i;
             break;
         }
@@ -482,8 +575,10 @@ void d_sylph_note_off(ref SylphDspState state, int pitch) nothrow @nogc @safe {
     foreach (ref v; state.voices) {
         if (v.active && (pitch < 0 || pitch > 127 || v.note == pitch)) {
             v.held = false;
-            v.amp_env.noteOff();
-            v.filt_env.noteOff();
+            v.ampa_env.noteOff();
+            v.filta_env.noteOff();
+            v.ampb_env.noteOff();
+            v.filtb_env.noteOff();
         }
     }
 }
@@ -491,24 +586,10 @@ void d_sylph_note_off(ref SylphDspState state, int pitch) nothrow @nogc @safe {
 void d_sylph_set_parameter(ref SylphDspState state, uint id, float value) nothrow @nogc @safe {
     if (id >= kSylphNumParams) return;
     state.params[id] = clampVal(value, 0.0f, 1.0f);
-    if (id >= SylphParamId.P_AMP_A && id <= SylphParamId.P_AMP_R) {
+    if ((id >= SylphParamId.P_AMPA_A && id <= SylphParamId.P_FILTA_R) ||
+        (id >= SylphParamId.P_AMPB_A && id <= SylphParamId.P_FILTB_R)) {
         foreach (ref v; state.voices) {
-            v.amp_env.setNormalized(
-                state.params[SylphParamId.P_AMP_A],
-                state.params[SylphParamId.P_AMP_D],
-                state.params[SylphParamId.P_AMP_S],
-                state.params[SylphParamId.P_AMP_R]
-            );
-        }
-    }
-    if (id >= SylphParamId.P_FILT_A && id <= SylphParamId.P_FILT_R) {
-        foreach (ref v; state.voices) {
-            v.filt_env.setNormalized(
-                state.params[SylphParamId.P_FILT_A],
-                state.params[SylphParamId.P_FILT_D],
-                state.params[SylphParamId.P_FILT_S],
-                state.params[SylphParamId.P_FILT_R]
-            );
+            syncVoiceEnvs(state, v);
         }
     }
 }
@@ -558,6 +639,42 @@ extern (D) private float processComb(T)(ref T buf, ref int idx, float input, flo
     return delayed;
 }
 
+private void applyFilterPair(
+    ref SylphZdfSvf f1L, ref SylphZdfSvf f2L,
+    ref SylphZdfSvf f1R, ref SylphZdfSvf f2R,
+    ref float l, ref float r,
+    SylphFilterType ftype, float cutBaseHz, float envNorm, float envOct, float lfoCut,
+    float kRes, float driveNorm, float sr
+) nothrow @nogc @trusted {
+    if (driveNorm > 0.01f) {
+        const float dg = 1.0f + driveNorm * 4.5f;
+        const float di = 1.0f / tanhf(dg);
+        l = tanhf(l * dg) * di;
+        r = tanhf(r * dg) * di;
+    }
+    float dynCut = cutBaseHz * powf(2.0f, envNorm * envOct + lfoCut);
+    dynCut = clampVal(dynCut, 20.0f, sr * 0.42f);
+    const float g = tanf(cast(float)pi * dynCut / sr);
+    final switch (ftype) {
+        case SylphFilterType.LP24:
+            l = f2L.process(f1L.process(l, g, kRes, 0), g, kRes * 0.65f, 0);
+            r = f2R.process(f1R.process(r, g, kRes, 0), g, kRes * 0.65f, 0);
+            break;
+        case SylphFilterType.LP12:
+            l = f1L.process(l, g, kRes, 0);
+            r = f1R.process(r, g, kRes, 0);
+            break;
+        case SylphFilterType.BP12:
+            l = f1L.process(l, g, kRes, 1);
+            r = f1R.process(r, g, kRes, 1);
+            break;
+        case SylphFilterType.HP12:
+            l = f1L.process(l, g, kRes, 2);
+            r = f1R.process(r, g, kRes, 2);
+            break;
+    }
+}
+
 void d_sylph_process(
     ref SylphDspState state,
     float* out_l,
@@ -582,28 +699,37 @@ void d_sylph_process(
         }
     }
 
+    // Part A config
     const wf1 = d_sylph_norm_to_wave(state.params[SylphParamId.P_OSC1_WAVE]);
-    const int oct1 = d_sylph_norm_to_oct(state.params[SylphParamId.P_OSC1_OCT]);
-    const int semi1 = d_sylph_norm_to_semi(state.params[SylphParamId.P_OSC1_SEMI]);
+    const float ratio1 = powf(2.0f, cast(float)d_sylph_norm_to_oct(state.params[SylphParamId.P_OSC1_OCT])
+                                  + cast(float)d_sylph_norm_to_semi(state.params[SylphParamId.P_OSC1_SEMI]) / 12.0f);
     const int uni1 = d_sylph_norm_to_unison(state.params[SylphParamId.P_OSC1_UNISON]);
-    const float det1 = state.params[SylphParamId.P_OSC1_DETUNE];
+    const float spread1 = state.params[SylphParamId.P_OSC1_DETUNE] * state.params[SylphParamId.P_OSC1_DETUNE] * 0.055f;
     const float st1 = state.params[SylphParamId.P_OSC1_STEREO];
-    const float vol1 = state.params[SylphParamId.P_OSC1_VOL];
-    const float ratio1 = powf(2.0f, cast(float)oct1 + cast(float)semi1 / 12.0f);
-    const float spread1 = det1 * det1 * 0.055f;
-    const float uniGain1 = vol1 / powf(cast(float)uni1, 0.52f);
+    const float uniGain1 = state.params[SylphParamId.P_OSC1_VOL] / powf(cast(float)uni1, 0.52f);
 
+    const ftA = d_sylph_norm_to_filter_type(state.params[SylphParamId.P_FILTA_TYPE]);
+    const float cutAHz = 20.0f * powf(900.0f, state.params[SylphParamId.P_FILTA_CUT]);
+    const float kResA = 2.0f * (1.0f - clampVal(state.params[SylphParamId.P_FILTA_RES] * 0.94f, 0.0f, 0.94f));
+    const float drvA = state.params[SylphParamId.P_FILTA_DRIVE];
+    const float envOctA = (state.params[SylphParamId.P_FILTA_ENV_AMT] - 0.5f) * 10.0f;
+
+    // Part B config
     const wf2 = d_sylph_norm_to_wave(state.params[SylphParamId.P_OSC2_WAVE]);
-    const int oct2 = d_sylph_norm_to_oct(state.params[SylphParamId.P_OSC2_OCT]);
-    const int semi2 = d_sylph_norm_to_semi(state.params[SylphParamId.P_OSC2_SEMI]);
+    const float ratio2 = powf(2.0f, cast(float)d_sylph_norm_to_oct(state.params[SylphParamId.P_OSC2_OCT])
+                                  + cast(float)d_sylph_norm_to_semi(state.params[SylphParamId.P_OSC2_SEMI]) / 12.0f);
     const int uni2 = d_sylph_norm_to_unison(state.params[SylphParamId.P_OSC2_UNISON]);
-    const float det2 = state.params[SylphParamId.P_OSC2_DETUNE];
+    const float spread2 = state.params[SylphParamId.P_OSC2_DETUNE] * state.params[SylphParamId.P_OSC2_DETUNE] * 0.055f;
     const float st2 = state.params[SylphParamId.P_OSC2_STEREO];
-    const float vol2 = state.params[SylphParamId.P_OSC2_VOL];
-    const float ratio2 = powf(2.0f, cast(float)oct2 + cast(float)semi2 / 12.0f);
-    const float spread2 = det2 * det2 * 0.055f;
-    const float uniGain2 = vol2 / powf(cast(float)uni2, 0.52f);
+    const float uniGain2 = state.params[SylphParamId.P_OSC2_VOL] / powf(cast(float)uni2, 0.52f);
 
+    const ftB = d_sylph_norm_to_filter_type(state.params[SylphParamId.P_FILTB_TYPE]);
+    const float cutBHz = 20.0f * powf(900.0f, state.params[SylphParamId.P_FILTB_CUT]);
+    const float kResB = 2.0f * (1.0f - clampVal(state.params[SylphParamId.P_FILTB_RES] * 0.94f, 0.0f, 0.94f));
+    const float drvB = state.params[SylphParamId.P_FILTB_DRIVE];
+    const float envOctB = (state.params[SylphParamId.P_FILTB_ENV_AMT] - 0.5f) * 10.0f;
+
+    // Sub / Punch / Mod config
     const float subNorm = state.params[SylphParamId.P_SUB_WAVE];
     const SylphWaveform subWf = subNorm < 0.34f ? SylphWaveform.SINE
                               : (subNorm < 0.67f ? SylphWaveform.TRIANGLE : SylphWaveform.SQUARE);
@@ -612,40 +738,46 @@ void d_sylph_process(
     const float subVol = state.params[SylphParamId.P_SUB_VOL];
     const float clickNoise = state.params[SylphParamId.P_CLICK_NOISE];
 
-    // Pitch snap envelope (for tight kicks / plucks)
     const float pitchSt = (state.params[SylphParamId.P_PITCH_AMT] - 0.5f) * 96.0f;
     const float pDecSec = 0.004f * powf(125.0f, state.params[SylphParamId.P_PITCH_DECAY]);
     const float pEnvCoef = expf(-1.0f / (pDecSec * sr));
-    const float pCurveExp = 3.0f - state.params[SylphParamId.P_PITCH_CURVE] * 2.1f; // 3.0=whip .. 0.9=punch
-    const float clickCoef = expf(-1.0f / (0.003f * sr)); // ~3ms beater click
+    const float pCurveExp = 3.0f - state.params[SylphParamId.P_PITCH_CURVE] * 2.1f;
+    const float clickCoef = expf(-1.0f / (0.003f * sr));
 
     const float glideNorm = state.params[SylphParamId.P_GLIDE];
     const float glideCoef = (glideNorm > 0.005f)
         ? (1.0f - expf(-1.0f / ((0.004f + glideNorm * 0.35f) * sr)))
         : 1.0f;
 
-    const filtType = d_sylph_norm_to_filter_type(state.params[SylphParamId.P_FILT_TYPE]);
-    const float cutBaseHz = 20.0f * powf(900.0f, state.params[SylphParamId.P_FILT_CUT]);
-    const float resNorm = state.params[SylphParamId.P_FILT_RES];
-    const float kRes = 2.0f * (1.0f - clampVal(resNorm * 0.94f, 0.0f, 0.94f));
-    const float filtEnvOct = (state.params[SylphParamId.P_FILT_ENV_AMT] - 0.5f) * 10.0f;
-
-    const float driveNorm = state.params[SylphParamId.P_DRIVE];
-    const float driveGain = 1.0f + driveNorm * 4.5f;
-    const float driveInv = 1.0f / tanhf(driveGain);
-
     const float lfoRateHz = 0.1f * powf(200.0f, state.params[SylphParamId.P_LFO_RATE]);
     const double lfoInc = cast(double)lfoRateHz / sample_rate;
     const float lfoPitchOct = state.params[SylphParamId.P_LFO_PITCH] * (1.0f / 12.0f);
     const float lfoCutOct = state.params[SylphParamId.P_LFO_CUT] * 3.0f;
+    const float masterVol = state.params[SylphParamId.P_VOLUME];
 
+    // Serial Master FX Chain config
+    const bool distOn = state.params[SylphParamId.P_DIST_ON] >= 0.5f;
+    const float distGain = 1.0f + state.params[SylphParamId.P_DIST_DRIVE] * 6.5f;
+    const float distInv = 1.0f / tanhf(distGain);
+    const float distToneCoef = 0.06f + state.params[SylphParamId.P_DIST_TONE] * 0.88f;
+    const float distMix = state.params[SylphParamId.P_DIST_MIX];
+
+    const bool chorusOn = state.params[SylphParamId.P_CHORUS_ON] >= 0.5f;
+    const float chorusRateHz = 0.15f + state.params[SylphParamId.P_CHORUS_RATE] * 2.5f;
+    const float chorusDepthSec = 0.001f + state.params[SylphParamId.P_CHORUS_DEPTH] * 0.006f;
     const float chorusMix = state.params[SylphParamId.P_CHORUS_MIX];
-    const float delayMix = state.params[SylphParamId.P_DELAY_MIX];
+
+    const bool delayOn = state.params[SylphParamId.P_DELAY_ON] >= 0.5f;
     int delaySamp = cast(int)((0.08f + state.params[SylphParamId.P_DELAY_TIME] * 0.47f) * sr);
     if (delaySamp < 64) delaySamp = 64;
     if (delaySamp >= kSylphDelayMax - 1) delaySamp = kSylphDelayMax - 2;
+    const float delayFb = clampVal(state.params[SylphParamId.P_DELAY_FB] * 0.82f, 0.0f, 0.82f);
+    const float delayMix = state.params[SylphParamId.P_DELAY_MIX];
+
+    const bool reverbOn = state.params[SylphParamId.P_REVERB_ON] >= 0.5f;
+    const float revFb = 0.62f + state.params[SylphParamId.P_REVERB_SIZE] * 0.25f;
+    const float revDamp = 0.04f + state.params[SylphParamId.P_REVERB_DAMP] * 0.35f;
     const float reverbMix = state.params[SylphParamId.P_REVERB_MIX];
-    const float masterVol = state.params[SylphParamId.P_VOLUME];
 
     foreach (i; 0 .. num_samples) {
         float mixL = 0.0f;
@@ -656,34 +788,32 @@ void d_sylph_process(
         if (state.lfo_phase >= 1.0) state.lfo_phase -= 1.0;
 
         const float lfoPitchMul = (lfoPitchOct > 0.0001f) ? powf(2.0f, lfo * lfoPitchOct) : 1.0f;
+        const float lfoCutMod = lfo * lfoCutOct;
 
         foreach (ref v; state.voices) {
             if (!v.active) continue;
 
-            const float envGain = v.amp_env.process(sr);
-            const float envFilt = v.filt_env.process(sr);
-            if (v.amp_env.isIdle()) {
+            const float gainA = v.ampa_env.process(sr);
+            const float envFiltA = v.filta_env.process(sr);
+            const float gainB = v.ampb_env.process(sr);
+            const float envFiltB = v.filtb_env.process(sr);
+            if (v.ampa_env.isIdle() && v.ampb_env.isIdle()) {
                 v.active = false;
                 continue;
             }
 
-            // Portamento glide
             v.cur_freq += (v.target_freq - v.cur_freq) * glideCoef;
-
-            // Shaped exponential Pitch Snap envelope for hard tight kicks
             v.pitch_env *= pEnvCoef;
             v.click_env *= clickCoef;
             float pitchModMul = lfoPitchMul;
             if (fabsf(pitchSt) > 0.05f && v.pitch_env > 0.0001f) {
-                const float shapedP = powf(v.pitch_env, pCurveExp);
-                pitchModMul *= powf(2.0f, (pitchSt * shapedP) / 12.0f);
+                pitchModMul *= powf(2.0f, (pitchSt * powf(v.pitch_env, pCurveExp)) / 12.0f);
             }
             const float instFreq = clampVal(v.cur_freq * pitchModMul, 10.0f, sr * 0.45f);
 
-            float vl = 0.0f;
-            float vr = 0.0f;
-
-            // Osc 1 Unison
+            // --- Part A (Osc A + Sub + Click -> Filter A -> Amp Env A) ---
+            float partAL = 0.0f;
+            float partAR = 0.0f;
             if (uniGain1 > 0.0005f) {
                 const float baseF1 = instFreq * ratio1;
                 foreach (u; 0 .. uni1) {
@@ -691,14 +821,35 @@ void d_sylph_process(
                     const double dt = clampVal(cast(double)(baseF1 * df) / sample_rate, 0.00001, 0.45);
                     const float smp = renderOscSample(wf1, v.osc1_phase[u], dt) * uniGain1;
                     const float panU = UNISON_PAN_OFFSETS[u] * st1;
-                    vl += smp * (0.5f * (1.0f - panU));
-                    vr += smp * (0.5f * (1.0f + panU));
+                    partAL += smp * (0.5f * (1.0f - panU));
+                    partAR += smp * (0.5f * (1.0f + panU));
                     v.osc1_phase[u] += dt;
                     if (v.osc1_phase[u] >= 1.0) v.osc1_phase[u] -= 1.0;
                 }
             }
+            if (subVol > 0.0005f) {
+                const double dtSub = clampVal(cast(double)(instFreq * subRatio) / sample_rate, 0.00001, 0.45);
+                const float subSmp = renderOscSample(subWf, v.sub_phase, dtSub) * subVol * 0.55f;
+                partAL += subSmp;
+                partAR += subSmp;
+                v.sub_phase += dtSub;
+                if (v.sub_phase >= 1.0) v.sub_phase -= 1.0;
+            }
+            if (clickNoise > 0.0005f) {
+                const float nz = nextNoise(state.rng_state);
+                const float beaterGain = (fabsf(pitchSt) > 3.0f) ? (clickNoise * v.click_env * 0.85f) : 0.0f;
+                const float cSmp = nz * (clickNoise * 0.14f + beaterGain);
+                partAL += cSmp;
+                partAR += cSmp;
+            }
+            applyFilterPair(
+                v.filta1_l, v.filta2_l, v.filta1_r, v.filta2_r,
+                partAL, partAR, ftA, cutAHz, envFiltA, envOctA, lfoCutMod, kResA, drvA, sr
+            );
 
-            // Osc 2 Unison
+            // --- Part B (Osc B -> Independent Filter B -> Amp Env B) ---
+            float partBL = 0.0f;
+            float partBR = 0.0f;
             if (uniGain2 > 0.0005f) {
                 const float baseF2 = instFreq * ratio2;
                 foreach (u; 0 .. uni2) {
@@ -706,80 +857,44 @@ void d_sylph_process(
                     const double dt = clampVal(cast(double)(baseF2 * df) / sample_rate, 0.00001, 0.45);
                     const float smp = renderOscSample(wf2, v.osc2_phase[u], dt) * uniGain2;
                     const float panU = UNISON_PAN_OFFSETS[u] * st2;
-                    vl += smp * (0.5f * (1.0f - panU));
-                    vr += smp * (0.5f * (1.0f + panU));
+                    partBL += smp * (0.5f * (1.0f - panU));
+                    partBR += smp * (0.5f * (1.0f + panU));
                     v.osc2_phase[u] += dt;
                     if (v.osc2_phase[u] >= 1.0) v.osc2_phase[u] -= 1.0;
                 }
             }
-
-            // Phase-locked Mono Sub Anchor
-            if (subVol > 0.0005f) {
-                const double dtSub = clampVal(cast(double)(instFreq * subRatio) / sample_rate, 0.00001, 0.45);
-                const float subSmp = renderOscSample(subWf, v.sub_phase, dtSub) * subVol * 0.55f;
-                vl += subSmp;
-                vr += subSmp;
-                v.sub_phase += dtSub;
-                if (v.sub_phase >= 1.0) v.sub_phase -= 1.0;
-            }
-
-            // Air noise + kick transient beater click
-            if (clickNoise > 0.0005f) {
-                const float nz = nextNoise(state.rng_state);
-                const float airGain = clickNoise * 0.14f;
-                const float beaterGain = (fabsf(pitchSt) > 3.0f) ? (clickNoise * v.click_env * 0.85f) : 0.0f;
-                const float cSmp = nz * (airGain + beaterGain);
-                vl += cSmp;
-                vr += cSmp;
-            }
-
-            // Warm analog / tight kick Drive saturation BEFORE/AT filter
-            if (driveNorm > 0.01f) {
-                vl = tanhf(vl * driveGain) * driveInv;
-                vr = tanhf(vr * driveGain) * driveInv;
-            }
-
-            // ZDF SVF Filter (12dB or cascaded 24dB LP)
-            const float totalModOct = envFilt * filtEnvOct + lfo * lfoCutOct;
-            float dynCut = cutBaseHz * powf(2.0f, totalModOct);
-            dynCut = clampVal(dynCut, 20.0f, sr * 0.42f);
-            const float g = tanf(cast(float)pi * dynCut / sr);
-            final switch (filtType) {
-                case SylphFilterType.LP24:
-                    vl = v.filt2_l.process(v.filt1_l.process(vl, g, kRes, 0), g, kRes * 0.65f, 0);
-                    vr = v.filt2_r.process(v.filt1_r.process(vr, g, kRes, 0), g, kRes * 0.65f, 0);
-                    break;
-                case SylphFilterType.LP12:
-                    vl = v.filt1_l.process(vl, g, kRes, 0);
-                    vr = v.filt1_r.process(vr, g, kRes, 0);
-                    break;
-                case SylphFilterType.BP12:
-                    vl = v.filt1_l.process(vl, g, kRes, 1);
-                    vr = v.filt1_r.process(vr, g, kRes, 1);
-                    break;
-                case SylphFilterType.HP12:
-                    vl = v.filt1_l.process(vl, g, kRes, 2);
-                    vr = v.filt1_r.process(vr, g, kRes, 2);
-                    break;
-            }
+            applyFilterPair(
+                v.filtb1_l, v.filtb2_l, v.filtb1_r, v.filtb2_r,
+                partBL, partBR, ftB, cutBHz, envFiltB, envOctB, lfoCutMod, kResB, drvB, sr
+            );
 
             const float gPanL = 1.0f - clampVal(v.pan, 0.0f, 1.0f);
             const float gPanR = 1.0f + clampVal(v.pan, -1.0f, 0.0f);
-            const float vGain = envGain * v.velocity * 0.42f;
-            mixL += vl * vGain * gPanL;
-            mixR += vr * vGain * gPanR;
+            const float vVel = v.velocity * 0.42f;
+            mixL += (partAL * gainA + partBL * gainB) * vVel * gPanL;
+            mixR += (partAR * gainA + partBR * gainB) * vVel * gPanR;
         }
 
-        // Stereo Ensemble Chorus
-        if (chorusMix > 0.005f) {
+        // --- Serial FX Block 1: DISTORTION ---
+        if (distOn && distMix > 0.005f) {
+            const float satL = tanhf(mixL * distGain) * distInv;
+            const float satR = tanhf(mixR * distGain) * distInv;
+            state.fx.dist_lp_l += (satL - state.fx.dist_lp_l) * distToneCoef;
+            state.fx.dist_lp_r += (satR - state.fx.dist_lp_r) * distToneCoef;
+            mixL = mixL * (1.0f - distMix) + state.fx.dist_lp_l * distMix;
+            mixR = mixR * (1.0f - distMix) + state.fx.dist_lp_r * distMix;
+        }
+
+        // --- Serial FX Block 2: CHORUS ---
+        if (chorusOn && chorusMix > 0.005f) {
             state.fx.chorus_l[state.fx.chorus_write] = mixL;
             state.fx.chorus_r[state.fx.chorus_write] = mixR;
             const float cLfo = sinf(cast(float)(state.fx.chorus_lfo * (2.0 * pi)));
-            state.fx.chorus_lfo += 0.65 / sample_rate;
+            state.fx.chorus_lfo += cast(double)chorusRateHz / sample_rate;
             if (state.fx.chorus_lfo >= 1.0) state.fx.chorus_lfo -= 1.0;
 
-            const int tapL = cast(int)((0.011f + 0.004f * cLfo) * sr);
-            const int tapR = cast(int)((0.014f - 0.004f * cLfo) * sr);
+            const int tapL = cast(int)((0.011f + chorusDepthSec * cLfo) * sr);
+            const int tapR = cast(int)((0.014f - chorusDepthSec * cLfo) * sr);
             const int idxL = (state.fx.chorus_write - tapL + kSylphChorusMax) & (kSylphChorusMax - 1);
             const int idxR = (state.fx.chorus_write - tapR + kSylphChorusMax) & (kSylphChorusMax - 1);
             const float wetL = state.fx.chorus_r[idxL];
@@ -789,33 +904,31 @@ void d_sylph_process(
             state.fx.chorus_write = (state.fx.chorus_write + 1) & (kSylphChorusMax - 1);
         }
 
-        // Ping-Pong Stereo Delay
-        if (delayMix > 0.005f) {
+        // --- Serial FX Block 3: PING-PONG DELAY ---
+        if (delayOn && delayMix > 0.005f) {
             const int rdL = (state.fx.delay_write - delaySamp + kSylphDelayMax) % kSylphDelayMax;
             const int rdR = (state.fx.delay_write - (delaySamp * 3) / 4 + kSylphDelayMax) % kSylphDelayMax;
             const float dOutL = state.fx.delay_l[rdL];
             const float dOutR = state.fx.delay_r[rdR];
-            state.fx.delay_l[state.fx.delay_write] = mixL + dOutR * 0.42f;
-            state.fx.delay_r[state.fx.delay_write] = mixR + dOutL * 0.42f;
+            state.fx.delay_l[state.fx.delay_write] = mixL + dOutR * delayFb;
+            state.fx.delay_r[state.fx.delay_write] = mixR + dOutL * delayFb;
             if (++state.fx.delay_write >= kSylphDelayMax) state.fx.delay_write = 0;
             mixL += dOutL * delayMix * 0.65f;
             mixR += dOutR * delayMix * 0.65f;
         }
 
-        // Stereo Trance Hall Reverb
-        if (reverbMix > 0.005f) {
+        // --- Serial FX Block 4: STEREO REVERB ---
+        if (reverbOn && reverbMix > 0.005f) {
             const float revInL = mixL * 0.25f;
             const float revInR = mixR * 0.25f;
-            const float fb = 0.80f;
-            const float damp = 0.14f;
-            float rL = processComb(state.fx.c1_l, state.fx.comb_idx[0], revInL, fb, damp)
-                     + processComb(state.fx.c2_l, state.fx.comb_idx[1], revInL, fb * 0.99f, damp)
-                     + processComb(state.fx.c3_l, state.fx.comb_idx[2], revInL, fb * 0.98f, damp)
-                     + processComb(state.fx.c4_l, state.fx.comb_idx[3], revInL, fb * 0.97f, damp);
-            float rR = processComb(state.fx.c1_r, state.fx.comb_idx_r[0], revInR, fb, damp)
-                     + processComb(state.fx.c2_r, state.fx.comb_idx_r[1], revInR, fb * 0.99f, damp)
-                     + processComb(state.fx.c3_r, state.fx.comb_idx_r[2], revInR, fb * 0.98f, damp)
-                     + processComb(state.fx.c4_r, state.fx.comb_idx_r[3], revInR, fb * 0.97f, damp);
+            float rL = processComb(state.fx.c1_l, state.fx.comb_idx[0], revInL, revFb, revDamp)
+                     + processComb(state.fx.c2_l, state.fx.comb_idx[1], revInL, revFb * 0.99f, revDamp)
+                     + processComb(state.fx.c3_l, state.fx.comb_idx[2], revInL, revFb * 0.98f, revDamp)
+                     + processComb(state.fx.c4_l, state.fx.comb_idx[3], revInL, revFb * 0.97f, revDamp);
+            float rR = processComb(state.fx.c1_r, state.fx.comb_idx_r[0], revInR, revFb, revDamp)
+                     + processComb(state.fx.c2_r, state.fx.comb_idx_r[1], revInR, revFb * 0.99f, revDamp)
+                     + processComb(state.fx.c3_r, state.fx.comb_idx_r[2], revInR, revFb * 0.98f, revDamp)
+                     + processComb(state.fx.c4_r, state.fx.comb_idx_r[3], revInR, revFb * 0.97f, revDamp);
             rL = processAllpass(state.fx.a1_l, state.fx.ap_idx[0], rL, 0.5f);
             rL = processAllpass(state.fx.a2_l, state.fx.ap_idx[1], rL, 0.5f);
             rR = processAllpass(state.fx.a1_r, state.fx.ap_idx_r[0], rR, 0.5f);
@@ -824,7 +937,6 @@ void d_sylph_process(
             mixR += rR * reverbMix * 0.45f;
         }
 
-        // Clean soft-clipped master output limiter stage
         out_l[i] = tanhf(mixL * masterVol * 1.4f);
         out_r[i] = tanhf(mixR * masterVol * 1.4f);
     }

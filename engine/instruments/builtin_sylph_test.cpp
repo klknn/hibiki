@@ -27,8 +27,12 @@ TEST(BuiltinSylphTest, RegistryMetadataAndParameters) {
   }
   EXPECT_FALSE(plugin->getParameterInfo(BuiltinSylph::kTotalParams, info));
 
-  plugin->setParameterValue(BuiltinSylph::P_FILT_CUT, 0.35);
-  EXPECT_NEAR(plugin->getParameterValue(BuiltinSylph::P_FILT_CUT), 0.35, 1e-4);
+  plugin->setParameterValue(BuiltinSylph::P_FILTA_CUT, 0.35);
+  EXPECT_NEAR(plugin->getParameterValue(BuiltinSylph::P_FILTA_CUT), 0.35, 1e-4);
+  plugin->setParameterValue(BuiltinSylph::P_FILTB_CUT, 0.65);
+  EXPECT_NEAR(plugin->getParameterValue(BuiltinSylph::P_FILTB_CUT), 0.65, 1e-4);
+  plugin->setParameterValue(BuiltinSylph::P_DIST_ON, 1.0);
+  EXPECT_NEAR(plugin->getParameterValue(BuiltinSylph::P_DIST_ON), 1.0, 1e-4);
 }
 
 TEST(BuiltinSylphTest,
@@ -63,12 +67,13 @@ TEST(BuiltinSylphTest,
   EXPECT_GT(stereoDiff, 1.0)
       << "Unison + chorus should produce wide stereo image";
 
-  // Release notes with FX dry so envelope tail reaches silence
+  // Release notes with FX bypassed so envelope tail reaches silence
   // deterministically
-  synth.setParameterValue(BuiltinSylph::P_CHORUS_MIX, 0.0);
-  synth.setParameterValue(BuiltinSylph::P_DELAY_MIX, 0.0);
-  synth.setParameterValue(BuiltinSylph::P_REVERB_MIX, 0.0);
-  synth.setParameterValue(BuiltinSylph::P_AMP_R, 0.05);
+  synth.setParameterValue(BuiltinSylph::P_CHORUS_ON, 0.0);
+  synth.setParameterValue(BuiltinSylph::P_DELAY_ON, 0.0);
+  synth.setParameterValue(BuiltinSylph::P_REVERB_ON, 0.0);
+  synth.setParameterValue(BuiltinSylph::P_AMPA_R, 0.05);
+  synth.setParameterValue(BuiltinSylph::P_AMPB_R, 0.05);
   std::vector<MidiNoteEvent> offs = {
       MidiNoteEvent{0, 0, 64, 0.0f, false},
       MidiNoteEvent{0, 0, 67, 0.0f, false},

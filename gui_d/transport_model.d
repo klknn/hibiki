@@ -450,7 +450,8 @@ struct TransportModel {
         slot.isInstrument = isInst;
         slot.presets = ["Default", "Warm Analog", "Punchy Club", "Wide Stereo", "Init"];
         if (uri == "builtin://sylph") {
-            // Sylph maintains its own 46-parameter Trance/Kick defaults until engine PLUGIN_INFO syncs.
+            // Sylph exposes curated Trance/Kick presets & 71 parameters synced on load/selection.
+            slot.presets = ["Trance Lead", "Hard Kick", "909 Punch", "Pluck", "Hive Pad", "Psy Bass"];
             return slot;
         }
         if (isInst) {
@@ -1141,7 +1142,9 @@ struct TransportModel {
                 slot.isInstrument = pl.is_instrument;
                 slot.enabled = !pl.bypassed;
                 if (pl.mix.hasValue) slot.mix = pl.mix.value;
-                if (slot.presets.length == 0) {
+                if (slot.uri == "builtin://sylph") {
+                    slot.presets = ["Trance Lead", "Hard Kick", "909 Punch", "Pluck", "Hive Pad", "Psy Bass"];
+                } else if (slot.presets.length == 0) {
                     slot.presets = ["Default", "Warm Analog", "Punchy Club", "Wide Stereo", "Init"];
                 }
                 slot.params.length = 0;

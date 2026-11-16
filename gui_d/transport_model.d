@@ -787,12 +787,55 @@ struct TransportModel {
         const int n = cast(int)patterns.length;
         int clamped = newPatIdx % n;
         if (clamped < 0) clamped += n;
-        if (clamped == selectedPatternIndex) return;
-        saveCurrentPatternToStore();
-        selectedPatternIndex = clamped;
+        if (clamped == selectedPatternIndex && activeMidi.channelIndex >= 0) return;
+        if (clamped != selectedPatternIndex) {
+            saveCurrentPatternToStore();
+            selectedPatternIndex = clamped;
+        }
         activePickerKind = PlaylistClipKind.PATTERN;
         activePickerIndex = clamped;
         loadPatternFromStore(clamped);
+    }
+
+    /// Opens `newPatIdx` for Piano Roll editing, ensuring a populated channel is targeted and loaded.
+    void selectPatternForPianoRoll(int newPatIdx) @safe {
+        if (patterns.length == 0) return;
+        const int n = cast(int)patterns.length;
+        int clamped = newPatIdx % n;
+        if (clamped < 0) clamped += n;
+        if (clamped != selectedPatternIndex) {
+            saveCurrentPatternToStore();
+            selectedPatternIndex = clamped;
+        }
+        activePickerKind = PlaylistClipKind.PATTERN;
+        activePickerIndex = clamped;
+        loadPatternFromStore(clamped);
+
+        if (channels.length == 0) return;
+        int targetCh = activeMidi.channelIndex;
+        if (targetCh < 0 || targetCh >= cast(int)channels.length ||
+            channels[targetCh].notes.length == 0) {
+            int firstWithNotes = -1;
+            int firstWithSteps = -1;
+            const int patLen = activePatternLengthSteps();
+            foreach (ci, const ref ch; channels) {
+                if (firstWithNotes < 0 && ch.notes.length > 0) {
+                    firstWithNotes = cast(int)ci;
+                }
+                if (firstWithSteps < 0) {
+                    foreach (s; 0 .. patLen) {
+                        if (s < cast(int)ch.steps.length && ch.steps[s]) {
+                            firstWithSteps = cast(int)ci;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (firstWithNotes >= 0) targetCh = firstWithNotes;
+            else if (firstWithSteps >= 0) targetCh = firstWithSteps;
+            else if (targetCh < 0 || targetCh >= cast(int)channels.length) targetCh = 0;
+        }
+        selectPianoRollChannel(targetCh);
     }
 
     /// Saves current `activeMidi.events` back to its channel and loads `newChannelIdx`'s notes.
@@ -1482,6 +1525,17 @@ unittest {
     assert(model.activeMidi.events.length == 8);
     model.selectPianoRollChannel(0);
     assert(model.activeMidi.events.length == 1 && model.activeMidi.events[0].pitch == 60);
+
+    // 4a. selectPatternForPianoRoll switches from timeline MIDI (channelIndex=-1) to populated channel
+    model.activeMidi.channelIndex = -1;
+    model.activeMidi.events = null;
+    model.selectPatternForPianoRoll(2); // Pattern 2 (E-Piano): notes live on channel 4
+    assert(model.selectedPatternIndex == 2 && model.activeMidi.channelIndex == 4 &&
+           model.activeMidi.events.length == 8,
+           "Expected selectPatternForPianoRoll(2) to select E-Piano channel 4 and load its 8 chord notes");
+    model.selectPatternForPianoRoll(0);
+    assert(model.selectedPatternIndex == 0 && model.activeMidi.events.length > 0,
+           "Expected selectPatternForPianoRoll(0) to restore Pattern 0 notes cleanly");
 
     // 4. Test nextClipIndex after deletions/slices
     TrackStripState tr;

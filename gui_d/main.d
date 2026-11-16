@@ -15,13 +15,13 @@ import dlangui.widgets.layouts : HorizontalLayout, VerticalLayout;
 import dlangui.widgets.menu : MenuItem, PopupMenu;
 import dlangui.widgets.popup : PopupAlign, PopupFlags;
 import dlangui.widgets.widget : Visibility, Widget;
-import gui_d.browser_panel : BrowserPanel, loadWavPreviewPeaks, scanBrowserDirectory;
+import gui_d.browser_panel : BrowserPanel, DEFAULT_BROWSER_ENTRIES, loadWavPreviewPeaks, scanBrowserDirectory;
 import gui_d.channel_rack : ChannelRackWidget;
 import gui_d.ipc_client;
 import gui_d.mixer_view : MixerCanvasWidget;
 import gui_d.modals : FlSettingsDialog, FlTextPromptDialog;
 import gui_d.piano_roll : PianoRollCanvasWidget;
-import gui_d.plugin_window : PluginWrapperWidget, resolveActiveWrapperPlugin;
+import gui_d.plugin_window : PluginWrapperWidget, resolveActiveWrapperPlugin, WrapperTargetKind;
 import gui_d.theme : activeDawUiFontFace, applyFlatThemeOverrides, dp, FlCompactButton, FlThemeId,
     registerBundledDawFonts;
 import gui_d.timeline_view : beatDurationSec, TimelineCanvasWidget;
@@ -31,11 +31,12 @@ import gui_d.workspace : DesktopLayoutPreset, FlDesktopCanvas, FlWindowFrame;
 import pb.commands : PluginHostMode, TransportCmd;
 import pb.core : MidiEvent, PbAutoPoint = AutomationPoint, PbPlaybackMode = PlaybackMode, TrackType;
 import pb.notifications : Notification;
+import std.algorithm : canFind;
 import std.file : exists, thisExePath;
 import std.format : format;
 import std.path : baseName, buildPath, dirName;
 import std.process : environment;
-import std.string : startsWith;
+import std.string : startsWith, toLower;
 import std.utf : toUTF32;
 
 mixin APP_ENTRY_POINT;
@@ -288,6 +289,9 @@ extern (C) int UIAppMain(string[] args) {
         window.executeInUiThread(() {
             if (atomicLoad(uiClosing)) return;
             model.applyNotification(notif);
+            if (notif.clip_midi_data.hasValue) {
+                pianoRollCanvas.frameActiveNotes();
+            }
             if ((notif.audio_input_list.hasValue || notif.midi_input_list.hasValue) &&
                 activeSettingsDlg !is null) {
                 activeSettingsDlg.refreshDeviceSummary();
@@ -342,10 +346,11 @@ extern (C) int UIAppMain(string[] args) {
         }
 
         foreach (ref pat; model.patterns) {
+            const int patSteps = (pat.lengthSteps > 0 && pat.lengthSteps <= 64) ? pat.lengthSteps : 16;
             client.sendRequest(makeSequencerAddPatternRequest(
-                pat.index, pat.name, pat.color, pat.lengthSteps));
+                pat.index, pat.name, pat.color, patSteps));
             foreach (ref cp; pat.channelSteps) {
-                foreach (stepIdx; 0 .. 16) {
+                foreach (stepIdx; 0 .. patSteps) {
                     if (cp.steps[stepIdx]) {
                         client.sendRequest(makeSequencerStepRequest(
                             pat.index, cp.channelIndex, stepIdx, true));
@@ -1056,22 +1061,39 @@ extern (C) int UIAppMain(string[] args) {
         sendVirtualNote(targetTrk, note);
     };
 
+    void openWrapperForTarget(WrapperTargetKind kind, int targetIdx, int fxSlot, string title) {
+        if (kind == WrapperTargetKind.CHANNEL_GENERATOR) {
+            pluginWrapper.setTargetChannel(targetIdx);
+        } else {
+            pluginWrapper.setTargetMixerFx(targetIdx, fxSlot);
+        }
+        winPlugin.windowTitle = title;
+        desktop.showWindow("win_plugin");
+        if (auto wp = resolveActiveWrapperPlugin(&model, kind, targetIdx, fxSlot)) {
+            if (wp.uri.length > 0 && !wp.uri.startsWith("builtin://") && !wp.remoteEditorOpen && client.isRunning()) {
+                wp.remoteEditorOpen = true;
+                const int trk = pluginWrapper.resolvedTrackIndex();
+                client.sendRequest(makePluginShowGuiRequest(trk, wp.pluginIndex));
+                client.sendRequest(makePluginGetEditorFrameRequest(trk, wp.pluginIndex));
+            }
+        }
+    }
+
     // Channel Rack Callbacks
     channelRack.onSelectChannel = (int chIdx) {
         if (winPlugin.visibility == Visibility.Visible) {
-            pluginWrapper.setTargetChannel(chIdx);
-            if (chIdx >= 0 && chIdx < cast(int)model.channels.length) {
-                winPlugin.windowTitle = "Fruity Wrapper - " ~ model.channels[chIdx].name;
-            }
+            const string title = (chIdx >= 0 && chIdx < cast(int)model.channels.length)
+                ? ("Fruity Wrapper - " ~ model.channels[chIdx].name)
+                : "Fruity Wrapper";
+            openWrapperForTarget(WrapperTargetKind.CHANNEL_GENERATOR, chIdx, 0, title);
         }
         refreshUi();
     };
     channelRack.onOpenPluginWrapper = (int chIdx) {
-        pluginWrapper.setTargetChannel(chIdx);
-        if (chIdx >= 0 && chIdx < cast(int)model.channels.length) {
-            winPlugin.windowTitle = "Fruity Wrapper - " ~ model.channels[chIdx].name;
-        }
-        desktop.showWindow("win_plugin");
+        const string title = (chIdx >= 0 && chIdx < cast(int)model.channels.length)
+            ? ("Fruity Wrapper - " ~ model.channels[chIdx].name)
+            : "Fruity Wrapper";
+        openWrapperForTarget(WrapperTargetKind.CHANNEL_GENERATOR, chIdx, 0, title);
         refreshUi();
     };
     channelRack.onOpenPianoRoll = (int chIdx) {
@@ -1121,24 +1143,48 @@ extern (C) int UIAppMain(string[] args) {
         refreshUi();
     };
     channelRack.onAddChannelPrompt = () {
-        model.saveCurrentPatternToStore();
-        const int chIdx = cast(int)model.channels.length;
-        ChannelState ch;
-        ch.initDefaults();
-        ch.index = chIdx;
-        ch.name = format("3x Osc %d", chIdx + 1);
-        ch.uri = "builtin://3xosc";
-        ch.category = "Synths";
-        ch.color = model.palette().clipPattern;
-        ch.mixerInsert = (chIdx % 11) + 1;
-        ch.generatorPlugin = TransportModel.makeDefaultPluginSlot(ch.name, ch.uri, true, 0);
-        model.channels ~= ch;
-        model.selectedChannelIndex = chIdx;
-        model.saveCurrentPatternToStore();
-        client.sendRequest(makeSequencerAddChannelRequest(
-            ch.index, ch.name, ch.uri, ch.category, ch.color, ch.mixerInsert));
-        model.hintText = format("Added new channel '%s' -> Insert %d", ch.name, ch.mixerInsert);
-        refreshUi();
+        static struct GenChoice { string name; string uri; string category; }
+        GenChoice[] choices;
+        foreach (de; DEFAULT_BROWSER_ENTRIES) {
+            if (de.category == BrowserCategory.PLUGINS && de.isInstrument) {
+                const string cleanName = de.label.startsWith("Gen: ") ? de.label[5 .. $] : de.label;
+                const string cat = canFind(toLower(cleanName), "drum") || canFind(toLower(cleanName), "dr-8")
+                    ? "Drums" : "Synths";
+                choices ~= GenChoice(cleanName, de.uri, cat);
+            }
+        }
+        foreach (pd; model.scannedPlugins) {
+            if (pd.is_instrument) {
+                choices ~= GenChoice("VST3: " ~ (pd.name.length > 0 ? pd.name : baseName(pd.path)), pd.path, "VST3");
+            }
+        }
+        auto m = new MenuItem();
+        foreach (i, c; choices) {
+            m.add(new Action(860 + cast(int)i, toUTF32(c.name)));
+        }
+        showMenuPopup(channelRack, m, (int id) {
+            const int ci = id - 860;
+            if (ci >= 0 && ci < cast(int)choices.length) {
+                model.saveCurrentPatternToStore();
+                const int chIdx = cast(int)model.channels.length;
+                ChannelState ch;
+                ch.initDefaults();
+                ch.index = chIdx;
+                ch.name = choices[ci].name;
+                ch.uri = choices[ci].uri;
+                ch.category = choices[ci].category;
+                ch.color = model.palette().clipPattern;
+                ch.mixerInsert = (chIdx % 11) + 1;
+                ch.generatorPlugin = TransportModel.makeDefaultPluginSlot(ch.name, ch.uri, true, 0);
+                model.channels ~= ch;
+                model.selectedChannelIndex = chIdx;
+                model.saveCurrentPatternToStore();
+                client.sendRequest(makeSequencerAddChannelRequest(
+                    ch.index, ch.name, ch.uri, ch.category, ch.color, ch.mixerInsert));
+                model.hintText = format("Added channel '%s' -> Insert %d", ch.name, ch.mixerInsert);
+                refreshUi();
+            }
+        });
     };
 
     // Playlist Callbacks
@@ -1173,14 +1219,17 @@ extern (C) int UIAppMain(string[] args) {
             client.sendRequest(makeAddPatternTimelineClipRequest(
                 trackIdx, clip.patternIndex, cast(float)startSec, durBeats));
         } else if (clip.kind == PlaylistClipKind.AUDIO) {
-            static immutable string[2] AUDIO_NAMES = ["loop140.wav", "bb140.wav"];
-            static immutable string[2] AUDIO_PATHS = ["testdata/loop140.wav", "testdata/bb140.wav"];
-            const size_t ai = (model.activePickerIndex >= 0) ? (cast(size_t)model.activePickerIndex % 2) : 0;
-            clip.name = AUDIO_NAMES[ai];
+            string chosenPath = model.samplePreview.path.length > 0
+                ? model.samplePreview.path
+                : ((model.activePickerIndex == 1) ? "testdata/bb140.wav" : "testdata/loop140.wav");
+            string resolved = resolveAssetPath(chosenPath);
+            if (resolved.length == 0) resolved = chosenPath;
+            clip.name = baseName(resolved);
+            clip.path = resolved;
             clip.color = model.palette().clipAudio;
-            auto realPeaks = loadWavPreviewPeaks(AUDIO_PATHS[ai], 512);
+            auto realPeaks = loadWavPreviewPeaks(resolved, 512);
             clip.waveform = realPeaks.length > 0 ? realPeaks : model.samplePreview.waveform.dup;
-            client.sendRequest(makeAddTimelineClipRequest(trackIdx, AUDIO_PATHS[ai], cast(float)startSec, 8.0f));
+            client.sendRequest(makeAddTimelineClipRequest(trackIdx, resolved, cast(float)startSec, 4.0f));
         } else {
             clip.name = model.activeAutomationTargetName.length > 0
                 ? model.activeAutomationTargetName : "Automation Env";
@@ -1299,8 +1348,9 @@ extern (C) int UIAppMain(string[] args) {
     };
     playlistCanvas.onDoubleClickClip = (int trackIdx, int clipIdx, int patternIdx, PlaylistClipKind kind) {
         if (kind == PlaylistClipKind.PATTERN) {
-            model.selectPattern(patternIdx);
-            client.sendRequest(makeSequencerSelectPatternRequest(patternIdx));
+            model.selectPatternForPianoRoll(patternIdx);
+            client.sendRequest(makeSequencerSelectPatternRequest(model.selectedPatternIndex));
+            pianoRollCanvas.frameActiveNotes();
             desktop.showWindow("win_piano_roll");
         } else if (kind == PlaylistClipKind.MIDI) {
             model.activeMidi.trackIndex = trackIdx;
@@ -1319,6 +1369,11 @@ extern (C) int UIAppMain(string[] args) {
                     break;
                 }
             }
+            if (wavPath.length == 0 && clipName.length > 0 && clipName != "Audio Clip") {
+                wavPath = "testdata/" ~ clipName;
+            }
+            const string resolved = resolveAssetPath(wavPath);
+            if (resolved.length > 0) wavPath = resolved;
             if (wavPath.length > 0) {
                 client.sendRequest(makeAudioEditorLoadRequest(wavPath));
                 client.sendRequest(makeAudioEditorPreviewPlayRequest());
@@ -1423,15 +1478,21 @@ extern (C) int UIAppMain(string[] args) {
     };
     mixerCanvas.onPromptLoadFx = (int trackIdx, int slotIdx) {
         static struct FxPreset { string name; string uri; }
-        static immutable FxPreset[8] PRESETS = [
+        static immutable FxPreset[14] PRESETS = [
             FxPreset("Parametric EQ", "builtin://eq"),
             FxPreset("Compressor", "builtin://compressor"),
             FxPreset("Stereo Reverb", "builtin://reverb"),
             FxPreset("Ping-Pong Delay", "builtin://delay"),
             FxPreset("HOTT Multiband", "builtin://hott"),
             FxPreset("Fruity Limiter", "builtin://limiter"),
+            FxPreset("Maxim", "builtin://maxim"),
+            FxPreset("Phaser", "builtin://phaser"),
             FxPreset("Chorus", "builtin://chorus"),
             FxPreset("Bitcrusher", "builtin://bitcrusher"),
+            FxPreset("Envelope Shaper", "builtin://envelope_shaper"),
+            FxPreset("Convolver", "builtin://convolver"),
+            FxPreset("Vocodey", "builtin://vocodey"),
+            FxPreset("Stereo Width", "builtin://stereo_width"),
         ];
         FxPreset[] choices;
         foreach (p; PRESETS) choices ~= p;
@@ -1452,18 +1513,16 @@ extern (C) int UIAppMain(string[] args) {
                 auto slot = TransportModel.makeDefaultPluginSlot(choices[ci].name, choices[ci].uri, false, actualSlot);
                 model.tracks[tArr].plugins ~= slot;
                 client.sendRequest(makePluginLoadRequest(trackIdx, choices[ci].uri, actualSlot));
-                pluginWrapper.setTargetMixerFx(trackIdx, actualSlot);
-                winPlugin.windowTitle = format("Fruity Wrapper - Insert %d Slot %d", trackIdx, actualSlot + 1);
-                desktop.showWindow("win_plugin");
+                openWrapperForTarget(WrapperTargetKind.MIXER_FX, trackIdx, actualSlot,
+                                     format("Fruity Wrapper - Insert %d Slot %d", trackIdx, actualSlot + 1));
                 model.hintText = format("Loaded '%s' -> Insert %d Slot %d", choices[ci].name, trackIdx, actualSlot + 1);
                 refreshUi();
             }
         });
     };
     mixerCanvas.onOpenFxPlugin = (int trackIdx, int slotIdx) {
-        pluginWrapper.setTargetMixerFx(trackIdx, slotIdx);
-        winPlugin.windowTitle = format("Fruity Wrapper - Insert %d Slot %d", trackIdx, slotIdx + 1);
-        desktop.showWindow("win_plugin");
+        openWrapperForTarget(WrapperTargetKind.MIXER_FX, trackIdx, slotIdx,
+                             format("Fruity Wrapper - Insert %d Slot %d", trackIdx, slotIdx + 1));
         refreshUi();
     };
     mixerCanvas.onEqChange = (int trackIdx, float low, float mid, float high) {

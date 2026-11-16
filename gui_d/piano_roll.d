@@ -128,10 +128,12 @@ void drawPianoRollCanvas(
     }
 
     // Target Channel pill (< Name >)
-    string targetName = "Acid Bass";
+    string targetName = "MIDI Clip";
     if (model && model.activeMidi.channelIndex >= 0 &&
         model.activeMidi.channelIndex < cast(int)model.channels.length) {
         targetName = model.channels[model.activeMidi.channelIndex].name;
+    } else if (model && model.channels.length > 0 && model.activeMidi.channelIndex >= 0) {
+        targetName = model.channels[0].name;
     }
     drawThemeCard(buf, m.tgtRc, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
     drawDawIcon(buf, Rect(m.tgtRc.left + dp(3), m.tgtRc.top + dp(3), m.tgtRc.left + dp(17), m.tgtRc.bottom - dp(3)),
@@ -223,10 +225,11 @@ void drawPianoRollCanvas(
         }
     }
 
-    // 4. Ghost Notes (notes from other channels in the active pattern)
+    // 4. Ghost Notes (notes + step triggers from other channels in the active pattern)
     const int res = (model && model.activeMidi.resolution > 0) ? model.activeMidi.resolution : 480;
     const double resF = cast(double)res;
-    if (ghostOn && model) {
+    const int patLen = model ? model.activePatternLengthSteps() : 16;
+    if (ghostOn && model && model.activeMidi.channelIndex >= 0) {
         foreach (ci, const ref ch; model.channels) {
             if (cast(int)ci == model.activeMidi.channelIndex) continue;
             foreach (const ref gev; ch.notes) {
@@ -247,11 +250,52 @@ void drawPianoRollCanvas(
                     buf.fillRect(Rect(gx0, y0, gx1, y1), pal.noteGhost);
                 }
             }
+            if (ch.notes.length == 0) {
+                foreach (s; 0 .. patLen) {
+                    if (s >= cast(int)ch.steps.length || !ch.steps[s]) continue;
+                    const int gp = 60 + cast(int)(ch.stepPitches[s] * 12.0f + (ch.stepPitches[s] >= 0.0f ? 0.5f : -0.5f));
+                    if (gp < pitchLow || gp > pitchHigh) continue;
+                    const int row = pitchHigh - gp;
+                    const int y0 = gridTop + row * rowHeight + dp(2);
+                    const int y1 = y0 + rowHeight - dp(4);
+                    if (y1 <= gridTop || y0 >= velTop) continue;
+                    const double startBeat = s * 0.25;
+                    int gx0 = gridLeft + cast(int)((startBeat - scrollBeats) * pixelsPerBeat + 0.5);
+                    int gx1 = gridLeft + cast(int)((startBeat + 0.22 - scrollBeats) * pixelsPerBeat + 0.5);
+                    if (gx1 > gridLeft && gx0 < gridRight) {
+                        if (gx0 < gridLeft) gx0 = gridLeft;
+                        if (gx1 > gridRight) gx1 = gridRight;
+                        buf.fillRect(Rect(gx0, y0, gx1, y1), pal.noteGhost);
+                    }
+                }
+            }
         }
     }
 
-    // 5. Active MIDI Note Bars
+    // 5. Active MIDI Note Bars (or active channel's step-sequencer triggers when notes[] is empty)
     const(MidiEvent)[] events = model ? model.activeMidi.events : null;
+    if (events.length == 0 && model && model.activeMidi.channelIndex >= 0 &&
+        model.activeMidi.channelIndex < cast(int)model.channels.length) {
+        const ref actCh = model.channels[model.activeMidi.channelIndex];
+        foreach (s; 0 .. patLen) {
+            if (s >= cast(int)actCh.steps.length || !actCh.steps[s]) continue;
+            const int p = 60 + cast(int)(actCh.stepPitches[s] * 12.0f + (actCh.stepPitches[s] >= 0.0f ? 0.5f : -0.5f));
+            if (p < pitchLow || p > pitchHigh) continue;
+            const int row = pitchHigh - p;
+            const int y0 = gridTop + row * rowHeight + bw;
+            const int y1 = y0 + rowHeight - bw * 2;
+            if (y1 <= gridTop || y0 >= velTop) continue;
+            const double startBeat = s * 0.25;
+            int x0 = gridLeft + cast(int)((startBeat - scrollBeats) * pixelsPerBeat + 0.5);
+            int x1 = gridLeft + cast(int)((startBeat + 0.22 - scrollBeats) * pixelsPerBeat + 0.5);
+            if (x1 <= x0 + dp(4)) x1 = x0 + dp(6);
+            if (x1 <= gridLeft || x0 >= gridRight) continue;
+            if (x0 < gridLeft) x0 = gridLeft;
+            if (x1 > gridRight) x1 = gridRight;
+            Rect stepRc = Rect(x0, y0, x1, y1);
+            drawThemeCard(buf, stepRc, adjustColorBrightness(pal.noteFill, -18), pal.accentCyan, pal, 2.0f, false);
+        }
+    }
     foreach (idx, const ref ev; events) {
         if (ev.cc_number != 0 || ev.velocity == 0) continue;
         const int p = cast(int)ev.pitch;
@@ -372,6 +416,30 @@ class PianoRollCanvasWidget : Widget {
         const int ch = model_.activeMidi.channelIndex;
         if (ch >= 0 && ch < cast(int)model_.channels.length) {
             model_.channels[ch].notes = model_.activeMidi.events.dup;
+        }
+    }
+
+    void frameActiveNotes() {
+        if (!model_ || model_.activeMidi.events.length == 0) return;
+        int minP = 127;
+        int maxP = 0;
+        bool any = false;
+        foreach (const ref ev; model_.activeMidi.events) {
+            if (ev.cc_number != 0 || ev.velocity == 0) continue;
+            const int p = cast(int)ev.pitch;
+            if (p < minP) minP = p;
+            if (p > maxP) maxP = p;
+            any = true;
+        }
+        if (!any) return;
+        const int span = pitchHigh - pitchLow;
+        if (minP < pitchLow || maxP > pitchHigh) {
+            int center = (minP + maxP) / 2;
+            int nl = center - span / 2;
+            if (nl < 24) nl = 24;
+            if (nl + span > 108) nl = 108 - span;
+            pitchLow = nl;
+            pitchHigh = nl + span;
         }
     }
 

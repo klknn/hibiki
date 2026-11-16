@@ -2,7 +2,7 @@ module gui_d.ipc_client;
 
 import core.stdc.string : memcpy;
 import dproto.proto : decodeProto, encodeProto;
-import pb.commands : AutomationCmd, MidiCmd, PluginCmd, ProjectCmd, Request, SendVirtualMidi,
+import pb.commands : AutomationCmd, DrumPadCmd, MidiCmd, PluginCmd, ProjectCmd, Request, SendVirtualMidi,
                        SequencerCmd, TrackCmd, TransportCmd;
 import pb.core : Clip, EntityRef, MidiEvent, PbAutoPoint = AutomationPoint,
                    PbPlaybackMode = PlaybackMode, TrackType;
@@ -684,6 +684,118 @@ Request makeAutomationUpdatePointsRequest(int trackIdx, int laneIdx, uint clipId
     return req;
 }
 
+Request makePluginGetEditorFrameRequest(int trackIdx, int pluginIdx) @safe {
+    Request req;
+    PluginCmd cmd;
+    cmd.action = PluginCmd.Action.ACTION_GET_EDITOR_FRAME;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.plugin_index.set(cast(uint)pluginIdx);
+    cmd.target = target;
+    req.plugin.set(cmd);
+    return req;
+}
+
+Request makePluginSendEditorInputRequest(
+    int trackIdx,
+    int pluginIdx,
+    int inputType,
+    int x,
+    int y,
+    int button = 0,
+    int key = 0,
+    int delta = 0
+) @safe {
+    Request req;
+    PluginCmd cmd;
+    cmd.action = PluginCmd.Action.ACTION_SEND_EDITOR_INPUT;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.plugin_index.set(cast(uint)pluginIdx);
+    cmd.target = target;
+    cmd.input_type = inputType;
+    cmd.input_x = x;
+    cmd.input_y = y;
+    cmd.input_button = button;
+    cmd.input_key = key;
+    cmd.input_delta = delta;
+    req.plugin.set(cmd);
+    return req;
+}
+
+Request makePluginStopGuiRequest(int trackIdx, int pluginIdx) @safe {
+    Request req;
+    PluginCmd cmd;
+    cmd.action = PluginCmd.Action.ACTION_STOP_GUI;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.plugin_index.set(cast(uint)pluginIdx);
+    cmd.target = target;
+    req.plugin.set(cmd);
+    return req;
+}
+
+Request makePluginLoadSampleRequest(int trackIdx, int pluginIdx, string samplePath) @safe {
+    Request req;
+    PluginCmd cmd;
+    cmd.action = PluginCmd.Action.ACTION_LOAD_SAMPLE;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.plugin_index.set(cast(uint)pluginIdx);
+    cmd.target = target;
+    cmd.sample_path = samplePath;
+    req.plugin.set(cmd);
+    return req;
+}
+
+Request makeDrumPadLoadSampleRequest(int trackIdx, int pluginIdx, int padIdx, string samplePath) @safe {
+    Request req;
+    DrumPadCmd cmd;
+    cmd.action = DrumPadCmd.Action.ACTION_LOAD_SAMPLE;
+    cmd.track_index = cast(uint)trackIdx;
+    cmd.plugin_index = cast(uint)pluginIdx;
+    cmd.pad_index = cast(uint)padIdx;
+    cmd.sample_path = samplePath;
+    req.drum_pad.set(cmd);
+    return req;
+}
+
+Request makeDrumPadSetVolumeRequest(int trackIdx, int pluginIdx, int padIdx, float vol) @safe {
+    Request req;
+    DrumPadCmd cmd;
+    cmd.action = DrumPadCmd.Action.ACTION_SET_VOLUME;
+    cmd.track_index = cast(uint)trackIdx;
+    cmd.plugin_index = cast(uint)pluginIdx;
+    cmd.pad_index = cast(uint)padIdx;
+    cmd.param_value = vol;
+    req.drum_pad.set(cmd);
+    return req;
+}
+
+Request makeDrumPadSetMuteRequest(int trackIdx, int pluginIdx, int padIdx, bool muted) @safe {
+    Request req;
+    DrumPadCmd cmd;
+    cmd.action = DrumPadCmd.Action.ACTION_SET_MUTE;
+    cmd.track_index = cast(uint)trackIdx;
+    cmd.plugin_index = cast(uint)pluginIdx;
+    cmd.pad_index = cast(uint)padIdx;
+    cmd.param_value = muted ? 1.0f : 0.0f;
+    req.drum_pad.set(cmd);
+    return req;
+}
+
+Request makeDrumPadSetSoloRequest(int trackIdx, int pluginIdx, int padIdx, bool soloed) @safe {
+    Request req;
+    DrumPadCmd cmd;
+    cmd.action = DrumPadCmd.Action.ACTION_SET_SOLO;
+    cmd.track_index = cast(uint)trackIdx;
+    cmd.plugin_index = cast(uint)pluginIdx;
+    cmd.pad_index = cast(uint)padIdx;
+    cmd.param_value = soloed ? 1.0f : 0.0f;
+    req.drum_pad.set(cmd);
+    return req;
+}
+
 /// Manages the `hbk-play` child process and its binary Protobuf IPC pipes.
 class EngineProcessClient {
     import core.atomic : atomicLoad, atomicStore;
@@ -947,4 +1059,32 @@ unittest {
     assert(decodeProto(encodeLengthPrefixedRequest(rAuto)[4 .. $], autoDec));
     assert(autoDec.automation.hasValue && autoDec.automation.value.clip_index == 1);
     assert(autoDec.automation.value.points.length == 1);
+
+    // 7. Test Phase 4 remote VST3 editor, sampler WAV load, and DrumPad IPC builders
+    auto rFrame = makePluginGetEditorFrameRequest(1, 0);
+    Request frameDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rFrame)[4 .. $], frameDec));
+    assert(frameDec.plugin.hasValue && frameDec.plugin.value.action == PluginCmd.Action.ACTION_GET_EDITOR_FRAME);
+
+    auto rIn = makePluginSendEditorInputRequest(1, 0, 1, 120, 45, 0, 0, 0);
+    Request inDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rIn)[4 .. $], inDec));
+    assert(inDec.plugin.hasValue && inDec.plugin.value.action == PluginCmd.Action.ACTION_SEND_EDITOR_INPUT);
+    assert(inDec.plugin.value.input_x == 120 && inDec.plugin.value.input_y == 45);
+
+    auto rStopGui = makePluginStopGuiRequest(1, 0);
+    Request stopGuiDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rStopGui)[4 .. $], stopGuiDec));
+    assert(stopGuiDec.plugin.hasValue && stopGuiDec.plugin.value.action == PluginCmd.Action.ACTION_STOP_GUI);
+
+    auto rSmp = makePluginLoadSampleRequest(100, 0, "testdata/kick.wav");
+    Request smpDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rSmp)[4 .. $], smpDec));
+    assert(smpDec.plugin.hasValue && smpDec.plugin.value.sample_path == "testdata/kick.wav");
+
+    auto rDp = makeDrumPadLoadSampleRequest(100, 0, 2, "testdata/snare.wav");
+    Request dpDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rDp)[4 .. $], dpDec));
+    assert(dpDec.drum_pad.hasValue && dpDec.drum_pad.value.pad_index == 2);
+    assert(dpDec.drum_pad.value.sample_path == "testdata/snare.wav");
 }

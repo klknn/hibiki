@@ -112,6 +112,20 @@ struct ParamItemState {
     float currentValue = 0.5f;
 }
 
+/// Per-pad state for `builtin://drum_machine`.
+struct DrumPadSlotState {
+    int padIndex = 0;
+    string name = "Pad";
+    string sampleName;
+    float volume = 0.8f;
+    float pan = 0.0f;
+    bool mute = false;
+    bool solo = false;
+    uint triggerNote = 36;
+    float[] sampleWaveform;
+    bool activeFlash = false;
+}
+
 /// Loaded plugin slot on a Channel or Mixer Insert FX Rack.
 struct PluginSlotState {
     int pluginIndex = 0;
@@ -123,6 +137,24 @@ struct PluginSlotState {
     int presetIndex = 0;
     string[] presets;
     ParamItemState[] params;
+
+    // Phase 4 live DSP telemetry, sampler waveform, drum pads, and remote VST3 editor frame
+    float[] specInDb;
+    float[] specOutDb;
+    float meterInDb = -96.0f;
+    float meterOutDb = -96.0f;
+    float meterGrDb = 0.0f;
+    bool hasMetering = false;
+    float[] scopeL;
+    float[] scopeR;
+    string sampleName;
+    float[] sampleWaveform;
+    double sampleDurationSec = 0.0;
+    DrumPadSlotState[] drumPads;
+    bool remoteEditorOpen = false;
+    int editorW = 0;
+    int editorH = 0;
+    ubyte[] editorRgba;
 }
 
 /// Channel Rack generator/sampler row with 16-step sequencer, Graph Editor values, and mixer routing.
@@ -736,8 +768,15 @@ struct TransportModel {
         return tracks.length - 1;
     }
 
-    /// Returns pointer to the selected track's `PluginSlotState` if present.
+    /// Returns pointer to the selected track or channel generator's `PluginSlotState` if present.
     PluginSlotState* findPlugin(int trackIdx, int pluginIdx) @trusted {
+        if (trackIdx >= 100) {
+            const int chIdx = trackIdx - 100;
+            if (chIdx >= 0 && chIdx < cast(int)channels.length) {
+                return &channels[chIdx].generatorPlugin;
+            }
+            return null;
+        }
         foreach (ref t; tracks) {
             if (t.index == trackIdx) {
                 foreach (ref p; t.plugins) {
@@ -886,12 +925,21 @@ struct TransportModel {
         }
         if (notif.param_list.hasValue) {
             const pl = notif.param_list.value;
+            PluginSlotState* target = findPlugin(pl.track_index, pl.plugin_index);
             PluginSlotState slot;
+            if (target !is null) {
+                slot = *target;
+            }
             slot.pluginIndex = pl.plugin_index;
-            slot.name = pl.plugin_name.length > 0 ? pl.plugin_name.idup : "Plugin";
+            if (pl.plugin_name.length > 0) slot.name = pl.plugin_name.idup;
+            else if (slot.name.length == 0) slot.name = "Plugin";
             slot.isInstrument = pl.is_instrument;
             slot.enabled = !pl.bypassed;
             if (pl.mix.hasValue) slot.mix = pl.mix.value;
+            if (slot.presets.length == 0) {
+                slot.presets = ["Default", "Warm Analog", "Punchy Club", "Wide Stereo", "Init"];
+            }
+            slot.params.length = 0;
             foreach (pm; pl.params) {
                 ParamItemState item;
                 item.id = pm.id;
@@ -905,17 +953,13 @@ struct TransportModel {
                 if (chIdx >= 0 && chIdx < cast(int)channels.length) {
                     channels[chIdx].generatorPlugin = slot;
                 }
+            } else if (target !is null) {
+                *target = slot;
+                selectedTrack = pl.track_index;
+                selectedPluginIndex = pl.plugin_index;
             } else {
                 const idx = ensureTrackIndex(pl.track_index);
-                bool updated = false;
-                foreach (ref existing; tracks[idx].plugins) {
-                    if (existing.pluginIndex == pl.plugin_index) {
-                        existing = slot;
-                        updated = true;
-                        break;
-                    }
-                }
-                if (!updated) tracks[idx].plugins ~= slot;
+                tracks[idx].plugins ~= slot;
                 selectedTrack = pl.track_index;
                 selectedPluginIndex = pl.plugin_index;
             }
@@ -1033,6 +1077,80 @@ struct TransportModel {
                     activeMidi.channelIndex = selectedChannelIndex;
                 }
                 activeMidi.events = channels[activeMidi.channelIndex].notes.dup;
+            }
+        }
+        if (notif.plugin_spectrum.hasValue) {
+            const ps = notif.plugin_spectrum.value;
+            if (auto plug = findPlugin(ps.track_index, ps.plugin_index)) {
+                plug.specInDb = ps.input_magnitudes.dup;
+                plug.specOutDb = ps.output_magnitudes.dup;
+            }
+        }
+        if (notif.plugin_metering.hasValue) {
+            const pm = notif.plugin_metering.value;
+            if (auto plug = findPlugin(pm.track_index, pm.plugin_index)) {
+                plug.meterInDb = pm.input_db;
+                plug.meterOutDb = pm.output_db;
+                plug.meterGrDb = pm.gain_reduction_db;
+                plug.hasMetering = true;
+            }
+        }
+        if (notif.plugin_scope_data.hasValue) {
+            const sc = notif.plugin_scope_data.value;
+            if (auto plug = findPlugin(sc.track_index, sc.plugin_index)) {
+                plug.scopeL = sc.left_samples.dup;
+                plug.scopeR = sc.right_samples.dup;
+            }
+        }
+        if (notif.plugin_sample_data.hasValue) {
+            const sd = notif.plugin_sample_data.value;
+            if (auto plug = findPlugin(sd.track_index, sd.plugin_index)) {
+                plug.sampleWaveform = sd.waveform.dup;
+                plug.sampleName = sd.sample_name.idup;
+                plug.sampleDurationSec = sd.sample_duration_sec;
+            }
+        }
+        if (notif.editor_frame_data.hasValue) {
+            const ef = notif.editor_frame_data.value;
+            if (auto plug = findPlugin(ef.track_index, ef.plugin_index)) {
+                if (ef.width > 0 && ef.height > 0 && ef.image_data.length >= cast(size_t)(ef.width * ef.height * 4)) {
+                    plug.editorW = ef.width;
+                    plug.editorH = ef.height;
+                    plug.editorRgba = ef.image_data.dup;
+                    plug.remoteEditorOpen = true;
+                }
+            }
+        }
+        if (notif.drum_pad.hasValue) {
+            const dp = notif.drum_pad.value;
+            if (auto plug = findPlugin(cast(int)dp.track_index, cast(int)dp.plugin_index)) {
+                const int pidx = cast(int)dp.pad_index;
+                ptrdiff_t found = -1;
+                foreach (i, const ref p; plug.drumPads) {
+                    if (p.padIndex == pidx) { found = cast(ptrdiff_t)i; break; }
+                }
+                if (found < 0 && pidx >= 0 && pidx < 32) {
+                    DrumPadSlotState np;
+                    np.padIndex = pidx;
+                    np.name = "Pad " ~ to!string(pidx + 1);
+                    np.triggerNote = cast(uint)(36 + pidx);
+                    plug.drumPads ~= np;
+                    found = cast(ptrdiff_t)plug.drumPads.length - 1;
+                }
+                if (found >= 0) {
+                    auto pad = &plug.drumPads[found];
+                    if (dp.type == 2) { // TYPE_PAD_TRIGGER
+                        pad.activeFlash = true;
+                    } else {
+                        pad.volume = dp.volume;
+                        pad.pan = dp.pan;
+                        pad.mute = dp.mute;
+                        pad.solo = dp.solo;
+                        if (dp.sample_name.length > 0) pad.sampleName = dp.sample_name.idup;
+                        if (dp.sample_waveform.length > 0) pad.sampleWaveform = dp.sample_waveform.dup;
+                        if (dp.trigger_note.hasValue) pad.triggerNote = dp.trigger_note.value;
+                    }
+                }
             }
         }
         if (notif.clear_project.hasValue) {
@@ -1308,4 +1426,55 @@ unittest {
         }
     }
     assert(foundPat);
+
+    // Phase 4: ParamList preserves presets/URI & telemetry notifications populate plugin slots
+    assert(model.channels[0].generatorPlugin.presets.length >= 4);
+    import pb.notifications : DrumPadNotification, PluginMeteringData, PluginSampleData, PluginScopeData;
+
+    Notification nMet;
+    PluginMeteringData pmd;
+    pmd.track_index = 1;
+    pmd.plugin_index = 0;
+    pmd.input_db = -12.0f;
+    pmd.output_db = -6.0f;
+    pmd.gain_reduction_db = -4.5f;
+    nMet.plugin_metering.set(pmd);
+    model.applyNotification(nMet);
+    assert(model.tracks[1].plugins[0].hasMetering);
+    assert(model.tracks[1].plugins[0].meterGrDb < -4.0f);
+
+    Notification nScp;
+    PluginScopeData pscp;
+    pscp.track_index = 4;
+    pscp.plugin_index = 1;
+    pscp.left_samples = [0.2f, -0.3f];
+    pscp.right_samples = [-0.2f, 0.3f];
+    nScp.plugin_scope_data.set(pscp);
+    model.applyNotification(nScp);
+    assert(model.tracks[4].plugins[1].scopeL.length == 2);
+
+    Notification nSmp;
+    PluginSampleData psd;
+    psd.track_index = 100;
+    psd.plugin_index = 0;
+    psd.sample_name = "kick_punch.wav";
+    psd.waveform = [0.8f, 0.4f, 0.1f];
+    psd.sample_duration_sec = 0.75;
+    nSmp.plugin_sample_data.set(psd);
+    model.applyNotification(nSmp);
+    assert(model.channels[0].generatorPlugin.sampleName == "kick_punch.wav");
+    assert(model.channels[0].generatorPlugin.sampleWaveform.length == 3);
+
+    Notification nPad;
+    DrumPadNotification dpn;
+    dpn.type = DrumPadNotification.Type.TYPE_PAD_STATE;
+    dpn.track_index = 100;
+    dpn.plugin_index = 0;
+    dpn.pad_index = 1;
+    dpn.sample_name = "snare.wav";
+    dpn.trigger_note.set(38u);
+    nPad.drum_pad.set(dpn);
+    model.applyNotification(nPad);
+    assert(model.channels[0].generatorPlugin.drumPads.length == 1);
+    assert(model.channels[0].generatorPlugin.drumPads[0].triggerNote == 38u);
 }

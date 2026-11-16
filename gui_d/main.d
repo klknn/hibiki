@@ -17,7 +17,7 @@ import gui_d.channel_rack : ChannelRackWidget;
 import gui_d.ipc_client;
 import gui_d.mixer_view : MixerCanvasWidget;
 import gui_d.piano_roll : PianoRollCanvasWidget;
-import gui_d.plugin_window : PluginWrapperWidget;
+import gui_d.plugin_window : PluginWrapperWidget, resolveActiveWrapperPlugin;
 import gui_d.theme : activeDawUiFontFace, applyFlatThemeOverrides, dp, FlCompactButton, FlThemeId,
     registerBundledDawFonts;
 import gui_d.timeline_view : beatDurationSec, TimelineCanvasWidget;
@@ -1190,6 +1190,51 @@ extern (C) int UIAppMain(string[] args) {
         model.hintText = format("Requested native editor GUI for track %d slot %d", trackIdx, plugIdx);
         refreshUi();
     };
+    pluginWrapper.onToggleRemoteEditor = (int trackIdx, int plugIdx, bool open) {
+        if (open) {
+            client.sendRequest(makePluginShowGuiRequest(trackIdx, plugIdx));
+            client.sendRequest(makePluginGetEditorFrameRequest(trackIdx, plugIdx));
+            model.hintText = format("Opened remote editor for track %d slot %d", trackIdx, plugIdx);
+        } else {
+            client.sendRequest(makePluginStopGuiRequest(trackIdx, plugIdx));
+            model.hintText = format("Closed remote editor for track %d slot %d", trackIdx, plugIdx);
+        }
+        refreshUi();
+    };
+    pluginWrapper.onEditorInput = (int trackIdx, int plugIdx, int inputType, int x, int y, int btn, int key, int delta) {
+        client.sendRequest(makePluginSendEditorInputRequest(
+            trackIdx, plugIdx, inputType, x, y, btn, key, delta));
+    };
+    pluginWrapper.onLoadSample = (int trackIdx, int plugIdx) {
+        import std.file : dirEntries, SpanMode;
+        string[] wavs;
+        if (exists("testdata")) {
+            foreach (e; dirEntries("testdata", "*.wav", SpanMode.depth)) {
+                wavs ~= e.name;
+            }
+        }
+        if (wavs.length == 0) {
+            model.hintText = "No .wav files found in testdata/";
+            refreshUi();
+            return;
+        }
+        auto m = new MenuItem();
+        foreach (i, wp; wavs) {
+            m.add(new Action(920 + cast(int)i, toUTF32(baseName(wp))));
+        }
+        showMenuPopup(pluginWrapper, m, (int id) {
+            const int wi = id - 920;
+            if (wi >= 0 && wi < cast(int)wavs.length) {
+                client.sendRequest(makePluginLoadSampleRequest(trackIdx, plugIdx, wavs[wi]));
+                model.hintText = format("Loading sample '%s' into track %d", baseName(wavs[wi]), trackIdx);
+                refreshUi();
+            }
+        });
+    };
+    pluginWrapper.onTriggerPad = (int trackIdx, uint notePitch) {
+        sendVirtualNote(trackIdx, notePitch);
+        refreshUi();
+    };
 
     int[uint] activeTypingNotes; // key: pitch -> trackIdx while key is held
 
@@ -1256,8 +1301,29 @@ extern (C) int UIAppMain(string[] args) {
         return false;
     };
 
-    // 33ms prototype playback & meter animation tick (only advances locally if engine is not connected)
+    int uiAnimTickCount = 0;
+    // 33ms animation & remote-GUI poll tick (local meter animation runs only if engine is not connected)
     root.onAnimationTick = () {
+        ++uiAnimTickCount;
+        if (winPlugin.visibility == Visibility.Visible) {
+            if (auto wp = resolveActiveWrapperPlugin(&model, pluginWrapper.targetKind,
+                                                     pluginWrapper.targetIndex, pluginWrapper.targetFxSlot)) {
+                if (client.isRunning() && wp.remoteEditorOpen && (uiAnimTickCount % 2) == 0) {
+                    client.sendRequest(makePluginGetEditorFrameRequest(
+                        pluginWrapper.resolvedTrackIndex(), wp.pluginIndex));
+                }
+                if ((uiAnimTickCount % 5) == 0) {
+                    bool flashed = false;
+                    foreach (ref pad; wp.drumPads) {
+                        if (pad.activeFlash) {
+                            pad.activeFlash = false;
+                            flashed = true;
+                        }
+                    }
+                    if (flashed) pluginWrapper.invalidate();
+                }
+            }
+        }
         if (!model.isPlaying) return;
         if (!client.isRunning()) {
             model.playheadPosSec += 0.033;

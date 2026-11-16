@@ -138,3 +138,11 @@ Each phase ends with `./tools/format.sh`, full Bazel `-c opt` tests, and a dedic
 ### Phase 6: Full Verification & Final Status Update
 - Run `./tools/format.sh`, `bazel test //... -c opt`, and `bazel build //gui_d:hibiki_gui //engine:hbk-play //engine:hbk-plugin-worker //engine:hbk-worker-daemon -c opt`.
 - Update `docs/d_v2.md` with verification results and commit.
+
+## Completion Status (`d` branch)
+- **Phases 0–5**: Implemented and committed on branch `d`.
+- **Verification**:
+  - `./tools/format.sh`: formatted 206 C++ files, 114 Java files, `BUILD` files, 4 `.proto` files; checked 74 D files.
+  - `bazel test //... -c opt`: **104 of 106 test targets passed** with 0 failures (`//android/app:hibiki_engine_playback_test` and `//android/app:melody_sequencer_integration_test` skipped).
+  - `bazel build //gui_d:hibiki_gui //engine:hbk-play //engine:hbk-plugin-worker //engine:hbk-worker-daemon -c opt`: exited `0` (all 4 targets built).
+  - Known testing limit: Full interactive GUI window rendering with live CoreAudio + real `.vst3` offscreen HWNDs was not executed in a live desktop windowing session; verification covers unit/integration/codec/DSP/render/offline-bounce suites under Bazel.

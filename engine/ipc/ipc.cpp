@@ -190,7 +190,8 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
                           const std::string& path, float start_time,
                           float duration, const std::vector<float>& waveform,
                           bool is_looped, int alias_source, float loop_interval,
-                          float fade_in_sec, float fade_out_sec, bool muted) {
+                          float fade_in_sec, float fade_out_sec, bool muted,
+                          int pattern_index) {
   hibiki::pb::notifications::Notification notification;
   auto* tci = notification.mutable_timeline_clip_info();
   tci->set_track_index(track_idx);
@@ -208,15 +209,19 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
   tci->set_fade_in_sec(fade_in_sec);
   tci->set_fade_out_sec(fade_out_sec);
   tci->set_muted(muted);
+  if (pattern_index >= 0) tci->set_pattern_index(pattern_index);
   sendProto(notification);
 }
 
 void sendPlayheadInfo(float position_sec, float bpm, bool is_playing,
                       bool loop_enabled, float loop_start, float loop_end,
                       bool is_recording, int cpu_percent,
-                      const std::vector<float>* oscilloscope) {
+                      const std::vector<float>* oscilloscope, int playback_mode,
+                      float swing_amount, int selected_pattern_index) {
   if (!is_recording && cpu_percent == 0 &&
-      (oscilloscope == nullptr || oscilloscope->empty())) {
+      (oscilloscope == nullptr || oscilloscope->empty()) &&
+      playback_mode == 0 && swing_amount == 0.0f &&
+      selected_pattern_index == 0) {
     sendDEncoded([&](uint8_t* b, int cap) {
       return d_encode_playhead_info(position_sec, bpm, is_playing, loop_enabled,
                                     loop_start, loop_end, b, cap);
@@ -240,6 +245,17 @@ void sendPlayheadInfo(float position_sec, float bpm, bool is_playing,
       phi->add_oscilloscope(s);
     }
   }
+  phi->set_playback_mode(static_cast<hibiki::pb::core::PlaybackMode>(
+      playback_mode == 1 ? hibiki::pb::core::PLAYBACK_MODE_SONG
+                         : hibiki::pb::core::PLAYBACK_MODE_PAT));
+  phi->set_swing_amount(swing_amount);
+  phi->set_selected_pattern_index(selected_pattern_index);
+  sendProto(notification);
+}
+
+void sendSequencerSync(const hibiki::pb::notifications::SequencerSync& sync) {
+  hibiki::pb::notifications::Notification notification;
+  *notification.mutable_sequencer_sync() = sync;
   sendProto(notification);
 }
 

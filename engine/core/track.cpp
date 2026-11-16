@@ -249,7 +249,15 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec,
                             double sample_rate) {
   std::lock_guard<DummyMutex> lock(mutex);
   std::unique_ptr<Clip> clip;
-  if (path.empty()) {
+  int pattern_idx = -1;
+  if (path.rfind("pattern://", 0) == 0) {
+    pattern_idx = std::atoi(path.c_str() + 10);
+    clip = std::make_unique<Clip>();
+    clip->type = Clip::Type::MIDI;
+    clip->path = path;
+    clip->duration_beats = (duration_beats > 0) ? duration_beats : 4.0;
+    clip->duration_sec = 0.0;
+  } else if (path.empty()) {
     // Create an empty MIDI clip for composing from scratch
     clip = std::make_unique<Clip>();
     clip->type = Clip::Type::MIDI;
@@ -262,9 +270,13 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec,
     clip = std::make_unique<Clip>(std::move(*result));
   }
 
-  std::string basename = path.empty() ? "New Clip" : path;
-  size_t pos = basename.find_last_of("/\\");
-  if (pos != std::string::npos) basename = basename.substr(pos + 1);
+  std::string basename = (pattern_idx >= 0)
+                             ? ("Pattern " + std::to_string(pattern_idx + 1))
+                             : (path.empty() ? "New Clip" : path);
+  if (pattern_idx < 0) {
+    size_t pos = basename.find_last_of("/\\");
+    if (pos != std::string::npos) basename = basename.substr(pos + 1);
+  }
   clip->name = basename;
 
   auto tc = std::make_unique<TimelineClip>();
@@ -272,6 +284,7 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec,
       clip->duration_sec;  // In seconds for audio clips, 0 for MIDI
   tc->duration_beats =
       clip->duration_beats;  // In beats for MIDI clips, 0 for audio
+  tc->pattern_index = pattern_idx;
   std::vector<float> waveform = clip->waveform_summary;  // copy before move
   tc->clip = std::move(clip);
   tc->start_time_sec = start_time_sec;
@@ -283,9 +296,9 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec,
   timeline_clips.push_back(std::move(tc));
   int clip_idx = (int)timeline_clips.size() - 1;
   // Use basename for display name
-  hibiki::sendTimelineClipInfo(index, clip_idx, basename, path,
-                               (float)start_time_sec, duration_for_gui,
-                               waveform);
+  hibiki::sendTimelineClipInfo(
+      index, clip_idx, basename, path, (float)start_time_sec, duration_for_gui,
+      waveform, false, -1, 0.0f, 0.0f, 0.0f, false, pattern_idx);
 }
 
 void Track::RemoveTimelineClip(int clip_index) {

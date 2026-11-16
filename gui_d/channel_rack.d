@@ -283,6 +283,11 @@ class ChannelRackWidget : Widget {
     void delegate(int channelIdx) onOpenPianoRoll;
     void delegate(int channelIdx, int mixerInsert) onRouteMixer;
     void delegate(int channelIdx, bool muted) onMuteChannel;
+    void delegate(int channelIdx, bool soloed) onSoloChannel;
+    void delegate(int channelIdx, float volume) onVolumeChannel;
+    void delegate(int channelIdx, float pan) onPanChannel;
+    void delegate(float swing) onSwingChanged;
+    void delegate(int channelIdx, int stepIdx, int graphParam, float value) onStepGraphChanged;
     void delegate() onAddChannelPrompt;
 
     this(string id, TransportModel* model) {
@@ -344,6 +349,7 @@ class ChannelRackWidget : Widget {
                 if (event.x >= _pos.left + dp(76) && event.x <= _pos.left + dp(170)) {
                     if (event.button == MouseButton.Right) {
                         model_.swingAmount = 0.0f;
+                        if (onSwingChanged !is null) onSwingChanged(0.0f);
                     } else {
                         dragTarget_ = DragTarget.SWING;
                         dragStartY_ = event.y;
@@ -397,6 +403,7 @@ class ChannelRackWidget : Widget {
             if (event.x >= _pos.left + dp(8) && event.x <= _pos.left + dp(22)) {
                 if (event.button == MouseButton.Right) {
                     ch.soloed = !ch.soloed;
+                    if (onSoloChannel !is null) onSoloChannel(ch.index, ch.soloed);
                 } else {
                     ch.muted = !ch.muted;
                     if (onMuteChannel !is null) onMuteChannel(ch.index, ch.muted);
@@ -410,6 +417,7 @@ class ChannelRackWidget : Widget {
                 if (event.button == MouseButton.Right) {
                     ch.pan = 0.0f;
                     model_.hintText = format("%s Pan: Center", ch.name);
+                    if (onPanChannel !is null) onPanChannel(ch.index, 0.0f);
                 } else {
                     dragTarget_ = DragTarget.CH_PAN;
                     dragChannelArrIdx_ = visIdx[visRow];
@@ -425,6 +433,7 @@ class ChannelRackWidget : Widget {
                 if (event.button == MouseButton.Right) {
                     ch.volume = 0.78f;
                     model_.hintText = format("%s Volume: 78%%", ch.name);
+                    if (onVolumeChannel !is null) onVolumeChannel(ch.index, 0.78f);
                 } else {
                     dragTarget_ = DragTarget.CH_VOL;
                     dragChannelArrIdx_ = visIdx[visRow];
@@ -496,6 +505,7 @@ class ChannelRackWidget : Widget {
                     if (v > 1.0f) v = 1.0f;
                     model_.swingAmount = v;
                     model_.hintText = format("Global Swing: %d%%", cast(int)(v * 100.0f + 0.5f));
+                    if (onSwingChanged !is null) onSwingChanged(v);
                     invalidate();
                     return true;
                 case DragTarget.CH_PAN:
@@ -507,6 +517,9 @@ class ChannelRackWidget : Widget {
                         model_.hintText = format("%s Pan: %+d%%",
                                                  model_.channels[dragChannelArrIdx_].name,
                                                  cast(int)(p * 100.0f));
+                        if (onPanChannel !is null) {
+                            onPanChannel(model_.channels[dragChannelArrIdx_].index, p);
+                        }
                         invalidate();
                     }
                     return true;
@@ -519,6 +532,9 @@ class ChannelRackWidget : Widget {
                         model_.hintText = format("%s Volume: %d%%",
                                                  model_.channels[dragChannelArrIdx_].name,
                                                  cast(int)(v * 100.0f + 0.5f));
+                        if (onVolumeChannel !is null) {
+                            onVolumeChannel(model_.channels[dragChannelArrIdx_].index, v);
+                        }
                         invalidate();
                     }
                     return true;
@@ -565,27 +581,35 @@ class ChannelRackWidget : Widget {
 
         foreach (ref ch; model_.channels) {
             if (ch.index == model_.selectedChannelIndex) {
+                float sentVal = norm;
                 final switch (model_.graphEditorMode) {
                     case GraphEditorMode.VELOCITY:
                         ch.stepVelocities[stepIdx] = norm;
+                        sentVal = norm;
                         model_.hintText = format("%s Step %d Velocity: %d%%",
                                                  ch.name, stepIdx + 1, cast(int)(norm * 100.0f + 0.5f));
                         break;
                     case GraphEditorMode.PITCH:
                         ch.stepPitches[stepIdx] = norm * 2.0f - 1.0f;
+                        sentVal = ch.stepPitches[stepIdx];
                         model_.hintText = format("%s Step %d Pitch: %+d%%",
                                                  ch.name, stepIdx + 1, cast(int)(ch.stepPitches[stepIdx] * 100.0f));
                         break;
                     case GraphEditorMode.PAN:
                         ch.stepPans[stepIdx] = norm * 2.0f - 1.0f;
+                        sentVal = ch.stepPans[stepIdx];
                         model_.hintText = format("%s Step %d Pan: %+d%%",
                                                  ch.name, stepIdx + 1, cast(int)(ch.stepPans[stepIdx] * 100.0f));
                         break;
                     case GraphEditorMode.SHIFT:
                         ch.stepShifts[stepIdx] = norm;
+                        sentVal = norm;
                         model_.hintText = format("%s Step %d Shift: %d%%",
                                                  ch.name, stepIdx + 1, cast(int)(norm * 100.0f + 0.5f));
                         break;
+                }
+                if (onStepGraphChanged !is null) {
+                    onStepGraphChanged(ch.index, stepIdx, cast(int)model_.graphEditorMode, sentVal);
                 }
                 invalidate();
                 break;

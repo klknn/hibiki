@@ -1826,4 +1826,154 @@ TEST_F(ProjectTest, BounceTrackClipWithFades) {
   std::remove(tmp_wav.c_str());
 }
 
+TEST_F(ProjectTest, SequencerSaveLoadAndPatternClipRoundTrip) {
+  hibiki::ProjectState state;
+  state.bpm = 136.0;
+  state.sample_rate = 44100.0;
+  state.playback_mode = hibiki::SequencerPlaybackMode::PAT;
+  state.swing_amount = 0.5f;
+  state.selected_pattern_index = 1;
+
+  hibiki::SequencerChannel ch;
+  ch.channel_index = 0;
+  ch.name = "DR-8 Kick";
+  ch.uri = "builtin://dr8_kick";
+  ch.category = "Drums";
+  ch.color = 0x00466480;
+  ch.mixer_insert = 3;
+  ch.volume = 0.85f;
+  ch.pan = -0.15f;
+  state.sequencer_channels.push_back(ch);
+
+  hibiki::SequencerPattern p0;
+  p0.pattern_index = 0;
+  p0.name = "Intro";
+  p0.length_steps = 16;
+  hibiki::SequencerPattern p1;
+  p1.pattern_index = 1;
+  p1.name = "Drop";
+  p1.length_steps = 16;
+  hibiki::ChannelPatternStepData cpd;
+  cpd.steps[0] = true;
+  cpd.steps[1] = true;
+  cpd.step_velocities[1] = 0.6f;
+  cpd.step_pitches[1] = 0.5f;
+  cpd.step_pans[1] = 0.4f;
+  cpd.step_shifts[1] = 0.25f;
+  hibiki::pb::core::MidiEvent ev;
+  ev.set_tick(480);
+  ev.set_pitch(67);
+  ev.set_duration_ticks(240);
+  ev.set_velocity(112);
+  cpd.notes.push_back(ev);
+  p1.channels[0] = cpd;
+  state.sequencer_patterns = {p0, p1};
+
+  auto* t1 = hibiki::GetOrCreateTrack(state, 1);
+  t1->AddTimelineClip("pattern://1", 0.0, state.bpm, 4.0);
+
+  auto data = hibiki::CaptureProjectState(state);
+  hibiki::ProjectState restored;
+  restored.sample_rate = 44100.0;
+  ASSERT_THAT(hibiki::ApplyProjectState(restored, data), IsOk());
+
+  EXPECT_EQ(restored.playback_mode, hibiki::SequencerPlaybackMode::PAT);
+  EXPECT_FLOAT_EQ(restored.swing_amount, 0.5f);
+  EXPECT_EQ(restored.selected_pattern_index, 1);
+  ASSERT_EQ(restored.sequencer_channels.size(), 1u);
+  EXPECT_EQ(restored.sequencer_channels[0].uri, "builtin://dr8_kick");
+  EXPECT_EQ(restored.sequencer_channels[0].mixer_insert, 3);
+  ASSERT_EQ(restored.sequencer_patterns.size(), 2u);
+  ASSERT_NE(restored.sequencer_patterns[1].channels.find(0),
+            restored.sequencer_patterns[1].channels.end());
+  EXPECT_TRUE(restored.sequencer_patterns[1].channels[0].steps[1]);
+  EXPECT_FLOAT_EQ(restored.sequencer_patterns[1].channels[0].step_shifts[1],
+                  0.25f);
+  ASSERT_EQ(restored.sequencer_patterns[1].channels[0].notes.size(), 1u);
+  EXPECT_EQ(restored.sequencer_patterns[1].channels[0].notes[0].pitch(), 67u);
+  ASSERT_EQ(restored.tracks[1]->timeline_clips.size(), 1u);
+  EXPECT_EQ(restored.tracks[1]->timeline_clips[0]->pattern_index, 1);
+}
+
+TEST_F(ProjectTest, CollectPatternBlockMidiEventsSwingAndWrap) {
+  hibiki::SequencerPattern pat;
+  pat.pattern_index = 0;
+  pat.length_steps = 16;
+  hibiki::ChannelPatternStepData ch;
+  ch.steps[1] = true;  // Odd 16th step -> affected by Swing!
+  ch.step_velocities[1] = 0.9f;
+  pat.channels[0] = ch;
+
+  const double bpm = 120.0;  // 0.5s/beat -> 1 step = 0.25 beats = 0.125s
+  const float sr = 44100.0f;
+  std::vector<hibiki::MidiNoteEvent> events;
+  // With swing = 1.0, step 1 fires at 0.25 + 0.5 * 0.25 = 0.375 beats.
+  hibiki::CollectPatternBlockMidiEvents(
+      pat, /*ch_idx=*/0, /*swing_amount=*/1.0f, /*loop_beats=*/4.0,
+      /*win_start_beats=*/0.25, /*block_dur_beats=*/0.25, bpm, sr,
+      /*block_size=*/5512, /*wrap_loop=*/true, events);
+
+  bool saw_note_on = false;
+  for (const auto& ev : events) {
+    if (ev.isNoteOn) {
+      saw_note_on = true;
+      EXPECT_GT(ev.sampleOffset, 2000)
+          << "Swing should delay odd step past start of step 1 window";
+    }
+  }
+  EXPECT_TRUE(saw_note_on);
+}
+
+TEST_F(ProjectTest, BounceProjectRendersRoutedGeneratorInPatMode) {
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+  state.playback_mode = hibiki::SequencerPlaybackMode::PAT;
+  state.selected_pattern_index = 0;
+
+  auto* master = hibiki::GetOrCreateTrack(state, 0);
+  master->track_type = hibiki::Track::TrackType::MASTER;
+  master->volume = 1.0f;
+
+  auto* insert1 = hibiki::GetOrCreateTrack(state, 1);
+  insert1->track_type = hibiki::Track::TrackType::GROUP;
+  insert1->output_track_index = 0;
+  insert1->volume = 1.0f;
+
+  auto* gen0 = hibiki::GetOrCreateTrack(state, 100);
+  gen0->track_type = hibiki::Track::TrackType::NORMAL;
+  gen0->output_track_index = 1;
+  gen0->volume = 1.0f;
+  ASSERT_GE(gen0->LoadPlugin("builtin://3xosc", 0, state.sample_rate).index, 0);
+
+  hibiki::SequencerChannel ch;
+  ch.channel_index = 0;
+  ch.name = "3x Osc";
+  ch.uri = "builtin://3xosc";
+  ch.mixer_insert = 1;
+  state.sequencer_channels.push_back(ch);
+
+  hibiki::SequencerPattern pat;
+  pat.pattern_index = 0;
+  pat.length_steps = 16;
+  hibiki::ChannelPatternStepData cpd;
+  cpd.steps[0] = true;
+  cpd.steps[2] = true;
+  pat.channels[0] = cpd;
+  state.sequencer_patterns.push_back(pat);
+
+  const std::string out_wav = "test_bounce_pat_seq.wav";
+  hibiki::BounceProject(state, out_wav);
+
+  std::vector<float> audio;
+  int nch = 0;
+  double dur = 0.0;
+  ASSERT_THAT(hibiki::LoadWav(out_wav, audio, nch, dur), IsOk());
+  float peak = 0.0f;
+  for (float s : audio) peak = std::max(peak, std::abs(s));
+  EXPECT_GT(peak, 0.01f)
+      << "Routed generator in PAT mode should produce audible WAV";
+  std::remove(out_wav.c_str());
+}
+
 }  // namespace hibiki

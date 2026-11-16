@@ -12,6 +12,7 @@ cc_library(
         "modulation_commands.cpp",
         "plugin_commands.cpp",
         "project_commands.cpp",
+        "sequencer_commands.cpp",
         "track_commands.cpp",
         "transport_commands.cpp",
     ],

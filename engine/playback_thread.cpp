@@ -202,7 +202,9 @@ void sendNotificationTick(ProjectState& state) {
                            state.is_timeline_playing, state.loop_enabled,
                            (float)state.loop_start_sec,
                            (float)state.loop_end_sec, state.is_recording,
-                           cpu_pct, &osc_copy);
+                           cpu_pct, &osc_copy,
+                           static_cast<int>(state.playback_mode),
+                           state.swing_amount, state.selected_pattern_index);
 
   hibiki::pb::notifications::Notification notification;
   auto* tl = notification.mutable_track_levels();
@@ -401,11 +403,15 @@ void playback_thread(ProjectState& state) {
     {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
 
-      bool any_soloed = false;
+      bool any_normal_soloed = false;
+      bool any_bus_soloed = false;
       for (const auto& sp : state.tracks) {
-        if (sp.second->soloed) {
-          any_soloed = true;
-          break;
+        if (!sp.second->soloed) continue;
+        if (sp.second->track_type == Track::TrackType::NORMAL) {
+          any_normal_soloed = true;
+        } else if (sp.second->track_type == Track::TrackType::GROUP ||
+                   sp.second->track_type == Track::TrackType::AUX) {
+          any_bus_soloed = true;
         }
       }
 
@@ -474,7 +480,9 @@ void playback_thread(ProjectState& state) {
           std::vector<MidiNoteEvent> timelineMidiEvents;
           if (state.is_timeline_playing) {
             for (const auto& tc : track->timeline_clips) {
-              if (!tc->clip || tc->clip->type != Clip::Type::MIDI) continue;
+              if (tc->muted || tc->pattern_index >= 0 || !tc->clip ||
+                  tc->clip->type != Clip::Type::MIDI)
+                continue;
               double clip_duration = (tc->duration_beats > 0)
                                          ? tc->duration_beats * 60.0 / state.bpm
                                          : tc->duration_sec;
@@ -546,6 +554,53 @@ void playback_thread(ProjectState& state) {
                   e.isNoteOn = hibiki::isNoteOn(me);
                   e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
                   timelineMidiEvents.push_back(e);
+                }
+              }
+            }
+
+            // 1b-seq. Channel Rack PAT / SONG pattern playback (generator
+            // tracks >= 100)
+            if (track_idx >= 100 && !state.sequencer_patterns.empty()) {
+              const int ch_idx = track_idx - 100;
+              const double bps = state.bpm / 60.0;
+              if (state.playback_mode == SequencerPlaybackMode::PAT) {
+                for (const auto& pat : state.sequencer_patterns) {
+                  if (pat.pattern_index != state.selected_pattern_index)
+                    continue;
+                  const double pat_loop_beats =
+                      (pat.length_steps > 0 ? pat.length_steps : 16) * 0.25;
+                  CollectPatternBlockMidiEvents(
+                      pat, ch_idx, state.swing_amount, pat_loop_beats,
+                      state.playhead_pos_sec * bps, time_per_block * bps,
+                      state.bpm, sample_rate, block_size, true,
+                      timelineMidiEvents);
+                }
+              } else {
+                for (const auto& [lane_idx, lane_track] : state.tracks) {
+                  for (const auto& tc : lane_track->timeline_clips) {
+                    if (tc->muted || tc->pattern_index < 0) continue;
+                    double clip_dur =
+                        (tc->duration_beats > 0)
+                            ? tc->duration_beats * 60.0 / state.bpm
+                            : tc->duration_sec;
+                    if (state.playhead_pos_sec + time_per_block >
+                            tc->start_time_sec &&
+                        state.playhead_pos_sec <
+                            tc->start_time_sec + clip_dur) {
+                      for (const auto& pat : state.sequencer_patterns) {
+                        if (pat.pattern_index != tc->pattern_index) continue;
+                        const double pat_loop_beats =
+                            (pat.length_steps > 0 ? pat.length_steps : 16) *
+                            0.25;
+                        double local_sec = std::max(
+                            0.0, state.playhead_pos_sec - tc->start_time_sec);
+                        CollectPatternBlockMidiEvents(
+                            pat, ch_idx, state.swing_amount, pat_loop_beats,
+                            local_sec * bps, time_per_block * bps, state.bpm,
+                            sample_rate, block_size, true, timelineMidiEvents);
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -780,7 +835,13 @@ void playback_thread(ProjectState& state) {
         }
 
         // 5. Apply volume and pan (via @nogc D DSP kernel)
-        bool is_silenced = track->muted || (any_soloed && !track->soloed);
+        const bool scope_soloed =
+            (track->track_type == Track::TrackType::NORMAL) ? any_normal_soloed
+            : (track->track_type == Track::TrackType::GROUP ||
+               track->track_type == Track::TrackType::AUX)
+                ? any_bus_soloed
+                : false;
+        bool is_silenced = track->muted || (scope_soloed && !track->soloed);
         float peakL = 0.0f, peakR = 0.0f;
         d_apply_track_gain_and_pan(bufferL, bufferR, block_size, track->volume,
                                    track->pan, !is_silenced, &peakL, &peakR);
@@ -922,9 +983,26 @@ void playback_thread(ProjectState& state) {
 
     if (state.is_timeline_playing) {
       double next_pos = state.playhead_pos_sec;
+      bool pat_loop_active =
+          (!state.loop_enabled &&
+           state.playback_mode == SequencerPlaybackMode::PAT &&
+           !state.sequencer_patterns.empty() && state.bpm > 0.0);
+      double pat_end_sec = 0.0;
+      if (pat_loop_active) {
+        int psteps = 16;
+        for (const auto& pat : state.sequencer_patterns) {
+          if (pat.pattern_index == state.selected_pattern_index) {
+            psteps = pat.length_steps > 0 ? pat.length_steps : 16;
+            break;
+          }
+        }
+        pat_end_sec = (psteps * 0.25) * (60.0 / state.bpm);
+      }
       d_advance_playhead(state.playhead_pos_sec, time_per_block,
-                         state.loop_enabled, state.loop_start_sec,
-                         state.loop_end_sec, &next_pos);
+                         state.loop_enabled || pat_loop_active,
+                         state.loop_enabled ? state.loop_start_sec : 0.0,
+                         state.loop_enabled ? state.loop_end_sec : pat_end_sec,
+                         &next_pos);
       state.playhead_pos_sec = next_pos;
     }
     context.continuousTimeSamples =

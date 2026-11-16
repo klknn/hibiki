@@ -35,12 +35,16 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
                           float duration, const std::vector<float>& waveform,
                           bool is_looped = false, int alias_source = -1,
                           float loop_interval = 0.0f, float fade_in_sec = 0.0f,
-                          float fade_out_sec = 0.0f, bool muted = false);
+                          float fade_out_sec = 0.0f, bool muted = false,
+                          int pattern_index = -1);
 void sendPlayheadInfo(float position_sec, float bpm, bool is_playing,
                       bool loop_enabled = false, float loop_start = 0,
                       float loop_end = 0, bool is_recording = false,
                       int cpu_percent = 0,
-                      const std::vector<float>* oscilloscope = nullptr);
+                      const std::vector<float>* oscilloscope = nullptr,
+                      int playback_mode = 0, float swing_amount = 0.0f,
+                      int selected_pattern_index = 0);
+void sendSequencerSync(const hibiki::pb::notifications::SequencerSync& sync);
 void sendBounceFinished(const std::string& path, bool success);
 void sendTrackInfo(int track_idx, const std::string& name);
 void sendTrackInfoFull(

@@ -295,6 +295,41 @@ struct DrumPadCmd {
     @ProtoField(11) uint effect_index = 0;
 }
 
+struct SequencerCmd {
+    enum Action : int {
+        ACTION_UNSPECIFIED = 0,
+        ACTION_SET_PLAYBACK_MODE = 1,
+        ACTION_SET_SWING = 2,
+        ACTION_SELECT_PATTERN = 3,
+        ACTION_ADD_PATTERN = 4,
+        ACTION_ADD_CHANNEL = 5,
+        ACTION_SET_CHANNEL_ROUTE = 6,
+        ACTION_SET_CHANNEL_MUTE = 7,
+        ACTION_SET_CHANNEL_SOLO = 8,
+        ACTION_SET_CHANNEL_VOLUME = 9,
+        ACTION_SET_CHANNEL_PAN = 10,
+        ACTION_SET_STEP = 11,
+        ACTION_SET_STEP_GRAPH = 12,
+        ACTION_SET_CHANNEL_NOTES = 13,
+    }
+
+    @ProtoField(1) Action action = Action.ACTION_UNSPECIFIED;
+    @ProtoField(2) pb.core.PlaybackMode playback_mode = pb.core.PlaybackMode.PLAYBACK_MODE_UNSPECIFIED;
+    @ProtoField(3) float value = 0.0f;
+    @ProtoField(4) uint pattern_index = 0;
+    @ProtoField(5) uint channel_index = 0;
+    @ProtoField(6) uint step_index = 0;
+    @ProtoField(7) int graph_param = 0;
+    @ProtoField(8) bool enabled = false;
+    @ProtoField(9) string name;
+    @ProtoField(10) string uri;
+    @ProtoField(11) string category;
+    @ProtoField(12) uint color = 0;
+    @ProtoField(13) int length_steps = 0;
+    @ProtoField(14) int mixer_insert = 0;
+    @ProtoField(15) pb.core.MidiEvent[] notes;
+}
+
 struct Request {
     @ProtoField(40, true, "command") ProtoOptional!(TransportCmd) transport;
     @ProtoField(41, true, "command") ProtoOptional!(TrackCmd) track;
@@ -313,5 +348,6 @@ struct Request {
     @ProtoField(54, true, "command") ProtoOptional!(SetProcessingPrecision) set_processing_precision;
     @ProtoField(55, true, "command") ProtoOptional!(AudioEditorCmd) audio_editor;
     @ProtoField(56, true, "command") ProtoOptional!(DrumPadCmd) drum_pad;
+    @ProtoField(57, true, "command") ProtoOptional!(SequencerCmd) sequencer;
 }
 

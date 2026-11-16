@@ -81,6 +81,9 @@ bool dispatchIpcCommand(const uint8_t* data, size_t size, ProjectState& state,
     case hibiki::pb::commands::Request::kDrumPad:
       handleDrumPadCmd(request.drum_pad(), state);
       break;
+    case hibiki::pb::commands::Request::kSequencer:
+      handleSequencerCmd(request.sequencer(), state, history);
+      break;
     case hibiki::pb::commands::Request::COMMAND_NOT_SET:
       break;
   }

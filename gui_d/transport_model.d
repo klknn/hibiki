@@ -2,7 +2,7 @@ module gui_d.transport_model;
 
 import core.stdc.math : expf, sinf;
 import gui_d.theme : FlPalette, FlThemeId, getFlPalette;
-import pb.core : MidiEvent, TransportState;
+import pb.core : MidiEvent, PbPlaybackMode = PlaybackMode, TransportState;
 import pb.notifications : Notification, PluginDescription;
 import std.conv : to;
 import std.format : format;
@@ -155,12 +155,34 @@ struct ChannelState {
     }
 }
 
+/// Per-channel step sequencer & Piano Roll data saved per Pattern.
+struct ChannelPatternSteps {
+    int channelIndex = 0;
+    bool[16] steps;
+    float[16] stepVelocities;
+    float[16] stepPitches;
+    float[16] stepPans;
+    float[16] stepShifts;
+    MidiEvent[] notes;
+
+    void initDefaults() @safe {
+        foreach (i; 0 .. 16) {
+            steps[i] = false;
+            stepVelocities[i] = 0.78f;
+            stepPitches[i] = 0.0f;
+            stepPans[i] = 0.0f;
+            stepShifts[i] = 0.0f;
+        }
+    }
+}
+
 /// FL Studio Pattern metadata.
 struct PatternState {
     int index = 0;
     string name = "Pattern 1";
     uint color = 0x00385770;
     int lengthSteps = 16;
+    ChannelPatternSteps[] channelSteps;
 }
 
 /// Mixer Insert (Master + Inserts 1..12) and Playlist Track Lane state.
@@ -478,7 +500,7 @@ struct TransportModel {
             p1b.durationSec = barSec * 2.0;
 
             TimelineClipState p2;
-            p2.clipIndex = 2;
+            p2.clipIndex = 0;
             p2.patternIndex = 1;
             p2.kind = PlaylistClipKind.PATTERN;
             p2.name = "Pattern 2 (Acid Bass)";
@@ -487,7 +509,7 @@ struct TransportModel {
             p2.durationSec = barSec * 4.0;
 
             TimelineClipState aud;
-            aud.clipIndex = 3;
+            aud.clipIndex = 0;
             aud.kind = PlaylistClipKind.AUDIO;
             aud.name = "loop140.wav";
             aud.color = pal.clipAudio;
@@ -496,7 +518,7 @@ struct TransportModel {
             aud.waveform = generateSampleWaveform(768, 140, true);
 
             TimelineClipState aut;
-            aut.clipIndex = 4;
+            aut.clipIndex = 0;
             aut.kind = PlaylistClipKind.AUTOMATION;
             aut.name = "Acid Cutoff Env";
             aut.color = pal.clipAutomation;
@@ -548,6 +570,131 @@ struct TransportModel {
         if (samplePreview.waveform.length == 0) {
             samplePreview.waveform = generateSampleWaveform(512, 140, true);
         }
+
+        // Seed distinct pattern contents so PAT/SONG mode & Pattern switching have rich data
+        if (patterns.length > 0 && patterns[0].channelSteps.length == 0) {
+            saveCurrentPatternToStore();
+            // Pattern 1 (Acid Bass): Bass Piano Roll melody + 4-on-floor kick
+            if (patterns.length > 1) {
+                ChannelPatternSteps kick1;
+                kick1.initDefaults();
+                kick1.channelIndex = 0;
+                kick1.steps = [true, false, false, false, true, false, false, false,
+                               true, false, false, false, true, false, false, false];
+                ChannelPatternSteps bass1;
+                bass1.initDefaults();
+                bass1.channelIndex = 3;
+                bass1.notes = activeMidi.events.dup;
+                patterns[1].channelSteps = [kick1, bass1];
+            }
+            // Pattern 2 (E-Piano): Lush Am7 chord progression
+            if (patterns.length > 2) {
+                ChannelPatternSteps ep2;
+                ep2.initDefaults();
+                ep2.channelIndex = 4;
+                static immutable uint[4] chordA = [57, 60, 64, 67];
+                static immutable uint[4] chordF = [53, 57, 60, 64];
+                foreach (n; chordA) {
+                    MidiEvent ev;
+                    ev.tick = 0;
+                    ev.pitch = n;
+                    ev.duration_ticks = 900;
+                    ev.velocity = 96;
+                    ep2.notes ~= ev;
+                }
+                foreach (n; chordF) {
+                    MidiEvent ev;
+                    ev.tick = 960;
+                    ev.pitch = n;
+                    ev.duration_ticks = 900;
+                    ev.velocity = 92;
+                    ep2.notes ~= ev;
+                }
+                patterns[2].channelSteps = [ep2];
+            }
+            // Pattern 3 (Fill): Snare/Hat transition roll
+            if (patterns.length > 3) {
+                ChannelPatternSteps sn3;
+                sn3.initDefaults();
+                sn3.channelIndex = 1;
+                sn3.steps = [false, false, false, false, true, false, false, false,
+                             true, false, true, true, true, true, true, true];
+                ChannelPatternSteps ht3;
+                ht3.initDefaults();
+                ht3.channelIndex = 2;
+                ht3.steps = [true, true, true, true, true, true, true, true,
+                             true, true, true, true, true, true, true, true];
+                patterns[3].channelSteps = [sn3, ht3];
+            }
+        }
+    }
+
+    /// Snapshots current `channels` steps and Piano Roll notes into `patterns[selectedPatternIndex]`.
+    void saveCurrentPatternToStore() @safe {
+        if (selectedPatternIndex < 0 || selectedPatternIndex >= cast(int)patterns.length) return;
+        if (activeMidi.channelIndex >= 0 && activeMidi.channelIndex < cast(int)channels.length) {
+            channels[activeMidi.channelIndex].notes = activeMidi.events.dup;
+        }
+        ChannelPatternSteps[] list;
+        foreach (ref ch; channels) {
+            ChannelPatternSteps cp;
+            cp.channelIndex = ch.index;
+            cp.steps = ch.steps;
+            cp.stepVelocities = ch.stepVelocities;
+            cp.stepPitches = ch.stepPitches;
+            cp.stepPans = ch.stepPans;
+            cp.stepShifts = ch.stepShifts;
+            cp.notes = ch.notes.dup;
+            list ~= cp;
+        }
+        patterns[selectedPatternIndex].channelSteps = list;
+    }
+
+    /// Loads `patIdx`'s saved steps/notes into `channels` and `activeMidi`.
+    void loadPatternFromStore(int patIdx) @safe {
+        if (patIdx < 0 || patIdx >= cast(int)patterns.length) return;
+        foreach (ref ch; channels) {
+            bool found = false;
+            foreach (ref cp; patterns[patIdx].channelSteps) {
+                if (cp.channelIndex == ch.index) {
+                    ch.steps = cp.steps;
+                    ch.stepVelocities = cp.stepVelocities;
+                    ch.stepPitches = cp.stepPitches;
+                    ch.stepPans = cp.stepPans;
+                    ch.stepShifts = cp.stepShifts;
+                    ch.notes = cp.notes.dup;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                foreach (i; 0 .. 16) {
+                    ch.steps[i] = false;
+                    ch.stepVelocities[i] = 0.78f;
+                    ch.stepPitches[i] = 0.0f;
+                    ch.stepPans[i] = 0.0f;
+                    ch.stepShifts[i] = 0.0f;
+                }
+                ch.notes = null;
+            }
+        }
+        if (activeMidi.channelIndex >= 0 && activeMidi.channelIndex < cast(int)channels.length) {
+            activeMidi.events = channels[activeMidi.channelIndex].notes.dup;
+        }
+    }
+
+    /// Switches active Channel Rack pattern, saving the outgoing pattern and restoring the incoming one.
+    void selectPattern(int newPatIdx) @safe {
+        if (patterns.length == 0) return;
+        const int n = cast(int)patterns.length;
+        int clamped = newPatIdx % n;
+        if (clamped < 0) clamped += n;
+        if (clamped == selectedPatternIndex) return;
+        saveCurrentPatternToStore();
+        selectedPatternIndex = clamped;
+        activePickerKind = PlaylistClipKind.PATTERN;
+        activePickerIndex = clamped;
+        loadPatternFromStore(clamped);
     }
 
     /// Saves current `activeMidi.events` back to its channel and loads `newChannelIdx`'s notes.
@@ -632,7 +779,7 @@ struct TransportModel {
         }
     }
 
-    /// Applies an engine `Notification` to update transport, mixer, timeline, MIDI, and plugin state.
+    /// Applies an engine `Notification` to update transport, mixer, timeline, MIDI, sequencer, and plugin state.
     void applyNotification(ref const(Notification) notif) @safe {
         if (notif.playhead_info.hasValue) {
             const p = notif.playhead_info.value;
@@ -646,9 +793,20 @@ struct TransportModel {
             loopEndSec = p.loop_end;
             cpuPercent = p.cpu_percent;
             oscilloscopeSamples = p.oscilloscope.dup;
+            if (p.playback_mode != PbPlaybackMode.PLAYBACK_MODE_UNSPECIFIED) {
+                playbackMode = (p.playback_mode == PbPlaybackMode.PLAYBACK_MODE_PAT)
+                    ? PlaybackMode.PAT : PlaybackMode.SONG;
+                swingAmount = p.swing_amount;
+                if (p.selected_pattern_index >= 0 &&
+                    p.selected_pattern_index < cast(int)patterns.length &&
+                    p.selected_pattern_index != selectedPatternIndex) {
+                    selectPattern(p.selected_pattern_index);
+                }
+            }
         }
         if (notif.track_levels.hasValue) {
             foreach (lvl; notif.track_levels.value.levels) {
+                if (lvl.track_index >= 100) continue;
                 const idx = ensureTrackIndex(lvl.track_index);
                 tracks[idx].peakL = lvl.peak_l;
                 tracks[idx].peakR = lvl.peak_r;
@@ -656,44 +814,72 @@ struct TransportModel {
         }
         if (notif.track_info.hasValue) {
             const ti = notif.track_info.value;
-            const idx = ensureTrackIndex(ti.track_index);
-            if (ti.name.length > 0) tracks[idx].name = ti.name.idup;
-            if (ti.volume.hasValue) tracks[idx].volume = ti.volume.value;
-            if (ti.pan.hasValue) tracks[idx].pan = ti.pan.value;
-            tracks[idx].muted = ti.muted;
-            tracks[idx].soloed = ti.soloed;
-            tracks[idx].routedTo = ti.output_track_index < 0 ? 0 : ti.output_track_index;
+            if (ti.track_index >= 100) {
+                const int chIdx = ti.track_index - 100;
+                if (chIdx >= 0 && chIdx < cast(int)channels.length) {
+                    if (ti.name.length > 0) channels[chIdx].name = ti.name.idup;
+                    if (ti.volume.hasValue) channels[chIdx].volume = ti.volume.value;
+                    if (ti.pan.hasValue) channels[chIdx].pan = ti.pan.value;
+                    channels[chIdx].muted = ti.muted;
+                    channels[chIdx].soloed = ti.soloed;
+                    if (ti.output_track_index > 0) channels[chIdx].mixerInsert = ti.output_track_index;
+                }
+            } else {
+                const idx = ensureTrackIndex(ti.track_index);
+                if (ti.name.length > 0) tracks[idx].name = ti.name.idup;
+                if (ti.volume.hasValue) tracks[idx].volume = ti.volume.value;
+                if (ti.pan.hasValue) tracks[idx].pan = ti.pan.value;
+                tracks[idx].muted = ti.muted;
+                tracks[idx].soloed = ti.soloed;
+                tracks[idx].routedTo = ti.output_track_index < 0 ? 0 : ti.output_track_index;
+            }
         }
         if (notif.timeline_clip_info.hasValue) {
             const tci = notif.timeline_clip_info.value;
-            const idx = ensureTrackIndex(tci.track_index);
-            bool found = false;
-            foreach (ref c; tracks[idx].clips) {
-                if (c.clipIndex == tci.clip_index) {
-                    if (tci.name.length > 0) c.name = tci.name.idup;
+            if (tci.track_index >= 0 && tci.track_index < 100) {
+                const idx = ensureTrackIndex(tci.track_index);
+                const bool isPat = tci.pattern_index.hasValue && tci.pattern_index.value >= 0;
+                const int patIdx = isPat ? tci.pattern_index.value : 0;
+                uint patColor = palette().clipPattern;
+                if (isPat && patIdx >= 0 && patIdx < cast(int)patterns.length) {
+                    patColor = patterns[patIdx].color;
+                }
+                bool found = false;
+                foreach (ref c; tracks[idx].clips) {
+                    if (c.clipIndex == tci.clip_index) {
+                        if (tci.name.length > 0) c.name = tci.name.idup;
+                        c.startTimeSec = tci.start_time;
+                        c.durationSec = tci.duration;
+                        c.waveform = tci.waveform.dup;
+                        if (isPat) {
+                            c.kind = PlaylistClipKind.PATTERN;
+                            c.patternIndex = patIdx;
+                            c.color = patColor;
+                        } else {
+                            c.kind = tci.waveform.length > 0 ? PlaylistClipKind.AUDIO : PlaylistClipKind.PATTERN;
+                            if (tci.waveform.length > 0) c.color = palette().clipAudio;
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    TimelineClipState c;
+                    c.clipIndex = tci.clip_index;
+                    c.name = tci.name.length > 0 ? tci.name.idup : "Clip";
+                    c.color = isPat ? patColor : (tci.waveform.length > 0 ? palette().clipAudio : palette().clipPattern);
                     c.startTimeSec = tci.start_time;
                     c.durationSec = tci.duration;
                     c.waveform = tci.waveform.dup;
-                    c.kind = tci.waveform.length > 0 ? PlaylistClipKind.AUDIO : PlaylistClipKind.PATTERN;
-                    found = true;
-                    break;
+                    c.kind = isPat ? PlaylistClipKind.PATTERN
+                                   : (tci.waveform.length > 0 ? PlaylistClipKind.AUDIO : PlaylistClipKind.PATTERN);
+                    c.patternIndex = patIdx;
+                    tracks[idx].clips ~= c;
                 }
-            }
-            if (!found) {
-                TimelineClipState c;
-                c.clipIndex = tci.clip_index;
-                c.name = tci.name.length > 0 ? tci.name.idup : "Clip";
-                c.color = tci.waveform.length > 0 ? palette().clipAudio : palette().clipPattern;
-                c.startTimeSec = tci.start_time;
-                c.durationSec = tci.duration;
-                c.waveform = tci.waveform.dup;
-                c.kind = tci.waveform.length > 0 ? PlaylistClipKind.AUDIO : PlaylistClipKind.PATTERN;
-                tracks[idx].clips ~= c;
             }
         }
         if (notif.param_list.hasValue) {
             const pl = notif.param_list.value;
-            const idx = ensureTrackIndex(pl.track_index);
             PluginSlotState slot;
             slot.pluginIndex = pl.plugin_index;
             slot.name = pl.plugin_name.length > 0 ? pl.plugin_name.idup : "Plugin";
@@ -707,21 +893,39 @@ struct TransportModel {
                 item.currentValue = pm.default_value;
                 slot.params ~= item;
             }
-            bool updated = false;
-            foreach (ref existing; tracks[idx].plugins) {
-                if (existing.pluginIndex == pl.plugin_index) {
-                    existing = slot;
-                    updated = true;
-                    break;
+            if (pl.track_index >= 100) {
+                const int chIdx = pl.track_index - 100;
+                if (chIdx >= 0 && chIdx < cast(int)channels.length) {
+                    channels[chIdx].generatorPlugin = slot;
                 }
+            } else {
+                const idx = ensureTrackIndex(pl.track_index);
+                bool updated = false;
+                foreach (ref existing; tracks[idx].plugins) {
+                    if (existing.pluginIndex == pl.plugin_index) {
+                        existing = slot;
+                        updated = true;
+                        break;
+                    }
+                }
+                if (!updated) tracks[idx].plugins ~= slot;
+                selectedTrack = pl.track_index;
+                selectedPluginIndex = pl.plugin_index;
             }
-            if (!updated) tracks[idx].plugins ~= slot;
-            selectedTrack = pl.track_index;
-            selectedPluginIndex = pl.plugin_index;
         }
         if (notif.param_value_change.hasValue) {
             const pvc = notif.param_value_change.value;
-            if (auto plug = findPlugin(pvc.track_index, pvc.plugin_index)) {
+            if (pvc.track_index >= 100) {
+                const int chIdx = pvc.track_index - 100;
+                if (chIdx >= 0 && chIdx < cast(int)channels.length) {
+                    foreach (ref pm; channels[chIdx].generatorPlugin.params) {
+                        if (pm.id == pvc.param_id) {
+                            pm.currentValue = pvc.value;
+                            break;
+                        }
+                    }
+                }
+            } else if (auto plug = findPlugin(pvc.track_index, pvc.plugin_index)) {
                 foreach (ref pm; plug.params) {
                     if (pm.id == pvc.param_id) {
                         pm.currentValue = pvc.value;
@@ -749,8 +953,85 @@ struct TransportModel {
                 if (!dup) scannedPlugins ~= pd;
             }
         }
+        if (notif.sequencer_sync.hasValue) {
+            const ss = notif.sequencer_sync.value;
+            if (ss.playback_mode != PbPlaybackMode.PLAYBACK_MODE_UNSPECIFIED) {
+                playbackMode = (ss.playback_mode == PbPlaybackMode.PLAYBACK_MODE_PAT)
+                    ? PlaybackMode.PAT : PlaybackMode.SONG;
+            }
+            swingAmount = ss.swing_amount;
+
+            ChannelState[] prevChannels = channels;
+            channels.length = 0;
+            foreach (sc; ss.channels) {
+                ChannelState ch;
+                ch.initDefaults();
+                ch.index = cast(int)sc.channel_index;
+                ch.name = sc.name.idup;
+                ch.uri = sc.uri.idup;
+                ch.category = sc.category.length > 0 ? sc.category.idup : "Synths";
+                ch.color = sc.color != 0 ? sc.color : palette().clipPattern;
+                ch.mixerInsert = sc.mixer_insert > 0 ? sc.mixer_insert : 1;
+                ch.volume = sc.volume;
+                ch.pan = sc.pan;
+                ch.muted = sc.muted;
+                ch.soloed = sc.soloed;
+                if (ch.index >= 0 && ch.index < cast(int)prevChannels.length &&
+                    prevChannels[ch.index].uri == ch.uri &&
+                    prevChannels[ch.index].generatorPlugin.params.length > 0) {
+                    ch.generatorPlugin = prevChannels[ch.index].generatorPlugin;
+                } else {
+                    ch.generatorPlugin = makeDefaultPluginSlot(ch.name, ch.uri, true, 0);
+                }
+                channels ~= ch;
+            }
+
+            patterns.length = 0;
+            foreach (sp; ss.patterns) {
+                PatternState pat;
+                pat.index = cast(int)sp.pattern_index;
+                pat.name = sp.name.length > 0 ? sp.name.idup : format("Pattern %d", pat.index + 1);
+                pat.color = sp.color != 0 ? sp.color : palette().clipPattern;
+                pat.lengthSteps = sp.length_steps > 0 ? sp.length_steps : 16;
+                foreach (cp; sp.channels) {
+                    ChannelPatternSteps cpe;
+                    cpe.channelIndex = cast(int)cp.channel_index;
+                    foreach (i; 0 .. 16) {
+                        cpe.steps[i] = (i < cp.steps.length) ? cp.steps[i] : false;
+                        cpe.stepVelocities[i] = (i < cp.step_velocities.length) ? cp.step_velocities[i] : 0.78f;
+                        cpe.stepPitches[i] = (i < cp.step_pitches.length) ? cp.step_pitches[i] : 0.0f;
+                        cpe.stepPans[i] = (i < cp.step_pans.length) ? cp.step_pans[i] : 0.0f;
+                        cpe.stepShifts[i] = (i < cp.step_shifts.length) ? cp.step_shifts[i] : 0.0f;
+                    }
+                    cpe.notes = cp.notes.dup;
+                    pat.channelSteps ~= cpe;
+                }
+                patterns ~= pat;
+            }
+            if (patterns.length > 0) {
+                int sel = ss.selected_pattern_index;
+                if (sel < 0 || sel >= cast(int)patterns.length) sel = 0;
+                selectedPatternIndex = sel;
+                activePickerKind = PlaylistClipKind.PATTERN;
+                activePickerIndex = sel;
+                loadPatternFromStore(sel);
+            } else {
+                selectedPatternIndex = 0;
+            }
+            if (channels.length > 0) {
+                if (selectedChannelIndex < 0 || selectedChannelIndex >= cast(int)channels.length) {
+                    selectedChannelIndex = 0;
+                }
+                if (activeMidi.channelIndex < 0 || activeMidi.channelIndex >= cast(int)channels.length) {
+                    activeMidi.channelIndex = selectedChannelIndex;
+                }
+                activeMidi.events = channels[activeMidi.channelIndex].notes.dup;
+            }
+        }
         if (notif.clear_project.hasValue) {
             tracks.length = 0;
+            channels.length = 0;
+            patterns.length = 0;
             activeMidi = ActiveMidiClip.init;
             playheadPosSec = 0.0;
             isPlaying = false;
@@ -910,4 +1191,114 @@ unittest {
     nByp.param_list.set(plByp);
     model.applyNotification(nByp);
     assert(!model.findPlugin(2, 0).enabled);
+
+    // 6. Test pattern switching preserves per-pattern steps & notes
+    TransportModel patModel;
+    patModel.initDefaultTemplate();
+    assert(patModel.selectedPatternIndex == 0);
+    assert(patModel.channels[0].steps[0] && patModel.channels[1].steps[4]); // Pattern 1 Drums
+    patModel.selectPattern(1);
+    assert(patModel.selectedPatternIndex == 1);
+    assert(!patModel.channels[1].steps[4]); // Pattern 2 (Acid Bass) has no Snare steps
+    assert(patModel.channels[0].steps[4]);  // Pattern 2 has 4-on-floor Kick
+    patModel.selectPattern(2);
+    assert(!patModel.channels[0].steps[0]); // Pattern 3 (E-Piano) has no Kick steps
+    patModel.channels[0].steps[1] = true;
+    patModel.selectPattern(0);
+    assert(!patModel.channels[0].steps[1]);
+    patModel.selectPattern(2);
+    assert(patModel.channels[0].steps[1]);
+
+    // 7. Test SequencerSync, TimelineClipInfo pattern_index, and generator track >=100 routing
+    import pb.notifications : ParamValueChange, SequencerSync, TimelineClipInfo;
+    import pb.core : ChannelPatternData, SequencerChannel, SequencerPattern;
+
+    Notification nSeq;
+    SequencerSync ss;
+    ss.playback_mode = PbPlaybackMode.PLAYBACK_MODE_SONG;
+    ss.swing_amount = 0.35f;
+    ss.selected_pattern_index = 1;
+    SequencerChannel sc0;
+    sc0.channel_index = 0;
+    sc0.name = "Synced Kick";
+    sc0.uri = "builtin://dr8_kick";
+    sc0.mixer_insert = 4;
+    sc0.volume = 0.72f;
+    ss.channels ~= sc0;
+    SequencerPattern sp0, sp1;
+    sp0.pattern_index = 0;
+    sp0.name = "Verse";
+    sp0.length_steps = 16;
+    sp1.pattern_index = 1;
+    sp1.name = "Drop";
+    sp1.length_steps = 16;
+    ChannelPatternData cpd;
+    cpd.channel_index = 0;
+    cpd.steps = [true, false, false, false];
+    sp1.channels ~= cpd;
+    ss.patterns ~= sp0;
+    ss.patterns ~= sp1;
+    nSeq.sequencer_sync.set(ss);
+    model.applyNotification(nSeq);
+
+    assert(model.playbackMode == PlaybackMode.SONG);
+    assert(model.swingAmount > 0.34f && model.swingAmount < 0.36f);
+    assert(model.selectedPatternIndex == 1);
+    assert(model.channels.length == 1 && model.channels[0].name == "Synced Kick");
+    assert(model.channels[0].steps[0] && !model.channels[0].steps[1]);
+
+    const size_t trackCountBefore = model.tracks.length;
+    Notification nGenLvl;
+    TrackLevels genTls;
+    TrackLevel genTl;
+    genTl.track_index = 100;
+    genTl.peak_l = 0.9f;
+    genTls.levels ~= genTl;
+    nGenLvl.track_levels.set(genTls);
+    model.applyNotification(nGenLvl);
+    assert(model.tracks.length == trackCountBefore); // must NOT pollute mixer strips
+
+    Notification nGenParam;
+    ParamList gpl;
+    gpl.track_index = 100;
+    gpl.plugin_index = 0;
+    gpl.plugin_name = "Synced Kick";
+    gpl.is_instrument = true;
+    ParamInfo gp0;
+    gp0.id = 0;
+    gp0.name = "Punch";
+    gp0.default_value = 0.5f;
+    gpl.params ~= gp0;
+    nGenParam.param_list.set(gpl);
+    model.applyNotification(nGenParam);
+    assert(model.channels[0].generatorPlugin.params.length == 1);
+
+    Notification nGenVal;
+    ParamValueChange pvc;
+    pvc.track_index = 100;
+    pvc.plugin_index = 0;
+    pvc.param_id = 0;
+    pvc.value = 0.88f;
+    nGenVal.param_value_change.set(pvc);
+    model.applyNotification(nGenVal);
+    assert(model.channels[0].generatorPlugin.params[0].currentValue > 0.87f);
+
+    Notification nPatClip;
+    TimelineClipInfo tci;
+    tci.track_index = 1;
+    tci.clip_index = 9;
+    tci.name = "Drop";
+    tci.start_time = 2.0f;
+    tci.duration = 4.0f;
+    tci.pattern_index.set(1);
+    nPatClip.timeline_clip_info.set(tci);
+    model.applyNotification(nPatClip);
+    const size_t t1Idx = model.ensureTrackIndex(1);
+    bool foundPat = false;
+    foreach (ref cl; model.tracks[t1Idx].clips) {
+        if (cl.clipIndex == 9) {
+            foundPat = (cl.kind == PlaylistClipKind.PATTERN && cl.patternIndex == 1);
+        }
+    }
+    assert(foundPat);
 }

@@ -522,4 +522,139 @@ TEST_F(CommandsTest, SyncProjectToGuiIncludesMixBypassAndMidi) {
   EXPECT_TRUE(saw_param_bypass);
 }
 
+TEST_F(CommandsTest, SequencerCmdChannelRoutingStepsNotesAndSync) {
+  state.sample_rate = 44100.0;
+  state.bpm = 140.0;
+
+  // 1. Add Channel 0 -> creates generator track 100 routed to Insert 4
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(hibiki::pb::commands::SequencerCmd::ACTION_ADD_CHANNEL);
+    seq.set_channel_index(0);
+    seq.set_name("DR-8 Kick");
+    seq.set_uri("builtin://dr8_kick");
+    seq.set_category("Drums");
+    seq.set_mixer_insert(4);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  ASSERT_EQ(state.sequencer_channels.size(), 1u);
+  ASSERT_NE(state.tracks.find(100), state.tracks.end());
+  EXPECT_EQ(state.tracks[100]->output_track_index, 4);
+  EXPECT_FALSE(state.tracks[100]->plugins.empty());
+
+  // 2. Add Pattern 0 + Pattern 1, toggle steps, set graph param & Piano Roll
+  // notes
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(hibiki::pb::commands::SequencerCmd::ACTION_ADD_PATTERN);
+    seq.set_pattern_index(0);
+    seq.set_name("Pattern 1");
+    seq.set_length_steps(16);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(hibiki::pb::commands::SequencerCmd::ACTION_SET_STEP);
+    seq.set_pattern_index(0);
+    seq.set_channel_index(0);
+    seq.set_step_index(4);
+    seq.set_enabled(true);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(hibiki::pb::commands::SequencerCmd::ACTION_SET_STEP_GRAPH);
+    seq.set_pattern_index(0);
+    seq.set_channel_index(0);
+    seq.set_step_index(4);
+    seq.set_graph_param(1);  // pitch
+    seq.set_value(0.25f);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(
+        hibiki::pb::commands::SequencerCmd::ACTION_SET_CHANNEL_NOTES);
+    seq.set_pattern_index(0);
+    seq.set_channel_index(0);
+    auto* ev = seq.add_notes();
+    ev->set_tick(240);
+    ev->set_pitch(64);
+    ev->set_duration_ticks(180);
+    ev->set_velocity(110);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(hibiki::pb::commands::SequencerCmd::ACTION_SET_SWING);
+    seq.set_value(0.45f);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(
+        hibiki::pb::commands::SequencerCmd::ACTION_SET_PLAYBACK_MODE);
+    seq.set_playback_mode(hibiki::pb::core::PLAYBACK_MODE_PAT);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+
+  ASSERT_EQ(state.sequencer_patterns.size(), 1u);
+  ASSERT_EQ(state.sequencer_patterns[0].channels.size(), 1u);
+  EXPECT_TRUE(state.sequencer_patterns[0].channels[0].steps[4]);
+  EXPECT_FLOAT_EQ(state.sequencer_patterns[0].channels[0].step_pitches[4],
+                  0.25f);
+  ASSERT_EQ(state.sequencer_patterns[0].channels[0].notes.size(), 1u);
+  EXPECT_EQ(state.sequencer_patterns[0].channels[0].notes[0].pitch(), 64u);
+  EXPECT_FLOAT_EQ(state.swing_amount, 0.45f);
+  EXPECT_EQ(state.playback_mode, hibiki::SequencerPlaybackMode::PAT);
+
+  // 3. Re-route channel to Insert 7 & add pattern://0 Playlist clip
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(
+        hibiki::pb::commands::SequencerCmd::ACTION_SET_CHANNEL_ROUTE);
+    seq.set_channel_index(0);
+    seq.set_mixer_insert(7);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  EXPECT_EQ(state.tracks[100]->output_track_index, 7);
+
+  auto* lane1 = hibiki::GetOrCreateTrack(state, 1);
+  lane1->AddTimelineClip("pattern://0", 0.0, state.bpm, 8.0);
+  ASSERT_EQ(lane1->timeline_clips.size(), 1u);
+  EXPECT_EQ(lane1->timeline_clips[0]->pattern_index, 0);
+
+  // 4. SyncProjectToGui emits SequencerSync & pattern_index
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+  hibiki::SyncProjectToGui(state);
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  bool saw_seq_sync = false;
+  bool saw_pat_clip = false;
+  for (const auto& n : captured) {
+    if (n.has_sequencer_sync()) {
+      saw_seq_sync = true;
+      EXPECT_EQ(n.sequencer_sync().playback_mode(),
+                hibiki::pb::core::PLAYBACK_MODE_PAT);
+      EXPECT_FLOAT_EQ(n.sequencer_sync().swing_amount(), 0.45f);
+      EXPECT_EQ(n.sequencer_sync().channels_size(), 1);
+      EXPECT_EQ(n.sequencer_sync().patterns_size(), 1);
+    }
+    if (n.has_timeline_clip_info() &&
+        n.timeline_clip_info().has_pattern_index()) {
+      saw_pat_clip = (n.timeline_clip_info().pattern_index() == 0);
+    }
+  }
+  EXPECT_TRUE(saw_seq_sync);
+  EXPECT_TRUE(saw_pat_clip);
+}
+
 }  // namespace hibiki

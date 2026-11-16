@@ -40,6 +40,8 @@ void handleSetProcessingPrecision(
 void handleAudioEditorCmd(const pb::commands::AudioEditorCmd& cmd,
                           ProjectState& state);
 void handleDrumPadCmd(const pb::commands::DrumPadCmd& cmd, ProjectState& state);
+void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
+                        ProjectState& state, HistoryManager& history);
 
 // Config file persistence (.hibikirc.textproto)
 constexpr const char* kConfigFile = ".hibikirc.textproto";

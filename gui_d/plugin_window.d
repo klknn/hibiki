@@ -247,7 +247,7 @@ class PluginWrapperWidget : Widget {
             return targetIndex;
         }
         if (targetIndex >= 0 && targetIndex < cast(int)model_.channels.length) {
-            return model_.channels[targetIndex].mixerInsert;
+            return 100 + targetIndex;
         }
         return model_.selectedTrack;
     }
@@ -361,7 +361,7 @@ unittest {
     drawPluginWrapperCanvas(buf, Rect(0, 0, 440, 260), &model, plug);
     assert(buf.scanLine(12)[200] == model.palette().bgLcd);
 
-    // Regression: CHANNEL_GENERATOR param edits must target channel's mixerInsert (4), not model.selectedTrack (0)
+    // Regression: CHANNEL_GENERATOR param edits must target generator track (100 + chIdx = 103), not model.selectedTrack (0)
     import dlangui.widgets.styles : currentTheme, createDefaultTheme;
     import gui_d.theme : destroyWidgetTree;
     if (currentTheme is null) currentTheme = createDefaultTheme();
@@ -369,7 +369,7 @@ unittest {
     model.selectedTrack = 0; // Master
     auto pw = new PluginWrapperWidget("pw", &model);
     scope (exit) destroyWidgetTree(pw);
-    pw.setTargetChannel(3); // Acid Bass -> mixerInsert = 4
+    pw.setTargetChannel(3); // Acid Bass -> engine track 103 (routed to Insert 4)
     pw.measure(440, 280);
     pw.layout(Rect(0, 0, 440, 280));
     int sentTrack = -1;
@@ -380,7 +380,7 @@ unittest {
     const int gridTop = WRAP_HDR_H + 8 + SCOPE_H + 10;
     pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)60, cast(short)(gridTop + 20)));
     pw.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, MouseFlag.LButton, cast(short)60, cast(short)(gridTop + 5)));
-    assert(sentTrack == 4, "Expected CHANNEL_GENERATOR param change to target channel's mixerInsert (4)");
+    assert(sentTrack == 103, "Expected CHANNEL_GENERATOR param change to target generator track 103");
 
     // Cancel ends knob drag cleanly
     pw.onMouseEvent(new MouseEvent(MouseAction.Cancel, MouseButton.None, 0, cast(short)60, cast(short)(gridTop + 5)));

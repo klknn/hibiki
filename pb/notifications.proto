@@ -43,6 +43,9 @@ message PlayheadInfo {
   float loop_end = 6;
   int32 cpu_percent = 7;
   repeated float oscilloscope = 8;
+  hibiki.pb.core.PlaybackMode playback_mode = 9;
+  float swing_amount = 10;
+  int32 selected_pattern_index = 11;
 }
 
 // ─── Plugin Discovery ───────────────────────────────────────────────
@@ -127,6 +130,7 @@ message TimelineClipInfo {
   float fade_in_sec = 11;   // Linear fade-in duration in seconds
   float fade_out_sec = 12;  // Linear fade-out duration in seconds
   bool muted = 13;          // Clip is muted (bounced-in-place)
+  optional int32 pattern_index = 14;
 }
 
 // Track name metadata.
@@ -342,7 +346,17 @@ message Notification {
 
     // Field 31 reserved (was track_reorder, removed — reordering is UI-only)
     DrumPadNotification drum_pad = 32;
+    SequencerSync sequencer_sync = 33;
   }
+}
+
+// Full Channel Rack / Sequencer state sync notification.
+message SequencerSync {
+  hibiki.pb.core.PlaybackMode playback_mode = 1;
+  float swing_amount = 2;
+  int32 selected_pattern_index = 3;
+  repeated hibiki.pb.core.SequencerChannel channels = 4;
+  repeated hibiki.pb.core.SequencerPattern patterns = 5;
 }
 
 message DrumPadNotification {

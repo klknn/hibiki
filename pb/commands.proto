@@ -315,6 +315,42 @@ message DrumPadCmd {
   uint32 effect_index = 11;
 }
 
+// Commands for the Channel Rack, 16-step sequencer, Patterns, and PAT/SONG
+// mode.
+message SequencerCmd {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_SET_PLAYBACK_MODE = 1;
+    ACTION_SET_SWING = 2;
+    ACTION_SELECT_PATTERN = 3;
+    ACTION_ADD_PATTERN = 4;
+    ACTION_ADD_CHANNEL = 5;
+    ACTION_SET_CHANNEL_ROUTE = 6;
+    ACTION_SET_CHANNEL_MUTE = 7;
+    ACTION_SET_CHANNEL_SOLO = 8;
+    ACTION_SET_CHANNEL_VOLUME = 9;
+    ACTION_SET_CHANNEL_PAN = 10;
+    ACTION_SET_STEP = 11;
+    ACTION_SET_STEP_GRAPH = 12;
+    ACTION_SET_CHANNEL_NOTES = 13;
+  }
+  Action action = 1;
+  hibiki.pb.core.PlaybackMode playback_mode = 2;
+  float value = 3;
+  uint32 pattern_index = 4;
+  uint32 channel_index = 5;
+  uint32 step_index = 6;
+  int32 graph_param = 7;  // 0=velocity, 1=pitch, 2=pan, 3=shift
+  bool enabled = 8;
+  string name = 9;
+  string uri = 10;
+  string category = 11;
+  uint32 color = 12;
+  int32 length_steps = 13;
+  int32 mixer_insert = 14;
+  repeated hibiki.pb.core.MidiEvent notes = 15;
+}
+
 // ─── Request Envelope ───────────────────────────────────────────────
 
 // Contains the new domain-grouped commands.
@@ -337,5 +373,6 @@ message Request {
     SetProcessingPrecision set_processing_precision = 54;
     AudioEditorCmd audio_editor = 55;
     DrumPadCmd drum_pad = 56;
+    SequencerCmd sequencer = 57;
   }
 }

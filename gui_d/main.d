@@ -25,7 +25,7 @@ import gui_d.toolbar : FlToolbarWidget;
 import gui_d.transport_model;
 import gui_d.workspace : DesktopLayoutPreset, FlDesktopCanvas, FlWindowFrame;
 import pb.commands : TransportCmd;
-import pb.core : MidiEvent;
+import pb.core : MidiEvent, PbPlaybackMode = PlaybackMode, TrackType;
 import pb.notifications : Notification;
 import std.file : exists, thisExePath;
 import std.format : format;
@@ -239,6 +239,115 @@ extern (C) int UIAppMain(string[] args) {
         desktop.invalidate();
     }
 
+    string enginePath = resolveEnginePath(args);
+    size_t expectedSyncChannels = 0;
+    size_t expectedSyncPatterns = 0;
+
+    client = new EngineProcessClient((Notification notif) {
+        const bool structural = notif.plugin_list.hasValue || notif.clear_project.hasValue ||
+                                notif.sequencer_sync.hasValue;
+        window.executeInUiThread(() {
+            if (expectedSyncChannels > 0 && notif.sequencer_sync.hasValue) {
+                const ss = notif.sequencer_sync.value;
+                if (ss.channels.length < expectedSyncChannels || ss.patterns.length < expectedSyncPatterns) {
+                    return;
+                }
+                expectedSyncChannels = 0;
+                expectedSyncPatterns = 0;
+            }
+            model.applyNotification(notif);
+            refreshUi(structural);
+        });
+    });
+
+    void syncTemplateToEngine() {
+        if (!client.isRunning()) return;
+        model.saveCurrentPatternToStore();
+        expectedSyncChannels = model.channels.length;
+        expectedSyncPatterns = model.patterns.length;
+
+        client.sendRequest(makeSetBpmRequest(cast(float)model.bpm));
+
+        foreach (ref trk; model.tracks) {
+            client.sendRequest(makeSetTrackTypeRequest(
+                trk.index, trk.index == 0 ? TrackType.TRACK_MASTER : TrackType.TRACK_GROUP));
+            if (trk.index > 0) {
+                client.sendRequest(makeSetOutputRoutingRequest(trk.index, trk.routedTo));
+            }
+            client.sendRequest(makeTrackVolumeRequest(trk.index, trk.volume));
+            client.sendRequest(makeTrackPanRequest(trk.index, trk.pan));
+            foreach (ref plug; trk.plugins) {
+                if (plug.uri.length > 0) {
+                    client.sendRequest(makePluginLoadRequest(trk.index, plug.uri, plug.pluginIndex));
+                }
+            }
+        }
+
+        foreach (ref ch; model.channels) {
+            client.sendRequest(makeSequencerAddChannelRequest(
+                ch.index, ch.name, ch.uri, ch.category, ch.color, ch.mixerInsert));
+            client.sendRequest(makeSequencerVolumeChannelRequest(ch.index, ch.volume));
+            client.sendRequest(makeSequencerPanChannelRequest(ch.index, ch.pan));
+            if (ch.muted) client.sendRequest(makeSequencerMuteChannelRequest(ch.index, true));
+            if (ch.soloed) client.sendRequest(makeSequencerSoloChannelRequest(ch.index, true));
+        }
+
+        foreach (ref pat; model.patterns) {
+            client.sendRequest(makeSequencerAddPatternRequest(
+                pat.index, pat.name, pat.color, pat.lengthSteps));
+            foreach (ref cp; pat.channelSteps) {
+                foreach (stepIdx; 0 .. 16) {
+                    if (cp.steps[stepIdx]) {
+                        client.sendRequest(makeSequencerStepRequest(
+                            pat.index, cp.channelIndex, stepIdx, true));
+                    }
+                    if (cp.stepVelocities[stepIdx] != 0.78f) {
+                        client.sendRequest(makeSequencerStepGraphRequest(
+                            pat.index, cp.channelIndex, stepIdx, 0, cp.stepVelocities[stepIdx]));
+                    }
+                    if (cp.stepPitches[stepIdx] != 0.0f) {
+                        client.sendRequest(makeSequencerStepGraphRequest(
+                            pat.index, cp.channelIndex, stepIdx, 1, cp.stepPitches[stepIdx]));
+                    }
+                    if (cp.stepPans[stepIdx] != 0.0f) {
+                        client.sendRequest(makeSequencerStepGraphRequest(
+                            pat.index, cp.channelIndex, stepIdx, 2, cp.stepPans[stepIdx]));
+                    }
+                    if (cp.stepShifts[stepIdx] != 0.0f) {
+                        client.sendRequest(makeSequencerStepGraphRequest(
+                            pat.index, cp.channelIndex, stepIdx, 3, cp.stepShifts[stepIdx]));
+                    }
+                }
+                if (cp.notes.length > 0) {
+                    client.sendRequest(makeSequencerChannelNotesRequest(
+                        pat.index, cp.channelIndex, cp.notes));
+                }
+            }
+        }
+
+        foreach (ref trk; model.tracks) {
+            foreach (ref cl; trk.clips) {
+                const float durBeats = cast(float)(cl.durationSec * (model.bpm / 60.0));
+                if (cl.kind == PlaylistClipKind.PATTERN) {
+                    client.sendRequest(makeAddPatternTimelineClipRequest(
+                        trk.index, cl.patternIndex, cast(float)cl.startTimeSec, durBeats));
+                } else if (cl.kind == PlaylistClipKind.AUDIO) {
+                    const string audioPath = cl.name.startsWith("testdata/") ? cl.name : ("testdata/" ~ cl.name);
+                    if (exists(audioPath)) {
+                        client.sendRequest(makeAddTimelineClipRequest(
+                            trk.index, audioPath, cast(float)cl.startTimeSec, durBeats));
+                    }
+                }
+            }
+        }
+
+        client.sendRequest(makeSequencerSelectPatternRequest(model.selectedPatternIndex));
+        client.sendRequest(makeSequencerSwingRequest(model.swingAmount));
+        client.sendRequest(makeSequencerModeRequest(
+            model.playbackMode == PlaybackMode.PAT
+                ? PbPlaybackMode.PLAYBACK_MODE_PAT : PbPlaybackMode.PLAYBACK_MODE_SONG));
+    }
+
     // Popup menu helper for top bar and window ▼ menus
     void showMenuPopup(Widget anchor, MenuItem rootItem, void delegate(int actionId) handler) {
         auto pop = new PopupMenu(rootItem);
@@ -303,6 +412,13 @@ extern (C) int UIAppMain(string[] args) {
                 model = TransportModel.init;
                 model.initDefaultTemplate();
                 applyThemeColors();
+                if (enginePath.length > 0) {
+                    if (client.isRunning()) client.stop();
+                    if (client.start(enginePath)) {
+                        syncTemplateToEngine();
+                        model.statusMessage = "New template synced to engine";
+                    }
+                }
             } else if (id == 102) {
                 client.sendRequest(makeProjectLoadRequest("testdata/acid.hbk"));
                 model.hintText = "Loading project: testdata/acid.hbk";
@@ -342,6 +458,7 @@ extern (C) int UIAppMain(string[] args) {
             ];
             const int idx = id - 301;
             if (idx >= 0 && idx < 5) {
+                model.saveCurrentPatternToStore();
                 const int chIdx = cast(int)model.channels.length;
                 ChannelState ch;
                 ch.initDefaults();
@@ -353,7 +470,9 @@ extern (C) int UIAppMain(string[] args) {
                 ch.generatorPlugin = TransportModel.makeDefaultPluginSlot(ch.name, ch.uri, true, 0);
                 model.channels ~= ch;
                 model.selectedChannelIndex = chIdx;
-                client.sendRequest(makePluginLoadRequest(ch.mixerInsert, ch.uri));
+                model.saveCurrentPatternToStore();
+                client.sendRequest(makeSequencerAddChannelRequest(
+                    ch.index, ch.name, ch.uri, ch.category, ch.color, ch.mixerInsert));
                 model.hintText = format("Added '%s' -> Mixer Insert %d", ch.name, ch.mixerInsert);
                 refreshUi();
             }
@@ -365,11 +484,37 @@ extern (C) int UIAppMain(string[] args) {
         auto m = new MenuItem();
         m.add(new Action(401, "Insert New Pattern"d), new Action(402, "Clone Current Pattern"d));
         showMenuPopup(s, m, (int id) {
+            model.saveCurrentPatternToStore();
+            const int prevIdx = model.selectedPatternIndex;
             const int idx = cast(int)model.patterns.length;
-            model.patterns ~= PatternState(idx, format("Pattern %d", idx + 1), model.palette().clipPattern, 16);
+            PatternState newPat = PatternState(idx, format("Pattern %d", idx + 1), model.palette().clipPattern, 16);
+            if (id == 402 && prevIdx >= 0 && prevIdx < cast(int)model.patterns.length) {
+                newPat.lengthSteps = model.patterns[prevIdx].lengthSteps;
+                foreach (cp; model.patterns[prevIdx].channelSteps) {
+                    ChannelPatternSteps copyCp = cp;
+                    copyCp.notes = cp.notes.dup;
+                    newPat.channelSteps ~= copyCp;
+                }
+            }
+            model.patterns ~= newPat;
             model.selectedPatternIndex = idx;
             model.activePickerKind = PlaylistClipKind.PATTERN;
             model.activePickerIndex = idx;
+            model.loadPatternFromStore(idx);
+            client.sendRequest(makeSequencerAddPatternRequest(idx, newPat.name, newPat.color, newPat.lengthSteps));
+            if (id == 402) {
+                foreach (ref cp; newPat.channelSteps) {
+                    foreach (stepIdx; 0 .. 16) {
+                        if (cp.steps[stepIdx]) {
+                            client.sendRequest(makeSequencerStepRequest(idx, cp.channelIndex, stepIdx, true));
+                        }
+                    }
+                    if (cp.notes.length > 0) {
+                        client.sendRequest(makeSequencerChannelNotesRequest(idx, cp.channelIndex, cp.notes));
+                    }
+                }
+            }
+            client.sendRequest(makeSequencerSelectPatternRequest(idx));
             model.hintText = format("Selected %s", model.patterns[idx].name);
             refreshUi(true);
         });
@@ -459,17 +604,9 @@ extern (C) int UIAppMain(string[] args) {
     root.addChild(workspace);
     root.addChild(statusBar);
 
-    // Connect Engine IPC client
-    client = new EngineProcessClient((Notification notif) {
-        const bool structural = notif.plugin_list.hasValue || notif.clear_project.hasValue;
-        window.executeInUiThread(() {
-            model.applyNotification(notif);
-            refreshUi(structural);
-        });
-    });
-
-    string enginePath = resolveEnginePath(args);
+    // Start Engine IPC client and sync starter FL Studio template
     if (enginePath.length > 0 && client.start(enginePath)) {
+        syncTemplateToEngine();
         model.statusMessage = "Connected to Hibiki engine: " ~ enginePath;
     } else {
         model.statusMessage = "FL Studio 2026 Prototype Mode (pass --engine=bazel-bin/engine/hbk-play for live audio)";
@@ -484,6 +621,9 @@ extern (C) int UIAppMain(string[] args) {
     toolbar.queryPluginVisible      = () => winPlugin.visibility == Visibility.Visible;
 
     toolbar.onPatSongToggle = () {
+        client.sendRequest(makeSequencerModeRequest(
+            model.playbackMode == PlaybackMode.PAT
+                ? PbPlaybackMode.PLAYBACK_MODE_PAT : PbPlaybackMode.PLAYBACK_MODE_SONG));
         model.hintText = (model.playbackMode == PlaybackMode.PAT)
             ? "Playback Mode: PAT (loops Channel Rack Pattern)"
             : "Playback Mode: SONG (plays Playlist arrangement)";
@@ -552,18 +692,22 @@ extern (C) int UIAppMain(string[] args) {
     toolbar.onPatternStep = (int delta) {
         if (model.patterns.length == 0) return;
         const int n = cast(int)model.patterns.length;
-        model.selectedPatternIndex = (model.selectedPatternIndex + delta + n) % n;
-        model.activePickerKind = PlaylistClipKind.PATTERN;
-        model.activePickerIndex = model.selectedPatternIndex;
+        model.selectPattern((model.selectedPatternIndex + delta + n) % n);
+        client.sendRequest(makeSequencerSelectPatternRequest(model.selectedPatternIndex));
         model.hintText = "Selected " ~ model.patterns[model.selectedPatternIndex].name;
         refreshUi(true);
     };
     toolbar.onPatternAdd = () {
+        model.saveCurrentPatternToStore();
         const int idx = cast(int)model.patterns.length;
-        model.patterns ~= PatternState(idx, format("Pattern %d", idx + 1), model.palette().clipPattern, 16);
+        auto pat = PatternState(idx, format("Pattern %d", idx + 1), model.palette().clipPattern, 16);
+        model.patterns ~= pat;
         model.selectedPatternIndex = idx;
         model.activePickerKind = PlaylistClipKind.PATTERN;
         model.activePickerIndex = idx;
+        model.loadPatternFromStore(idx);
+        client.sendRequest(makeSequencerAddPatternRequest(idx, pat.name, pat.color, pat.lengthSteps));
+        client.sendRequest(makeSequencerSelectPatternRequest(idx));
         model.hintText = format("Created Pattern %d", idx + 1);
         refreshUi(true);
     };
@@ -594,6 +738,7 @@ extern (C) int UIAppMain(string[] args) {
 
     // Browser Callbacks
     browserPanel.onAddGenerator = (string label, string uri, bool isInst) {
+        model.saveCurrentPatternToStore();
         const int chIdx = cast(int)model.channels.length;
         ChannelState ch;
         ch.initDefaults();
@@ -606,8 +751,10 @@ extern (C) int UIAppMain(string[] args) {
         ch.generatorPlugin = TransportModel.makeDefaultPluginSlot(ch.name, uri, true, 0);
         model.channels ~= ch;
         model.selectedChannelIndex = chIdx;
+        model.saveCurrentPatternToStore();
         model.hintText = format("Added '%s' to Channel Rack -> Insert %d", ch.name, ch.mixerInsert);
-        client.sendRequest(makePluginLoadRequest(ch.mixerInsert, uri));
+        client.sendRequest(makeSequencerAddChannelRequest(
+            ch.index, ch.name, ch.uri, ch.category, ch.color, ch.mixerInsert));
         desktop.showWindow("win_channel_rack");
         refreshUi();
     };
@@ -647,10 +794,9 @@ extern (C) int UIAppMain(string[] args) {
     };
     browserPanel.onSelectPattern = (int patIdx) {
         if (patIdx >= 0 && patIdx < cast(int)model.patterns.length) {
-            model.selectedPatternIndex = patIdx;
-            model.activePickerKind = PlaylistClipKind.PATTERN;
-            model.activePickerIndex = patIdx;
-            refreshUi();
+            model.selectPattern(patIdx);
+            client.sendRequest(makeSequencerSelectPatternRequest(model.selectedPatternIndex));
+            refreshUi(true);
         }
     };
     browserPanel.onScanVst3 = (string searchPath) {
@@ -659,9 +805,10 @@ extern (C) int UIAppMain(string[] args) {
         refreshUi();
     };
     browserPanel.onPreviewNote = (uint note) {
-        const int targetTrk = (model.selectedChannelIndex < cast(int)model.channels.length)
-            ? model.channels[model.selectedChannelIndex].mixerInsert
-            : 1;
+        const int targetTrk = (model.selectedChannelIndex >= 0 &&
+                               model.selectedChannelIndex < cast(int)model.channels.length)
+            ? (100 + model.selectedChannelIndex)
+            : 100;
         sendVirtualNote(targetTrk, note);
     };
 
@@ -689,16 +836,44 @@ extern (C) int UIAppMain(string[] args) {
         refreshUi();
     };
     channelRack.onMuteChannel = (int chIdx, bool muted) {
+        client.sendRequest(makeSequencerMuteChannelRequest(chIdx, muted));
         model.hintText = format("Channel %d %s", chIdx + 1, muted ? "Muted" : "Unmuted");
         refreshUi();
     };
+    channelRack.onSoloChannel = (int chIdx, bool soloed) {
+        client.sendRequest(makeSequencerSoloChannelRequest(chIdx, soloed));
+        model.hintText = format("Channel %d %s", chIdx + 1, soloed ? "Soloed" : "Unsoloed");
+        refreshUi();
+    };
+    channelRack.onVolumeChannel = (int chIdx, float vol) {
+        client.sendRequest(makeSequencerVolumeChannelRequest(chIdx, vol));
+        refreshUi();
+    };
+    channelRack.onPanChannel = (int chIdx, float pan) {
+        client.sendRequest(makeSequencerPanChannelRequest(chIdx, pan));
+        refreshUi();
+    };
+    channelRack.onSwingChanged = (float swing) {
+        client.sendRequest(makeSequencerSwingRequest(swing));
+        refreshUi();
+    };
     channelRack.onRouteMixer = (int chIdx, int mixerInsert) {
+        client.sendRequest(makeSequencerRouteChannelRequest(chIdx, mixerInsert));
         refreshUi();
     };
     channelRack.onStepToggle = (int chIdx, int stepIdx, bool active) {
+        model.saveCurrentPatternToStore();
+        client.sendRequest(makeSequencerStepRequest(model.selectedPatternIndex, chIdx, stepIdx, active));
+        refreshUi();
+    };
+    channelRack.onStepGraphChanged = (int chIdx, int stepIdx, int paramIdx, float value) {
+        model.saveCurrentPatternToStore();
+        client.sendRequest(makeSequencerStepGraphRequest(
+            model.selectedPatternIndex, chIdx, stepIdx, paramIdx, value));
         refreshUi();
     };
     channelRack.onAddChannelPrompt = () {
+        model.saveCurrentPatternToStore();
         const int chIdx = cast(int)model.channels.length;
         ChannelState ch;
         ch.initDefaults();
@@ -711,6 +886,9 @@ extern (C) int UIAppMain(string[] args) {
         ch.generatorPlugin = TransportModel.makeDefaultPluginSlot(ch.name, ch.uri, true, 0);
         model.channels ~= ch;
         model.selectedChannelIndex = chIdx;
+        model.saveCurrentPatternToStore();
+        client.sendRequest(makeSequencerAddChannelRequest(
+            ch.index, ch.name, ch.uri, ch.category, ch.color, ch.mixerInsert));
         model.hintText = format("Added new channel '%s' -> Insert %d", ch.name, ch.mixerInsert);
         refreshUi();
     };
@@ -739,6 +917,9 @@ extern (C) int UIAppMain(string[] args) {
             clip.patternIndex = pat.index;
             clip.name = pat.name;
             clip.color = pat.color;
+            const float durBeats = cast(float)(clip.durationSec * (model.bpm / 60.0));
+            client.sendRequest(makeAddPatternTimelineClipRequest(
+                trackIdx, clip.patternIndex, cast(float)startSec, durBeats));
         } else if (clip.kind == PlaylistClipKind.AUDIO) {
             static immutable string[4] AUDIO_NAMES = ["loop140.wav", "bb140.wav", "kick_punch.wav", "snare_crisp.wav"];
             static immutable string[4] AUDIO_PATHS = [
@@ -771,15 +952,23 @@ extern (C) int UIAppMain(string[] args) {
 
     // Piano Roll Callbacks
     pianoRollCanvas.onNotesChanged = (const(MidiEvent)[] evs) {
-        client.sendRequest(makeMidiUpdateRequest(
-            model.activeMidi.trackIndex, model.activeMidi.clipIndex,
-            cast(uint)model.activeMidi.resolution, evs));
+        if (model.activeMidi.channelIndex >= 0 &&
+            model.activeMidi.channelIndex < cast(int)model.channels.length) {
+            model.channels[model.activeMidi.channelIndex].notes = evs.dup;
+            model.saveCurrentPatternToStore();
+            client.sendRequest(makeSequencerChannelNotesRequest(
+                model.selectedPatternIndex, model.activeMidi.channelIndex, evs));
+        } else {
+            client.sendRequest(makeMidiUpdateRequest(
+                model.activeMidi.trackIndex, model.activeMidi.clipIndex,
+                cast(uint)model.activeMidi.resolution, evs));
+        }
         refreshUi();
     };
     pianoRollCanvas.onPreviewNote = (uint pitch) {
         const int targetTrk = (model.activeMidi.channelIndex >= 0 &&
                                model.activeMidi.channelIndex < cast(int)model.channels.length)
-            ? model.channels[model.activeMidi.channelIndex].mixerInsert
+            ? (100 + model.activeMidi.channelIndex)
             : model.activeMidi.trackIndex;
         sendVirtualNote(targetTrk, pitch);
     };
@@ -909,9 +1098,10 @@ extern (C) int UIAppMain(string[] args) {
             const int pitch = typingKeyToMidiPitch(keyCode);
             if (pitch >= 0) {
                 if ((cast(uint)pitch in activeTypingNotes) is null) {
-                    const int targetTrk = (model.selectedChannelIndex < cast(int)model.channels.length)
-                        ? model.channels[model.selectedChannelIndex].mixerInsert
-                        : 1;
+                    const int targetTrk = (model.selectedChannelIndex >= 0 &&
+                                           model.selectedChannelIndex < cast(int)model.channels.length)
+                        ? (100 + model.selectedChannelIndex)
+                        : 100;
                     activeTypingNotes[cast(uint)pitch] = targetTrk;
                     if (client.isRunning()) {
                         client.sendRequest(makeSendVirtualMidiRequest(targetTrk, cast(uint)pitch, 108, true));

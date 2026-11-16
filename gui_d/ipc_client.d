@@ -3,8 +3,8 @@ module gui_d.ipc_client;
 import core.stdc.string : memcpy;
 import dproto.proto : decodeProto, encodeProto;
 import pb.commands : MidiCmd, PluginCmd, ProjectCmd, Request, SendVirtualMidi,
-                       TrackCmd, TransportCmd;
-import pb.core : Clip, EntityRef, MidiEvent;
+                       SequencerCmd, TrackCmd, TransportCmd;
+import pb.core : Clip, EntityRef, MidiEvent, PbPlaybackMode = PlaybackMode, TrackType;
 import pb.notifications : Notification;
 import std.process : Pipe, ProcessPipes, pipeProcess, Redirect, tryWait, wait;
 import std.stdio : stderr;
@@ -365,6 +365,186 @@ Request makeSendVirtualMidiRequest(int trackIdx, uint note, uint velocity, bool 
     return req;
 }
 
+Request makeSetTrackTypeRequest(int trackIdx, TrackType trackType) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_SET_TRACK_TYPE;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    cmd.record_mode = cast(int)trackType;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeSetOutputRoutingRequest(int trackIdx, int targetTrackIdx) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_SET_OUTPUT_ROUTING;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    cmd.target_track_index = targetTrackIdx;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeAddPatternTimelineClipRequest(int trackIdx, int patternIdx, float startSec, float durationBeats) @safe {
+    import std.format : format;
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_ADD_TIMELINE_CLIP;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    Clip cd;
+    cd.path = format("pattern://%d", patternIdx);
+    cd.duration_beats = durationBeats;
+    cmd.clip_data = cd;
+    cmd.value = startSec;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeSequencerModeRequest(PbPlaybackMode mode) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SET_PLAYBACK_MODE;
+    cmd.playback_mode = mode;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerSwingRequest(float swing) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SET_SWING;
+    cmd.value = swing;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerSelectPatternRequest(int patternIdx) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SELECT_PATTERN;
+    cmd.pattern_index = cast(uint)patternIdx;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerAddPatternRequest(int patternIdx, string name, uint color, int lengthSteps) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_ADD_PATTERN;
+    cmd.pattern_index = cast(uint)patternIdx;
+    cmd.name = name;
+    cmd.color = color;
+    cmd.length_steps = lengthSteps;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerAddChannelRequest(int channelIdx, string name, string uri, string category, uint color, int mixerInsert) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_ADD_CHANNEL;
+    cmd.channel_index = cast(uint)channelIdx;
+    cmd.name = name;
+    cmd.uri = uri;
+    cmd.category = category;
+    cmd.color = color;
+    cmd.mixer_insert = mixerInsert;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerRouteChannelRequest(int channelIdx, int mixerInsert) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SET_CHANNEL_ROUTE;
+    cmd.channel_index = cast(uint)channelIdx;
+    cmd.mixer_insert = mixerInsert;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerMuteChannelRequest(int channelIdx, bool muted) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SET_CHANNEL_MUTE;
+    cmd.channel_index = cast(uint)channelIdx;
+    cmd.enabled = muted;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerSoloChannelRequest(int channelIdx, bool soloed) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SET_CHANNEL_SOLO;
+    cmd.channel_index = cast(uint)channelIdx;
+    cmd.enabled = soloed;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerVolumeChannelRequest(int channelIdx, float volume) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SET_CHANNEL_VOLUME;
+    cmd.channel_index = cast(uint)channelIdx;
+    cmd.value = volume;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerPanChannelRequest(int channelIdx, float pan) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SET_CHANNEL_PAN;
+    cmd.channel_index = cast(uint)channelIdx;
+    cmd.value = pan;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerStepRequest(int patternIdx, int channelIdx, int stepIdx, bool active) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SET_STEP;
+    cmd.pattern_index = cast(uint)patternIdx;
+    cmd.channel_index = cast(uint)channelIdx;
+    cmd.step_index = cast(uint)stepIdx;
+    cmd.enabled = active;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerStepGraphRequest(int patternIdx, int channelIdx, int stepIdx, int graphParam, float value) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SET_STEP_GRAPH;
+    cmd.pattern_index = cast(uint)patternIdx;
+    cmd.channel_index = cast(uint)channelIdx;
+    cmd.step_index = cast(uint)stepIdx;
+    cmd.graph_param = graphParam;
+    cmd.value = value;
+    req.sequencer.set(cmd);
+    return req;
+}
+
+Request makeSequencerChannelNotesRequest(int patternIdx, int channelIdx, const(MidiEvent)[] notes) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SET_CHANNEL_NOTES;
+    cmd.pattern_index = cast(uint)patternIdx;
+    cmd.channel_index = cast(uint)channelIdx;
+    cmd.notes = notes.dup;
+    req.sequencer.set(cmd);
+    return req;
+}
+
 /// Manages the `hbk-play` child process and its binary Protobuf IPC pipes.
 class EngineProcessClient {
     import core.atomic : atomicLoad, atomicStore;
@@ -548,4 +728,36 @@ unittest {
     assert(decodeProto(encodeLengthPrefixedRequest(rMp)[4 .. $], mpDec));
     assert(mpDec.transport.hasValue && mpDec.transport.value.action == TransportCmd.Action.ACTION_SET_MASTER_PITCH);
     assert(mpDec.transport.value.value == 3.0f);
+
+    // 5. Test Phase 2 SequencerCmd & pattern clip request round-trips
+    auto rPatClip = makeAddPatternTimelineClipRequest(2, 3, 1.5f, 8.0f);
+    Request patClipDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rPatClip)[4 .. $], patClipDec));
+    assert(patClipDec.track.hasValue && patClipDec.track.value.action == TrackCmd.Action.ACTION_ADD_TIMELINE_CLIP);
+    assert(patClipDec.track.value.clip_data.path == "pattern://3");
+
+    auto rAddCh = makeSequencerAddChannelRequest(0, "Kick", "builtin://dr8_kick", "Drums", 0x00466480, 4);
+    Request addChDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rAddCh)[4 .. $], addChDec));
+    assert(addChDec.sequencer.hasValue &&
+           addChDec.sequencer.value.action == SequencerCmd.Action.ACTION_ADD_CHANNEL);
+    assert(addChDec.sequencer.value.uri == "builtin://dr8_kick");
+    assert(addChDec.sequencer.value.mixer_insert == 4);
+
+    auto rStep = makeSequencerStepRequest(1, 0, 12, true);
+    Request stepDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rStep)[4 .. $], stepDec));
+    assert(stepDec.sequencer.hasValue && stepDec.sequencer.value.pattern_index == 1);
+    assert(stepDec.sequencer.value.step_index == 12 && stepDec.sequencer.value.enabled);
+
+    auto rGraph = makeSequencerStepGraphRequest(0, 2, 5, 1, -0.5f);
+    Request graphDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rGraph)[4 .. $], graphDec));
+    assert(graphDec.sequencer.hasValue && graphDec.sequencer.value.graph_param == 1);
+    assert(graphDec.sequencer.value.value < -0.49f);
+
+    auto rMode = makeSequencerModeRequest(PbPlaybackMode.PLAYBACK_MODE_PAT);
+    Request modeDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rMode)[4 .. $], modeDec));
+    assert(modeDec.sequencer.hasValue && modeDec.sequencer.value.playback_mode == PbPlaybackMode.PLAYBACK_MODE_PAT);
 }

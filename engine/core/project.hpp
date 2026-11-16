@@ -11,6 +11,38 @@
 
 namespace hibiki {
 
+enum class SequencerPlaybackMode { PAT = 0, SONG = 1 };
+
+struct ChannelPatternStepData {
+  std::vector<bool> steps = std::vector<bool>(16, false);
+  std::vector<float> step_velocities = std::vector<float>(16, 0.78f);
+  std::vector<float> step_pitches = std::vector<float>(16, 0.0f);
+  std::vector<float> step_pans = std::vector<float>(16, 0.0f);
+  std::vector<float> step_shifts = std::vector<float>(16, 0.0f);
+  std::vector<hibiki::pb::core::MidiEvent> notes;
+};
+
+struct SequencerPattern {
+  int pattern_index = 0;
+  std::string name;
+  uint32_t color = 0x00385770;
+  int length_steps = 16;
+  std::map<int, ChannelPatternStepData> channels;
+};
+
+struct SequencerChannel {
+  int channel_index = 0;
+  std::string name;
+  std::string uri;
+  std::string category = "Synths";
+  uint32_t color = 0x004A6A8A;
+  int mixer_insert = 1;
+  float volume = 0.78f;
+  float pan = 0.0f;
+  bool muted = false;
+  bool soloed = false;
+};
+
 struct ProjectState {
   std::map<int, std::unique_ptr<Track>> tracks;
   double bpm =
@@ -52,6 +84,13 @@ struct ProjectState {
   float master_pitch = 0.0f;
   int cpu_percent = 0;
   std::vector<float> oscilloscope;
+
+  // Channel Rack & Pattern Sequencer state
+  SequencerPlaybackMode playback_mode = SequencerPlaybackMode::PAT;
+  float swing_amount = 0.0f;
+  int selected_pattern_index = 0;
+  std::vector<SequencerChannel> sequencer_channels;
+  std::vector<SequencerPattern> sequencer_patterns;
 };
 
 // Convert a duration in beats to seconds at the given BPM.
@@ -59,6 +98,17 @@ double beatsToSec(double beats, double bpm);
 
 // Returns a pointer to the track, creating it if it doesn't exist
 Track* GetOrCreateTrack(ProjectState& state, int track_index);
+
+// Collect MIDI NoteOn/NoteOff events for `ch_idx` inside `pat` over the beat
+// window `[win_start_beats, win_start_beats + block_dur_beats)` wrapped at
+// `loop_beats` (if `wrap_loop == true`).
+void CollectPatternBlockMidiEvents(const SequencerPattern& pat, int ch_idx,
+                                   float swing_amount, double loop_beats,
+                                   double win_start_beats,
+                                   double block_dur_beats, double bpm,
+                                   float sample_rate, int block_size,
+                                   bool wrap_loop,
+                                   std::vector<MidiNoteEvent>& out);
 
 absl::Status SaveProject(const ProjectState& state, const std::string& path);
 absl::Status LoadProject(ProjectState& state, const std::string& path);

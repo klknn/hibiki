@@ -26,6 +26,12 @@ enum TransportState : int {
     TRANSPORT_STATE_RECORDING = 3,
 }
 
+enum PlaybackMode : int {
+    PLAYBACK_MODE_UNSPECIFIED = 0,
+    PLAYBACK_MODE_PAT = 1,
+    PLAYBACK_MODE_SONG = 2,
+}
+
 struct AutomationPoint {
     @ProtoField(1) float time_beats = 0.0f;
     @ProtoField(2) float value = 0.0f;
@@ -117,6 +123,7 @@ struct TimelineClip {
     @ProtoField(7) bool muted = false;
     @ProtoField(8) float duration_beats = 0.0f;
     @ProtoField(9) float loop_interval_beats = 0.0f;
+    @ProtoField(10) ProtoOptional!(int) pattern_index;
 }
 
 struct SessionSlot {
@@ -155,11 +162,47 @@ struct Track {
     @ProtoField(22) int[] bypassed_plugins;
 }
 
+struct ChannelPatternData {
+    @ProtoField(1) uint channel_index = 0;
+    @ProtoField(2) bool[] steps;
+    @ProtoField(3) float[] step_velocities;
+    @ProtoField(4) float[] step_pitches;
+    @ProtoField(5) float[] step_pans;
+    @ProtoField(6) float[] step_shifts;
+    @ProtoField(7) MidiEvent[] notes;
+}
+
+struct SequencerPattern {
+    @ProtoField(1) uint pattern_index = 0;
+    @ProtoField(2) string name;
+    @ProtoField(3) uint color = 0;
+    @ProtoField(4) int length_steps = 0;
+    @ProtoField(5) ChannelPatternData[] channels;
+}
+
+struct SequencerChannel {
+    @ProtoField(1) uint channel_index = 0;
+    @ProtoField(2) string name;
+    @ProtoField(3) string uri;
+    @ProtoField(4) string category;
+    @ProtoField(5) uint color = 0;
+    @ProtoField(6) int mixer_insert = 0;
+    @ProtoField(7) float volume = 0.0f;
+    @ProtoField(8) float pan = 0.0f;
+    @ProtoField(9) bool muted = false;
+    @ProtoField(10) bool soloed = false;
+}
+
 struct Project {
     @ProtoField(1) float bpm = 0.0f;
     @ProtoField(2) float playhead_sec = 0.0f;
     @ProtoField(3) TransportState transport_state = TransportState.TRANSPORT_STATE_UNSPECIFIED;
     @ProtoField(4) Track[] tracks;
+    @ProtoField(5) PlaybackMode playback_mode = PlaybackMode.PLAYBACK_MODE_UNSPECIFIED;
+    @ProtoField(6) float swing_amount = 0.0f;
+    @ProtoField(7) int selected_pattern_index = 0;
+    @ProtoField(8) SequencerChannel[] channels;
+    @ProtoField(9) SequencerPattern[] patterns;
 }
 
 struct EntityRef {

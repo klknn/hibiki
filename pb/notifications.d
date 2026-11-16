@@ -27,6 +27,9 @@ struct PlayheadInfo {
     @ProtoField(6) float loop_end = 0.0f;
     @ProtoField(7) int cpu_percent = 0;
     @ProtoField(8) float[] oscilloscope;
+    @ProtoField(9) pb.core.PlaybackMode playback_mode = pb.core.PlaybackMode.PLAYBACK_MODE_UNSPECIFIED;
+    @ProtoField(10) float swing_amount = 0.0f;
+    @ProtoField(11) int selected_pattern_index = 0;
 }
 
 struct PluginListResponse {
@@ -95,6 +98,7 @@ struct TimelineClipInfo {
     @ProtoField(11) float fade_in_sec = 0.0f;
     @ProtoField(12) float fade_out_sec = 0.0f;
     @ProtoField(13) bool muted = false;
+    @ProtoField(14) ProtoOptional!(int) pattern_index;
 }
 
 struct TrackInfo {
@@ -255,6 +259,15 @@ struct Notification {
     @ProtoField(29, true, "response") ProtoOptional!(AudioEditorData) audio_editor_data;
     @ProtoField(30, true, "response") ProtoOptional!(ProjectInfo) project_info;
     @ProtoField(32, true, "response") ProtoOptional!(DrumPadNotification) drum_pad;
+    @ProtoField(33, true, "response") ProtoOptional!(SequencerSync) sequencer_sync;
+}
+
+struct SequencerSync {
+    @ProtoField(1) pb.core.PlaybackMode playback_mode = pb.core.PlaybackMode.PLAYBACK_MODE_UNSPECIFIED;
+    @ProtoField(2) float swing_amount = 0.0f;
+    @ProtoField(3) int selected_pattern_index = 0;
+    @ProtoField(4) pb.core.SequencerChannel[] channels;
+    @ProtoField(5) pb.core.SequencerPattern[] patterns;
 }
 
 struct DrumPadNotification {

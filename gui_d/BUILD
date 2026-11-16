@@ -30,6 +30,7 @@ d_test(
     srcs = [
         "browser_panel.d",
         "channel_rack.d",
+        "device_panels.d",
         "icons.d",
         "ipc_client.d",
         "mixer_view.d",
@@ -57,6 +58,7 @@ d_library(
     srcs = [
         "browser_panel.d",
         "channel_rack.d",
+        "device_panels.d",
         "mixer_view.d",
         "modals.d",
         "piano_roll.d",

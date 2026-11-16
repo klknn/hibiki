@@ -90,13 +90,17 @@ Phase 1〜11 を通じて解決した主な断絶は以下の通りです：
 - **Phase 8 (`3374d31`, P0)**: ゼロアロケーション `PlaybackThread::Workspace`、EQ 係数キャッシュ、アトミック `ProjectState` スカラー値、`tracks_mutex` / `plugins_mutex` ロック分割、`AudioEditor` UAF 修正、Browser クリック/ドラッグ判別。
 - **Phase 9 (`6259950`, P1)**: 統合 `RenderProjectAudioBlock`、Pass 2 トポロジカル DAG + `WouldCreateRoutingCycle` BFS 循環防止、ユニティゲイン `BounceTrackClip`、`Project` スカラー `10..15` 永続化、64 ステップ化（`ACTION_SET_PATTERN_LENGTH`）、ステップパン DSP（`BuiltinSampler`, `Builtin3xOsc`, `BuiltinDrumMachine`）、Sequencer Undo/Redo、`ACTION_CLEAR_HISTORY`、動的オートメーションターゲット、`TimelineClipInfo.is_midi`、および Audio vs MIDI/Pattern ダブルクリック導線統一。
 - **Phase 10 (`b8ac57c`, P2 & 拡張 E2E)**: `stderr` スレッド & `onError` UI 表示、1 バイト再同期、`PluginWrapperWidget` の `editorRevision` フレームバッファキャッシュ、Mixer レコードアーム `[R]`、1 小節カウントダウン・プリロール & オーバーダブ制御、タイマー駆動 `PendingNoteOff[]` + `FocusOut` ノート解放、Timeline `SLIP`/`SELECT` + `DEL`、Piano Roll `snapBeats()` & `SELECT` + `DEL`、および `//gui_d:gui_e2e_test` 拡充（バウンス WAV 非無音波形ピーク検証、`PAT`/`SONG`、32 ステップ Undo/Redo、`ACTION_CLEAR_HISTORY`、`.hbk` 往復復元、`onError` 検証）。
-- **Phase 11**: `docs/d_v2.md` の最新化、日本語ドキュメント `docs/d_v2_ja.md` の作成、最終フォーマットおよび全リポジトリ検証。
+- **Phase 11 (`bd343b9`)**: `docs/d_v2.md` の最新化、日本語ドキュメント `docs/d_v2_ja.md` の作成、最終フォーマットおよび全リポジトリ検証。
+- **Phase 12 (`c7b86d8`)**: `GROUP`/`AUX` Pass 2 のタイムラインクリップ再生境界（`allow_timeline_clips`）、デフォルト `SONG` モードの `loop140.wav` 2 小節目 1 小節再生（`//testdata:testdata` 同梱）、空クリップに仮ノートを描画しない実パターン/MIDI プレビュー描画、および終了時 UI スレッド競合ガード（`uiClosing`, 冪等な `EngineProcessClient.stop()`）を修正。
+- **Phase 13 (`e10f19e`)**: 終了時 `FT_Done_Face` GC クラッシュを `third_party/dlangui_ft_shutdown.patch`（`APP_IS_SHUTTING_DOWN` ガード）で解消し、`gui_d/browser_panel.d` の D `foreach` ループクロージャ捕捉バグ（任意デバイスクリックで末尾項目 `loop140.wav` が発火する問題）を修正。
+- **Phase 14 (`04024e7`)**: クリップダブルクリック時の Piano Roll 表示同期（`selectPatternForPianoRoll`, `frameActiveNotes`, ステップノート描画）、ラッパー表示時の外部エディタ自動オープン、64 ステップ完全同期、実サンプルパス描画、および Channel Rack `+` / Mixer FX 全内蔵プラグイン導線を統一。
+- **Phase 15**: `gui_d/device_panels.d` を新設して 21 種の Java Swing 内蔵デバイス UI（`EQ`, `Compressor`, `Limiter`, `Hott`, `Maxim`, `Delay`, `Reverb`, `Phaser`, `Chorus`, `Bitcrusher`, `EnvelopeShaper`, `Convolver`, `Vocodey`, `StereoWidth`, `AcidBass`, `3xOsc`, `Sampler`, `EPiano`, `Organ`, `DrumMachine`, `DR8_*`）を `FlPalette`/`retroBevel` 調和デザインで移植。マルチバンド計測値（`low/mid/high` `in_db`/`gr_db`）を接続し、`PluginWrapperWidget` でカスタム UI を `EDITOR` 二度押し不要で即時表示（UI レスプラグイン向けの汎用ノブ `PARAMS` フォールバック維持）。
 
 ---
 
 ## 4. 検証ステータス (`d` ブランチ)
 
-- **`./tools/format.sh`**: C++（206）、Java（114）、`BUILD`、`.proto`（4）、D（75）ソースファイルの整形・検査を実行。
+- **`./tools/format.sh`**: C++（206）、Java（114）、`BUILD`、`.proto`（4）、D（76）ソースファイルの整形・検査を実行。
 - **`bazel test //... -c opt --test_output=errors`**: **107 件中 105 件のテストターゲットが合格**（失敗 0 件、Android 実機/エミュレータ依存の 2 件 `//android/app:hibiki_engine_playback_test` および `//android/app:melody_sequencer_integration_test` はスキップ）。
   - `//engine/core:project_test`、`//engine/commands:commands_test`、`//engine:playback_d_test`、`//gui_d:gui_d_test`、および実プロセス `//gui_d:gui_e2e_test`（IPC ハンドシェイク、BPM・テンプレート同期、非無音 WAV バウンス、`PAT`/`SONG`、32 ステップ + Undo/Redo + `ACTION_CLEAR_HISTORY`、`.hbk` 保存・読込往復、`onError` 検出）を含みます。
 - **`bazel build //gui_d:hibiki_gui //engine:hbk-play //engine:hbk-plugin-worker //engine:hbk-worker-daemon -c opt`**: 4 つのリリースバイナリすべてが終了コード `0` でビルド完了。

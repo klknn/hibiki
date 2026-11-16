@@ -963,6 +963,24 @@ extern (C) int UIAppMain(string[] args) {
         pendingNoteOffs ~= PendingNoteOff(trackIdx, note, 6);
     }
 
+    void openWrapperForTarget(WrapperTargetKind kind, int targetIdx, int fxSlot, string title) {
+        if (kind == WrapperTargetKind.CHANNEL_GENERATOR) {
+            pluginWrapper.setTargetChannel(targetIdx);
+        } else {
+            pluginWrapper.setTargetMixerFx(targetIdx, fxSlot);
+        }
+        winPlugin.windowTitle = title;
+        desktop.showWindow("win_plugin");
+        if (auto wp = resolveActiveWrapperPlugin(&model, kind, targetIdx, fxSlot)) {
+            if (wp.uri.length > 0 && !wp.uri.startsWith("builtin://") && !wp.remoteEditorOpen && client.isRunning()) {
+                wp.remoteEditorOpen = true;
+                const int trk = pluginWrapper.resolvedTrackIndex();
+                client.sendRequest(makePluginShowGuiRequest(trk, wp.pluginIndex));
+                client.sendRequest(makePluginGetEditorFrameRequest(trk, wp.pluginIndex));
+            }
+        }
+    }
+
     // Browser Callbacks
     browserPanel.onAddGenerator = (string label, string uri, bool isInst) {
         model.saveCurrentPatternToStore();
@@ -983,6 +1001,7 @@ extern (C) int UIAppMain(string[] args) {
         client.sendRequest(makeSequencerAddChannelRequest(
             ch.index, ch.name, ch.uri, ch.category, ch.color, ch.mixerInsert));
         desktop.showWindow("win_channel_rack");
+        openWrapperForTarget(WrapperTargetKind.CHANNEL_GENERATOR, chIdx, 0, "Fruity Wrapper - " ~ ch.name);
         refreshUi();
     };
     browserPanel.onAddEffect = (string label, string uri) {
@@ -996,6 +1015,10 @@ extern (C) int UIAppMain(string[] args) {
         client.sendRequest(makePluginLoadRequest(ins, uri, slotIdx));
         model.hintText = format("Loaded %s onto Mixer Insert %d", label, ins);
         desktop.showWindow("win_mixer");
+        if (slotIdx < 10) {
+            openWrapperForTarget(WrapperTargetKind.MIXER_FX, ins, slotIdx,
+                                 format("Fruity Wrapper - Insert %d Slot %d", ins, slotIdx + 1));
+        }
         refreshUi();
     };
     browserPanel.onAddSampleClip = (string path) {
@@ -1060,24 +1083,6 @@ extern (C) int UIAppMain(string[] args) {
             : 100;
         sendVirtualNote(targetTrk, note);
     };
-
-    void openWrapperForTarget(WrapperTargetKind kind, int targetIdx, int fxSlot, string title) {
-        if (kind == WrapperTargetKind.CHANNEL_GENERATOR) {
-            pluginWrapper.setTargetChannel(targetIdx);
-        } else {
-            pluginWrapper.setTargetMixerFx(targetIdx, fxSlot);
-        }
-        winPlugin.windowTitle = title;
-        desktop.showWindow("win_plugin");
-        if (auto wp = resolveActiveWrapperPlugin(&model, kind, targetIdx, fxSlot)) {
-            if (wp.uri.length > 0 && !wp.uri.startsWith("builtin://") && !wp.remoteEditorOpen && client.isRunning()) {
-                wp.remoteEditorOpen = true;
-                const int trk = pluginWrapper.resolvedTrackIndex();
-                client.sendRequest(makePluginShowGuiRequest(trk, wp.pluginIndex));
-                client.sendRequest(makePluginGetEditorFrameRequest(trk, wp.pluginIndex));
-            }
-        }
-    }
 
     // Channel Rack Callbacks
     channelRack.onSelectChannel = (int chIdx) {
@@ -1182,6 +1187,7 @@ extern (C) int UIAppMain(string[] args) {
                 client.sendRequest(makeSequencerAddChannelRequest(
                     ch.index, ch.name, ch.uri, ch.category, ch.color, ch.mixerInsert));
                 model.hintText = format("Added channel '%s' -> Insert %d", ch.name, ch.mixerInsert);
+                openWrapperForTarget(WrapperTargetKind.CHANNEL_GENERATOR, chIdx, 0, "Fruity Wrapper - " ~ ch.name);
                 refreshUi();
             }
         });

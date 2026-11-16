@@ -5,6 +5,8 @@ import dlangui;
 import dlangui.graphics.drawbuf : ColorDrawBuf, DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
+import gui_d.device_panels : buildBuiltinDeviceLayout, BuiltinDeviceUiState, drawBuiltinDevicePanel,
+    handleBuiltinDeviceMouse, hasCustomBuiltinDeviceUi;
 import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawRotaryKnob,
     drawThemeCard, drawThickLine, drawVCenteredText, FlPalette, getDawFont, getDawMonoFont,
@@ -171,13 +173,20 @@ private void drawSpectrumCurve(
 }
 
 /// Renders the FL Studio 2026 Fruity Wrapper Plugin Editor canvas.
+private bool hasActiveRemoteEditorFrame(const(PluginSlotState)* plug) pure nothrow @safe {
+    return plug !is null && plug.remoteEditorOpen && plug.editorW > 0 && plug.editorH > 0 &&
+           plug.editorRgba.length >= cast(size_t)(plug.editorW * plug.editorH * 4);
+}
+
 void drawPluginWrapperCanvas(
     DrawBuf buf,
     Rect rc,
     const(TransportModel)* model,
     const(PluginSlotState)* plug,
     FontRef fnt = FontRef.init,
-    DrawBuf remoteFrameBuf = null
+    DrawBuf remoteFrameBuf = null,
+    const(BuiltinDeviceUiState)* builtinUi = null,
+    bool showRawParams = false
 ) {
     const pal = model ? model.palette() : getFlPalette();
     auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
@@ -215,24 +224,35 @@ void drawPluginWrapperCanvas(
     drawDawIcon(buf, Rect(m.nextRc.left + dp(3), m.nextRc.top + dp(3), m.nextRc.right - dp(3), m.nextRc.bottom - dp(3)),
                 DawIcon.CHEVRON_RIGHT, pal.fgText);
 
-    // Unified flush VST3 EDITOR + Bypass strip
+    // Unified flush VST3 EDITOR / PARAMS + Bypass strip
+    const bool customBuiltin = hasCustomBuiltinDeviceUi(plug);
     const bool edOpen = plug && plug.remoteEditorOpen;
+    const bool toggleLit = customBuiltin ? showRawParams : edOpen;
+    dstring guiBtnLbl = customBuiltin ? "PARAMS"d : "EDITOR"d;
     drawThemeCard(buf, Rect(m.guiRc.left, m.guiRc.top, m.bypRc.right, m.bypRc.bottom),
-                  edOpen ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
+                  toggleLit ? pal.accentOrange : pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
     drawThemeCard(buf, m.bypRc, (plug && plug.enabled) ? pal.accentGreen : pal.ledOff,
                   COLOR_TRANSPARENT, pal, 1.5f, pal.retroBevel);
-    drawCenteredText(buf, uiFnt, m.guiRc, "EDITOR"d, edOpen ? pal.bgWindow : pal.fgText);
+    drawCenteredText(buf, uiFnt, m.guiRc, guiBtnLbl, toggleLit ? pal.bgWindow : pal.fgText);
 
     if (!plug) return;
 
     // 1b. Remote VST3 Offscreen Editor Framebuffer mode
-    if (plug.remoteEditorOpen && plug.editorW > 0 && plug.editorH > 0 &&
-        plug.editorRgba.length >= cast(size_t)(plug.editorW * plug.editorH * 4)) {
+    if (hasActiveRemoteEditorFrame(plug)) {
         drawThemeCard(buf, m.editorDstRc, pal.bgLcd, pal.borderSubtle, pal, 2.0f, true);
         if (remoteFrameBuf !is null) {
             const dstFit = computeRemoteEditorFitRect(m.editorDstRc, plug.editorW, plug.editorH);
             buf.drawRescaled(dstFit, remoteFrameBuf, Rect(0, 0, plug.editorW, plug.editorH));
         }
+        return;
+    }
+
+    // 1c. Builtin Swing-ported custom device UI (shown directly without extra EDITOR click)
+    if (customBuiltin && !showRawParams) {
+        BuiltinDeviceUiState fallbackUi;
+        const auto uiPtr = builtinUi ? builtinUi : &fallbackUi;
+        drawBuiltinDevicePanel(buf, Rect(rc.left, m.hdrRc.bottom, rc.right, rc.bottom),
+                               model, plug, *uiPtr, fnt);
         return;
     }
 
@@ -414,6 +434,8 @@ class PluginWrapperWidget : Widget {
     private int dragParamIdx_ = -1;
     private int dragStartY_ = 0;
     private float dragStartVal_ = 0.0f;
+    private BuiltinDeviceUiState builtinUi_;
+    private bool showRawParams_ = false;
     private ColorDrawBuf remoteBuf_;
     private const(PluginSlotState)* lastSyncedPlug_ = null;
     private uint lastSyncedRevision_ = 0;
@@ -436,12 +458,22 @@ class PluginWrapperWidget : Widget {
     }
 
     void setTargetChannel(int channelIdx) {
+        if (targetKind != WrapperTargetKind.CHANNEL_GENERATOR || targetIndex != channelIdx) {
+            builtinUi_ = BuiltinDeviceUiState.init;
+            showRawParams_ = false;
+            dragParamIdx_ = -1;
+        }
         targetKind = WrapperTargetKind.CHANNEL_GENERATOR;
         targetIndex = channelIdx;
         invalidate();
     }
 
     void setTargetMixerFx(int mixerInsert, int slotIdx) {
+        if (targetKind != WrapperTargetKind.MIXER_FX || targetIndex != mixerInsert || targetFxSlot != slotIdx) {
+            builtinUi_ = BuiltinDeviceUiState.init;
+            showRawParams_ = false;
+            dragParamIdx_ = -1;
+        }
         targetKind = WrapperTargetKind.MIXER_FX;
         targetIndex = mixerInsert;
         targetFxSlot = slotIdx;
@@ -495,7 +527,8 @@ class PluginWrapperWidget : Widget {
         if (visibility != Visibility.Visible) return;
         auto plug = resolveActiveWrapperPlugin(model_, targetKind, targetIndex, targetFxSlot);
         syncRemoteFrameBuffer(plug);
-        drawPluginWrapperCanvas(buf, _pos, model_, plug, safeWidgetFont(this), remoteBuf_);
+        drawPluginWrapperCanvas(buf, _pos, model_, plug, safeWidgetFont(this), remoteBuf_, &builtinUi_,
+                                showRawParams_);
     }
 
     private void forwardEditorMouse(const(PluginSlotState)* plug, int inputType, int wx, int wy, int btn, int delta) {
@@ -525,8 +558,11 @@ class PluginWrapperWidget : Widget {
     }
 
     override bool onMouseEvent(MouseEvent event) {
+        const bool hasCustomDrag = builtinUi_.activeDragParamId >= 0 ||
+                                   builtinUi_.eqDragBand >= 0 ||
+                                   builtinUi_.envDragPoint >= 0;
         if (event.action == MouseAction.FocusOut) {
-            return dragParamIdx_ >= 0;
+            return dragParamIdx_ >= 0 || hasCustomDrag;
         }
         if (!model_) return super.onMouseEvent(event);
         auto plug = resolveActiveWrapperPlugin(model_, targetKind, targetIndex, targetFxSlot);
@@ -565,6 +601,26 @@ class PluginWrapperWidget : Widget {
                     return true;
                 }
                 if (m.guiRc.isPointInside(event.x, event.y)) {
+                    if (hasCustomBuiltinDeviceUi(plug)) {
+                        if (plug.remoteEditorOpen) {
+                            plug.remoteEditorOpen = false;
+                            if (onToggleRemoteEditor !is null) {
+                                onToggleRemoteEditor(trk, plug.pluginIndex, false);
+                            }
+                            showRawParams_ = false;
+                        } else {
+                            showRawParams_ = !showRawParams_;
+                        }
+                        dragParamIdx_ = -1;
+                        builtinUi_.activeDragParamId = -1;
+                        builtinUi_.eqDragBand = -1;
+                        builtinUi_.envDragPoint = -1;
+                        model_.hintText = showRawParams_
+                            ? format("%s: Raw parameter knobs", plug.name)
+                            : format("%s: Custom device UI", plug.name);
+                        invalidate();
+                        return true;
+                    }
                     if (plug.uri.startsWith("builtin://") || plug.uri.length == 0) {
                         if (plug.remoteEditorOpen) {
                             plug.remoteEditorOpen = false;
@@ -597,12 +653,32 @@ class PluginWrapperWidget : Widget {
             }
 
             // Remote VST3 editor framebuffer mouse down forwarding
-            if (plug.remoteEditorOpen && event.y >= m.hdrRc.bottom) {
+            if (hasActiveRemoteEditorFrame(plug) && event.y >= m.hdrRc.bottom) {
                 const int btn = (event.button == MouseButton.Right) ? 1 : 0;
                 forwardEditorMouse(plug, 1, event.x, event.y, btn, 0);
                 return true;
             }
+        }
 
+        // Builtin Swing-ported custom device UI mouse interactions
+        if (!hasActiveRemoteEditorFrame(plug) && hasCustomBuiltinDeviceUi(plug) && !showRawParams_ &&
+            (event.y >= m.hdrRc.bottom || hasCustomDrag)) {
+            Rect bodyRc = Rect(_pos.left, m.hdrRc.bottom, _pos.right, _pos.bottom);
+            const int trk = resolveTargetMixerTrack();
+            const bool handled = handleBuiltinDeviceMouse(
+                event, bodyRc, model_, plug, builtinUi_, trk,
+                onSetParam, onTriggerPad, onPromptPadSample, onLoadSample,
+                (string msg) { model_.hintText = msg; });
+            if (handled) {
+                invalidate();
+                return true;
+            }
+            if (event.action == MouseAction.ButtonDown) {
+                return true;
+            }
+        }
+
+        if (event.action == MouseAction.ButtonDown) {
             // Sampler [LOAD WAV] button hit test
             if (isSamplerPlugin(plug) && m.sampleLoadRc.isPointInside(event.x, event.y)) {
                 if (onLoadSample !is null) onLoadSample(resolveTargetMixerTrack(), plug.pluginIndex);
@@ -658,7 +734,7 @@ class PluginWrapperWidget : Widget {
             return true;
         }
 
-        if (plug.remoteEditorOpen && event.y >= m.hdrRc.bottom) {
+        if (hasActiveRemoteEditorFrame(plug) && event.y >= m.hdrRc.bottom) {
             if (event.action == MouseAction.Move) {
                 forwardEditorMouse(plug, 0, event.x, event.y, 0, 0);
                 return true;
@@ -732,7 +808,25 @@ unittest {
         sentTrack = trkIdx;
         ++paramUpdates;
     };
-    // Click and drag param 0 knob
+    // Phase 15: Builtin plugin opens custom Swing-ported UI directly without extra EDITOR click
+    assert(!pw.showRawParams_ && hasCustomBuiltinDeviceUi(plug));
+    const dlAcid = buildBuiltinDeviceLayout(Rect(0, WRAP_HDR_H, 440, 280), plug, pw.builtinUi_, model.palette());
+    assert(dlAcid.knobs.length >= 1);
+    const short acKx = cast(short)dlAcid.knobs[0].cx;
+    const short acKy = cast(short)dlAcid.knobs[0].cy;
+    pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, acKx, acKy));
+    pw.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, MouseFlag.LButton, acKx, cast(short)(acKy - 18)));
+    assert(sentTrack == 103, "Expected custom Acid Bass knob change to target generator track 103");
+    pw.onMouseEvent(new MouseEvent(MouseAction.Cancel, MouseButton.None, 0, acKx, cast(short)(acKy - 18)));
+    sentTrack = -1;
+    pw.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, 0, acKx, cast(short)(acKy + 25)));
+    assert(sentTrack == -1, "Expected MouseAction.Cancel to clear custom builtin knob drag");
+
+    // Toggle PARAMS button to verify raw knob fallback & reset behavior
+    pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)(440 - 50), cast(short)16));
+    assert(pw.showRawParams_ && !plug.remoteEditorOpen, "Expected PARAMS click on builtin plugin to show raw parameter knobs");
+
+    // Click and drag param 0 knob in raw param view
     const int gridTop = WRAP_HDR_H + 8 + SCOPE_H + 10;
     pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)60, cast(short)(gridTop + 20)));
     pw.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, MouseFlag.LButton, cast(short)60, cast(short)(gridTop + 5)));
@@ -743,6 +837,10 @@ unittest {
     sentTrack = -1;
     pw.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, 0, cast(short)60, cast(short)(gridTop + 40)));
     assert(sentTrack == -1, "Expected MouseAction.Cancel to clear knob drag");
+
+    // Toggle back to custom UI
+    pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)(440 - 50), cast(short)16));
+    assert(!pw.showRawParams_, "Expected second PARAMS click to return to custom device UI");
 
     // Phase 4: Preset '>' selector updates presetIndex & syncs params via onSetParam
     const int prevPreset = plug.presetIndex;
@@ -785,12 +883,21 @@ unittest {
     pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)(440 - 50), cast(short)16));
     assert(!edState && !plug.remoteEditorOpen, "Expected EDITOR click to toggle remote editor off");
 
-    // Regression: Clicking EDITOR on a built-in plugin (builtin://...) must NOT activate remoteEditorOpen polling
+    // Regression: Clicking PARAMS/EDITOR on a built-in plugin (builtin://...) must NOT activate remoteEditorOpen polling
     assert(plug.uri == "builtin://acid_bass");
     edState = false;
     pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)(440 - 50), cast(short)16));
     assert(!plug.remoteEditorOpen && !edState,
-           "Expected EDITOR button on builtin:// plugin not to enter remoteEditorOpen polling state");
+           "Expected PARAMS button on builtin:// plugin not to enter remoteEditorOpen polling state");
+    pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)(440 - 50), cast(short)16));
+    assert(!pw.showRawParams_);
+
+    // External headless/GUI-less plugin falls back cleanly when remoteEditorOpen is off or editorW == 0
+    PluginSlotState extPlug;
+    extPlug.uri = "vst3://external-headless";
+    extPlug.name = "Headless VST3";
+    assert(!hasCustomBuiltinDeviceUi(&extPlug));
+    drawPluginWrapperCanvas(buf, Rect(0, 0, 440, 260), &model, &extPlug);
 
     // Regression: syncRemoteFrameBuffer caches ColorDrawBuf across identical editorRevision frames
     plug.remoteEditorOpen = true;

@@ -150,6 +150,12 @@ struct PluginSlotState {
     float meterInDb = -96.0f;
     float meterOutDb = -96.0f;
     float meterGrDb = 0.0f;
+    float meterLowGrDb = 0.0f;
+    float meterMidGrDb = 0.0f;
+    float meterHighGrDb = 0.0f;
+    float meterLowInDb = -96.0f;
+    float meterMidInDb = -96.0f;
+    float meterHighInDb = -96.0f;
     bool hasMetering = false;
     float[] scopeL;
     float[] scopeR;
@@ -1265,6 +1271,12 @@ struct TransportModel {
                 plug.meterInDb = pm.input_db;
                 plug.meterOutDb = pm.output_db;
                 plug.meterGrDb = pm.gain_reduction_db;
+                plug.meterLowGrDb = pm.low_gr_db;
+                plug.meterMidGrDb = pm.mid_gr_db;
+                plug.meterHighGrDb = pm.high_gr_db;
+                plug.meterLowInDb = pm.low_in_db;
+                plug.meterMidInDb = pm.mid_in_db;
+                plug.meterHighInDb = pm.high_in_db;
                 plug.hasMetering = true;
             }
         }

@@ -1,11 +1,14 @@
 module gui_d.main;
 
+import core.atomic : atomicLoad, atomicStore;
 import core.math : fabs;
+import core.memory : GC;
 import core.stdc.math : sinf;
 import core.thread : Thread;
 import core.time : msecs;
 import dlangui;
 import dlangui.graphics.colors : COLOR_TRANSPARENT;
+import dlangui.graphics.fonts : FontManager;
 import dlangui.widgets.controls : TextWidget;
 import dlangui.widgets.editors : EditLine;
 import dlangui.widgets.layouts : HorizontalLayout, VerticalLayout;
@@ -36,6 +39,32 @@ import std.string : startsWith;
 import std.utf : toUTF32;
 
 mixin APP_ENTRY_POINT;
+
+/// Resolves asset path (`testdata/loop140.wav`, etc.) across cwd, exe-relative, and Bazel runfiles.
+private string resolveAssetPath(string relPath) {
+    if (relPath.length > 0 && exists(relPath)) return relPath;
+    string[] candidates;
+    try {
+        const exePath = thisExePath();
+        const exeDir = dirName(exePath);
+        candidates ~= buildPath(exeDir, relPath);
+        candidates ~= buildPath(exeDir, "..", relPath);
+        candidates ~= buildPath(exePath ~ ".runfiles", "_main", relPath);
+    } catch (Exception) {
+    }
+    const runfilesDir = environment.get("RUNFILES_DIR", "");
+    if (runfilesDir.length > 0) {
+        candidates ~= buildPath(runfilesDir, "_main", relPath);
+    }
+    const testSrcDir = environment.get("TEST_SRCDIR", "");
+    if (testSrcDir.length > 0) {
+        candidates ~= buildPath(testSrcDir, "_main", relPath);
+    }
+    foreach (c; candidates) {
+        if (c.length > 0 && exists(c)) return c;
+    }
+    return "";
+}
 
 /// Resolves `hbk-play` binary path from CLI `--engine=`, Bazel runfiles, exe-relative, or workspace paths.
 private string resolveEnginePath(string[] args) {
@@ -250,11 +279,14 @@ extern (C) int UIAppMain(string[] args) {
 
     string enginePath = resolveEnginePath(args);
     FlSettingsDialog activeSettingsDlg;
+    shared bool uiClosing = false;
 
     client = new EngineProcessClient((Notification notif) {
+        if (atomicLoad(uiClosing)) return;
         const bool structural = notif.plugin_list.hasValue || notif.clear_project.hasValue ||
                                 notif.sequencer_sync.hasValue;
         window.executeInUiThread(() {
+            if (atomicLoad(uiClosing)) return;
             model.applyNotification(notif);
             if ((notif.audio_input_list.hasValue || notif.midi_input_list.hasValue) &&
                 activeSettingsDlg !is null) {
@@ -263,7 +295,9 @@ extern (C) int UIAppMain(string[] args) {
             refreshUi(structural);
         });
     }, (string errLine) {
+        if (atomicLoad(uiClosing)) return;
         window.executeInUiThread(() {
+            if (atomicLoad(uiClosing)) return;
             model.hintText = "Engine: " ~ errLine;
             refreshUi();
         });
@@ -349,8 +383,9 @@ extern (C) int UIAppMain(string[] args) {
                     client.sendRequest(makeAddPatternTimelineClipRequest(
                         trk.index, cl.patternIndex, cast(float)cl.startTimeSec, durBeats));
                 } else if (cl.kind == PlaylistClipKind.AUDIO) {
-                    const string audioPath = cl.name.startsWith("testdata/") ? cl.name : ("testdata/" ~ cl.name);
-                    if (exists(audioPath)) {
+                    const string rawAudio = cl.name.startsWith("testdata/") ? cl.name : ("testdata/" ~ cl.name);
+                    const string audioPath = resolveAssetPath(rawAudio);
+                    if (audioPath.length > 0 && exists(audioPath)) {
                         client.sendRequest(makeAddTimelineClipRequest(
                             trk.index, audioPath, cast(float)cl.startTimeSec, durBeats));
                     }
@@ -1617,6 +1652,7 @@ extern (C) int UIAppMain(string[] args) {
     int uiAnimTickCount = 0;
     // 33ms animation & remote-GUI poll tick (local meter animation runs only if engine is not connected)
     root.onAnimationTick = () {
+        if (atomicLoad(uiClosing)) return;
         ++uiAnimTickCount;
         // Flush scheduled virtual MIDI audition note-offs cleanly on UI thread
         if (pendingNoteOffs.length > 0) {
@@ -1698,10 +1734,25 @@ extern (C) int UIAppMain(string[] args) {
     applyThemeColors();
     refreshUi(true);
 
+    window.onCanClose = () {
+        atomicStore(uiClosing, true);
+        client.stop();
+        return true;
+    };
+    window.onClose = () {
+        atomicStore(uiClosing, true);
+        client.stop();
+    };
     window.mainWidget = root;
     window.show();
     root.setTimer(33);
     int res = Platform.instance.enterMessageLoop();
+    atomicStore(uiClosing, true);
     client.stop();
+    // Pin FontManager.instance across rt_term() so FreeTypeFontManager.~this() cannot
+    // tear down FT_Library before lingering Style/FreeTypeFontFile GC finalizers run FT_Done_Face.
+    if (FontManager.instance !is null) {
+        GC.addRoot(cast(void*)FontManager.instance);
+    }
     return res;
 }

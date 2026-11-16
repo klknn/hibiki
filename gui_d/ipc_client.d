@@ -998,7 +998,7 @@ Request makeAudioEditorPreviewStopRequest() @safe {
 
 /// Manages the `hbk-play` child process and its binary Protobuf IPC pipes.
 class EngineProcessClient {
-    import core.atomic : atomicLoad, atomicStore;
+    import core.atomic : atomicLoad, atomicStore, cas;
     import core.sync.mutex : Mutex;
     import core.thread : Thread;
 
@@ -1007,6 +1007,7 @@ class EngineProcessClient {
     private Thread readerThread_;
     private Thread stderrThread_;
     private shared bool running_ = false;
+    private shared bool stopping_ = false;
     private void delegate(Notification) onNotification_;
     void delegate(string) onError;
 
@@ -1017,16 +1018,17 @@ class EngineProcessClient {
     }
 
     bool isRunning() const {
-        return atomicLoad(running_);
+        return atomicLoad(running_) && !atomicLoad(stopping_);
     }
 
     bool start(string engineBinaryPath) {
+        atomicStore(stopping_, false);
         try {
             pipes_ = pipeProcess([engineBinaryPath], Redirect.stdin | Redirect.stdout | Redirect.stderr);
         } catch (Exception e) {
             const string msg = "Failed to start engine " ~ engineBinaryPath ~ ": " ~ e.msg;
             stderr.writeln(msg);
-            if (onError !is null) onError(msg);
+            if (onError !is null && !atomicLoad(stopping_)) onError(msg);
             return false;
         }
         atomicStore(running_, true);
@@ -1040,11 +1042,11 @@ class EngineProcessClient {
     }
 
     void sendRequest(Request req) {
-        if (!atomicLoad(running_)) return;
+        if (!atomicLoad(running_) || atomicLoad(stopping_)) return;
         ubyte[] framed = encodeLengthPrefixedRequest(req);
         bool failed = false;
         synchronized (writeMutex_) {
-            if (!atomicLoad(running_)) return;
+            if (!atomicLoad(running_) || atomicLoad(stopping_)) return;
             try {
                 pipes_.stdin.rawWrite(framed);
                 pipes_.stdin.flush();
@@ -1053,14 +1055,24 @@ class EngineProcessClient {
                 failed = true;
             }
         }
-        if (failed && onError !is null) {
+        if (failed && onError !is null && !atomicLoad(stopping_)) {
             onError("Engine IPC pipe disconnected while sending command");
         }
     }
 
     void stop() {
-        if (!atomicLoad(running_)) return;
-        sendRequest(makeQuitRequest());
+        if (!cas(&stopping_, false, true)) return;
+        if (!atomicLoad(running_)) {
+            atomicStore(stopping_, false);
+            return;
+        }
+        synchronized (writeMutex_) {
+            try {
+                auto quitReq = makeQuitRequest();
+                pipes_.stdin.rawWrite(encodeLengthPrefixedRequest(quitReq));
+                pipes_.stdin.flush();
+            } catch (Exception) {}
+        }
         atomicStore(running_, false);
         try {
             pipes_.stdin.close();
@@ -1072,11 +1084,13 @@ class EngineProcessClient {
             try {
                 readerThread_.join(false);
             } catch (Exception) {}
+            readerThread_ = null;
         }
         if (stderrThread_ !is null) {
             try {
                 stderrThread_.join(false);
             } catch (Exception) {}
+            stderrThread_ = null;
         }
         try {
             pipes_.stdout.close();
@@ -1084,22 +1098,23 @@ class EngineProcessClient {
         try {
             pipes_.stderr.close();
         } catch (Exception) {}
+        atomicStore(stopping_, false);
     }
 
     private void stderrLoop() {
         import std.string : strip;
         char[2048] chunk;
         string pending;
-        while (true) {
+        while (!atomicLoad(stopping_)) {
             char[] got;
             try {
                 got = pipes_.stderr.rawRead(chunk[]);
             } catch (Exception) {
                 break;
             }
-            if (got.length == 0) break;
+            if (got.length == 0 || atomicLoad(stopping_)) break;
             pending ~= got;
-            while (true) {
+            while (!atomicLoad(stopping_)) {
                 ptrdiff_t nl = -1;
                 foreach (idx, c; pending) {
                     if (c == '\n') { nl = cast(ptrdiff_t)idx; break; }
@@ -1107,13 +1122,13 @@ class EngineProcessClient {
                 if (nl < 0) break;
                 const string line = strip(pending[0 .. nl]).idup;
                 pending = pending[nl + 1 .. $];
-                if (line.length > 0 && onError !is null) {
+                if (line.length > 0 && onError !is null && !atomicLoad(stopping_)) {
                     onError(line);
                 }
             }
         }
         const string tail = strip(pending).idup;
-        if (tail.length > 0 && onError !is null) {
+        if (tail.length > 0 && onError !is null && !atomicLoad(stopping_)) {
             onError(tail);
         }
     }
@@ -1121,20 +1136,21 @@ class EngineProcessClient {
     private void readLoop() {
         ubyte[4096] chunk;
         ubyte[] rxBuf;
-        while (atomicLoad(running_)) {
+        while (atomicLoad(running_) && !atomicLoad(stopping_)) {
             ubyte[] readSlice;
             try {
                 readSlice = pipes_.stdout.rawRead(chunk[]);
             } catch (Exception) {
                 break;
             }
-            if (readSlice.length == 0) break;
+            if (readSlice.length == 0 || atomicLoad(stopping_)) break;
             rxBuf ~= readSlice;
 
             ubyte[] payload;
-            while (atomicLoad(running_) && extractNextFrame(rxBuf, payload)) {
+            while (atomicLoad(running_) && !atomicLoad(stopping_) && extractNextFrame(rxBuf, payload)) {
                 Notification notif;
-                if (decodeProtoOwned(payload, notif) && onNotification_ !is null && atomicLoad(running_)) {
+                if (decodeProtoOwned(payload, notif) && onNotification_ !is null &&
+                    atomicLoad(running_) && !atomicLoad(stopping_)) {
                     onNotification_(notif);
                 }
             }
@@ -1413,4 +1429,11 @@ unittest {
     Notification decoded2;
     assert(decodeProto(outP2, decoded2) && decoded2.playhead_info.hasValue);
     assert(decoded2.playhead_info.value.bpm > 151.0f && decoded2.playhead_info.value.bpm < 153.0f);
+
+    // 10. Repeated stop() on idle EngineProcessClient must be safely idempotent without firing onError
+    bool idleErr = false;
+    auto idleClient = new EngineProcessClient((Notification n) {}, (string e) { idleErr = true; });
+    idleClient.stop();
+    idleClient.stop();
+    assert(!idleErr && !idleClient.isRunning(), "Expected idempotent stop() on unstarted client");
 }

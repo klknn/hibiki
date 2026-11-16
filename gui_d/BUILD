@@ -76,6 +76,7 @@ d_binary(
     srcs = ["main.d"],
     data = [
         "//engine:hbk-play",
+        "//testdata",
         "@biz_ud_gothic//:fonts",
     ],
     linkopts = select({

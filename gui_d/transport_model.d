@@ -321,7 +321,7 @@ struct TransportModel {
     bool loopEnabled = true;
     double loopStartSec = 0.0;
     double loopEndSec = 6.857; // 4 bars at 140 BPM
-    PlaybackMode playbackMode = PlaybackMode.PAT;
+    PlaybackMode playbackMode = PlaybackMode.SONG;
     SnapMode snapMode = SnapMode.BEAT_1_4;
     TimeDisplayMode timeDisplayMode = TimeDisplayMode.BAR_BEAT;
 
@@ -612,7 +612,7 @@ struct TransportModel {
             aud.name = "loop140.wav";
             aud.color = pal.clipAudio;
             aud.startTimeSec = barSec;
-            aud.durationSec = barSec * 2.0;
+            aud.durationSec = barSec; // 1 bar at 140 BPM (1.714s), matching testdata/loop140.wav
             aud.waveform = generateSampleWaveform(768, 140, true);
 
             TimelineClipState aut;

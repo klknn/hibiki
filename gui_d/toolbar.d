@@ -576,7 +576,8 @@ unittest {
     auto buf = new ColorDrawBuf(1280, 48);
     drawToolbarCanvas(buf, Rect(0, 0, 1280, 48), &model, true, true, true, true, true, false);
     assert(buf.scanLine(10)[100] == model.palette().bgToolbarWell ||
-           buf.scanLine(10)[100] == model.palette().accentOrange);
+           buf.scanLine(10)[100] == model.palette().accentOrange ||
+           buf.scanLine(10)[100] == model.palette().accentGreen);
 
     import gui_d.theme : destroyWidgetTree;
     if (currentTheme is null) currentTheme = createDefaultTheme();

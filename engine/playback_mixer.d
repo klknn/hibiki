@@ -134,6 +134,9 @@ void renderAudioClipBlock(
     const double invSr = 1.0 / sampleRate;
 
     foreach (i; 0 .. blockSize) {
+        const double sampleTimeInClip = clipLocalTime + cast(double)i * invSr;
+        if (sampleTimeInClip < 0.0) continue;
+        if (clipDuration > 0.0 && sampleTimeInClip >= clipDuration) break;
         int samplePos = startSample + cast(int)i;
         if (samplePos < 0) continue;
         if (isLoop && loopLen > 0) {
@@ -143,7 +146,6 @@ void renderAudioClipBlock(
         }
 
         double fadeGain = 1.0;
-        double sampleTimeInClip = clipLocalTime + cast(double)i * invSr;
         if (fadeInSec > 0.0 && sampleTimeInClip < fadeInSec) {
             double t = sampleTimeInClip / fadeInSec;
             double db = fadeMinDb * (1.0 - t);

@@ -1,5 +1,6 @@
 module gui_d.timeline_view;
 
+import core.stdc.math : ceil, lround;
 import dlangui;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
@@ -9,7 +10,7 @@ import gui_d.theme : adjustColorBrightness, contrastTextColor, dp, dpf, drawBeve
     drawCenteredText, drawDetailedWaveform, drawFilledCircle, drawPlayheadTriangle, drawThemeCard,
     drawThickLine, drawVCenteredText, FlPalette, getDawFont, getFlPalette, safeWidgetFont,
     ScopedRetroAntialias, truncateLabel, uiScale;
-import gui_d.transport_model : AutomationPoint, EditorTool, PlaylistClipKind,
+import gui_d.transport_model : AutomationPoint, EditorTool, PatternState, PlaylistClipKind,
     TimelineClipState, TransportModel;
 import gui_d.workspace : activateParentWindow;
 import std.format : format;
@@ -357,7 +358,7 @@ void drawTimelineCanvas(
             foreach (const ref clip; model.tracks[tIdx].clips) {
                 const bool isSel = (model.tracks[tIdx].index == model.selectedTrack &&
                                     clip.clipIndex == model.selectedClipIndex);
-                drawPlaylistClip(buf, arrRc, y0, y1, clip, pal, pixelsPerSec, scrollSec, smallFnt, isSel);
+                drawPlaylistClip(buf, arrRc, y0, y1, clip, pal, pixelsPerSec, scrollSec, smallFnt, isSel, model);
             }
         }
     }
@@ -377,6 +378,103 @@ void drawTimelineCanvas(
     }
 }
 
+private struct ClipPreviewBar {
+    double startNorm;
+    double endNorm;
+    int pitch;
+}
+
+private void collectPatternPreviewBars(
+    const(TransportModel)* model,
+    ref const(TimelineClipState) clip,
+    out ClipPreviewBar[] outBars
+) @safe {
+    if (model is null) return;
+    int patIdx = -1;
+    foreach (i, const ref p; model.patterns) {
+        if (p.index == clip.patternIndex) {
+            patIdx = cast(int)i;
+            break;
+        }
+    }
+    if (patIdx < 0) return;
+
+    const ref pat = model.patterns[patIdx];
+    const int patLen = (pat.lengthSteps > 0 && pat.lengthSteps <= 64) ? pat.lengthSteps : 16;
+    const double patBeats = patLen * 0.25;
+    const double bpm = (model.bpm > 0.0) ? model.bpm : 140.0;
+    const double clipBeats = clip.durationSec * (bpm / 60.0);
+    if (patBeats <= 0.0 || clipBeats <= 0.0) return;
+
+    struct RawBar {
+        double startBeat;
+        double endBeat;
+        int pitch;
+    }
+    RawBar[] raw;
+
+    void appendChannel(int chIdx, const(bool)[] steps, const(float)[] stepPitches, const typeof(model.channels[0].notes) notes) @safe {
+        foreach (int s; 0 .. patLen) {
+            if (s >= cast(int)steps.length || !steps[s]) continue;
+            const float pn = (s < cast(int)stepPitches.length) ? stepPitches[s] : 0.0f;
+            int pitch = (pn != 0.0f)
+                ? (60 + cast(int)(pn * 12.0f + (pn >= 0.0f ? 0.5f : -0.5f)))
+                : (48 + (chIdx % 8) * 3);
+            if (pitch < 0) pitch = 0;
+            if (pitch > 127) pitch = 127;
+            raw ~= RawBar(s * 0.25, s * 0.25 + 0.20, pitch);
+        }
+        foreach (const ref ev; notes) {
+            const double b0 = cast(double)ev.tick / 480.0;
+            const double durB = (ev.duration_ticks > 0 ? cast(double)ev.duration_ticks : 120.0) / 480.0;
+            raw ~= RawBar(b0, b0 + durB, cast(int)ev.pitch);
+        }
+    }
+
+    if (clip.patternIndex == model.selectedPatternIndex) {
+        foreach (const ref ch; model.channels) {
+            appendChannel(ch.index, ch.steps[], ch.stepPitches[], ch.notes);
+        }
+    } else {
+        foreach (const ref cp; pat.channelSteps) {
+            appendChannel(cp.channelIndex, cp.steps[], cp.stepPitches[], cp.notes);
+        }
+    }
+    if (raw.length == 0) return;
+
+    int numReps = cast(int)ceil(clipBeats / patBeats);
+    if (numReps < 1) numReps = 1;
+    if (numReps > 16) numReps = 16;
+    foreach (rep; 0 .. numReps) {
+        const double baseBeat = rep * patBeats;
+        foreach (const ref rb; raw) {
+            const double t0 = baseBeat + rb.startBeat;
+            if (t0 >= clipBeats) continue;
+            double t1 = baseBeat + rb.endBeat;
+            if (t1 > clipBeats) t1 = clipBeats;
+            if (t1 <= t0) continue;
+            outBars ~= ClipPreviewBar(t0 / clipBeats, t1 / clipBeats, rb.pitch);
+        }
+    }
+}
+
+private void collectMidiWaveformPreviewBars(
+    ref const(TimelineClipState) clip,
+    out ClipPreviewBar[] outBars
+) @safe {
+    for (size_t i = 0; i + 2 < clip.waveform.length; i += 3) {
+        double s = cast(double)clip.waveform[i];
+        const int pitch = cast(int)lround(cast(double)clip.waveform[i + 1]);
+        double d = cast(double)clip.waveform[i + 2];
+        if (s < 0.0) s = 0.0;
+        if (s > 1.0) continue;
+        if (d < 0.01) d = 0.02;
+        double e = s + d;
+        if (e > 1.0) e = 1.0;
+        if (e > s) outBars ~= ClipPreviewBar(s, e, pitch);
+    }
+}
+
 private void drawPlaylistClip(
     DrawBuf buf,
     Rect arrRc,
@@ -387,7 +485,8 @@ private void drawPlaylistClip(
     double pixelsPerSec,
     double scrollSec,
     FontRef fnt,
-    bool isSelected = false
+    bool isSelected = false,
+    const(TransportModel)* model = null
 ) {
     int cx0 = secToPixelX(clip.startTimeSec, pixelsPerSec, arrRc.left, scrollSec);
     int cx1 = secToPixelX(clip.startTimeSec + clip.durationSec, pixelsPerSec, arrRc.left, scrollSec);
@@ -463,21 +562,50 @@ private void drawPlaylistClip(
             }
         }
     } else if (clip.kind == PlaylistClipKind.PATTERN || clip.kind == PlaylistClipKind.MIDI) {
-        // Mini piano-roll / step preview bars inside pattern or recorded MIDI clip
-        const uint noteCol = clip.muted ? pal.fgDim : pal.noteFill;
-        const uint attackCol = clip.muted
-            ? pal.fgDim
-            : (clip.kind == PlaylistClipKind.MIDI ? pal.accentCyan : pal.accentGreen);
-        const int spanY = bodyBot - bodyTop - dp(3);
-        if (spanY > 0) {
-            foreach (k; 0 .. 8) {
-                const int nx0 = cx0 + dp(4) + (k * bodyW) / 8;
-                const int nx1 = nx0 + (bodyW / 12) + dp(2);
-                const int ny = bodyTop + (dp(k * 5 + clip.patternIndex * 3) % spanY);
-                if (nx1 < cx1 - dp(2)) {
-                    buf.fillRect(Rect(nx0, ny, nx1, ny + dp(3)), noteCol);
-                    if (nx1 - nx0 >= dp(4)) {
-                        buf.fillRect(Rect(nx0, ny, nx0 + dp(2), ny + dp(3)), attackCol);
+        // Render actual Pattern steps/notes or MIDI clip notes (empty clips render cleanly with zero notes)
+        ClipPreviewBar[] bars;
+        if (clip.kind == PlaylistClipKind.PATTERN) {
+            collectPatternPreviewBars(model, clip, bars);
+        } else {
+            collectMidiWaveformPreviewBars(clip, bars);
+        }
+        if (bars.length > 0) {
+            const uint noteCol = clip.muted ? pal.fgDim : pal.noteFill;
+            const uint attackCol = clip.muted
+                ? pal.fgDim
+                : (clip.kind == PlaylistClipKind.MIDI ? pal.accentCyan : pal.accentGreen);
+            const int noteH = dp(3);
+            const int spanY = bodyBot - bodyTop - noteH;
+            if (spanY >= 0) {
+                int minP = bars[0].pitch;
+                int maxP = bars[0].pitch;
+                foreach (const ref b; bars) {
+                    if (b.pitch < minP) minP = b.pitch;
+                    if (b.pitch > maxP) maxP = b.pitch;
+                }
+                const int pRange = (maxP - minP > 12) ? (maxP - minP) : 12;
+                const int pPad = (pRange - (maxP - minP)) / 2;
+                const int effMin = minP - pPad;
+                const double visLeftSec = scrollSec;
+                const double visRightSec = scrollSec + cast(double)arrRc.width / (pixelsPerSec > 0.0 ? pixelsPerSec : 52.0);
+                const double clipSpan = clip.durationSec > 0.0 ? clip.durationSec : 1.0;
+                const int fullX0 = secToPixelX(clip.startTimeSec, pixelsPerSec, arrRc.left, scrollSec) + padX;
+                const int fullX1 = secToPixelX(clip.startTimeSec + clip.durationSec, pixelsPerSec, arrRc.left, scrollSec) - padX;
+                const int fullW = fullX1 - fullX0;
+                if (fullW > dp(4) && visRightSec > visLeftSec) {
+                    foreach (const ref b; bars) {
+                        int nx0 = fullX0 + cast(int)(b.startNorm * fullW);
+                        int nx1 = fullX0 + cast(int)(b.endNorm * fullW);
+                        if (nx1 < nx0 + dp(2)) nx1 = nx0 + dp(2);
+                        if (nx0 < cx0 + dp(2)) nx0 = cx0 + dp(2);
+                        if (nx1 > cx1 - dp(2)) nx1 = cx1 - dp(2);
+                        if (nx1 <= nx0) continue;
+                        const double normY = cast(double)(b.pitch - effMin) / cast(double)pRange;
+                        const int ny = bodyTop + cast(int)((1.0 - normY) * spanY + 0.5);
+                        buf.fillRect(Rect(nx0, ny, nx1, ny + noteH), noteCol);
+                        if (nx1 - nx0 >= dp(4)) {
+                            buf.fillRect(Rect(nx0, ny, nx0 + dp(2), ny + noteH), attackCol);
+                        }
                     }
                 }
             }
@@ -1212,4 +1340,37 @@ unittest {
     tl.onKeyEvent(new KeyEvent(KeyAction.KeyDown, KeyCode.DEL, 0));
     assert(deletedId == 0 && model.tracks[idx3].clips.length == 0,
            "Expected KeyCode.DEL after SELECT to delete selected Playlist clip");
+
+    // Regression 5: Empty Pattern & empty MIDI clips draw zero phantom note bars
+    model.patterns ~= PatternState(9, "Empty Pat 10", pal.clipPattern, 16);
+    model.selectedPatternIndex = 0;
+    TimelineClipState emptyPatClip;
+    emptyPatClip.clipIndex = 0;
+    emptyPatClip.kind = PlaylistClipKind.PATTERN;
+    emptyPatClip.patternIndex = 9;
+    emptyPatClip.name = "Empty Pat 10";
+    emptyPatClip.startTimeSec = 0.0;
+    emptyPatClip.durationSec = 2.0;
+    ClipPreviewBar[] emptyPatBars;
+    collectPatternPreviewBars(&model, emptyPatClip, emptyPatBars);
+    assert(emptyPatBars.length == 0, "Expected empty Pattern clip to produce zero preview bars");
+
+    TimelineClipState emptyMidiClip;
+    emptyMidiClip.clipIndex = 1;
+    emptyMidiClip.kind = PlaylistClipKind.MIDI;
+    emptyMidiClip.name = "Empty MIDI";
+    emptyMidiClip.startTimeSec = 0.0;
+    emptyMidiClip.durationSec = 2.0;
+    ClipPreviewBar[] emptyMidiBars;
+    collectMidiWaveformPreviewBars(emptyMidiClip, emptyMidiBars);
+    assert(emptyMidiBars.length == 0, "Expected empty MIDI clip to produce zero preview bars");
+
+    // Populated pattern clip produces preview bars matching its actual steps/notes
+    TimelineClipState pat0Clip;
+    pat0Clip.kind = PlaylistClipKind.PATTERN;
+    pat0Clip.patternIndex = 0;
+    pat0Clip.durationSec = 2.0;
+    ClipPreviewBar[] pat0Bars;
+    collectPatternPreviewBars(&model, pat0Clip, pat0Bars);
+    assert(pat0Bars.length > 0, "Expected Pattern 0 with active steps to produce preview bars");
 }

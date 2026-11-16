@@ -2455,4 +2455,62 @@ TEST_F(ProjectTest, SequencerStepPanShiftsLeftRightRms) {
       << "step_pans[0]=+1.0 must isolate note to Right channel";
 }
 
+TEST_F(ProjectTest, GroupTrackAudioClipPlaysOnlyInScheduledBarInSongMode) {
+  hibiki::ProjectState state;
+  state.bpm = 140.0;
+  state.sample_rate = 44100.0;
+  state.playback_mode = hibiki::SequencerPlaybackMode::SONG;
+
+  // Include a sequencer pattern so PAT vs SONG gating is exercised.
+  hibiki::SequencerPattern pat;
+  pat.pattern_index = 0;
+  pat.length_steps = 16;
+  state.sequencer_patterns.push_back(pat);
+
+  const double bar_sec = 4.0 * (60.0 / state.bpm);
+  auto* bus3 = hibiki::GetOrCreateTrack(state, 3);
+  bus3->track_type = hibiki::Track::TrackType::GROUP;
+  bus3->output_track_index = 0;
+  bus3->volume = 1.0f;
+  bus3->AddTimelineClip(hibiki::find_test_file("testdata/loop140.wav"), bar_sec,
+                        state.bpm, 0.0, state.sample_rate);
+  ASSERT_EQ(bus3->timeline_clips.size(), 1u);
+
+  const int bs = 512;
+  hibiki::RenderProjectWorkspace ws;
+  ws.reserve(bs);
+  hibiki::HostProcessContext ctx{};
+  ctx.sampleRate = 44100.0;
+  ctx.tempo = state.bpm;
+
+  auto maxAmpInRange = [&](double start_sec, double end_sec) {
+    float peak = 0.0f;
+    for (double t = start_sec; t < end_sec; t += bs / state.sample_rate) {
+      hibiki::RenderBlockOptions opts;
+      opts.cur_bpm = state.bpm;
+      opts.cur_playhead_sec = t;
+      opts.sample_rate = 44100.0f;
+      opts.cur_playing = true;
+      opts.render_metronome = false;
+      hibiki::RenderProjectAudioBlock(state, ctx, ws, bs, opts);
+      for (int i = 0; i < bs; ++i) {
+        peak = std::max(peak, static_cast<float>(std::abs(ws.mixBufferL[i])));
+        peak = std::max(peak, static_cast<float>(std::abs(ws.mixBufferR[i])));
+      }
+    }
+    return peak;
+  };
+
+  // Bar 1 [0 .. bar_sec): silent before audio clip starts
+  EXPECT_FLOAT_EQ(maxAmpInRange(0.0, bar_sec - 0.05), 0.0f);
+  // Bar 2 [bar_sec .. 2*bar_sec): loop140.wav plays on GROUP track 3
+  EXPECT_GT(maxAmpInRange(bar_sec + 0.05, 2.0 * bar_sec - 0.05), 0.05f);
+  // Bars 3..4 [2*bar_sec .. 4*bar_sec): silent after 1-bar loop140.wav ends
+  EXPECT_FLOAT_EQ(maxAmpInRange(2.0 * bar_sec + 0.05, 4.0 * bar_sec), 0.0f);
+
+  // In PAT mode, Playlist audio clip must remain silent during Bar 2
+  state.playback_mode = hibiki::SequencerPlaybackMode::PAT;
+  EXPECT_FLOAT_EQ(maxAmpInRange(bar_sec + 0.05, 2.0 * bar_sec - 0.05), 0.0f);
+}
+
 }  // namespace hibiki

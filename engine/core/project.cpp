@@ -1170,9 +1170,22 @@ void RenderProjectAudioBlock(ProjectState& state, HostProcessContext& context,
     }
   }
 
+  const bool allow_timeline_clips =
+      (state.playback_mode.load(std::memory_order_relaxed) !=
+           SequencerPlaybackMode::PAT ||
+       state.sequencer_patterns.empty());
+
   auto renderTrack = [&](Track* track, int track_idx, bool render_content) {
-    std::fill_n(bufferL, bs, 0.0);
-    std::fill_n(bufferR, bs, 0.0);
+    if (track->track_type == Track::TrackType::GROUP ||
+        track->track_type == Track::TrackType::AUX) {
+      for (int i = 0; i < bs; ++i) {
+        bufferL[i] = track->rt_bus_in_l[i];
+        bufferR[i] = track->rt_bus_in_r[i];
+      }
+    } else {
+      std::fill_n(bufferL, bs, 0.0);
+      std::fill_n(bufferR, bs, 0.0);
+    }
 
     if (render_content) {
       // 1. Session clip playback
@@ -1221,75 +1234,79 @@ void RenderProjectAudioBlock(ProjectState& state, HostProcessContext& context,
       // 1b. Collect timeline MIDI & Sequencer events
       ws.timelineMidiEvents.clear();
       if (cur_playing) {
-        for (const auto& tc : track->timeline_clips) {
-          if (tc->muted || tc->pattern_index >= 0 || !tc->clip ||
-              tc->clip->type != Clip::Type::MIDI)
-            continue;
-          double clip_duration = (tc->duration_beats > 0)
-                                     ? tc->duration_beats * 60.0 / cur_bpm
-                                     : tc->duration_sec;
-          if (cur_playhead + time_per_block > tc->start_time_sec &&
-              cur_playhead < tc->start_time_sec + clip_duration) {
-            double clip_local_time = cur_playhead - tc->start_time_sec;
-            double content_dur_beats = tc->clip->duration_beats;
-            double loop_length_beats =
-                (tc->loop_interval_beats > 0)
-                    ? tc->loop_interval_beats
-                    : (content_dur_beats - tc->trim_start_beats);
-            double window_start_beats =
-                clip_local_time * bps + tc->trim_start_beats;
-            double window_end_beats =
-                (clip_local_time + time_per_block) * bps + tc->trim_start_beats;
-            if (tc->clip->is_loop && loop_length_beats > 0) {
-              window_start_beats =
-                  tc->trim_start_beats +
-                  std::fmod(window_start_beats - tc->trim_start_beats,
-                            loop_length_beats);
-              window_end_beats = window_start_beats + time_per_block * bps;
-            }
-            for (const auto& me : tc->clip->midi_events) {
-              double me_beats = me.beats;
-              if (me_beats < tc->trim_start_beats ||
-                  me_beats >= content_dur_beats)
-                continue;
-              double loop_end_beats = tc->trim_start_beats + loop_length_beats;
-              if (tc->clip->is_loop && loop_length_beats > 0 &&
-                  window_end_beats > loop_end_beats) {
-                bool in_range =
-                    (me_beats >= window_start_beats &&
-                     me_beats < window_end_beats) ||
-                    (me_beats >= tc->trim_start_beats &&
-                     me_beats <
-                         tc->trim_start_beats +
-                             std::fmod(window_end_beats - tc->trim_start_beats,
-                                       loop_length_beats));
-                if (!in_range) continue;
-              } else {
-                if (me_beats < window_start_beats ||
-                    me_beats >= window_end_beats)
-                  continue;
-              }
-              MidiNoteEvent e;
-              double event_local_sec = me.beats / bps - clip_local_time;
+        if (allow_timeline_clips) {
+          for (const auto& tc : track->timeline_clips) {
+            if (tc->muted || tc->pattern_index >= 0 || !tc->clip ||
+                tc->clip->type != Clip::Type::MIDI)
+              continue;
+            double clip_duration = (tc->duration_beats > 0)
+                                       ? tc->duration_beats * 60.0 / cur_bpm
+                                       : tc->duration_sec;
+            if (cur_playhead + time_per_block > tc->start_time_sec &&
+                cur_playhead < tc->start_time_sec + clip_duration) {
+              double clip_local_time = cur_playhead - tc->start_time_sec;
+              double content_dur_beats = tc->clip->duration_beats;
+              double loop_length_beats =
+                  (tc->loop_interval_beats > 0)
+                      ? tc->loop_interval_beats
+                      : (content_dur_beats - tc->trim_start_beats);
+              double window_start_beats =
+                  clip_local_time * bps + tc->trim_start_beats;
+              double window_end_beats =
+                  (clip_local_time + time_per_block) * bps +
+                  tc->trim_start_beats;
               if (tc->clip->is_loop && loop_length_beats > 0) {
-                double rel_beat = me.beats - tc->trim_start_beats;
-                double loop_length_sec = loop_length_beats / bps;
-                double local_in_content =
-                    std::fmod(clip_local_time, loop_length_sec);
-                event_local_sec = rel_beat / bps - local_in_content;
-                if (event_local_sec < 0) event_local_sec += loop_length_sec;
+                window_start_beats =
+                    tc->trim_start_beats +
+                    std::fmod(window_start_beats - tc->trim_start_beats,
+                              loop_length_beats);
+                window_end_beats = window_start_beats + time_per_block * bps;
               }
-              e.sampleOffset =
-                  std::max(0, static_cast<int>(event_local_sec * sample_rate));
-              if (e.sampleOffset >= bs) e.sampleOffset = bs - 1;
-              e.channel = me.channel;
-              e.pitch = me.note;
-              e.isNoteOn = isNoteOn(me);
-              e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
-              ws.timelineMidiEvents.push_back(e);
+              for (const auto& me : tc->clip->midi_events) {
+                double me_beats = me.beats;
+                if (me_beats < tc->trim_start_beats ||
+                    me_beats >= content_dur_beats)
+                  continue;
+                double loop_end_beats =
+                    tc->trim_start_beats + loop_length_beats;
+                if (tc->clip->is_loop && loop_length_beats > 0 &&
+                    window_end_beats > loop_end_beats) {
+                  bool in_range =
+                      (me_beats >= window_start_beats &&
+                       me_beats < window_end_beats) ||
+                      (me_beats >= tc->trim_start_beats &&
+                       me_beats < tc->trim_start_beats +
+                                      std::fmod(window_end_beats -
+                                                    tc->trim_start_beats,
+                                                loop_length_beats));
+                  if (!in_range) continue;
+                } else {
+                  if (me_beats < window_start_beats ||
+                      me_beats >= window_end_beats)
+                    continue;
+                }
+                MidiNoteEvent e;
+                double event_local_sec = me.beats / bps - clip_local_time;
+                if (tc->clip->is_loop && loop_length_beats > 0) {
+                  double rel_beat = me.beats - tc->trim_start_beats;
+                  double loop_length_sec = loop_length_beats / bps;
+                  double local_in_content =
+                      std::fmod(clip_local_time, loop_length_sec);
+                  event_local_sec = rel_beat / bps - local_in_content;
+                  if (event_local_sec < 0) event_local_sec += loop_length_sec;
+                }
+                e.sampleOffset = std::max(
+                    0, static_cast<int>(event_local_sec * sample_rate));
+                if (e.sampleOffset >= bs) e.sampleOffset = bs - 1;
+                e.channel = me.channel;
+                e.pitch = me.note;
+                e.isNoteOn = isNoteOn(me);
+                e.velocity = e.isNoteOn ? me.velocity / 127.0f : 0.0f;
+                ws.timelineMidiEvents.push_back(e);
+              }
             }
           }
-        }
+        }  // end if (allow_timeline_clips)
 
         // 1b-seq. Channel Rack PAT / SONG pattern playback (generator >= 100)
         if (track_idx >= 100 && !state.sequencer_patterns.empty()) {
@@ -1384,44 +1401,47 @@ void RenderProjectAudioBlock(ProjectState& state, HostProcessContext& context,
           std::fill_n(plugBufR, bs, 0.0f);
         }
       }
+    }  // end if (render_content)
 
-      // 2. Timeline audio clip playback
-      if (cur_playing) {
-        for (const auto& tc : track->timeline_clips) {
-          if (!tc->clip || tc->muted || tc->pattern_index >= 0) continue;
-          if (tc->clip->type == Clip::Type::MIDI) continue;
-          double clip_duration = (tc->duration_beats > 0)
-                                     ? tc->duration_beats * 60.0 / cur_bpm
-                                     : tc->duration_sec;
-          if (cur_playhead + time_per_block > tc->start_time_sec &&
-              cur_playhead < tc->start_time_sec + clip_duration) {
-            double clip_local_time = cur_playhead - tc->start_time_sec;
-            int content_samples = static_cast<int>(tc->clip->audio_data.size());
-            if (tc->clip->num_channels == 2) content_samples /= 2;
-            int trim_samples =
-                (bps > 0)
-                    ? static_cast<int>(tc->trim_start_beats / bps * sample_rate)
-                    : 0;
-            int start_sample =
-                trim_samples + static_cast<int>(clip_local_time * sample_rate);
-            int loop_len;
-            if (tc->loop_interval_beats > 0 && bps > 0) {
-              loop_len =
-                  static_cast<int>(tc->loop_interval_beats / bps * sample_rate);
-            } else {
-              loop_len = content_samples - trim_samples;
-            }
-            d_render_audio_clip_block(
-                tc->clip->audio_data.data(),
-                static_cast<int>(tc->clip->audio_data.size()),
-                tc->clip->num_channels, tc->clip->is_loop, trim_samples,
-                start_sample, loop_len, clip_local_time, clip_duration,
-                tc->fade_in_sec, tc->fade_out_sec, sample_rate, bufferL,
-                bufferR, bs);
+    // 2. Timeline audio clip playback (Playlist Audio clips on NORMAL or GROUP
+    // tracks)
+    if (cur_playing && allow_timeline_clips) {
+      for (const auto& tc : track->timeline_clips) {
+        if (!tc->clip || tc->muted || tc->pattern_index >= 0) continue;
+        if (tc->clip->type == Clip::Type::MIDI) continue;
+        double clip_duration = (tc->duration_beats > 0)
+                                   ? tc->duration_beats * 60.0 / cur_bpm
+                                   : tc->duration_sec;
+        if (cur_playhead + time_per_block > tc->start_time_sec &&
+            cur_playhead < tc->start_time_sec + clip_duration) {
+          double clip_local_time = cur_playhead - tc->start_time_sec;
+          int content_samples = static_cast<int>(tc->clip->audio_data.size());
+          if (tc->clip->num_channels == 2) content_samples /= 2;
+          int trim_samples =
+              (bps > 0)
+                  ? static_cast<int>(tc->trim_start_beats / bps * sample_rate)
+                  : 0;
+          int start_sample =
+              trim_samples + static_cast<int>(clip_local_time * sample_rate);
+          int loop_len;
+          if (tc->loop_interval_beats > 0 && bps > 0) {
+            loop_len =
+                static_cast<int>(tc->loop_interval_beats / bps * sample_rate);
+          } else {
+            loop_len = content_samples - trim_samples;
           }
+          d_render_audio_clip_block(
+              tc->clip->audio_data.data(),
+              static_cast<int>(tc->clip->audio_data.size()),
+              tc->clip->num_channels, tc->clip->is_loop, trim_samples,
+              start_sample, loop_len, clip_local_time, clip_duration,
+              tc->fade_in_sec, tc->fade_out_sec, sample_rate, bufferL, bufferR,
+              bs);
         }
       }
+    }
 
+    if (render_content) {
       // 2a. Recording audio input capture
       if (opts.capture_live_inputs && cur_recording && track->record_armed &&
           track->input_device && track->input_device->is_ready()) {
@@ -1457,14 +1477,6 @@ void RenderProjectAudioBlock(ProjectState& state, HostProcessContext& context,
         }
       }
     }  // end if (render_content)
-
-    // Group/Aux tracks load their accumulated bus buffer
-    if (!render_content) {
-      for (int i = 0; i < bs; ++i) {
-        bufferL[i] = track->rt_bus_in_l[i];
-        bufferR[i] = track->rt_bus_in_r[i];
-      }
-    }
 
     // 3. Apply Automation
     if (cur_playing) {

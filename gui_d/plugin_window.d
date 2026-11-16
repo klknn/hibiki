@@ -435,13 +435,6 @@ class PluginWrapperWidget : Widget {
         layoutHeight = FILL_PARENT;
     }
 
-    ~this() {
-        if (remoteBuf_ !is null) {
-            destroy(remoteBuf_);
-            remoteBuf_ = null;
-        }
-    }
-
     void setTargetChannel(int channelIdx) {
         targetKind = WrapperTargetKind.CHANNEL_GENERATOR;
         targetIndex = channelIdx;

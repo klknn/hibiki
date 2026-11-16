@@ -1,148 +1,103 @@
 # Hibiki `gui_d` Live End-to-End Integration Architecture (`d_v2`)
 
-> **Goal**: Turn the `dlangui`-based Y2K/FL-inspired `gui_d` frontend into a fully functional, end-to-end live DAW connected to the `hbk-play` C++/D real-time audio engine over Protobuf/HBKI IPC.
+> **Goal**: Turn the `dlangui`-based Y2K/FL-inspired `gui_d` frontend into a fully functional, real-time, end-to-end live DAW connected to the `hbk-play` C++/D audio engine over Protobuf/HBKI IPC.
 
 ---
 
-## 1. Current Audit & Architectural Gaps
+## 1. Initial Audit & Architectural Gaps Solved
 
-The existing `gui_d` prototype renders FL-style windows (Toolbar, Browser, Channel Rack + Graph Editor, Playlist, Piano Roll, Mixer + FX Rack + 3-Band EQ, Plugin Wrapper) and holds local UI state in `TransportModel`, while the `hbk-play` backend (`engine/main.d` + `engine/playback_thread.cpp` + `engine/commands/` + `engine/core/`) already implements real-time 512-sample audio mixing, built-in instruments/effects, VST3/CLAP hosting, MIDI/Timeline/Session clip playback, automation, recording, and WAV bouncing.
+The original `gui_d` prototype rendered FL-style windows (Toolbar, Browser, Channel Rack + Graph Editor, Playlist, Piano Roll, Mixer + FX Rack + 3-Band EQ, Plugin Wrapper) backed only by local state in `TransportModel`, while `hbk-play` (`engine/main.d` + `engine/playback_thread.cpp` + `engine/commands/` + `engine/core/`) hosted the real-time 512-sample audio mixer, built-in instruments/effects, VST3/CLAP hosting, MIDI/Timeline/Session playback, automation, recording, and WAV bouncing.
 
-Key disconnects discovered during the audit:
+Key disconnects resolved across Phases 1–11:
 
-1. **Executable Discovery & Lifecycle (`gui_d/main.d`)**
-   - `resolveEnginePath` checks workspace-relative paths only, missing Bazel runfiles / sibling binary paths when invoked via `bazel run //gui_d:hibiki_gui`.
-2. **Startup Desync & Track Topology**
-   - `gui_d` initializes `model.initDefaultTemplate()`, while `hbk-play` boots with `tracks = {}`, `bpm = 140`. Pressing Play or triggering `Z..M` produces silence.
-   - `gui_d` routes Channel Generators (`Kick`, `Snare`, `Hi-Hat`, `Acid Bass`, `E-Piano`) to Mixer Inserts (`1..5`), whereas `Track::LoadPlugin` forces `isInstrument()` plugins into slot `0` and effects after it on the *same* `track_index`. Using the same index for both causes slot `0` collisions.
-   - `playback_thread.cpp` mixes normal tracks -> group/aux tracks -> `d_process_master_output`, without treating Track `0` as a true Master FX/Gain/Pitch bus or providing per-track 3-band EQ, stereo separation, and wet/dry FX mix.
-3. **Step Sequencer / Channel Rack / Pattern / Song Mode**
-   - Channel Rack step pads, Graph Editor parameters (`vel`/`pitch`/`pan`/`shift`), Swing, Patterns, and `PAT` vs `SONG` transport mode exist only in `gui_d/transport_model.d`, with no backend execution or sync.
-4. **Incomplete `SyncProjectToGui` & Telemetry**
-   - `SyncProjectToGui` omits project `bpm`, transport state, track volume/pan/mute/solo/routing/EQ/stereo-sep, plugin bypass & current parameter values, and MIDI clip note payloads.
-   - `Toolbar` oscilloscope & CPU meter use mock `sinf()` and hardcoded `cpuPercent = 3`.
-5. **Missing UI <-> IPC Bindings**
-   - Playlist lacks IPC sync for clip move, resize, slice, mute, clone/copy, track mute/solo, automation point edits, and double-click clip -> `MIDI_ACTION_GET` -> Piano Roll.
-   - Plugin Wrapper lacks live parameter list binding, preset selector, bypass sync, VST3 remote framebuffer rendering/input, EQ spectrum, compressor metering, phaser scope, sampler WAV load, and drum machine pad triggers.
-   - Browser sample list uses non-existent sample filenames; `sendPluginList` omits `PluginDescription.path`; File Open/Save/Bounce/Settings/Undo/Redo lack real interactive modals or full backend wiring.
+1. **Executable Discovery, Lifecycle & IPC Safety (`gui_d/main.d`, `gui_d/ipc_client.d`)**
+   - `resolveEnginePath` locates `hbk-play` next to the binary, in sibling `../engine/hbk-play`, and inside Bazel runfiles (`RUNFILES_DIR` / `TEST_SRCDIR`).
+   - `decodeProtoOwned` allocates per-message GC `Arena` buffers so queued notifications never alias a shared static scratch buffer.
+   - `extractNextFrame` scans ahead with a **1-byte stride** on corrupt/oversized headers (`len > MAX_IPC_FRAME_BYTES`) so valid `HBKI` headers at unaligned offsets are never skipped.
+   - `EngineProcessClient` captures `hbk-play` `stderr` on a background thread (`stderrLoop`) and surfaces process/pipe diagnostics via `onError` directly to the UI hint bar.
+2. **Startup Sync & Track Topology**
+   - `gui_d` initializes `model.initDefaultTemplate()`, syncs it cleanly to `hbk-play` via `syncTemplateToEngine()`, and resets history via `ProjectCmd::ACTION_CLEAR_HISTORY = 9` so Undo starts at a clean post-template baseline.
+   - Generator tracks live at `100 + channelIdx` (instrument exclusively in slot `0`), routing via `output_track_index` into Mixer Insert `GROUP` buses `1..12` (pure FX chains slots `0..9`), which route through topological DAG ordering into Master Track `0` (`TrackType::TRACK_MASTER`).
+3. **Real-Time Hardening (P0)**
+   - Audio thread pre-allocates scratch workspaces (`PlaybackThread::Workspace` and `RenderProjectWorkspace`) with cached 3-band Biquad EQ coefficients (`Track::EnsureEqCoeffs`, `Track::IsEqBypassed`), lock-free `std::atomic` `ProjectState` transport scalars, and split `tracks_mutex` / `plugins_mutex` synchronization + snapshot locking in `RenderTimeline` / `BounceProject`.
+   - `AudioEditor` lifetime UAF fixed; Browser distinguishes single-click audition from double-click/drag assignment.
+4. **Unified Live & Offline DSP (`RenderProjectAudioBlock`) & Topological Routing DAG (P1)**
+   - Both `playback_thread.cpp` live playback and offline `BounceProject` call `RenderProjectAudioBlock(...)`:
+     - **Pass 1**: Render `NORMAL` / generator tracks (`100+`).
+     - **Pass 2**: Topological Kahn DAG over `GROUP`/`AUX` buses (`output_track_index`, `group_parent_index`, `aux_sends`) with cycle-rejection (`WouldCreateRoutingCycle` BFS in `track_commands.cpp`) and deterministic index-order fallback if legacy projects contain cycles.
+     - **Pass 3**: Master Track `0` FX chain + EQ + Stereo Separation + `master_volume` + `master_pitch` + Metronome click.
+   - `BounceTrackClip` preserves unity gain with `trim_start_beats`, `plugin_mix`, and 3-band EQ + stereo separation (`d_apply_track_eq_and_stereo_sep_f32`).
+5. **Step Sequencer, 64 Steps, Step Pan DSP, & Clip Parity (P1/P2)**
+   - Supports `16 / 32 / 64` pattern lengths (`SequencerCmd::ACTION_SET_PATTERN_LENGTH = 14`), per-step Graph Editor `step_pans` wired into `MidiNoteEvent::pan` across `BuiltinSampler`, `Builtin3xOsc`, and `BuiltinDrumMachine`, and full `HistoryManager` Undo/Redo across sequencer mutations.
+   - `TimelineClipInfo.is_midi = 15` classifies pure MIDI vs Pattern vs Audio clips for mini-note rendering and double-click routing (`AudioEditorLoad` + `PreviewPlay` for Audio vs Piano Roll for MIDI/Pattern).
+   - Remote VST3 editor `ColorDrawBuf` conversion skips redundant pixel copies via `PluginSlotState.editorRevision` caching.
 
 ---
 
 ## 2. Target End-to-End Architecture
 
-### 2.1 Track Topology & Signal Routing
+### 2.1 Track Topology & Signal Routing DAG
 
 ```
   [Channel Generator Tracks (100 + channelIdx)]
        │  e.g. Ch 0 Kick    (track 100) ──> builtin://dr8_kick  ──┐
-       │       Ch 1 Snare   (track 101) ──> builtin://dr8_snare ──┼── output_track_index = ch.mixerInsert (1..12)
+       │       Ch 1 Snare   (track 101) ──> builtin://dr8_snare ──┼── output_track_index = ch.mixerInsert (1..12 or 0)
        │       Ch 2 Hi-Hat  (track 102) ──> builtin://dr8_hat   ──┤
        │       Ch 3 Acid    (track 103) ──> builtin://acid_bass ──┤
        │       Ch 4 E-Piano (track 104) ──> builtin://epiano    ──┘
        ▼
-  [Mixer Insert Bus Tracks (1..12, TrackType = GROUP)]
-       │  Per-Insert FX chain slots 0..9 (wet/dry mix + enable/bypass)
-       │  Built-in 3-Band EQ (Low/Mid/High) + Stereo Separation + Pan + Fader + Mute/Solo
-       │  Route ──> output_track_index = 0 (Master) or another Insert/Aux (1..12)
+  [Mixer Insert / Group / Aux Buses (1..12, TrackType = GROUP/AUX)]
+       │  Topological DAG pass (Pass 2) + WouldCreateRoutingCycle BFS guard
+       │  Per-Insert FX chain slots 0..9 (plugin_mix wet/dry + bypass)
+       │  Cached 3-Band EQ (Low/Mid/High) + Stereo Separation + Pan + Fader + Mute/Solo/Record Arm
+       │  Route ──> output_track_index = 0 (Master) or any upstream/downstream Group/Aux Insert
        ▼
-  [Master Bus (Track 0, TrackType = MASTER / special post-mix pass)]
-       │  Master FX slots 0..9 + Master 3-Band EQ + Master StereoSep + Master Vol/Pitch
+  [Master Bus (Track 0, TrackType = TRACK_MASTER, Pass 3)]
+       │  Master FX slots 0..9 + Master 3-Band EQ + Master StereoSep + Master Vol/Pitch + Metronome
        ▼
-  [d_process_master_output] ──> miniaudio hardware output + Telemetry ring
+  [d_process_master_output / BounceProject WAV]
 ```
-
-Why this works cleanly:
-- **Zero slot collisions**: Generator tracks (`100 + chIdx`) hold the instrument plugin exclusively at slot `0` and route audio into their assigned Mixer Insert Group bus (`1..12`), while Mixer Inserts (`1..12`) and Master (`0`) hold pure FX chains at slots `0..9`.
-- **Reuses existing Pass 1 -> Pass 2 engine scheduling**: `playback_thread.cpp` already processes `NORMAL` tracks (generators/audio/MIDI) in Pass 1 and sums their outputs into `GROUP`/`AUX` tracks (`1..12`) processed in Pass 2! We add Pass 3 for Master Track `0` before `d_process_master_output`.
-- **Single-track Solo/Mute**: Channel Solo/Mute gates its generator track; Mixer Insert Solo/Mute gates the insert bus cleanly without corrupting channel mute state.
 
 ### 2.2 Playback Modes: `PAT` vs `SONG`
 
-- **`SONG` mode**: Plays timeline clips (`TimelineClip`) and automation lanes across tracks `0..12` and generator tracks, just as `playback_thread.cpp` currently does, plus any `PLAYLIST_CLIP_PATTERN` references or synced compiled pattern clips.
-- **`PAT` mode**: Loops the active Pattern (steps `0..stepCount-1`, 16th-note resolution with FL-style **Swing** applied to odd 16th steps and per-step Graph Editor velocity/pitch/pan/shift) across generator tracks (`100 + chIdx`), plus any Piano Roll notes on that pattern/channel.
-- Both modes run sample-accurately in the real-time audio callback (`512` frames/block), plus **Metronome click** on quarter beats and optional **Count-in** before recording.
+- **`SONG` mode (`PLAYBACK_MODE_SONG`)**: Plays timeline clips (`TimelineClip`), pattern clip references (`pattern_index`), MIDI clips (`is_midi`), and automation lanes (`pluginIndex`, `paramId`) sample-accurately inside `RenderProjectAudioBlock`.
+- **`PAT` mode (`PLAYBACK_MODE_PAT`)**: Loops active Pattern (`length_steps` in `{16, 32, 64}` via `activePatternLengthSteps()` / `currentStepIndex()`), applying FL-style Swing on odd 16th steps and per-step Graph Editor `velocity` / `pitch` / `pan` / `shift`, plus pattern Piano Roll notes.
+- **Recording Pre-Roll & Overdub**: Toolbar Record honors `countdownEnabled` (1-bar metronome pre-roll via UI animation timer before dispatching `ACTION_RECORD`) and `overdubEnabled` (preserve vs clear existing pattern take), plus Mixer `[R]` strip Record Arm buttons.
 
 ### 2.3 Protocol & DSP Extensions (`pb/*.proto`)
 
 - `pb/core.proto`:
-  - `Track`: add `eq_low`, `eq_mid`, `eq_high`, `stereo_sep`, `plugin_mix` (`map<int32, float>`), and `TrackType::TRACK_TYPE_MASTER` (or explicit `track_index == 0` master role).
-  - `Project`: add `playback_mode`, `metronome_enabled`, `swing`, `master_pitch`, plus Channel Rack / Pattern state (`patterns`, `channels`, `active_pattern_index`) so `.hbk` project saves/loads preserve the complete FL/Hibiki session!
+  - `Track`: `eq_low` (`23`), `eq_mid` (`24`), `eq_high` (`25`), `stereo_sep` (`26`), `repeated float plugin_mix = 27`, `TrackType::TRACK_MASTER = 3`.
+  - `Project`: `playback_mode` (`5`), `swing_amount` (`6`), `selected_pattern_index` (`7`), `channels` (`8`), `patterns` (`9`), `metronome_enabled` (`10`), `optional float master_volume = 11`, `master_pitch` (`12`), `loop_enabled` (`13`), `loop_start_sec` (`14`), `loop_end_sec` (`15`).
+  - `ChannelPatternData`: expanded up to 64 steps (`steps`, `step_velocities`, `step_pitches`, `step_pans`, `step_shifts`, `notes`).
 - `pb/commands.proto`:
-  - `TransportCmd`: add `ACTION_SET_PLAYBACK_MODE` (`PAT`/`SONG`), `ACTION_SET_METRONOME`, `ACTION_SET_SWING`, `ACTION_SET_MASTER_PITCH`, `ACTION_PANIC`.
-  - `TrackCmd`: add `ACTION_SET_EQ` (low/mid/high), `ACTION_SET_STEREO_SEP`.
-  - `PluginCmd`: add `ACTION_SET_MIX` (wet/dry `0..1`).
-  - `PatternCmd` / `ChannelCmd` (or dedicated `SequencerCmd`): create/select/clone pattern, set active pattern length, toggle/edit step + graph values (velocity/pitch/pan/shift), add/update channel (uri, mixer_insert, mute, solo, vol, pan).
+  - `ProjectCmd`: `ACTION_CLEAR_HISTORY = 9`.
+  - `SequencerCmd`: `ACTION_SET_PLAYBACK_MODE = 1` .. `ACTION_SET_CHANNEL_NOTES = 13`, `ACTION_SET_PATTERN_LENGTH = 14`.
+  - `TrackCmd`: `ACTION_ARM_RECORD = 9`, `ACTION_SET_RECORD_MODE = 12`, `ACTION_SET_OUTPUT_ROUTING = 23`, `ACTION_SET_AUX_SEND = 24`, `ACTION_SET_GROUP_PARENT = 25`, `ACTION_SET_EQ = 26`, `ACTION_SET_STEREO_SEP = 27`.
+  - `PluginCmd`: `ACTION_SET_BYPASS = 11`, `ACTION_REORDER_PLUGIN = 12`, `ACTION_SET_MIX = 13`.
 - `pb/notifications.proto`:
-  - `TrackLevels`: extend with `stereo_sep`, `eq_low/mid/high`, `volume`, `pan`, `muted`, `soloed` OR include in `TrackInfo` + `ProjectSync` (`PlayheadInfo` extended with `cpu_percent` and downsampled `master_waveform` oscilloscope samples!).
-  - `PluginDescription`: ensure `path` is populated in `sendPluginList`.
+  - `TimelineClipInfo`: `optional int32 pattern_index = 14`, `bool is_midi = 15`.
+  - `PlayheadInfo`: `cpu_percent`, `oscilloscope`, `playback_mode`, `transport_state`.
+  - `PluginDescription`: includes bundle `path` (`4`) and `is_instrument` (`5`).
 
 ---
 
-## 3. Phased Implementation & Rollback Plan
+## 3. Phased Implementation Summary (Branch `d`)
 
-Each phase ends with `./tools/format.sh`, full Bazel `-c opt` tests, and a dedicated clean git commit on branch `d`.
+- **Phases 0–5**: Initial architecture, `resolveEnginePath`, Master Bus & live telemetry, Channel Rack/Sequencer/`PAT` vs `SONG`, 3-Band EQ / Stereo Sep / Wet-Dry FX Mix, Plugin Wrapper remote VST3 GUI & metering/spectrum/scope, real Browser scanning/audition, Save/Load/Bounce/Collect/Settings modals.
+- **Phase 6 (`ff3d078`)**: Verified full-repo build/tests and updated status docs.
+- **Phase 7 (`d8a9fcb`)**: Per-message GC `Arena` in `decodeProtoOwned`, macOS shutdown clean exit, clip/slot/pattern sync fixes, initial live `//gui_d:gui_e2e_test`.
+- **Phase 8 (`3374d31`, P0)**: Zero-alloc `PlaybackThread::Workspace`, cached EQ coefficients, atomic `ProjectState` scalars, split `tracks_mutex` / `plugins_mutex` concurrency, `AudioEditor` UAF fix, and Browser click/drag disambiguation.
+- **Phase 9 (`6259950`, P1)**: Unified `RenderProjectAudioBlock`, Pass 2 topological routing DAG + `WouldCreateRoutingCycle` BFS guard, unity-gain `BounceTrackClip`, `Project` scalars `10..15` persistence, 64 steps (`ACTION_SET_PATTERN_LENGTH`), per-step voice `pan` DSP (`BuiltinSampler`, `Builtin3xOsc`, `BuiltinDrumMachine`), Sequencer Undo/Redo, `ACTION_CLEAR_HISTORY`, dynamic Automation targets, `TimelineClipInfo.is_midi`, and Audio vs MIDI/Pattern clip double-click parity.
+- **Phase 10 (`b8ac57c`, P2 & Extended E2E)**: `stderr` thread & `onError` surfacing, 1-byte `extractNextFrame` resync, `editorRevision` framebuffer cache in `PluginWrapperWidget`, Mixer Record Arm `[R]`, 1-bar countdown pre-roll & overdub, timer-driven `PendingNoteOff[]` + `FocusOut` note cleanup, Timeline `SLIP`/`SELECT` + `DEL`, Piano Roll `snapBeats()` & `SELECT` + `DEL`, and expanded live `//gui_d:gui_e2e_test` (non-silent bounced `mix.wav` verification, `PAT`/`SONG`, 32-step Undo/Redo, `ClearHistory`, and `onError`).
+- **Phase 11**: Updated `docs/d_v2.md`, added Japanese translation `docs/d_v2_ja.md`, ran final `./tools/format.sh`, full `bazel test //... -c opt`, and binary builds.
 
-### Phase 0: Architecture Documentation (`docs/d_v2.md`)
-- Document design, track routing topology, protocol extensions, and phased plan.
-- Commit Phase 0.
+---
 
-### Phase 1: Engine Discovery, Master Bus, Sync Completeness, Metronome & Live Telemetry
-- **UI**:
-  - Fix `resolveEnginePath` (`gui_d/main.d`) to find `hbk-play` next to the binary, in `../engine/hbk-play`, and Bazel runfiles, plus surface stderr/connection errors gracefully.
-  - Replace mock `sinf()` oscilloscope & `cpuPercent = 3` in `Toolbar` with real telemetry streamed from `hbk-play`.
-  - Wire `SendVirtualMidi` on `Z..M` and Piano Roll keybed with clean timed note-off without blocking/leaking, plus `ACTION_PANIC` on Stop.
-- **Engine**:
-  - Fix `sendPluginList` in `engine/ipc/ipc.cpp` to populate `PluginDescription.path`.
-  - Add Track `0` Master Bus pass (`Master` FX + Volume + Pitch) in `playback_thread.cpp` and `d_process_master_output` telemetry (`cpu_percent`, downsampled master waveform in `PlayheadInfo`).
-  - Add backend Metronome synthesis (accented downbeat + beat click) toggled via `TransportCmd`.
-  - Complete `SyncProjectToGui` so BPM, playhead, track levels/routing/mute/solo, plugin bypass & param values, and clip MIDI events sync immediately on load/connect.
-- **Tests**: D (`gui_d_test`, `commands_d_test`) + C++ (`commands_test`, `playback_test`).
-- Commit Phase 1.
+## 4. Verification Status (`d` branch)
 
-### Phase 2: Channel Rack, Step Sequencer, Patterns, & Generator-to-Mixer Routing
-- **Engine & Proto**:
-  - Implement generator track topology (`100 + channelIdx` -> `output_track_index = mixerInsert`), Channel Rack + Pattern sequencer (`PatternState`, `ChannelState`, 16/32/64 steps, Swing, Graph Editor velocity/pitch/pan/shift), and `PAT` vs `SONG` real-time rendering in `playback_thread.cpp` + `.hbk` save/load.
-  - Add `SequencerCmd` (sync/add channel, set step, set pattern, set active pattern, swing, channel volume/pan/mute/solo/route).
-- **UI**:
-  - Sync `initDefaultTemplate()` to `hbk-play` as soon as the IPC connection opens (and on `File -> New`), so pressing Play / clicking pads / typing `Z..M` makes live audio immediately.
-  - Wire all `ChannelRackWidget` actions (`onStepToggled`, `onGraphValueChanged`, `onSwingChanged`, `onChannelChanged`, `onAddChannel`, `onOpenPianoRoll`, `onOpenPlugin`) and `Toolbar` `PAT`/`SONG` + Pattern `< > +` to `hbk-play`.
-- **Tests**: Unit tests for step timing, swing math, PAT vs SONG event emission, generator->insert routing, and D model/IPC round-trips.
-- Commit Phase 2.
-
-### Phase 3: Mixer DSP (3-Band EQ, Stereo Sep, Wet/Dry FX Mix) & Playlist/Piano Roll Sync
-- **Engine & D DSP**:
-  - Add `@nogc` 3-band Biquad EQ (leveraging `engine/core/biquad_filter.d` / D kernel), Stereo Separation M/S processor, and per-FX-slot wet/dry Mix blending in `playback_mixer.d` / `playback_thread.cpp`.
-  - Add `ACTION_SET_EQ`, `ACTION_SET_STEREO_SEP`, `ACTION_SET_MIX`, and consistent FL-curve gain mapping (`0..1` UI <-> linear amplitude).
-- **UI**:
-  - Wire Mixer 3-Band EQ sliders, Stereo Separation knob, FX slot Mix knobs, Routing selector, and Track `0` Master FX chain.
-  - Complete Playlist (`TimelineCanvasWidget`) callbacks (`MOVE_CLIP`, `RESIZE_CLIP`, `SET_CLIP_MUTED`, `SLICE`, `COPY`, `TRACK_MUTE`/`TRACK_SOLO`, `AutomationCmd`, double-click clip -> `MIDI_ACTION_GET`) and Piano Roll `onNotesChanged` / active clip synchronization.
-- **Tests**: DSP unit tests (EQ boost/cut frequency response, stereo width mono/wide bounds, wet/dry mix), IPC command/notification tests, and `gui_d` widget regression tests.
-- Commit Phase 3.
-
-### Phase 4: Plugin Wrapper, Real Metering/Spectrum/Scope, Remote VST3 Editor, & Sampler/Drum Machine
-- **UI & Engine**:
-  - Populate `PluginWrapperWidget` parameters directly from `ParamList`, sync live `ParamValueChange`, wire **Preset `< >`**, **Bypass**, and `EDITOR` toggle (`ACTION_SHOW_GUI` / `ACTION_GET_EDITOR_FRAME` -> `EditorFrameData` rendered into `ColorDrawBuf`, mouse/key events via `ACTION_SEND_EDITOR_INPUT`, `ACTION_STOP_GUI`).
-  - Render real telemetry inside `PluginWrapperWidget` when telemetry notifications arrive (`PluginSpectrumData` for EQ, `PluginMeteringData` for Comp/Limiter/HOTT/Maxim/Reverb/Delay, `PluginScopeData` for Phaser).
-  - Support `BuiltinSampler` sample load (`ACTION_LOAD_SAMPLE` -> `PluginSampleData`) and `BuiltinDrumMachine` pad preview (`DrumPadCmd`).
-- **Tests**: Plugin param sync, preset switching, telemetry apply/render, sampler & drum pad IPC tests.
-- Commit Phase 4.
-
-### Phase 5: Real Browser Scanning/Audition, Project Dialogs, Settings, Undo/Redo, & Bounce
-- **UI**:
-  - Replace hardcoded non-existent WAV paths in `browser_panel.d` with real filesystem directory scanning (including `testdata/` + configurable sample folder), WAV preview loading, and live preview audition in engine.
-  - Add interactive modal dialogs in `gui_d` for **Open / Save As / Bounce WAV / Collect Files**, **Browse VST3 / Scan Paths**, and **Audio/Plugin Settings** (`SetPluginHostMode`, `SetAudioBufferSize`, `SetProcessingPrecision`, `ListAudioInputs`, `ListMidiInputs`).
-  - Wire **Edit -> Undo / Redo** with full project re-sync, plus **Toolbar Record / Overdub / Countdown** recording flow.
-- **Tests**: Browser scan/filter tests, Undo/Redo round-trip, project save->clear->load round-trip including patterns/channels/EQ/routing, WAV bounce verification.
-- Commit Phase 5.
-
-### Phase 6: Full Verification & Final Status Update
-- Run `./tools/format.sh`, `bazel test //... -c opt`, and `bazel build //gui_d:hibiki_gui //engine:hbk-play //engine:hbk-plugin-worker //engine:hbk-worker-daemon -c opt`.
-- Update `docs/d_v2.md` with verification results and commit.
-
-## Completion Status (`d` branch)
-- **Phases 0–5**: Implemented and committed on branch `d`.
-- **Verification**:
-  - `./tools/format.sh`: formatted 206 C++ files, 114 Java files, `BUILD` files, 4 `.proto` files; checked 74 D files.
-  - `bazel test //... -c opt`: **104 of 106 test targets passed** with 0 failures (`//android/app:hibiki_engine_playback_test` and `//android/app:melody_sequencer_integration_test` skipped).
-  - `bazel build //gui_d:hibiki_gui //engine:hbk-play //engine:hbk-plugin-worker //engine:hbk-worker-daemon -c opt`: exited `0` (all 4 targets built).
-  - Known testing limit: Full interactive GUI window rendering with live CoreAudio + real `.vst3` offscreen HWNDs was not executed in a live desktop windowing session; verification covers unit/integration/codec/DSP/render/offline-bounce suites under Bazel.
+- **`./tools/format.sh`**: Reformatted/verified all C++ (`206`), Java (`114`), `BUILD`, `.proto` (`4`), and D (`75`) source files.
+- **`bazel test //... -c opt --test_output=errors`**: **105 of 107 test targets passed** with 0 failures (`//android/app:hibiki_engine_playback_test` and `//android/app:melody_sequencer_integration_test` skipped).
+  - Includes `//engine/core:project_test`, `//engine/commands:commands_test`, `//engine:playback_d_test`, `//gui_d:gui_d_test`, and live subprocess `//gui_d:gui_e2e_test` (verifying `hbk-play` IPC handshake, BPM & template sync, non-silent bounced WAV samples, `PAT`/`SONG`, 32-step toggle + Undo/Redo + `ACTION_CLEAR_HISTORY`, `.hbk` save/load round-trip, and `onError`).
+- **`bazel build //gui_d:hibiki_gui //engine:hbk-play //engine:hbk-plugin-worker //engine:hbk-worker-daemon -c opt`**: All 4 release binaries built cleanly with exit code `0`.
+- **Known Scope Limit**: Automated Bazel runs exercise headless unit, DSP, widget (`ColorDrawBuf` offscreen canvas), and live `hbk-play` IPC E2E suites; interactive SDL2/Cocoa desktop window rendering with live CoreAudio hardware I/O and third-party `.vst3` desktop HWNDs requires manual desktop launch (`bazel run //gui_d:hibiki_gui`).

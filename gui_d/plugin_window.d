@@ -560,6 +560,7 @@ class PluginWrapperWidget : Widget {
     override bool onMouseEvent(MouseEvent event) {
         const bool hasCustomDrag = builtinUi_.activeDragParamId >= 0 ||
                                    builtinUi_.eqDragBand >= 0 ||
+                                   builtinUi_.hottDragBand >= 0 ||
                                    builtinUi_.envDragPoint >= 0;
         if (event.action == MouseAction.FocusOut) {
             return dragParamIdx_ >= 0 || hasCustomDrag;
@@ -614,6 +615,7 @@ class PluginWrapperWidget : Widget {
                         dragParamIdx_ = -1;
                         builtinUi_.activeDragParamId = -1;
                         builtinUi_.eqDragBand = -1;
+                        builtinUi_.hottDragBand = -1;
                         builtinUi_.envDragPoint = -1;
                         model_.hintText = showRawParams_
                             ? format("%s: Raw parameter knobs", plug.name)

@@ -214,12 +214,12 @@ extern (C) int UIAppMain(string[] args) {
                                          &model, playlistCanvas, Rect(0, 0, dp(730), dp(430)), 360, 200);
     auto winChannelRack = new FlWindowFrame("win_channel_rack", "Channel Rack - Pattern 1",
                                             &model, channelRack, Rect(dp(736), 0, dp(1180), dp(340)), 420, 170);
-    auto winPianoRoll = new FlWindowFrame("win_piano_roll", "Piano roll - Acid Bass",
+    auto winPianoRoll = new FlWindowFrame("win_piano_roll", "Piano roll - DR-8 Kick",
                                           &model, pianoRollCanvas, Rect(0, dp(436), dp(610), dp(760)), 340, 200);
     auto winMixer = new FlWindowFrame("win_mixer", "Mixer - Master",
                                       &model, mixerCanvas, Rect(dp(616), dp(346), dp(1180), dp(760)), 440, 240);
     auto winPlugin = new FlWindowFrame("win_plugin", "Fruity Wrapper - Acid Bass",
-                                       &model, pluginWrapper, Rect(dp(320), dp(160), dp(800), dp(480)), 360, 240);
+                                       &model, pluginWrapper, Rect(dp(260), dp(140), dp(820), dp(490)), 440, 270);
     winPlugin.visibility = Visibility.Gone;
 
     // Add in initial Z-order (last added = topmost)
@@ -265,11 +265,17 @@ extern (C) int UIAppMain(string[] args) {
     }
 
     void refreshUi(bool refreshBrowser = false) {
+        string patLabel = "Pattern 1";
         if (model.selectedPatternIndex >= 0 && model.selectedPatternIndex < cast(int)model.patterns.length) {
-            winChannelRack.windowTitle = "Channel Rack - " ~ model.patterns[model.selectedPatternIndex].name;
+            patLabel = model.patterns[model.selectedPatternIndex].name;
+            winChannelRack.windowTitle = "Channel Rack - " ~ patLabel;
         }
         if (model.activeMidi.channelIndex >= 0 && model.activeMidi.channelIndex < cast(int)model.channels.length) {
-            winPianoRoll.windowTitle = "Piano roll - " ~ model.channels[model.activeMidi.channelIndex].name;
+            winPianoRoll.windowTitle = format("Piano roll - %s (%s)",
+                                              model.channels[model.activeMidi.channelIndex].name, patLabel);
+        } else {
+            winPianoRoll.windowTitle = format("Piano roll - Track %d Clip %d",
+                                              model.activeMidi.trackIndex, model.activeMidi.clipIndex + 1);
         }
         hintBar.text = toUTF32(model.hintText);
         statusBar.text = toUTF32(model.statusMessage);
@@ -921,6 +927,7 @@ extern (C) int UIAppMain(string[] args) {
         const int n = cast(int)model.patterns.length;
         model.selectPattern((model.selectedPatternIndex + delta + n) % n);
         client.sendRequest(makeSequencerSelectPatternRequest(model.selectedPatternIndex));
+        pianoRollCanvas.frameActiveNotes();
         model.hintText = "Selected " ~ model.patterns[model.selectedPatternIndex].name;
         refreshUi(true);
     };
@@ -933,6 +940,12 @@ extern (C) int UIAppMain(string[] args) {
         model.activePickerKind = PlaylistClipKind.PATTERN;
         model.activePickerIndex = idx;
         model.loadPatternFromStore(idx);
+        if (model.channels.length > 0) {
+            int chIdx = model.selectedChannelIndex;
+            if (chIdx < 0 || chIdx >= cast(int)model.channels.length) chIdx = 0;
+            model.activeMidi.channelIndex = chIdx;
+            model.activeMidi.events = null;
+        }
         client.sendRequest(makeSequencerAddPatternRequest(idx, pat.name, pat.color, pat.lengthSteps));
         client.sendRequest(makeSequencerSelectPatternRequest(idx));
         model.hintText = format("Created Pattern %d", idx + 1);
@@ -1350,6 +1363,11 @@ extern (C) int UIAppMain(string[] args) {
     };
     playlistCanvas.onCopyClip = (int srcTrackIdx, int srcClipIdx, double newStartSec, int targetTrackIdx) {
         client.sendRequest(makeCopyTimelineClipRequest(srcTrackIdx, srcClipIdx, cast(float)newStartSec, targetTrackIdx, false));
+        refreshUi();
+    };
+    playlistCanvas.onSelectPattern = (int patternIdx) {
+        client.sendRequest(makeSequencerSelectPatternRequest(patternIdx));
+        pianoRollCanvas.frameActiveNotes();
         refreshUi();
     };
     playlistCanvas.onDoubleClickClip = (int trackIdx, int clipIdx, int patternIdx, PlaylistClipKind kind) {

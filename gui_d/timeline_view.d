@@ -632,12 +632,14 @@ class TimelineCanvasWidget : Widget {
     private float dragOrigTrimBeats_ = 0.0f;
     private int dragAnchorX_ = 0;
     private int dragAnchorY_ = 0;
+    private bool dragMoved_ = false;
     private Rect marqueeRc_;
 
     double pixelsPerSec = 52.0;
     double scrollSec = 0.0;
 
     void delegate(double seekSec) onSeek;
+    void delegate(int patternIdx) onSelectPattern;
     void delegate(int trackIdx, int clipIdx) onSelectTrackClip;
     void delegate(int trackIdx, double startSec) onPaintClip;
     void delegate(int trackIdx, int clipIdx) onDeleteClip;
@@ -763,7 +765,15 @@ class TimelineCanvasWidget : Widget {
                     model_.activePickerIndex = itemIdx;
                     if (model_.activePickerKind == PlaylistClipKind.PATTERN &&
                         itemIdx < cast(int)model_.patterns.length) {
-                        model_.selectedPatternIndex = itemIdx;
+                        if (event.doubleClick) {
+                            model_.selectPatternForPianoRoll(itemIdx);
+                            if (onDoubleClickClip !is null) {
+                                onDoubleClickClip(0, 0, itemIdx, PlaylistClipKind.PATTERN);
+                            }
+                        } else {
+                            model_.selectPattern(itemIdx);
+                            if (onSelectPattern !is null) onSelectPattern(itemIdx);
+                        }
                     } else if (model_.activePickerKind == PlaylistClipKind.AUTOMATION) {
                         const auto targets = model_.collectAutomationTargets(model_.selectedMixerInsert);
                         if (itemIdx < cast(int)targets.length) {
@@ -974,6 +984,9 @@ class TimelineCanvasWidget : Widget {
                     dragOrigKind_ = origKind;
                     dragOrigLaneIdx_ = origLaneIdx;
                     dragStartSec_ = clip.startTimeSec;
+                    dragAnchorX_ = event.x;
+                    dragAnchorY_ = event.y;
+                    dragMoved_ = false;
                     model_.selectedTrack = trk.index;
                     model_.selectedClipIndex = clip.clipIndex;
                     if (onSelectTrackClip !is null) onSelectTrackClip(trk.index, clip.clipIndex);
@@ -1054,6 +1067,12 @@ class TimelineCanvasWidget : Widget {
                 const double curSec = pixelXToSec(event.x, effPxPerSec, arrRc.left, scrollSec);
                 auto clip = &model_.tracks[dragTrackArrIdx_].clips[dragClipArrIdx_];
                 if (dragMode_ == DragMode.MOVE_CLIP) {
+                    const int dx = event.x > dragAnchorX_ ? (event.x - dragAnchorX_) : (dragAnchorX_ - event.x);
+                    const int dy = event.y > dragAnchorY_ ? (event.y - dragAnchorY_) : (dragAnchorY_ - event.y);
+                    if (!dragMoved_ && dx < dp(4) && dy < dp(4) && !dragIsCopy_) {
+                        return true;
+                    }
+                    dragMoved_ = true;
                     clip.startTimeSec = snapSec(curSec - dragOffsetSec_);
                     // Support vertical cross-track drag for non-automation clips
                     size_t[] laneTracks;
@@ -1122,6 +1141,12 @@ class TimelineCanvasWidget : Widget {
                 const auto destTrack = &model_.tracks[dragTrackArrIdx_];
                 const auto finClip = &destTrack.clips[dragClipArrIdx_];
                 if (dragMode_ == DragMode.MOVE_CLIP) {
+                    if (!dragMoved_ && !dragIsCopy_) {
+                        dragMode_ = DragMode.NONE;
+                        dragTrackArrIdx_ = -1;
+                        dragClipArrIdx_ = -1;
+                        return true;
+                    }
                     if (dragIsCopy_) {
                         if (onCopyClip !is null) {
                             onCopyClip(dragOrigTrackIdx_, dragOrigClipIdx_, finClip.startTimeSec, destTrack.index);

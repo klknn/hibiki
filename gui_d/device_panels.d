@@ -7,7 +7,7 @@ import dlangui.graphics.colors : COLOR_TRANSPARENT;
 import dlangui.graphics.drawbuf : DrawBuf;
 import dlangui.graphics.fonts : FontRef, FontWeight;
 import gui_d.theme : adjustColorBrightness, contrastTextColor, dp, dpf, drawCenteredText,
-    drawFilledCircle, drawRotaryKnob, drawThemeCard, drawThickLine, drawVCenteredText,
+    drawFilledCircle, drawOpenArc, drawRotaryKnob, drawThemeCard, drawThickLine, drawVCenteredText,
     FlPalette, FlThemeId, getDawFont, getDawMonoFont, getFlPalette, ScopedRetroAntialias,
     truncateLabel;
 import gui_d.transport_model : ParamItemState, PluginSlotState, TransportModel;
@@ -84,8 +84,11 @@ struct BuiltinDeviceUiState {
 
     int maximBandTab = 3; // 0=Low,1=Mid,2=High,3=Master,4=Xover
     int hottTab = 0;      // 0=Time,1=Below,2=Above
+    int hottDragBand = -1;
+    int hottDragMode = 0; // 0=downThresh, 1=upThresh, 2=attack/upRatio, 3=release/downRatio
     int drumSelPad = 0;
     int envDragPoint = -1;
+    int acidActiveNote = -1;
 
     int activeDragParamId = -1;
     int dragStartY = 0;
@@ -106,6 +109,8 @@ struct DeviceKnobSpec {
     int cy;
     int r;
     string formattedVal;
+    int knobStyle = 0; // 0=FlPalette dark knob, 1=TB-303 brushed silver+red ring, 2=light text on dark
+    bool lightBg = false;
 }
 
 /// Interactive pill/toggle button descriptor built during layout.
@@ -114,10 +119,11 @@ struct DevicePillSpec {
     string label;
     bool active;
     uint activeColor;
-    int actionKind; // 0=set param to targetVal, 1=toggle param 0/1, 2=ui tab, 3=virtual note, 4=load wav
+    int actionKind; // 0=set param to targetVal, 1=toggle param 0/1, 2=ui tab, 3=virtual note, 4=load wav, 5=step param delta
     uint paramId;
     float targetVal;
     int uiTabVal;
+    bool visibleButton = true;
 }
 
 private float clamp01(float v) pure nothrow @safe {
@@ -259,11 +265,14 @@ struct DeviceLayout {
     BuiltinDeviceKind kind = BuiltinDeviceKind.GENERIC;
     Rect canvasRc;
     Rect footerRc;
+    Rect auxRc;
     DeviceKnobSpec[] knobs;
     DevicePillSpec[] pills;
     Rect[] drawbarRcs; // Organ drawbars 0..8
     Rect[] padRcs;     // Drum Machine pads 0..15
     Rect[] bandMeterRcs;
+    Rect[3] hottBarRcs;
+    Rect[3] hottInspectorRcs;
 }
 
 private void appendKnobRow(
@@ -275,7 +284,9 @@ private void appendKnobRow(
     const(float)[] defaults,
     const(string)[] formattedVals,
     const(uint)[] accents,
-    const ref FlPalette pal
+    const ref FlPalette pal,
+    int knobStyle = 0,
+    bool lightBg = false
 ) @safe {
     const size_t n = paramIds.length;
     if (n == 0 || area.width < dp(24) || area.height < dp(24)) return;
@@ -295,7 +306,7 @@ private void appendKnobRow(
             ? formattedVals[i]
             : formatPercent(readPlugParam(plug, paramIds[i], dv));
         dst ~= DeviceKnobSpec(paramIds[i], labels[i], dv, col,
-                              Rect(x0, area.top, x0 + cw, area.bottom), cx, cy, r, fv);
+                              Rect(x0, area.top, x0 + cw, area.bottom), cx, cy, r, fv, knobStyle, lightBg);
     }
 }
 
@@ -315,48 +326,73 @@ DeviceLayout buildBuiltinDeviceLayout(
 
     switch (dl.kind) {
         case BuiltinDeviceKind.EQ: {
-            const int pillH = dp(20);
-            const int knobH = dp(64);
-            dl.canvasRc = Rect(inner.left, inner.top, inner.right, inner.bottom - pillH - knobH - dp(8));
-            Rect stripRc = Rect(inner.left, dl.canvasRc.bottom + dp(4), inner.right, dl.canvasRc.bottom + dp(4) + pillH);
-            const int bw = stripRc.width / 8;
             static immutable uint[8] BAND_COLS = [
                 0x00E04040, 0x00E07020, 0x00D0C020, 0x0040B040,
                 0x0030A0A0, 0x004080E0, 0x008060D0, 0x00C050A0,
             ];
             static immutable string[6] TYPE_NAMES = ["Off", "LP", "HP", "LS", "HS", "Bell"];
+            static immutable float[8] DEF_FREQS = [30, 80, 250, 700, 2000, 5000, 10000, 16000];
+
+            const int botH = dp(40);
+            const int inspW = (inner.width > dp(340)) ? dp(96) : dp(82);
+            Rect topRc = Rect(inner.left, inner.top, inner.right, inner.bottom - botH - dp(4));
+            dl.canvasRc = Rect(topRc.left, topRc.top, topRc.right - inspW - dp(5), topRc.bottom);
+            dl.auxRc = Rect(dl.canvasRc.right + dp(5), topRc.top, topRc.right, topRc.bottom);
+            dl.footerRc = Rect(inner.left, topRc.bottom + dp(4), inner.right, inner.bottom);
+
+            // Bottom 8 rainbow band strip columns (rendered cleanly like EqDevicePanel.java)
+            const int bw = dl.footerRc.width / 8;
             foreach (b; 0 .. 8) {
-                const int bx = stripRc.left + b * bw;
+                const int bx = dl.footerRc.left + b * bw;
                 const int ti = eqNormToTypeIdx(readPlugParam(plug, cast(uint)b, 0.0f));
                 const bool sel = (ui.eqSelectedBand == b);
                 dl.pills ~= DevicePillSpec(
-                    Rect(bx + dp(1), stripRc.top, bx + bw - dp(1), stripRc.bottom),
-                    format("%d:%s", b + 1, TYPE_NAMES[ti]),
+                    Rect(bx + dp(1), dl.footerRc.top, bx + bw - dp(1), dl.footerRc.bottom),
+                    TYPE_NAMES[ti],
                     sel || ti > 0, sel ? BAND_COLS[b] : adjustColorBrightness(BAND_COLS[b], -24),
-                    2, cast(uint)b, 0.0f, b
+                    2, cast(uint)b, 0.0f, b, false
                 );
             }
+
+            // Right selected-band inspector: Type cycler pill + 3 knobs (Freq, Gain, Q)
             const int sb = (ui.eqSelectedBand >= 0 && ui.eqSelectedBand < 8) ? ui.eqSelectedBand : 0;
             const int curType = eqNormToTypeIdx(readPlugParam(plug, cast(uint)sb, 0.0f));
-            Rect botRc = Rect(inner.left, stripRc.bottom + dp(4), inner.right, inner.bottom);
-            // Type cycle pill on left + 3 knobs (Freq, Gain, Q)
-            const int typeW = dp(66);
             dl.pills ~= DevicePillSpec(
-                Rect(botRc.left, botRc.top + dp(18), botRc.left + typeW, botRc.top + dp(42)),
+                Rect(dl.auxRc.left + dp(3), dl.auxRc.top + dp(18),
+                     dl.auxRc.right - dp(3), dl.auxRc.top + dp(36)),
                 "Type: " ~ TYPE_NAMES[curType], curType > 0, BAND_COLS[sb],
-                0, cast(uint)sb, eqTypeIdxToNorm((curType + 1) % 6), sb
+                0, cast(uint)sb, eqTypeIdxToNorm((curType + 1) % 6), sb, true
             );
-            static immutable float[8] DEF_FREQS = [30, 80, 250, 700, 2000, 5000, 10000, 16000];
+
             const float fNorm = readPlugParam(plug, cast(uint)(8 + sb), eqFreqToNorm(DEF_FREQS[sb]));
             const float gNorm = readPlugParam(plug, cast(uint)(16 + sb), 0.5f);
             const float qNorm = readPlugParam(plug, cast(uint)(24 + sb), 0.425f);
-            Rect kArea = Rect(botRc.left + typeW + dp(6), botRc.top, botRc.right, botRc.bottom);
-            appendKnobRow(dl.knobs, kArea, plug,
-                [cast(uint)(8 + sb), cast(uint)(16 + sb), cast(uint)(24 + sb)],
-                ["Freq", "Gain", "Q"],
-                [eqFreqToNorm(DEF_FREQS[sb]), 0.5f, 0.425f],
-                [formatFreq(eqNormToFreq(fNorm)), formatDb((gNorm - 0.5f) * 48.0f), format("%.2f", eqNormToQ(qNorm))],
-                [BAND_COLS[sb], BAND_COLS[sb], BAND_COLS[sb]], pal);
+            Rect kZone = Rect(dl.auxRc.left + dp(2), dl.auxRc.top + dp(40), dl.auxRc.right - dp(2), dl.auxRc.bottom);
+            const uint[3] pids = [cast(uint)(8 + sb), cast(uint)(16 + sb), cast(uint)(24 + sb)];
+            const string[3] klbls = ["Freq", "Gain", "Q"];
+            const float[3] kdefs = [eqFreqToNorm(DEF_FREQS[sb]), 0.5f, 0.425f];
+            const string[3] kvals = [
+                formatFreq(eqNormToFreq(fNorm)),
+                formatDb((gNorm - 0.5f) * 48.0f),
+                format("%.2f", eqNormToQ(qNorm))
+            ];
+            if (kZone.height >= dp(148)) {
+                const int kh = kZone.height / 3;
+                foreach (k; 0 .. 3) {
+                    appendKnobRow(dl.knobs,
+                        Rect(kZone.left, kZone.top + k * kh, kZone.right, kZone.top + (k + 1) * kh),
+                        plug, [pids[k]], [klbls[k]], [kdefs[k]], [kvals[k]], [BAND_COLS[sb]], pal);
+                }
+            } else {
+                const int row1H = kZone.height / 2;
+                appendKnobRow(dl.knobs,
+                    Rect(kZone.left, kZone.top, kZone.right, kZone.top + row1H),
+                    plug, [pids[0], pids[1]], [klbls[0], klbls[1]], [kdefs[0], kdefs[1]], [kvals[0], kvals[1]],
+                    [BAND_COLS[sb], BAND_COLS[sb]], pal);
+                appendKnobRow(dl.knobs,
+                    Rect(kZone.left, kZone.top + row1H, kZone.right, kZone.bottom),
+                    plug, [pids[2]], [klbls[2]], [kdefs[2]], [kvals[2]], [BAND_COLS[sb]], pal);
+            }
             break;
         }
         case BuiltinDeviceKind.COMPRESSOR: {
@@ -400,42 +436,95 @@ DeviceLayout buildBuiltinDeviceLayout(
             break;
         }
         case BuiltinDeviceKind.HOTT: {
-            const int knobH = dp(66);
-            const int tabH = dp(20);
-            dl.canvasRc = Rect(inner.left, inner.top, inner.right, inner.bottom - tabH - knobH - dp(6));
-            Rect tabRc = Rect(inner.left, dl.canvasRc.bottom + dp(3), inner.right, dl.canvasRc.bottom + dp(3) + tabH);
-            const int bw = tabRc.width / 5;
-            static immutable string[3] TABS = ["T: Time", "B: Below", "A: Above"];
-            foreach (ti; 0 .. 3) {
-                dl.pills ~= DevicePillSpec(
-                    Rect(tabRc.left + ti * bw, tabRc.top, tabRc.left + (ti + 1) * bw - dp(2), tabRc.bottom),
-                    TABS[ti], ui.hottTab == ti, pal.accentOrange, 2, 0, 0.0f, ti
-                );
-            }
+            // Authentic 3-column Xfer OTT / Swing HottDevicePanel layout:
+            // Top banner + [Left: Split Freqs + SoftKnee/RMS] [Center: 3-Band Up/Down Comp Meters + T/B/A] [Right: 2x3 Out/Depth]
+            const int hdrH = dp(18);
+            dl.footerRc = Rect(inner.left, inner.top, inner.right, inner.top + hdrH);
+            Rect body = Rect(inner.left, dl.footerRc.bottom + dp(4), inner.right, inner.bottom);
+
+            const int leftW = (body.width >= dp(440)) ? dp(78) : dp(64);
+            const int rightW = (body.width >= dp(440)) ? dp(164) : dp(136);
+            Rect leftCol = Rect(body.left, body.top, body.left + leftW, body.bottom);
+            Rect rightCol = Rect(body.right - rightW, body.top, body.right, body.bottom);
+            dl.auxRc = leftCol;
+            dl.canvasRc = Rect(leftCol.right + dp(4), body.top, rightCol.left - dp(4), body.bottom);
+
+            // Left column: HiFreq, LoFreq knobs + Soft Knee, RMS toggles
+            const float hiF = readPlugParam(plug, 1, 0.436f);
+            const float loF = readPlugParam(plug, 0, 0.461f);
+            const float hiHz = 500.0f * powf(40.0f, hiF);
+            const float loHz = 20.0f * powf(25.0f, loF);
+            const int btnAreaH = dp(38);
+            const int splH = (leftCol.height - dp(14) - btnAreaH) / 2;
+            appendKnobRow(dl.knobs,
+                Rect(leftCol.left, leftCol.top + dp(12), leftCol.right, leftCol.top + dp(12) + splH),
+                plug, [1u], ["HiFreq"], [0.436f], [format("%.2fk", hiHz / 1000.0f)], [0x0000D4FF], pal);
+            appendKnobRow(dl.knobs,
+                Rect(leftCol.left, leftCol.top + dp(12) + splH, leftCol.right, leftCol.bottom - btnAreaH - dp(2)),
+                plug, [0u], ["LoFreq"], [0.461f], [format("%.0fHz", loHz)], [0x0000D4FF], pal);
+
             const bool softKnee = readPlugParam(plug, 15, 1.0f) >= 0.5f;
             const bool rmsMode = readPlugParam(plug, 16, 1.0f) >= 0.5f;
             dl.pills ~= DevicePillSpec(
-                Rect(tabRc.left + 3 * bw, tabRc.top, tabRc.left + 4 * bw - dp(2), tabRc.bottom),
-                "Soft", softKnee, pal.accentCyan, 1, 15, 1.0f, 0
+                Rect(leftCol.left + dp(2), leftCol.bottom - dp(36), leftCol.right - dp(2), leftCol.bottom - dp(19)),
+                "Soft Knee", softKnee, 0x0000D4FF, 1, 15, 1.0f, 0
             );
             dl.pills ~= DevicePillSpec(
-                Rect(tabRc.left + 4 * bw, tabRc.top, tabRc.right, tabRc.bottom),
-                "RMS", rmsMode, pal.accentGreen, 1, 16, 1.0f, 0
+                Rect(leftCol.left + dp(2), leftCol.bottom - dp(17), leftCol.right - dp(2), leftCol.bottom),
+                "RMS", rmsMode, 0x0010B981, 1, 16, 1.0f, 0
             );
-            Rect kArea = Rect(inner.left, tabRc.bottom + dp(3), inner.right, inner.bottom);
-            const float amt = readPlugParam(plug, 2, 1.0f);
-            const float tm = readPlugParam(plug, 3, 1.0f);
-            const float outV = readPlugParam(plug, 4, 0.5f);
+
+            // Center meter panel rows & [T] [B] [A] tabs
+            Rect c = dl.canvasRc;
+            const int cPad = dp(6);
+            const int tabH = dp(18);
+            const int topRulerH = dp(12);
+            const int inspW = (c.width >= dp(230)) ? dp(68) : dp(54);
+            const int meterW = c.width - cPad * 2 - inspW - dp(4);
+            const int bandsTop = c.top + topRulerH + dp(2);
+            const int bandsBot = c.bottom - tabH - dp(2);
+            const int bandGap = dp(4);
+            const int bandH = ((bandsBot - bandsTop) - bandGap * 2) / 3;
+            foreach (bi; 0 .. 3) {
+                const int ry0 = bandsTop + bi * (bandH + bandGap);
+                const int ry1 = ry0 + bandH;
+                dl.hottBarRcs[bi] = Rect(c.left + cPad, ry0, c.left + cPad + meterW, ry1);
+                dl.hottInspectorRcs[bi] = Rect(c.left + cPad + meterW + dp(4), ry0, c.right - cPad, ry1);
+            }
+
+            static immutable string[3] TABS = ["T", "B", "A"];
+            const int tbW = dp(20);
+            const int tbGap = dp(2);
+            const int tabX0 = c.right - cPad - 3 * tbW - 2 * tbGap;
+            const int tabY0 = c.bottom - tabH;
+            foreach (ti; 0 .. 3) {
+                const int x0 = tabX0 + ti * (tbW + tbGap);
+                dl.pills ~= DevicePillSpec(
+                    Rect(x0, tabY0, x0 + tbW, c.bottom - dp(2)),
+                    TABS[ti], ui.hottTab == ti, 0x0000D4FF, 2, 0, 0.0f, ti
+                );
+            }
+
+            // Right column: 2x3 OTT cyan knobs (HiOut/MidOut/LoOut + Output/Time/Depth)
+            const int rHalf = rightCol.height / 2;
             const float lo = readPlugParam(plug, 5, 0.715f);
             const float md = readPlugParam(plug, 6, 0.619f);
             const float hi = readPlugParam(plug, 7, 0.715f);
-            appendKnobRow(dl.knobs, kArea, plug,
-                [2u, 3u, 4u, 5u, 6u, 7u],
-                ["Depth", "Time", "Output", "Low Out", "Mid Out", "High Out"],
-                [1.0f, 1.0f, 0.5f, 0.715f, 0.619f, 0.715f],
-                [formatPercent(amt), formatPercent(tm), formatDb((outV - 0.5f) * 24.0f),
-                 formatPercent(lo), formatPercent(md), formatPercent(hi)],
-                [pal.accentOrange, pal.accentCyan, pal.accentAmber, 0x00E25822, 0x0010B981, 0x003B82F6], pal);
+            const float outV = readPlugParam(plug, 4, 0.5f);
+            const float tm = readPlugParam(plug, 3, 1.0f);
+            const float amt = readPlugParam(plug, 2, 1.0f);
+            appendKnobRow(dl.knobs,
+                Rect(rightCol.left, rightCol.top, rightCol.right, rightCol.top + rHalf),
+                plug, [7u, 6u, 5u], ["Hi Out", "Mid Out", "Lo Out"],
+                [0.715f, 0.619f, 0.715f],
+                [formatDb(hi * 48.0f - 24.0f), formatDb(md * 48.0f - 24.0f), formatDb(lo * 48.0f - 24.0f)],
+                [0x0000D4FF, 0x0000D4FF, 0x0000D4FF], pal);
+            appendKnobRow(dl.knobs,
+                Rect(rightCol.left, rightCol.top + rHalf, rightCol.right, rightCol.bottom),
+                plug, [4u, 3u, 2u], ["Output", "Time", "Amount"],
+                [0.5f, 1.0f, 1.0f],
+                [formatDb(outV * 48.0f - 24.0f), formatPercent(tm), formatPercent(amt)],
+                [0x0000D4FF, 0x0000D4FF, 0x0000D4FF], pal);
             break;
         }
         case BuiltinDeviceKind.MAXIM: {
@@ -604,52 +693,100 @@ DeviceLayout buildBuiltinDeviceLayout(
             break;
         }
         case BuiltinDeviceKind.ACID_BASS: {
-            // TB-303 layout: Top waveform switch + 7 dials + Slide/Accent switches; Bottom 13-key virtual keyboard
-            const int keysH = dp(40);
-            const int switchW = dp(52);
-            Rect mainRc = Rect(inner.left, inner.top, inner.right, inner.bottom - keysH - dp(4));
+            // Authentic Roland TB-303 brushed silver face:
+            // Top charcoal badge | 8 silver vertical bays (Waveform + 7 dials) | Lower keyboard/step bay
+            const int hdrH = dp(16);
+            dl.auxRc = Rect(inner.left, inner.top, inner.right, inner.top + hdrH);
+            const int remH = inner.bottom - dl.auxRc.bottom;
+            const int upperH = (remH * 55) / 100;
+            Rect mainRc = Rect(inner.left, dl.auxRc.bottom, inner.right, dl.auxRc.bottom + upperH);
+            Rect kbdRc = Rect(inner.left, mainRc.bottom, inner.right, inner.bottom);
             dl.canvasRc = mainRc;
+            dl.footerRc = kbdRc;
+
+            // Col 0: WAVEFORM SAW/SQR switch; Cols 1..7: 7 TB-303 silver dials
+            const int colW = mainRc.width / 8;
             const bool isSq = readPlugParam(plug, 0, 0.0f) >= 0.5f;
             dl.pills ~= DevicePillSpec(
-                Rect(mainRc.left + dp(6), mainRc.top + dp(8), mainRc.left + switchW, mainRc.top + dp(30)),
-                isSq ? "SQR" : "SAW", isSq, pal.accentOrange, 1, 0, 1.0f, 0
+                Rect(mainRc.left + dp(4), mainRc.top + dp(18), mainRc.left + colW - dp(4), mainRc.bottom - dp(16)),
+                isSq ? "SQR" : "SAW", isSq, 0x00FF3333, 1, 0, 1.0f, 0, false
             );
-            const bool slideOn = readPlugParam(plug, 9, 0.0f) >= 0.5f;
-            const bool accOn = readPlugParam(plug, 10, 0.0f) >= 0.5f;
-            dl.pills ~= DevicePillSpec(
-                Rect(mainRc.left + dp(6), mainRc.top + dp(34), mainRc.left + switchW, mainRc.top + dp(52)),
-                "SLIDE", slideOn, pal.accentRed, 1, 9, 1.0f, 0
-            );
-            dl.pills ~= DevicePillSpec(
-                Rect(mainRc.left + dp(6), mainRc.top + dp(56), mainRc.left + switchW, mainRc.top + dp(74)),
-                "ACCNT", accOn, pal.accentRed, 1, 10, 1.0f, 0
-            );
-            Rect kArea = Rect(mainRc.left + switchW + dp(6), mainRc.top + dp(4), mainRc.right - dp(4), mainRc.bottom - dp(4));
+
+            Rect kArea = Rect(mainRc.left + colW, mainRc.top + dp(4), mainRc.left + colW * 8, mainRc.bottom - dp(2));
             const float cut = readPlugParam(plug, 1, 0.3f);
             const float dec = readPlugParam(plug, 4, 0.2f);
             appendKnobRow(dl.knobs, kArea, plug,
                 [1u, 2u, 3u, 4u, 5u, 6u, 7u],
-                ["Cutoff", "Reso", "EnvMod", "Decay", "Accent", "Drive", "Vol"],
+                ["CUTOFF", "RESONANCE", "ENV MOD", "DECAY", "ACCENT", "OVERDRIVE", "VOLUME"],
                 [0.3f, 0.6f, 0.5f, 0.2f, 0.0f, 0.1f, 0.7f],
                 [formatFreq(100.0f * powf(30.0f, cut)), formatPercent(readPlugParam(plug, 2, 0.6f)),
                  formatPercent(readPlugParam(plug, 3, 0.5f)), formatMsFromExp(dec, 50.0f, 60.0f),
                  formatPercent(readPlugParam(plug, 5, 0.0f)), formatPercent(readPlugParam(plug, 6, 0.1f)),
                  formatPercent(readPlugParam(plug, 7, 0.7f))],
-                [pal.accentOrange, pal.accentOrange, pal.accentCyan, pal.accentCyan,
-                 pal.accentRed, pal.accentRed, pal.accentGreen], pal);
+                [0x00FF3333, 0x00FF3333, 0x00FF3333, 0x00FF3333, 0x00FF3333, 0x00FF3333, 0x00FF3333],
+                pal, 1, true);
 
-            // 13-key TB-303 trigger bar at bottom (C3=48 .. C4=60)
-            Rect kbdRc = Rect(inner.left, mainRc.bottom + dp(4), inner.right, inner.bottom);
-            static immutable string[13] KEY_LBL = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C+"];
-            const int kw = kbdRc.width / 13;
-            foreach (ki; 0 .. 13) {
-                const bool blk = (ki == 1 || ki == 3 || ki == 6 || ki == 8 || ki == 10);
+            // Lower keyboard bay: Left Octave ◀/▶ | Center 12 staggered silver keys | Right SLIDE/ACCENT
+            const int octVal = 1 + cast(int)(readPlugParam(plug, 8, 0.5f) * 4.0f + 0.5f);
+            const uint baseMidi = cast(uint)(24 + octVal * 12);
+            const int octW = dp(82);
+            const int modW = dp(78);
+            const int keySpanW = kbdRc.width - octW - modW;
+            const int keyStart = kbdRc.left + octW + dp(4);
+            const int wStep = (keySpanW - dp(8)) / 7;
+            const int kw = (wStep > dp(18)) ? dp(14) : (wStep - dp(3));
+            const int kh = (kbdRc.height >= dp(88)) ? dp(26) : dp(20);
+
+            // Octave Down / Up circular buttons
+            const int octBtnY = kbdRc.top + dp(34);
+            dl.pills ~= DevicePillSpec(
+                Rect(kbdRc.left + dp(10), octBtnY - dp(9), kbdRc.left + dp(28), octBtnY + dp(9)),
+                "<", false, 0x00CCCCCC, 5, 8, -0.25f, 0, false
+            );
+            dl.pills ~= DevicePillSpec(
+                Rect(kbdRc.left + dp(52), octBtnY - dp(9), kbdRc.left + dp(70), octBtnY + dp(9)),
+                ">", false, 0x00CCCCCC, 5, 8, 0.25f, 0, false
+            );
+
+            // 5 Black keys (upper row: C#, D#, F#, G#, A#)
+            static immutable int[5] BLK_OFF = [1, 3, 6, 8, 10];
+            static immutable float[5] BLK_MULT = [0.5f, 1.5f, 3.5f, 4.5f, 5.5f];
+            static immutable string[5] BLK_LBL = ["C#", "D#", "F#", "G#", "A#"];
+            const int blkCenterY = kbdRc.top + (kbdRc.height * 32) / 100;
+            foreach (bi; 0 .. 5) {
+                const int kx = keyStart + wStep / 2 + cast(int)(BLK_MULT[bi] * wStep);
                 dl.pills ~= DevicePillSpec(
-                    Rect(kbdRc.left + ki * kw, kbdRc.top, kbdRc.left + (ki + 1) * kw - dp(1), kbdRc.bottom),
-                    KEY_LBL[ki], !blk, blk ? pal.bgPanelAlt : pal.accentCyan,
-                    3, cast(uint)(48 + ki), 1.0f, ki
+                    Rect(kx - kw / 2, blkCenterY - kh / 2, kx + kw / 2, blkCenterY + kh / 2),
+                    BLK_LBL[bi], true, 0x00111111, 3, baseMidi + BLK_OFF[bi], 1.0f, BLK_OFF[bi], false
                 );
             }
+
+            // 7 White keys (lower row: C, D, E, F, G, A, B)
+            static immutable int[7] WHT_OFF = [0, 2, 4, 5, 7, 9, 11];
+            static immutable string[7] WHT_LBL = ["C", "D", "E", "F", "G", "A", "B"];
+            const int whtCenterY = kbdRc.top + (kbdRc.height * 68) / 100;
+            foreach (wi; 0 .. 7) {
+                const int kx = keyStart + wStep / 2 + wi * wStep;
+                dl.pills ~= DevicePillSpec(
+                    Rect(kx - kw / 2, whtCenterY - kh / 2, kx + kw / 2, whtCenterY + kh / 2),
+                    WHT_LBL[wi], false, 0x00FAFAFA, 3, baseMidi + WHT_OFF[wi], 1.0f, WHT_OFF[wi], false
+                );
+            }
+
+            // Right SLIDE & ACCENT brushed buttons with glowing Red LEDs
+            const bool slideOn = readPlugParam(plug, 9, 0.0f) >= 0.5f;
+            const bool accOn = readPlugParam(plug, 10, 0.0f) >= 0.5f;
+            const int rModY = kbdRc.middley;
+            const int slideCx = kbdRc.right - dp(54);
+            const int accCx = kbdRc.right - dp(20);
+            dl.pills ~= DevicePillSpec(
+                Rect(slideCx - dp(10), rModY - dp(10), slideCx + dp(10), rModY + dp(10)),
+                "SLIDE", slideOn, 0x00FF3333, 1, 9, 1.0f, 0, false
+            );
+            dl.pills ~= DevicePillSpec(
+                Rect(accCx - dp(10), rModY - dp(10), accCx + dp(10), rModY + dp(10)),
+                "ACCENT", accOn, 0x00FF3333, 1, 10, 1.0f, 0, false
+            );
             break;
         }
         case BuiltinDeviceKind.THREE_OSC: {
@@ -807,6 +944,66 @@ private void drawDbMeterBar(DrawBuf buf, Rect rc, float db, float minDb, float m
     }
 }
 
+private uint lerpColorRgb(uint a, uint b, float t) pure nothrow @safe {
+    const float u = clamp01(t);
+    const int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+    const int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+    const uint r = cast(uint)(ar + (br - ar) * u + 0.5f) & 0xFF;
+    const uint g = cast(uint)(ag + (bg - ag) * u + 0.5f) & 0xFF;
+    const uint bl = cast(uint)(ab + (bb - ab) * u + 0.5f) & 0xFF;
+    return (a & 0xFF000000u) | (r << 16) | (g << 8) | bl;
+}
+
+private void drawVGradientRect(DrawBuf buf, Rect rc, uint topCol, uint botCol) {
+    if (rc.width <= 0 || rc.height <= 0) return;
+    const int h = rc.height;
+    const int step = (h > 48) ? 2 : 1;
+    for (int dy = 0; dy < h; dy += step) {
+        const float t = (h > 1) ? cast(float)dy / cast(float)(h - 1) : 0.0f;
+        const uint col = lerpColorRgb(topCol, botCol, t);
+        const int y1 = (dy + step < h) ? (rc.top + dy + step) : rc.bottom;
+        buf.fillRect(Rect(rc.left, rc.top + dy, rc.right, y1), col);
+    }
+}
+
+private void drawAcidLed(DrawBuf buf, float cx, float cy, float r, bool lit) {
+    if (lit) {
+        drawFilledCircle(buf, cx, cy, r * 1.9f, 0xA8FF3333, COLOR_TRANSPARENT);
+        drawFilledCircle(buf, cx, cy, r, 0x00FF3333, 0x00555555);
+        drawFilledCircle(buf, cx - r * 0.25f, cy - r * 0.25f, r * 0.35f, 0x40FFFFFF, COLOR_TRANSPARENT);
+    } else {
+        drawFilledCircle(buf, cx, cy, r, 0x00480808, 0x00666666);
+        drawFilledCircle(buf, cx - r * 0.25f, cy - r * 0.25f, r * 0.28f, 0xC8FFFFFF, COLOR_TRANSPARENT);
+    }
+}
+
+private void drawTb303Knob(DrawBuf buf, int cx, int cy, int r, float normVal) {
+    if (r < 4) return;
+    const float v = clamp01(normVal);
+    // 11 radial tick marks around knob perimeter (135 deg -> 405 deg)
+    foreach (i; 0 .. 11) {
+        const float deg = 135.0f + cast(float)i * 27.0f;
+        const float rad = deg * 0.0174532925f;
+        const float cs = cosf(rad);
+        const float sn = sinf(rad);
+        drawThickLine(buf,
+            cx + cs * (r + dpf(1.2f)), cy + sn * (r + dpf(1.2f)),
+            cx + cs * (r + dpf(4.0f)), cy + sn * (r + dpf(4.0f)),
+            dpf(1.1f), 0x00333333);
+    }
+    // Outer brushed silver aluminum skirt + dark inner cap + glowing red value arc + white pointer
+    drawFilledCircle(buf, cx + dpf(1.0f), cy + dpf(1.5f), r, 0xB8000000, COLOR_TRANSPARENT);
+    drawFilledCircle(buf, cx, cy, r, 0x00D0D4DA, 0x0044484E);
+    const float innerR = r * 0.72f;
+    drawFilledCircle(buf, cx, cy, innerR, 0x0022262C, COLOR_TRANSPARENT);
+    if (v > 0.01f) {
+        drawOpenArc(buf, cx, cy, innerR - dpf(1.6f), 135.0f, 135.0f + 270.0f * v, dpf(1.6f), 0x00FF3333);
+    }
+    const float ptrRad = (135.0f + 270.0f * v) * 0.0174532925f;
+    drawThickLine(buf, cx, cy, cx + cosf(ptrRad) * (r - dpf(1.5f)), cy + sinf(ptrRad) * (r - dpf(1.5f)),
+                  dpf(1.8f), 0x00FFFFFF);
+}
+
 void drawBuiltinDevicePanel(
     DrawBuf buf,
     Rect bodyRc,
@@ -832,33 +1029,92 @@ void drawBuiltinDevicePanel(
     // 1. Device-specific visualizers
     switch (dl.kind) {
         case BuiltinDeviceKind.EQ: {
-            Rect c = dl.canvasRc;
-            drawThemeCard(buf, c, pal.bgLcd, pal.borderSubtle, pal, 2.0f, true);
-            drawPanelGrid(buf, c, pal);
+            static immutable uint[8] BAND_COLS = [
+                0x00E04040, 0x00E07020, 0x00D0C020, 0x0040B040,
+                0x0030A0A0, 0x004080E0, 0x008060D0, 0x00C050A0,
+            ];
+            static immutable string[6] TYPE_NAMES = ["Off", "LP", "HP", "LS", "HS", "Bell"];
+            static immutable float[8] DEF_FREQS = [30, 80, 250, 700, 2000, 5000, 10000, 16000];
 
-            const int pad = dp(6);
+            // Left Main Fruity EQ 2 / EQ Eight Curve + FFT Heatmap Canvas
+            Rect c = dl.canvasRc;
+            drawThemeCard(buf, c, 0x000F131A, pal.borderSubtle, pal, 2.0f, true);
+            const int pad = dp(8);
             const int sw = c.width - pad * 2;
             const int sh = c.height - pad * 2;
             if (sw > dp(20) && sh > dp(16)) {
-                // Real-time FFT spectrum overlay
-                void plotSpec(const(float)[] mags, uint col) {
+                // Log frequency gridlines (30, 50, 100, 200, 500, 1k, 2k, 5k, 10k) & dB gridlines (-12, 0, +12)
+                static immutable float[7] GRID_HZ = [50, 100, 200, 500, 1000, 5000, 10000];
+                static immutable string[7] GRID_LBL = ["50", "100", "200", "500", "1k", "5k", "10k"];
+                foreach (gi, hz; GRID_HZ) {
+                    const int gx = c.left + pad + cast(int)(eqFreqToNorm(hz) * sw);
+                    buf.fillRect(Rect(gx, c.top + dp(2), gx + dp(1), c.bottom - dp(2)), 0xE8FFFFFF);
+                    if (gx + dp(20) < c.right) {
+                        drawVCenteredText(buf, valFnt, gx + dp(2),
+                                          Rect(gx, c.bottom - dp(13), gx + dp(26), c.bottom - dp(1)),
+                                          toUTF32(GRID_LBL[gi]), 0x80FFFFFF);
+                    }
+                }
+                const int yZero = c.top + pad + sh / 2;
+                const int yP12 = c.top + pad + sh / 4;
+                const int yM12 = c.top + pad + (sh * 3) / 4;
+                buf.fillRect(Rect(c.left + dp(2), yP12, c.right - dp(2), yP12 + dp(1)), 0xECFFFFFF);
+                buf.fillRect(Rect(c.left + dp(2), yZero, c.right - dp(2), yZero + dp(1)), 0xD0FFFFFF);
+                buf.fillRect(Rect(c.left + dp(2), yM12, c.right - dp(2), yM12 + dp(1)), 0xECFFFFFF);
+
+                // Fruity EQ 2 style FFT spectrum overlay (soft heat bars + smooth trace)
+                void plotFftFill(const(float)[] mags, uint barCol, uint lineCol) {
                     if (mags.length < 2) return;
                     float px = c.left + pad;
-                    float py = c.bottom - pad - normalizeDb(mags[0], -60.0f, 12.0f) * sh;
+                    float py = c.bottom - pad - normalizeDb(mags[0], -72.0f, 6.0f) * sh;
                     foreach (i; 1 .. mags.length) {
                         const float t = cast(float)i / cast(float)(mags.length - 1);
                         const float x = c.left + pad + t * sw;
-                        const float y = c.bottom - pad - normalizeDb(mags[i], -60.0f, 12.0f) * sh;
-                        drawThickLine(buf, px, py, x, y, dpf(1.4f), col);
+                        const float y = c.bottom - pad - normalizeDb(mags[i], -72.0f, 6.0f) * sh;
+                        if (cast(int)y < c.bottom - pad) {
+                            const int bx0 = cast(int)px;
+                            const int bx1 = (cast(int)x > bx0) ? cast(int)x : (bx0 + dp(1));
+                            buf.fillRect(Rect(bx0, cast(int)y, bx1, c.bottom - pad), barCol);
+                        }
+                        drawThickLine(buf, px, py, x, y, dpf(1.3f), lineCol);
                         px = x;
                         py = y;
                     }
                 }
-                plotSpec(plug.specInDb, pal.fgDim);
-                plotSpec(plug.specOutDb, pal.accentCyan);
+                plotFftFill(plug.specInDb, 0xDF4080E0, 0x904080E0);
+                plotFftFill(plug.specOutDb, 0xD4F59E0B, 0x48FFC040);
 
-                // Composite EQ frequency response curve
-                enum int CURVE_N = 48;
+                // Per-band translucent response curves & fills toward 0dB
+                enum int CURVE_N = 56;
+                foreach (b; 0 .. 8) {
+                    if (eqNormToTypeIdx(readPlugParam(plug, cast(uint)b, 0.0f)) == 0) continue;
+                    const uint bc = BAND_COLS[b];
+                    const uint bcFill = (bc & 0x00FFFFFF) | 0xDE000000;
+                    const uint bcLine = (bc & 0x00FFFFFF) | 0x70000000;
+                    float bpx = c.left + pad;
+                    float bpy = yZero;
+                    foreach (i; 0 .. CURVE_N + 1) {
+                        const float t = cast(float)i / cast(float)CURVE_N;
+                        const float hz = 20.0f * powf(1000.0f, t);
+                        float bdb = eqBandGainDbAtFreq(plug, b, hz);
+                        if (bdb < -25.0f) bdb = -25.0f; else if (bdb > 25.0f) bdb = 25.0f;
+                        const float x = c.left + pad + t * sw;
+                        const float y = c.top + pad + (1.0f - (bdb + 25.0f) / 50.0f) * sh;
+                        if (i > 0) {
+                            const int ry0 = (y < yZero) ? cast(int)y : yZero;
+                            const int ry1 = (y > yZero) ? cast(int)y : yZero;
+                            if (ry1 > ry0) {
+                                const int rx1 = (cast(int)x > cast(int)bpx) ? cast(int)x : (cast(int)bpx + 1);
+                                buf.fillRect(Rect(cast(int)bpx, ry0, rx1, ry1), bcFill);
+                            }
+                            drawThickLine(buf, bpx, bpy, x, y, dpf(1.2f), bcLine);
+                        }
+                        bpx = x;
+                        bpy = y;
+                    }
+                }
+
+                // Crisp white/cream composite EQ response curve
                 float prevX = c.left + pad;
                 float prevDb = eqCompositeDbAtFreq(plug, 20.0f);
                 if (prevDb < -25.0f) prevDb = -25.0f; else if (prevDb > 25.0f) prevDb = 25.0f;
@@ -870,29 +1126,73 @@ void drawBuiltinDevicePanel(
                     if (db < -25.0f) db = -25.0f; else if (db > 25.0f) db = 25.0f;
                     const float x = c.left + pad + t * sw;
                     const float y = c.top + pad + (1.0f - (db + 25.0f) / 50.0f) * sh;
-                    drawThickLine(buf, prevX, prevY, x, y, dpf(2.0f), pal.fgText);
+                    drawThickLine(buf, prevX, prevY, x, y, dpf(2.2f), 0x00F4F7FC);
                     prevX = x;
                     prevY = y;
                 }
 
-                // 8 draggable colored band handles
-                static immutable uint[8] BAND_COLS = [
-                    0x00E04040, 0x00E07020, 0x00D0C020, 0x0040B040,
-                    0x0030A0A0, 0x004080E0, 0x008060D0, 0x00C050A0,
-                ];
+                // 8 colored numbered Fruity EQ2 / EQ Eight band tokens ('1'..'8')
                 foreach (b; 0 .. 8) {
-                    if (eqNormToTypeIdx(readPlugParam(plug, cast(uint)b, 0.0f)) == 0 &&
-                        b != ui.eqSelectedBand) continue;
-                    static immutable float[8] DEF_FREQS = [30, 80, 250, 700, 2000, 5000, 10000, 16000];
+                    const int ti = eqNormToTypeIdx(readPlugParam(plug, cast(uint)b, 0.0f));
+                    if (ti == 0 && b != ui.eqSelectedBand) continue;
                     const float fn = readPlugParam(plug, cast(uint)(8 + b), eqFreqToNorm(DEF_FREQS[b]));
                     const float gn = readPlugParam(plug, cast(uint)(16 + b), 0.5f);
                     float db = (gn - 0.5f) * 48.0f;
                     if (db < -25.0f) db = -25.0f; else if (db > 25.0f) db = 25.0f;
                     const float bx = c.left + pad + fn * sw;
                     const float by = c.top + pad + (1.0f - (db + 25.0f) / 50.0f) * sh;
-                    drawFilledCircle(buf, bx, by, dpf(b == ui.eqSelectedBand ? 6.0f : 4.5f),
-                                     BAND_COLS[b], b == ui.eqSelectedBand ? pal.fgText : pal.bgLcd);
+                    const bool isSel = (b == ui.eqSelectedBand);
+                    if (isSel) {
+                        buf.fillRect(Rect(cast(int)bx, c.top + dp(2), cast(int)bx + dp(1), c.bottom - dp(2)),
+                                     (BAND_COLS[b] & 0x00FFFFFF) | 0xA8000000);
+                        drawFilledCircle(buf, bx, by, dpf(9.0f), (BAND_COLS[b] & 0x00FFFFFF) | 0x90000000,
+                                         0x00FFFFFF);
+                    }
+                    const uint tokFill = (ti == 0)
+                        ? adjustColorBrightness(BAND_COLS[b], -28)
+                        : BAND_COLS[b];
+                    drawFilledCircle(buf, bx, by, dpf(isSel ? 7.2f : 6.0f), tokFill, 0x00FFFFFF);
+                    drawCenteredText(buf, valFnt,
+                                     Rect(cast(int)bx - dp(7), cast(int)by - dp(7), cast(int)bx + dp(7), cast(int)by + dp(7)),
+                                     toUTF32(format("%d", b + 1)), 0x00FFFFFF);
                 }
+
+                // Selected band HUD badge at top-left
+                const int sb = (ui.eqSelectedBand >= 0 && ui.eqSelectedBand < 8) ? ui.eqSelectedBand : 0;
+                const int sbType = eqNormToTypeIdx(readPlugParam(plug, cast(uint)sb, 0.0f));
+                const float sbFreq = eqNormToFreq(readPlugParam(plug, cast(uint)(8 + sb), eqFreqToNorm(DEF_FREQS[sb])));
+                const float sbGain = (readPlugParam(plug, cast(uint)(16 + sb), 0.5f) - 0.5f) * 48.0f;
+                const float sbQ = eqNormToQ(readPlugParam(plug, cast(uint)(24 + sb), 0.425f));
+                const string hud = format("B%d %s · %s · %+.1fdB · Q%.2f",
+                                          sb + 1, TYPE_NAMES[sbType], formatFreq(sbFreq), sbGain, sbQ);
+                drawVCenteredText(buf, valFnt, c.left + dp(8),
+                                  Rect(c.left + dp(4), c.top + dp(2), c.right - dp(4), c.top + dp(16)),
+                                  toUTF32(hud), BAND_COLS[sb]);
+            }
+
+            // Right Inspector Card
+            drawThemeCard(buf, dl.auxRc, pal.bgPanelAlt, pal.borderSubtle, pal, 2.0f, false);
+            const int sbIdx = (ui.eqSelectedBand >= 0 && ui.eqSelectedBand < 8) ? ui.eqSelectedBand : 0;
+            drawCenteredText(buf, uiFnt, Rect(dl.auxRc.left, dl.auxRc.top + dp(2), dl.auxRc.right, dl.auxRc.top + dp(17)),
+                             toUTF32(format("BAND %d", sbIdx + 1)), BAND_COLS[sbIdx]);
+
+            // Bottom 8 rainbow band strip cells (matching EqDevicePanel.java)
+            foreach (b; 0 .. 8) {
+                if (b >= dl.pills.length) break;
+                Rect br = dl.pills[b].rc;
+                const int ti = eqNormToTypeIdx(readPlugParam(plug, cast(uint)b, 0.0f));
+                const bool sel = (b == ui.eqSelectedBand);
+                const uint cellBg = sel ? adjustColorBrightness(pal.bgControlHover, 6) : pal.bgWindow;
+                drawThemeCard(buf, br, cellBg, sel ? BAND_COLS[b] : pal.borderStrong, pal, 1.5f, false);
+                buf.fillRect(Rect(br.left + dp(2), br.top + dp(2), br.right - dp(2), br.top + dp(5)),
+                             ti > 0 ? BAND_COLS[b] : adjustColorBrightness(BAND_COLS[b], -26));
+                drawFilledCircle(buf, br.left + dp(9), br.top + dp(14), dpf(3.2f), BAND_COLS[b], COLOR_TRANSPARENT);
+                drawVCenteredText(buf, valFnt, br.left + dp(15), Rect(br.left + dp(14), br.top + dp(6), br.right, br.top + dp(22)),
+                                  toUTF32(format("%d %s", b + 1, TYPE_NAMES[ti])),
+                                  ti > 0 || sel ? pal.fgText : pal.fgMuted);
+                const float bf = eqNormToFreq(readPlugParam(plug, cast(uint)(8 + b), eqFreqToNorm(DEF_FREQS[b])));
+                drawCenteredText(buf, valFnt, Rect(br.left, br.top + dp(21), br.right, br.bottom - dp(2)),
+                                 toUTF32(formatFreq(bf)), pal.fgMuted);
             }
             break;
         }
@@ -953,32 +1253,119 @@ void drawBuiltinDevicePanel(
             break;
         }
         case BuiltinDeviceKind.HOTT: {
+            // Top Xfer OTT / Hott header banner
+            drawThemeCard(buf, dl.footerRc, 0x001A6B8A, 0x0000A8CC, pal, 2.0f, false);
+            drawVCenteredText(buf, uiFnt, dl.footerRc.left + dp(8), dl.footerRc,
+                              "⚡ HOTT  ·  OTT MULTIBAND COMPRESSOR"d, 0x0000D4FF);
+
+            // Left Split Freq panel card
+            drawThemeCard(buf, dl.auxRc, pal.bgPanelAlt, pal.borderSubtle, pal, 2.0f, false);
+            drawCenteredText(buf, valFnt, Rect(dl.auxRc.left, dl.auxRc.top + dp(1), dl.auxRc.right, dl.auxRc.top + dp(13)),
+                             "SPLIT FREQ"d, pal.fgMuted);
+
+            // Center Xfer OTT Band Meter Panel
             Rect c = dl.canvasRc;
-            drawThemeCard(buf, c, pal.bgLcd, pal.borderSubtle, pal, 2.0f, true);
-            const int rowH = (c.height - dp(8)) / 3;
-            static immutable string[3] BNAMES = ["HIGH", "MID", "LOW"];
-            static immutable uint[3] BCOLS = [0x003B82F6, 0x0010B981, 0x00E25822];
+            drawThemeCard(buf, c, 0x00151C24, pal.borderSubtle, pal, 2.0f, true);
+
+            // dB gridlines across bands (-80 .. 0 dB) & top inspector header
+            Rect b0 = dl.hottBarRcs[0];
+            Rect b2 = dl.hottBarRcs[2];
+            foreach (db; [-80, -70, -60, -50, -40, -30, -20, -10, 0]) {
+                const float n = normalizeDb(cast(float)db, -80.0f, 0.0f);
+                const int gx = b0.left + cast(int)(n * b0.width);
+                buf.fillRect(Rect(gx, b0.top, gx + dp(1), b2.bottom), 0xDCFFFFFF);
+            }
+            foreach (db; [-80, -60, -40, -20, 0]) {
+                const float n = normalizeDb(cast(float)db, -80.0f, 0.0f);
+                const int gx = b0.left + cast(int)(n * b0.width);
+                drawVCenteredText(buf, valFnt, gx - dp(4), Rect(gx - dp(6), c.bottom - dp(16), gx + dp(18), c.bottom - dp(2)),
+                                  toUTF32(format("%d", db < 0 ? -db : 0)), 0x90FFFFFF);
+            }
+            static immutable string[3] HDR_TXT = ["Att/Rel", "Below", "Above"];
+            drawVCenteredText(buf, valFnt, dl.hottInspectorRcs[0].left,
+                              Rect(dl.hottInspectorRcs[0].left, c.top + dp(2), dl.hottInspectorRcs[0].right, c.top + dp(14)),
+                              toUTF32(HDR_TXT[ui.hottTab]), 0x00A8B8C8);
+
+            // 3 Band Horizontal Threshold/Compression Bars (High, Mid, Low)
+            static immutable string[3] BNAMES = ["High", "Mid", "Low"];
+            static immutable uint[3] DOWN_PIDS = [11u, 10u, 9u];
+            static immutable uint[3] UP_PIDS   = [14u, 13u, 12u];
+            static immutable uint[3] ATK_PIDS  = [19u, 18u, 17u];
+            static immutable uint[3] REL_PIDS  = [22u, 21u, 20u];
+            static immutable uint[3] DRAT_PIDS = [25u, 24u, 23u];
+            static immutable uint[3] URAT_PIDS = [28u, 27u, 26u];
+            static immutable float[3] DEF_DN   = [(-35.5f + 60.0f) / 60.0f, (-30.2f + 60.0f) / 60.0f, (-33.8f + 60.0f) / 60.0f];
+            static immutable float[3] DEF_UP   = [(-40.8f + 60.0f) / 72.0f, (-41.8f + 60.0f) / 72.0f, (-40.8f + 60.0f) / 72.0f];
+            static immutable float[3] DEF_ATK  = [0.710f, 0.783f, 0.893f];
+            static immutable float[3] DEF_REL  = [0.560f, 0.725f, 0.725f];
+            static immutable float[3] DEF_DR   = [0.999f, 0.985f, 0.985f];
             float[3] grs = [plug.meterHighGrDb, plug.meterMidGrDb, plug.meterLowGrDb];
             float[3] ins = [plug.meterHighInDb, plug.meterMidInDb, plug.meterLowInDb];
+
             foreach (bi; 0 .. 3) {
-                const int ry = c.top + dp(4) + bi * rowH;
-                Rect lRc = Rect(c.left + dp(6), ry, c.left + dp(44), ry + rowH - dp(2));
-                drawVCenteredText(buf, uiFnt, lRc.left, lRc, toUTF32(BNAMES[bi]), BCOLS[bi]);
-                Rect barRc = Rect(lRc.right + dp(4), ry + dp(4), c.right - dp(54), ry + rowH - dp(6));
-                buf.fillRect(barRc, pal.bgWindow);
-                const float inN = normalizeDb(ins[bi], -60.0f, 0.0f);
-                const float grN = normalizeDb(-grs[bi], 0.0f, 24.0f);
-                if (inN > 0.0f) {
-                    buf.fillRect(Rect(barRc.left, barRc.top,
-                                      barRc.left + cast(int)(inN * barRc.width), barRc.bottom),
-                                 adjustColorBrightness(BCOLS[bi], -10));
+                Rect barRc = dl.hottBarRcs[bi];
+                Rect inspRc = dl.hottInspectorRcs[bi];
+                buf.fillRect(barRc, 0x0026323D);
+
+                const float downDb = readPlugParam(plug, DOWN_PIDS[bi], DEF_DN[bi]) * 60.0f - 60.0f;
+                const float upDb = readPlugParam(plug, UP_PIDS[bi], DEF_UP[bi]) * 72.0f - 60.0f;
+                const int upX = barRc.left + cast(int)(normalizeDb(upDb, -80.0f, 0.0f) * barRc.width);
+                const int downX = barRc.left + cast(int)(normalizeDb(downDb, -80.0f, 0.0f) * barRc.width);
+
+                // Cyan upward zone & dark downward zone
+                if (upX > barRc.left) {
+                    buf.fillRect(Rect(barRc.left, barRc.top, upX, barRc.bottom), 0xB000D4FF);
                 }
-                if (grN > 0.0f) {
-                    const int gw = cast(int)(grN * barRc.width);
-                    buf.fillRect(Rect(barRc.right - gw, barRc.top, barRc.right, barRc.bottom), pal.accentOrange);
+                if (downX < barRc.right) {
+                    buf.fillRect(Rect(downX > barRc.left ? downX : barRc.left, barRc.top, barRc.right, barRc.bottom), 0x70121C26);
                 }
-                drawVCenteredText(buf, valFnt, barRc.right + dp(4), Rect(barRc.right + dp(4), ry, c.right - dp(4), ry + rowH),
-                                  toUTF32(format("%.1fdB", grs[bi])), pal.fgMuted);
+                // Output bar & orange input tick
+                const float bandInDb = (ins[bi] > -80.0f) ? ins[bi] : plug.meterOutDb;
+                if (bandInDb > -80.0f) {
+                    const float outN = normalizeDb(plug.meterOutDb > -80.0f ? plug.meterOutDb : bandInDb, -80.0f, 0.0f);
+                    const int barH = dp(4);
+                    const int by = barRc.middley - barH / 2;
+                    buf.fillRect(Rect(barRc.left, by, barRc.left + cast(int)(outN * barRc.width), by + barH), 0x5500D4FF);
+                    const int inX = barRc.left + cast(int)(normalizeDb(bandInDb, -80.0f, 0.0f) * barRc.width);
+                    buf.fillRect(Rect(inX - dp(1), barRc.middley - dp(5), inX + dp(2), barRc.middley + dp(5)), 0x00FF8C00);
+                }
+                // Draggable thick cyan threshold lines (upX, downX)
+                buf.fillRect(Rect(upX - dp(1), barRc.top, upX + dp(1), barRc.bottom), 0x0000D4FF);
+                buf.fillRect(Rect(downX - dp(1), barRc.top, downX + dp(1), barRc.bottom), 0x0000D4FF);
+
+                // Band label & threshold readout
+                drawVCenteredText(buf, valFnt, barRc.right - dp(28),
+                                  Rect(barRc.right - dp(30), barRc.top + dp(1), barRc.right - dp(2), barRc.top + dp(12)),
+                                  toUTF32(BNAMES[bi]), 0x70FFFFFF);
+                drawVCenteredText(buf, valFnt, (downX > barRc.left + dp(28)) ? (downX - dp(28)) : (barRc.left + dp(2)),
+                                  Rect(barRc.left + dp(2), barRc.bottom - dp(13), barRc.right, barRc.bottom),
+                                  toUTF32(format("%.1f", downDb)), 0x0000D4FF);
+
+                // Right inspector cell per band (Att/Rel, Below Thresh/Ratio, or Above Thresh/Ratio)
+                drawThemeCard(buf, inspRc, 0x001A242E, 0x002B3A48, pal, 1.0f, false);
+                string topStr, botStr;
+                if (ui.hottTab == 0) {
+                    const float atkMs = 0.1f * powf(1000.0f, readPlugParam(plug, ATK_PIDS[bi], DEF_ATK[bi]));
+                    const float relMs = 10.0f * powf(100.0f, readPlugParam(plug, REL_PIDS[bi], DEF_REL[bi]));
+                    topStr = format("%.1f ms", atkMs);
+                    botStr = format("%.0f ms", relMs);
+                } else if (ui.hottTab == 1) {
+                    const float urN = readPlugParam(plug, URAT_PIDS[bi], 0.76f);
+                    const float uRat = (urN >= 0.999f) ? 1000.0f : (1.0f / (1.0f - urN));
+                    topStr = format("%.1fdB", upDb);
+                    botStr = format("1:%.2f", uRat);
+                } else {
+                    const float drN = readPlugParam(plug, DRAT_PIDS[bi], DEF_DR[bi]);
+                    const float dRat = (drN >= 0.999f) ? 1000.0f : (1.0f / (1.0f - drN));
+                    topStr = format("%.1fdB", downDb);
+                    botStr = (dRat >= 999.0f) ? "inf:1" : format("%.1f:1", dRat);
+                }
+                drawVCenteredText(buf, valFnt, inspRc.left + dp(4),
+                                  Rect(inspRc.left, inspRc.top, inspRc.right, inspRc.middley),
+                                  toUTF32(topStr), 0x0000D4FF);
+                drawVCenteredText(buf, valFnt, inspRc.left + dp(4),
+                                  Rect(inspRc.left, inspRc.middley, inspRc.right, inspRc.bottom),
+                                  toUTF32(botStr), 0x006CE5FF);
             }
             break;
         }
@@ -1153,11 +1540,88 @@ void drawBuiltinDevicePanel(
             break;
         }
         case BuiltinDeviceKind.ACID_BASS: {
+            // Iconic Roland TB-303 charcoal header + brushed silver metallic chassis + vertical dividers + red LEDs
+            drawThemeCard(buf, dl.auxRc, 0x0033363B, 0x001D2024, pal, 0.0f, false);
+            drawAcidLed(buf, dl.auxRc.left + dp(10), dl.auxRc.middley, dpf(3.5f), true);
+            drawVCenteredText(buf, uiFnt, dl.auxRc.left + dp(20), dl.auxRc,
+                              "ACID BASS  ·  TB-303 BASS LINE"d, 0x00EEEEEE);
+
             Rect c = dl.canvasRc;
-            const uint faceBg = pal.retroBevel ? pal.bgPanel : adjustColorBrightness(pal.bgPanelAlt, 10);
-            drawThemeCard(buf, c, faceBg, pal.borderStrong, pal, 2.0f, false);
-            drawVCenteredText(buf, uiFnt, c.left + dp(8), Rect(c.left, c.bottom - dp(18), c.left + dp(90), c.bottom - dp(2)),
-                              "TB-303 ACID"d, pal.accentOrange);
+            Rect kbd = dl.footerRc;
+            drawVGradientRect(buf, c, 0x00EAEAEA, 0x00B5B5B5);
+            drawVGradientRect(buf, kbd, 0x00E4E4E4, 0x00B0B0B0);
+            buf.fillRect(Rect(c.left, c.top, c.right, c.top + dp(1)), 0x00222222);
+            buf.fillRect(Rect(c.left, kbd.top, c.right, kbd.top + dp(2)), 0x00141414);
+
+            // 8 vertical black partition lines across upper faceplate
+            const int colW = c.width / 8;
+            foreach (ci; 1 .. 8) {
+                const int lx = c.left + ci * colW;
+                buf.fillRect(Rect(lx, c.top, lx + dp(1), c.bottom), 0x002C2C2C);
+            }
+
+            // Col 0: WAVEFORM SAW / SQR switch + glowing Red LEDs
+            drawCenteredText(buf, valFnt, Rect(c.left, c.top + dp(2), c.left + colW, c.top + dp(15)),
+                             "WAVEFORM"d, 0x00222222);
+            if (dl.pills.length > 0) {
+                const auto wfPill = dl.pills[0];
+                const bool isSq = (readPlugParam(plug, 0, 0.0f) >= 0.5f);
+                drawAcidLed(buf, wfPill.rc.left + dp(8), wfPill.rc.middley - dp(8), dpf(2.8f), !isSq);
+                drawCenteredText(buf, valFnt, Rect(wfPill.rc.left, wfPill.rc.middley, wfPill.rc.left + dp(18), wfPill.rc.bottom),
+                                 "SAW"d, 0x00222222);
+                Rect swBtn = Rect(wfPill.rc.middlex - dp(9), wfPill.rc.middley - dp(9),
+                                  wfPill.rc.middlex + dp(9), wfPill.rc.middley + dp(9));
+                drawVGradientRect(buf, swBtn, isSq ? 0x00CCCCCC : 0x00F6F6F6, isSq ? 0x00999999 : 0x00C8C8C8);
+                buf.drawFrame(swBtn, 0x00333333, Rect(1, 1, 1, 1), 0);
+                drawCenteredText(buf, uiFnt, swBtn, "~"d, 0x00111111);
+                drawAcidLed(buf, wfPill.rc.right - dp(8), wfPill.rc.middley - dp(8), dpf(2.8f), isSq);
+                drawCenteredText(buf, valFnt, Rect(wfPill.rc.right - dp(18), wfPill.rc.middley, wfPill.rc.right, wfPill.rc.bottom),
+                                 "SQR"d, 0x00222222);
+            }
+
+            // Lower bay Left: OCTAVE ◀ ▶ buttons + digital Red LED C1..C5 box
+            const int octVal = 1 + cast(int)(readPlugParam(plug, 8, 0.5f) * 4.0f + 0.5f);
+            drawCenteredText(buf, valFnt, Rect(kbd.left + dp(4), kbd.top + dp(6), kbd.left + dp(76), kbd.top + dp(18)),
+                             "OCTAVE"d, 0x00222222);
+            if (dl.pills.length >= 3) {
+                foreach (oi; 1 .. 3) {
+                    Rect r = dl.pills[oi].rc;
+                    drawFilledCircle(buf, r.middlex, r.middley, r.width * 0.5f, 0x00DEDEDE, 0x00333333);
+                    drawCenteredText(buf, valFnt, r, oi == 1 ? "◀"d : "▶"d, 0x00111111);
+                }
+            }
+            Rect dispRc = Rect(kbd.left + dp(20), kbd.top + dp(52), kbd.left + dp(60), kbd.top + dp(68));
+            drawThemeCard(buf, dispRc, 0x001D1F22, 0x00444444, pal, 2.0f, true);
+            drawCenteredText(buf, valFnt, dispRc, toUTF32(format("C%d", octVal)), 0x00FF3333);
+
+            // Lower bay Center: 12 staggered TB-303 keys (dl.pills[3..15]) with glowing Red LEDs above each
+            foreach (ki; 3 .. 15) {
+                if (ki >= dl.pills.length) break;
+                const auto kp = dl.pills[ki];
+                const bool isBlk = kp.active;
+                const bool lit = (ui.acidActiveNote == kp.uiTabVal);
+                drawAcidLed(buf, kp.rc.middlex, kp.rc.top - dp(6), dpf(2.6f), lit);
+                if (isBlk) {
+                    Rect boxRc = Rect(kp.rc.left - dp(3), kp.rc.top - dp(2), kp.rc.right + dp(3), kp.rc.bottom + dp(2));
+                    buf.fillRect(boxRc, 0x00101215);
+                    buf.drawFrame(boxRc, 0x00444444, Rect(1, 1, 1, 1), 0);
+                }
+                drawVGradientRect(buf, kp.rc, lit ? 0x00D8D8D8 : 0x00FAFAFA, lit ? 0x00909090 : 0x00C6C6C6);
+                buf.drawFrame(kp.rc, 0x00444444, Rect(1, 1, 1, 1), 0);
+                drawCenteredText(buf, valFnt, Rect(kp.rc.left - dp(4), kp.rc.bottom + dp(1), kp.rc.right + dp(4), kp.rc.bottom + dp(12)),
+                                 toUTF32(kp.label), 0x00222222);
+            }
+
+            // Lower bay Right: circular SLIDE & ACCENT brushed buttons + glowing Red LEDs
+            foreach (mi; 15 .. 17) {
+                if (mi >= dl.pills.length) break;
+                const auto mp = dl.pills[mi];
+                drawAcidLed(buf, mp.rc.middlex, mp.rc.top - dp(8), dpf(2.6f), mp.active);
+                drawFilledCircle(buf, mp.rc.middlex, mp.rc.middley, mp.rc.width * 0.5f,
+                                 mp.active ? 0x00D6D6D6 : 0x00EBEBEB, 0x00333333);
+                drawCenteredText(buf, valFnt, Rect(mp.rc.left - dp(8), mp.rc.bottom + dp(2), mp.rc.right + dp(8), mp.rc.bottom + dp(13)),
+                                 toUTF32(mp.label), 0x00222222);
+            }
             break;
         }
         case BuiltinDeviceKind.THREE_OSC: {
@@ -1275,20 +1739,27 @@ void drawBuiltinDevicePanel(
 
     // 2. Render interactive pill buttons cleanly
     foreach (const ref pl; dl.pills) {
+        if (!pl.visibleButton) continue;
         const uint fill = pl.active ? pl.activeColor : pal.bgControl;
         drawThemeCard(buf, pl.rc, fill, pal.borderStrong, pal, 2.0f, pal.retroBevel);
         drawCenteredText(buf, uiFnt, pl.rc, toUTF32(pl.label),
                          pl.active ? contrastTextColor(fill) : pal.fgText);
     }
 
-    // 3. Render rotary knobs cleanly
+    // 3. Render rotary knobs cleanly (TB-303 silver brushed dials vs standard FlPalette knobs)
     foreach (const ref kn; dl.knobs) {
         const float val = readPlugParam(plug, kn.paramId, kn.defaultVal);
-        drawRotaryKnob(buf, kn.cx, kn.cy, kn.r, val, pal.bgLcd, kn.accent, pal.bgControl, pal.borderSubtle, false);
-        drawCenteredText(buf, uiFnt, Rect(kn.cellRc.left, kn.cy + kn.r + dp(1), kn.cellRc.right, kn.cy + kn.r + dp(15)),
-                         toUTF32(truncateLabel(kn.label, 9)), pal.fgText);
-        drawCenteredText(buf, valFnt, Rect(kn.cellRc.left, kn.cy - kn.r - dp(12), kn.cellRc.right, kn.cy - kn.r),
-                         toUTF32(truncateLabel(kn.formattedVal, 9)), pal.fgMuted);
+        if (kn.knobStyle == 1) {
+            drawTb303Knob(buf, kn.cx, kn.cy, kn.r, val);
+        } else {
+            drawRotaryKnob(buf, kn.cx, kn.cy, kn.r, val, pal.bgLcd, kn.accent, pal.bgControl, pal.borderSubtle, false);
+        }
+        const uint lblCol = kn.lightBg ? 0x001E2126 : pal.fgText;
+        const uint valCol = kn.lightBg ? 0x00333840 : pal.fgMuted;
+        drawCenteredText(buf, valFnt, Rect(kn.cellRc.left, kn.cy + kn.r + dp(2), kn.cellRc.right, kn.cy + kn.r + dp(15)),
+                         toUTF32(truncateLabel(kn.formattedVal, 9)), valCol);
+        drawCenteredText(buf, valFnt, Rect(kn.cellRc.left, kn.cy - kn.r - dp(13), kn.cellRc.right, kn.cy - kn.r - dp(1)),
+                         toUTF32(truncateLabel(kn.label, 9)), lblCol);
     }
 }
 
@@ -1318,6 +1789,18 @@ bool handleBuiltinDeviceMouse(
         if (onHint !is null) onHint(format("%s — %s: %d%%", plug.name, lbl, cast(int)(nv * 100.0f + 0.5f)));
     }
 
+    if (event.action == MouseAction.Wheel) {
+        if (dl.kind == BuiltinDeviceKind.EQ &&
+            (dl.canvasRc.isPointInside(event.x, event.y) || dl.footerRc.isPointInside(event.x, event.y))) {
+            const int b = (ui.eqSelectedBand >= 0 && ui.eqSelectedBand < 8) ? ui.eqSelectedBand : 0;
+            const float curQ = readPlugParam(plug, cast(uint)(24 + b), 0.425f);
+            const float dq = (event.wheelDelta > 0) ? 0.04f : -0.04f;
+            emitParam(cast(uint)(24 + b), curQ + dq, 0.425f, format("Band %d Q", b + 1));
+            return true;
+        }
+        return false;
+    }
+
     if (event.action == MouseAction.ButtonDown) {
         // 1. Check pills first
         foreach (const ref pl; dl.pills) {
@@ -1340,9 +1823,15 @@ bool handleBuiltinDeviceMouse(
                     ui.maximBandTab = pl.uiTabVal;
                 }
             } else if (pl.actionKind == 3) {
+                if (dl.kind == BuiltinDeviceKind.ACID_BASS) {
+                    ui.acidActiveNote = pl.uiTabVal;
+                }
                 if (onTriggerPad !is null) onTriggerPad(trkIdx, pl.paramId);
             } else if (pl.actionKind == 4) {
                 if (onLoadSample !is null) onLoadSample(trkIdx, plug.pluginIndex);
+            } else if (pl.actionKind == 5) {
+                const float cur = readPlugParam(plug, pl.paramId, 0.5f);
+                emitParam(pl.paramId, cur + pl.targetVal, 0.5f, pl.label);
             }
             return true;
         }
@@ -1394,9 +1883,62 @@ bool handleBuiltinDeviceMouse(
             }
         }
 
+        // 4b. HOTT interactive 3-band OTT thresholds & Att/Rel drag
+        if (dl.kind == BuiltinDeviceKind.HOTT) {
+            static immutable uint[3] DOWN_PIDS = [11u, 10u, 9u];
+            static immutable uint[3] UP_PIDS   = [14u, 13u, 12u];
+            static immutable uint[3] ATK_PIDS  = [19u, 18u, 17u];
+            static immutable uint[3] REL_PIDS  = [22u, 21u, 20u];
+            static immutable uint[3] DRAT_PIDS = [25u, 24u, 23u];
+            static immutable uint[3] URAT_PIDS = [28u, 27u, 26u];
+            static immutable float[3] DEF_DN   = [(-35.5f + 60.0f) / 60.0f, (-30.2f + 60.0f) / 60.0f, (-33.8f + 60.0f) / 60.0f];
+            static immutable float[3] DEF_UP   = [(-40.8f + 60.0f) / 72.0f, (-41.8f + 60.0f) / 72.0f, (-40.8f + 60.0f) / 72.0f];
+            foreach (bi; 0 .. 3) {
+                Rect barRc = dl.hottBarRcs[bi];
+                Rect inspRc = dl.hottInspectorRcs[bi];
+                if (barRc.isPointInside(event.x, event.y)) {
+                    ui.hottDragBand = bi;
+                    const float downDb = readPlugParam(plug, DOWN_PIDS[bi], DEF_DN[bi]) * 60.0f - 60.0f;
+                    const float upDb = readPlugParam(plug, UP_PIDS[bi], DEF_UP[bi]) * 72.0f - 60.0f;
+                    if (ui.hottTab == 1) {
+                        ui.hottDragMode = 1;
+                    } else if (ui.hottTab == 2) {
+                        ui.hottDragMode = 0;
+                    } else {
+                        const int upX = barRc.left + cast(int)(normalizeDb(upDb, -80.0f, 0.0f) * barRc.width);
+                        const int downX = barRc.left + cast(int)(normalizeDb(downDb, -80.0f, 0.0f) * barRc.width);
+                        const int dUp = event.x > upX ? (event.x - upX) : (upX - event.x);
+                        const int dDn = event.x > downX ? (event.x - downX) : (downX - event.x);
+                        ui.hottDragMode = (dUp < dDn) ? 1 : 0;
+                    }
+                    const float db = -80.0f + clamp01(cast(float)(event.x - barRc.left) / (barRc.width > 1 ? barRc.width : 1)) * 80.0f;
+                    if (ui.hottDragMode == 1) {
+                        emitParam(UP_PIDS[bi], (db + 60.0f) / 72.0f, DEF_UP[bi], "Up Thresh");
+                    } else {
+                        emitParam(DOWN_PIDS[bi], (db + 60.0f) / 60.0f, DEF_DN[bi], "Down Thresh");
+                    }
+                    return true;
+                }
+                if (inspRc.isPointInside(event.x, event.y)) {
+                    ui.hottDragBand = bi;
+                    const bool topHalf = event.y < inspRc.middley;
+                    ui.hottDragMode = topHalf ? 2 : 3;
+                    const float frac = clamp01(cast(float)(event.x - inspRc.left) / (inspRc.width > 1 ? inspRc.width : 1));
+                    if (ui.hottTab == 0) {
+                        emitParam(topHalf ? ATK_PIDS[bi] : REL_PIDS[bi], frac, 0.7f, topHalf ? "Attack" : "Release");
+                    } else if (ui.hottTab == 1) {
+                        emitParam(URAT_PIDS[bi], frac * 0.999f, 0.76f, "Up Ratio");
+                    } else {
+                        emitParam(DRAT_PIDS[bi], frac * 0.999f, 0.985f, "Down Ratio");
+                    }
+                    return true;
+                }
+            }
+        }
+
         // 5. EQ interactive band handle drag
         if (dl.kind == BuiltinDeviceKind.EQ && dl.canvasRc.isPointInside(event.x, event.y)) {
-            const int pad = dp(6);
+            const int pad = dp(8);
             const int sw = dl.canvasRc.width - pad * 2;
             const int sh = dl.canvasRc.height - pad * 2;
             if (sw > dp(8) && sh > dp(8)) {
@@ -1428,6 +1970,10 @@ bool handleBuiltinDeviceMouse(
                 }
                 if (bestB >= 0) {
                     ui.eqSelectedBand = bestB;
+                    if (event.button == MouseButton.Right) {
+                        emitParam(cast(uint)bestB, 0.0f, 0.0f, format("Band %d Off", bestB + 1));
+                        return true;
+                    }
                     ui.eqDragBand = bestB;
                     ui.eqDragStartY = event.y;
                     ui.eqDragStartQ = readPlugParam(plug, cast(uint)(24 + bestB), 0.425f);
@@ -1464,8 +2010,38 @@ bool handleBuiltinDeviceMouse(
     }
 
     if (event.action == MouseAction.Move) {
+        if (ui.hottDragBand >= 0 && ui.hottDragBand < 3 && dl.kind == BuiltinDeviceKind.HOTT) {
+            static immutable uint[3] DOWN_PIDS = [11u, 10u, 9u];
+            static immutable uint[3] UP_PIDS   = [14u, 13u, 12u];
+            static immutable uint[3] ATK_PIDS  = [19u, 18u, 17u];
+            static immutable uint[3] REL_PIDS  = [22u, 21u, 20u];
+            static immutable uint[3] DRAT_PIDS = [25u, 24u, 23u];
+            static immutable uint[3] URAT_PIDS = [28u, 27u, 26u];
+            const int bi = ui.hottDragBand;
+            if (ui.hottDragMode <= 1) {
+                Rect barRc = dl.hottBarRcs[bi];
+                const float db = -80.0f + clamp01(cast(float)(event.x - barRc.left) / (barRc.width > 1 ? barRc.width : 1)) * 80.0f;
+                if (ui.hottDragMode == 1) {
+                    emitParam(UP_PIDS[bi], (db + 60.0f) / 72.0f, 0.25f, "Up Thresh");
+                } else {
+                    emitParam(DOWN_PIDS[bi], (db + 60.0f) / 60.0f, 0.45f, "Down Thresh");
+                }
+            } else {
+                Rect inspRc = dl.hottInspectorRcs[bi];
+                const float frac = clamp01(cast(float)(event.x - inspRc.left) / (inspRc.width > 1 ? inspRc.width : 1));
+                const bool topHalf = (ui.hottDragMode == 2);
+                if (ui.hottTab == 0) {
+                    emitParam(topHalf ? ATK_PIDS[bi] : REL_PIDS[bi], frac, 0.7f, topHalf ? "Attack" : "Release");
+                } else if (ui.hottTab == 1) {
+                    emitParam(URAT_PIDS[bi], frac * 0.999f, 0.76f, "Up Ratio");
+                } else {
+                    emitParam(DRAT_PIDS[bi], frac * 0.999f, 0.985f, "Down Ratio");
+                }
+            }
+            return true;
+        }
         if (ui.eqDragBand >= 0 && dl.kind == BuiltinDeviceKind.EQ) {
-            const int pad = dp(6);
+            const int pad = dp(8);
             const int sw = dl.canvasRc.width - pad * 2;
             const int sh = dl.canvasRc.height - pad * 2;
             if (sw > dp(8) && sh > dp(8)) {
@@ -1503,7 +2079,9 @@ bool handleBuiltinDeviceMouse(
 
     if (event.action == MouseAction.ButtonUp || event.action == MouseAction.Cancel) {
         ui.eqDragBand = -1;
+        ui.hottDragBand = -1;
         ui.envDragPoint = -1;
+        ui.acidActiveNote = -1;
         ui.activeDragParamId = -1;
         ui.dragIsVerticalSlider = false;
         return true;
@@ -1576,13 +2154,32 @@ unittest {
     acidSlot.name = "Acid Bass";
     BuiltinDeviceUiState acidUi;
     const dlAcid = buildBuiltinDeviceLayout(bodyRc, &acidSlot, acidUi, model.palette());
+    assert(dlAcid.knobs.length == 7 && dlAcid.pills.length == 17);
     uint triggeredNote = 0;
-    // Last pill in Acid Bass is the bottom 13th key (C4 = note 60)
-    const auto c4Pill = dlAcid.pills[$ - 1];
+    // Pill index 8 in TB-303 Acid Bass is lower key 'C' (offset 0, C3 at default octave 3 = MIDI note 60)
+    const auto c3Pill = dlAcid.pills[8];
     handleBuiltinDeviceMouse(
         new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
-                       cast(short)c4Pill.rc.middlex, cast(short)c4Pill.rc.middley),
+                       cast(short)c3Pill.rc.middlex, cast(short)c3Pill.rc.middley),
         bodyRc, &model, &acidSlot, acidUi, 103, null,
         (int t, uint note) { triggeredNote = note; }, null, null, null);
-    assert(triggeredNote == 60, "Expected Acid Bass bottom virtual keyboard click to trigger MIDI note 60");
+    assert(triggeredNote == 60 && acidUi.acidActiveNote == 0,
+           "Expected TB-303 Acid Bass C key click to trigger MIDI note 60 and light its LED");
+
+    // 3. Test HOTT (OTT) interactive band threshold bar drag in center BandMeterPanel
+    PluginSlotState hottSlot;
+    hottSlot.uri = "builtin://hott";
+    hottSlot.name = "Hott";
+    BuiltinDeviceUiState hottUi;
+    const dlHott = buildBuiltinDeviceLayout(Rect(0, 32, 520, 290), &hottSlot, hottUi, model.palette());
+    assert(dlHott.knobs.length == 8);
+    int hottPid = -1;
+    handleBuiltinDeviceMouse(
+        new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
+                       cast(short)dlHott.hottBarRcs[0].middlex, cast(short)dlHott.hottBarRcs[0].middley),
+        Rect(0, 32, 520, 290), &model, &hottSlot, hottUi, 4,
+        (int t, int p, uint pid, float v) { hottPid = cast(int)pid; },
+        null, null, null, null);
+    assert(hottPid == 11 || hottPid == 14,
+           "Expected OTT High band bar click to adjust High Down/Up threshold param");
 }

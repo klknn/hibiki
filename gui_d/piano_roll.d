@@ -830,7 +830,9 @@ unittest {
     scope (exit) destroyWidgetTree(pr);
     pr.measure(400, 300);
     pr.layout(Rect(0, 0, 400, 300));
-    model.activeMidi.channelIndex = 3; // Acid Bass (has 1 note)
+    model.selectPattern(1); // Pattern 2 (Acid Bass) -> channel 3 with default Acid Bass notes
+    model.channels[3].notes = [ev];
+    model.activeMidi.events = [ev];
     // Click > side of target channel pill (158..290 -> x=270) -> switch to channel 4 (E-Piano)
     pr.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, 270, 14));
     assert(model.activeMidi.channelIndex == 4);

@@ -535,8 +535,6 @@ struct TransportModel {
             bass.category = "Synths";
             bass.color = 0x00785535;
             bass.mixerInsert = 4;
-            bass.steps[0 .. 16] = [true, false, true, false, false, true, false, true,
-                                   true, false, false, true, false, true, true, false];
             bass.generatorPlugin = makeDefaultPluginSlot("Acid Bass", "builtin://acid_bass", true, 0);
 
             ChannelState epiano;
@@ -651,24 +649,11 @@ struct TransportModel {
             ];
         }
 
-        if (activeMidi.events.length == 0) {
+        if (activeMidi.events.length == 0 && activeMidi.channelIndex != 0) {
             activeMidi.trackIndex = 0;
             activeMidi.clipIndex = 0;
-            activeMidi.channelIndex = 3; // Acid Bass
+            activeMidi.channelIndex = 0; // Pattern 1 (Drums) -> DR-8 Kick by default
             activeMidi.resolution = 480;
-            static immutable uint[8] pitches = [57, 57, 69, 60, 64, 67, 64, 60];
-            static immutable uint[8] vels    = [115, 92, 118, 100, 110, 122, 96, 104];
-            foreach (i; 0 .. 8) {
-                MidiEvent ev;
-                ev.tick = cast(long)(i * 240);
-                ev.pitch = pitches[i];
-                ev.duration_ticks = 180;
-                ev.velocity = vels[i];
-                activeMidi.events ~= ev;
-            }
-            if (channels.length > 3 && channels[3].notes.length == 0) {
-                channels[3].notes = activeMidi.events.dup;
-            }
         }
 
         if (samplePreview.waveform.length == 0) {
@@ -677,8 +662,9 @@ struct TransportModel {
 
         // Seed distinct pattern contents so PAT/SONG mode & Pattern switching have rich data
         if (patterns.length > 0 && patterns[0].channelSteps.length == 0) {
+            // Pattern 0 (Pattern 1 Drums): Kick, Snare, Hat ONLY (no Acid Bass leak)
             saveCurrentPatternToStore();
-            // Pattern 1 (Acid Bass): Bass Piano Roll melody + 4-on-floor kick
+            // Pattern 1 (Pattern 2 Acid Bass): Bass Piano Roll melody + Acid Bass steps + 4-on-floor kick
             if (patterns.length > 1) {
                 ChannelPatternSteps kick1;
                 kick1.initDefaults();
@@ -688,7 +674,18 @@ struct TransportModel {
                 ChannelPatternSteps bass1;
                 bass1.initDefaults();
                 bass1.channelIndex = 3;
-                bass1.notes = activeMidi.events.dup;
+                bass1.steps[0 .. 16] = [true, false, true, false, false, true, false, true,
+                                        true, false, false, true, false, true, true, false];
+                static immutable uint[8] pitches = [57, 57, 69, 60, 64, 67, 64, 60];
+                static immutable uint[8] vels    = [115, 92, 118, 100, 110, 122, 96, 104];
+                foreach (i; 0 .. 8) {
+                    MidiEvent ev;
+                    ev.tick = cast(long)(i * 240);
+                    ev.pitch = pitches[i];
+                    ev.duration_ticks = 180;
+                    ev.velocity = vels[i];
+                    bass1.notes ~= ev;
+                }
                 patterns[1].channelSteps = [kick1, bass1];
             }
             // Pattern 2 (E-Piano): Lush Am7 chord progression
@@ -787,6 +784,41 @@ struct TransportModel {
         }
     }
 
+    private bool channelHasAnySteps(int chIdx, int patLen) const @safe {
+        if (chIdx < 0 || chIdx >= cast(int)channels.length) return false;
+        foreach (s; 0 .. patLen) {
+            if (s < cast(int)channels[chIdx].steps.length && channels[chIdx].steps[s]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Selects the most appropriate channel to display after loading a pattern into `channels`.
+    private int resolvePreferredChannelForLoadedPattern(int currentCh) const @safe {
+        if (channels.length == 0) return 0;
+        const int patLen = activePatternLengthSteps();
+        int firstWithNotes = -1;
+        int firstWithSteps = -1;
+        foreach (ci, const ref ch; channels) {
+            if (firstWithNotes < 0 && ch.notes.length > 0) firstWithNotes = cast(int)ci;
+            if (firstWithSteps < 0 && channelHasAnySteps(cast(int)ci, patLen)) firstWithSteps = cast(int)ci;
+        }
+        const bool curValid = currentCh >= 0 && currentCh < cast(int)channels.length;
+        if (firstWithNotes >= 0) {
+            if (curValid && channels[currentCh].notes.length > 0) return currentCh;
+            return firstWithNotes;
+        }
+        if (firstWithSteps >= 0) {
+            if (curValid && channelHasAnySteps(currentCh, patLen)) return currentCh;
+            return firstWithSteps;
+        }
+        if (selectedChannelIndex >= 0 && selectedChannelIndex < cast(int)channels.length) {
+            return selectedChannelIndex;
+        }
+        return 0;
+    }
+
     /// Switches active Channel Rack pattern, saving the outgoing pattern and restoring the incoming one.
     void selectPattern(int newPatIdx) @safe {
         if (patterns.length == 0) return;
@@ -801,6 +833,12 @@ struct TransportModel {
         activePickerKind = PlaylistClipKind.PATTERN;
         activePickerIndex = clamped;
         loadPatternFromStore(clamped);
+        if (channels.length > 0) {
+            const int targetCh = resolvePreferredChannelForLoadedPattern(activeMidi.channelIndex);
+            activeMidi.channelIndex = targetCh;
+            selectedChannelIndex = targetCh;
+            activeMidi.events = channels[targetCh].notes.dup;
+        }
     }
 
     /// Opens `newPatIdx` for Piano Roll editing, ensuring a populated channel is targeted and loaded.
@@ -818,30 +856,10 @@ struct TransportModel {
         loadPatternFromStore(clamped);
 
         if (channels.length == 0) return;
-        int targetCh = activeMidi.channelIndex;
-        if (targetCh < 0 || targetCh >= cast(int)channels.length ||
-            channels[targetCh].notes.length == 0) {
-            int firstWithNotes = -1;
-            int firstWithSteps = -1;
-            const int patLen = activePatternLengthSteps();
-            foreach (ci, const ref ch; channels) {
-                if (firstWithNotes < 0 && ch.notes.length > 0) {
-                    firstWithNotes = cast(int)ci;
-                }
-                if (firstWithSteps < 0) {
-                    foreach (s; 0 .. patLen) {
-                        if (s < cast(int)ch.steps.length && ch.steps[s]) {
-                            firstWithSteps = cast(int)ci;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (firstWithNotes >= 0) targetCh = firstWithNotes;
-            else if (firstWithSteps >= 0) targetCh = firstWithSteps;
-            else if (targetCh < 0 || targetCh >= cast(int)channels.length) targetCh = 0;
-        }
-        selectPianoRollChannel(targetCh);
+        const int targetCh = resolvePreferredChannelForLoadedPattern(activeMidi.channelIndex);
+        activeMidi.channelIndex = targetCh;
+        selectedChannelIndex = targetCh;
+        activeMidi.events = channels[targetCh].notes.dup;
     }
 
     /// Saves current `activeMidi.events` back to its channel and loads `newChannelIdx`'s notes.
@@ -1047,7 +1065,12 @@ struct TransportModel {
                 bool found = false;
                 foreach (ref c; tracks[idx].clips) {
                     if (c.kind != PlaylistClipKind.AUTOMATION && c.clipIndex == tci.clip_index) {
-                        if (tci.name.length > 0) c.name = tci.name.idup;
+                        if (isPat && patIdx >= 0 && patIdx < cast(int)patterns.length &&
+                            patterns[patIdx].name.length > 0) {
+                            c.name = patterns[patIdx].name;
+                        } else if (tci.name.length > 0) {
+                            c.name = tci.name.idup;
+                        }
                         if (tci.path.length > 0) c.path = tci.path.idup;
                         c.startTimeSec = tci.start_time;
                         c.durationSec = tci.duration;
@@ -1252,10 +1275,14 @@ struct TransportModel {
                 if (selectedChannelIndex < 0 || selectedChannelIndex >= cast(int)channels.length) {
                     selectedChannelIndex = 0;
                 }
-                if (activeMidi.channelIndex < 0 || activeMidi.channelIndex >= cast(int)channels.length) {
+                if (activeMidi.channelIndex >= cast(int)channels.length) {
                     activeMidi.channelIndex = selectedChannelIndex;
                 }
-                activeMidi.events = channels[activeMidi.channelIndex].notes.dup;
+                if (activeMidi.channelIndex >= 0) {
+                    activeMidi.channelIndex = resolvePreferredChannelForLoadedPattern(activeMidi.channelIndex);
+                    selectedChannelIndex = activeMidi.channelIndex;
+                    activeMidi.events = channels[activeMidi.channelIndex].notes.dup;
+                }
             }
         }
         if (notif.plugin_spectrum.hasValue) {
@@ -1452,7 +1479,7 @@ unittest {
     assert(model.channels.length == 5);
     assert(model.patterns.length == 4);
     assert(model.tracks.length == 13);
-    assert(model.activeMidi.events.length == 8);
+    assert(model.activeMidi.channelIndex == 0 && model.activeMidi.events.length == 0);
     assert(model.tracks[0].plugins.length == 2);
 
     Notification n1;
@@ -1522,6 +1549,7 @@ unittest {
 
     // 3. Test selectPianoRollChannel preserves per-channel notes and wraps safely
     model.initDefaultTemplate();
+    model.selectPatternForPianoRoll(1); // Pattern 2 (Acid Bass) -> channel 3 with 8 notes
     assert(model.activeMidi.channelIndex == 3);
     assert(model.activeMidi.events.length == 8);
     model.selectPianoRollChannel(0);
@@ -1538,16 +1566,23 @@ unittest {
     model.selectPianoRollChannel(0);
     assert(model.activeMidi.events.length == 1 && model.activeMidi.events[0].pitch == 60);
 
-    // 4a. selectPatternForPianoRoll switches from timeline MIDI (channelIndex=-1) to populated channel
+    // 4a. selectPatternForPianoRoll switches from timeline MIDI (channelIndex=-1) and between patterns
+    model = TransportModel.init;
+    model.initDefaultTemplate();
     model.activeMidi.channelIndex = -1;
     model.activeMidi.events = null;
     model.selectPatternForPianoRoll(2); // Pattern 2 (E-Piano): notes live on channel 4
     assert(model.selectedPatternIndex == 2 && model.activeMidi.channelIndex == 4 &&
            model.activeMidi.events.length == 8,
            "Expected selectPatternForPianoRoll(2) to select E-Piano channel 4 and load its 8 chord notes");
-    model.selectPatternForPianoRoll(0);
-    assert(model.selectedPatternIndex == 0 && model.activeMidi.events.length > 0,
-           "Expected selectPatternForPianoRoll(0) to restore Pattern 0 notes cleanly");
+    model.selectPatternForPianoRoll(0); // Pattern 0 (Drums): switches away from Acid Bass/E-Piano to Kick (ch 0)
+    assert(model.selectedPatternIndex == 0 && model.activeMidi.channelIndex == 0 &&
+           model.activeMidi.events.length == 0 && model.channels[0].steps[0],
+           "Expected selectPatternForPianoRoll(0) to switch to Pattern 0 Drum channel without stale Acid Bass notes");
+    model.selectPatternForPianoRoll(1); // Pattern 1 (Acid Bass): loads Acid Bass notes cleanly
+    assert(model.selectedPatternIndex == 1 && model.activeMidi.channelIndex == 3 &&
+           model.activeMidi.events.length == 8,
+           "Expected selectPatternForPianoRoll(1) to load Pattern 1 Acid Bass notes");
 
     // 4. Test nextClipIndex after deletions/slices
     TrackStripState tr;

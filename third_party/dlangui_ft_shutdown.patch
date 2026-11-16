@@ -1,0 +1,50 @@
+--- a/src/dlangui/graphics/ftfonts.d
++++ b/src/dlangui/graphics/ftfonts.d
+@@ -150,7 +150,8 @@ class FreeTypeFontFile {
+     }
+ 
+     ~this() {
+-        clear();
++        if (!APP_IS_SHUTTING_DOWN)
++            clear();
+         debug --_instanceCount;
+         debug(FontResources) Log.d("Destroyed FreeTypeFontFile, count=", _instanceCount);
+     }
+@@ -369,7 +370,8 @@ class FreeTypeFont : Font {
+ 
+     /// do cleanup
+     ~this() {
+-        clear();
++        if (!APP_IS_SHUTTING_DOWN)
++            clear();
+         debug --_instanceCount;
+         debug(FontResources) Log.d("Destroyed font, count=", _instanceCount);
+     }
+@@ -680,15 +682,17 @@ class FreeTypeFontManager : FontManager {
+     }
+     ~this() {
+         debug(FontResources) Log.d("FreeTypeFontManager ~this()");
+-        //_activeFonts.clear();
+-        foreach(ref FontFileItem item; _fontFiles) {
+-            destroy(item);
+-            item = null;
++        if (!APP_IS_SHUTTING_DOWN) {
++            //_activeFonts.clear();
++            foreach(ref FontFileItem item; _fontFiles) {
++                destroy(item);
++                item = null;
++            }
++            _fontFiles.length = 0;
++            debug(FontResources) Log.d("Destroyed all fonts. Freeing library.");
++            // uninit library
++            if (_library)
++                FT_Done_FreeType(_library);
+         }
+-        _fontFiles.length = 0;
+-        debug(FontResources) Log.d("Destroyed all fonts. Freeing library.");
+-        // uninit library
+-        if (_library)
+-            FT_Done_FreeType(_library);
+     }
+ 
+     /// get font instance with specified parameters

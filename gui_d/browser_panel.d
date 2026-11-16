@@ -389,20 +389,23 @@ class BrowserPanel : VerticalLayout {
         };
         addChild(previewWidget_);
 
-        // Audition pitch keys
+        // Audition pitch keys (helper isolates per-iteration closure capture in D)
         auto keyRow = new HorizontalLayout("br_keys");
         keyRow.layoutWidth = FILL_PARENT;
         static immutable uint[5] NOTES = [60, 62, 64, 67, 72];
         static immutable string[5] LABELS = ["C4", "D4", "E4", "G4", "C5"];
-        foreach (i; 0 .. 5) {
-            const uint n = NOTES[i];
-            auto bk = new FlCompactButton(null, toUTF32(LABELS[i]), pal, 10, 22, true, false);
+        FlCompactButton makeKeyBtn(uint pitch, string lbl) {
+            auto bk = new FlCompactButton(null, toUTF32(lbl), pal, 10, 22, true, false);
             bk.layoutWidth = FILL_PARENT;
             bk.focusable = false;
             bk.click = (Widget s) {
-                if (onPreviewNote !is null) onPreviewNote(n);
+                if (onPreviewNote !is null) onPreviewNote(pitch);
                 return true;
             };
+            return bk;
+        }
+        foreach (i; 0 .. 5) {
+            auto bk = makeKeyBtn(NOTES[i], LABELS[i]);
             keyBtns_[i] = bk;
             keyRow.addChild(bk);
         }
@@ -514,80 +517,85 @@ class BrowserPanel : VerticalLayout {
             }
         }
 
-        foreach (sec; sectionOrder) {
-            const bool collapsed = (sec in collapsedSections_) !is null && collapsedSections_[sec];
-            const string secPrefix = collapsed ? "> " : "v ";
-            auto secBtn = new FlCompactButton(null, toUTF32(secPrefix ~ sec), pal, 11, 20, false, false);
+        FlCompactButton makeSectionHeaderBtn(string secKey, bool curCollapsed) {
+            const string secPrefix = curCollapsed ? "> " : "v ";
+            auto secBtn = new FlCompactButton(null, toUTF32(secPrefix ~ secKey), pal, 11, 20, false, false);
             secBtn.layoutWidth = FILL_PARENT;
             secBtn.focusable = false;
             secBtn.customFillColor = pal.bgPanelAlt;
             secBtn.customTextColor = pal.accentCyan;
-            const string secKey = sec;
             secBtn.click = (Widget s) {
-                collapsedSections_[secKey] = !collapsed;
+                collapsedSections_[secKey] = !curCollapsed;
                 refresh();
                 return true;
             };
-            listBody_.addChild(secBtn);
+            return secBtn;
+        }
 
+        FlCompactButton makeEntryBtn(BrowserEntry entry) {
+            auto btn = new FlCompactButton(null, toUTF32("  " ~ entry.label), pal, 11, 20, false, false);
+            btn.layoutWidth = FILL_PARENT;
+            btn.focusable = false;
+            btn.customFillColor = pal.bgPanel;
+            btn.customBorderColor = COLOR_TRANSPARENT;
+            btn.click = (Widget s) {
+                if (entry.category == BrowserCategory.PLUGINS) {
+                    if (entry.isInstrument) {
+                        if (onAddGenerator !is null) onAddGenerator(entry.label, entry.uri, true);
+                    } else {
+                        if (onAddEffect !is null) onAddEffect(entry.label, entry.uri);
+                    }
+                } else if (entry.category == BrowserCategory.SAMPLES) {
+                    if (model_) {
+                        model_.samplePreview.name = baseName(entry.uri);
+                        model_.samplePreview.path = entry.uri;
+                        model_.activePickerKind = PlaylistClipKind.AUDIO;
+                        int sr = 44100;
+                        int bits = 16;
+                        auto peaks = loadWavPreviewPeaks(entry.uri, 512, &sr, &bits);
+                        if (peaks.length > 0) {
+                            model_.samplePreview.waveform = peaks;
+                            model_.samplePreview.info = format("%d Hz | %d-bit", sr, bits);
+                        } else {
+                            uint seed = 17;
+                            foreach (ch; entry.uri) seed = seed * 31u + cast(uint)ch;
+                            model_.samplePreview.waveform =
+                                generateSampleWaveform(512, seed, canFind(toLower(entry.uri), "loop"));
+                        }
+                        model_.hintText = format("Previewing '%s' (double-click to add to Playlist)",
+                                                 baseName(entry.uri));
+                    }
+                    if (onAuditionSample !is null) onAuditionSample(entry.uri);
+                } else if (entry.category == BrowserCategory.RECENT) {
+                    if (onLoadProject !is null) onLoadProject(entry.uri);
+                } else if (entry.category == BrowserCategory.PROJECT) {
+                    if (entry.uri.length > 10 && entry.uri[0 .. 10] == "pattern://") {
+                        if (onSelectPattern !is null) onSelectPattern(to!int(entry.uri[10 .. $]));
+                    }
+                }
+                previewWidget_.invalidate();
+                return true;
+            };
+            if (entry.category == BrowserCategory.SAMPLES) {
+                btn.mouseEvent = delegate(Widget src, MouseEvent ev) {
+                    if (ev.action == MouseAction.ButtonDown &&
+                        ((ev.button == MouseButton.Left && ev.doubleClick) ||
+                         ev.button == MouseButton.Right)) {
+                        if (onAddSampleClip !is null) onAddSampleClip(entry.uri);
+                        return true;
+                    }
+                    return false;
+                };
+            }
+            return btn;
+        }
+
+        foreach (sec; sectionOrder) {
+            const bool collapsed = (sec in collapsedSections_) !is null && collapsedSections_[sec];
+            listBody_.addChild(makeSectionHeaderBtn(sec, collapsed));
             if (collapsed) continue;
             foreach (item; grouped[sec]) {
-                auto btn = new FlCompactButton(null, toUTF32("  " ~ item.label), pal, 11, 20, false, false);
-                btn.layoutWidth = FILL_PARENT;
-                btn.focusable = false;
-                btn.customFillColor = pal.bgPanel;
-                btn.customBorderColor = COLOR_TRANSPARENT;
-                const auto entry = item;
-                btn.click = (Widget s) {
-                    if (entry.category == BrowserCategory.PLUGINS) {
-                        if (entry.isInstrument) {
-                            if (onAddGenerator !is null) onAddGenerator(entry.label, entry.uri, true);
-                        } else {
-                            if (onAddEffect !is null) onAddEffect(entry.label, entry.uri);
-                        }
-                    } else if (entry.category == BrowserCategory.SAMPLES) {
-                        if (model_) {
-                            model_.samplePreview.name = baseName(entry.uri);
-                            model_.samplePreview.path = entry.uri;
-                            model_.activePickerKind = PlaylistClipKind.AUDIO;
-                            int sr = 44100;
-                            int bits = 16;
-                            auto peaks = loadWavPreviewPeaks(entry.uri, 512, &sr, &bits);
-                            if (peaks.length > 0) {
-                                model_.samplePreview.waveform = peaks;
-                                model_.samplePreview.info = format("%d Hz | %d-bit", sr, bits);
-                            } else {
-                                uint seed = 17;
-                                foreach (ch; entry.uri) seed = seed * 31u + cast(uint)ch;
-                                model_.samplePreview.waveform =
-                                    generateSampleWaveform(512, seed, canFind(toLower(entry.uri), "loop"));
-                            }
-                            model_.hintText = format("Previewing '%s' (double-click to add to Playlist)",
-                                                     baseName(entry.uri));
-                        }
-                        if (onAuditionSample !is null) onAuditionSample(entry.uri);
-                    } else if (entry.category == BrowserCategory.RECENT) {
-                        if (onLoadProject !is null) onLoadProject(entry.uri);
-                    } else if (entry.category == BrowserCategory.PROJECT) {
-                        if (entry.uri.length > 10 && entry.uri[0 .. 10] == "pattern://") {
-                            if (onSelectPattern !is null) onSelectPattern(to!int(entry.uri[10 .. $]));
-                        }
-                    }
-                    previewWidget_.invalidate();
-                    return true;
-                };
-                if (entry.category == BrowserCategory.SAMPLES) {
-                    btn.mouseEvent = delegate(Widget src, MouseEvent ev) {
-                        if (ev.action == MouseAction.ButtonDown &&
-                            ((ev.button == MouseButton.Left && ev.doubleClick) ||
-                             ev.button == MouseButton.Right)) {
-                            if (onAddSampleClip !is null) onAddSampleClip(entry.uri);
-                            return true;
-                        }
-                        return false;
-                    };
-                }
-                listBody_.addChild(btn);
+                listBody_.addChild(makeEntryBtn(item));
             }
         }
         previewWidget_.invalidate();
@@ -774,4 +782,32 @@ unittest {
     sampleBtn.onMouseEvent(dbl);
     assert(addedClipCount == 1,
            "Expected double-click on sample to add clip to Playlist");
+
+    // Regression: in ALL mode (with SAMPLES at bottom), clicking Gen/FX/Key must invoke exact clicked item, NOT last WAV
+    string addedGenUri;
+    string addedFxUri;
+    uint previewedPitch = 0;
+    bp.onAddGenerator = (string lbl, string uri, bool isInst) { addedGenUri = uri; };
+    bp.onAddEffect = (string lbl, string uri) { addedFxUri = uri; };
+    bp.onPreviewNote = (uint p) { previewedPitch = p; };
+    bp.activeCat_ = BrowserCategory.ALL;
+    bp.refresh();
+    Widget genBtn;
+    Widget fxBtn;
+    foreach (li; 0 .. bp.listBody_.childCount) {
+        auto w = bp.listBody_.child(li);
+        const txt = toUTF8(w.text);
+        if (genBtn is null && canFind(txt, "Gen: 3x Osc")) genBtn = w;
+        if (fxBtn is null && canFind(txt, "FX: Parametric EQ")) fxBtn = w;
+    }
+    assert(genBtn !is null && fxBtn !is null);
+    auditionCount = 0;
+    genBtn.click(genBtn);
+    assert(addedGenUri == "builtin://3xosc" && auditionCount == 0,
+           "Expected Gen: 3x Osc click to call onAddGenerator('builtin://3xosc'), not audition sample");
+    fxBtn.click(fxBtn);
+    assert(addedFxUri == "builtin://eq" && auditionCount == 0,
+           "Expected FX: Parametric EQ click to call onAddEffect('builtin://eq'), not audition sample");
+    bp.keyBtns_[0].click(bp.keyBtns_[0]);
+    assert(previewedPitch == 60, "Expected first audition key C4 to send MIDI pitch 60, not loop-captured 72");
 }

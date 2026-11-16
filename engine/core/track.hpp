@@ -132,8 +132,8 @@ inline float GetAutomationValue(const AutomationLane& lane, double time_beats,
 
 class Track {
  public:
-  // Track type: Normal, Group (bus), or Aux (return)
-  enum class TrackType { NORMAL = 0, GROUP = 1, AUX = 2 };
+  // Track type: Normal, Group (bus), Aux (return), or Master
+  enum class TrackType { NORMAL = 0, GROUP = 1, AUX = 2, MASTER = 3 };
 
   // Aux send from this track to an aux bus
   struct AuxSend {

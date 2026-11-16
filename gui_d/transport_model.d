@@ -272,7 +272,8 @@ struct TransportModel {
     bool loopRecordEnabled = true;
     bool typingKeyboardEnabled = true;
 
-    int cpuPercent = 3;
+    int cpuPercent = 0;
+    float[] oscilloscopeSamples;
     int voiceCount = 4;
     string hintText = "Ready — Drag window title bars to move (snap on; hold Alt to bypass)";
     string statusMessage = "FL Studio 2026 Prototype Ready";
@@ -643,6 +644,8 @@ struct TransportModel {
             loopEnabled = p.loop_enabled;
             loopStartSec = p.loop_start;
             loopEndSec = p.loop_end;
+            cpuPercent = p.cpu_percent;
+            oscilloscopeSamples = p.oscilloscope.dup;
         }
         if (notif.track_levels.hasValue) {
             foreach (lvl; notif.track_levels.value.levels) {
@@ -655,6 +658,11 @@ struct TransportModel {
             const ti = notif.track_info.value;
             const idx = ensureTrackIndex(ti.track_index);
             if (ti.name.length > 0) tracks[idx].name = ti.name.idup;
+            if (ti.volume.hasValue) tracks[idx].volume = ti.volume.value;
+            if (ti.pan.hasValue) tracks[idx].pan = ti.pan.value;
+            tracks[idx].muted = ti.muted;
+            tracks[idx].soloed = ti.soloed;
+            tracks[idx].routedTo = ti.output_track_index < 0 ? 0 : ti.output_track_index;
         }
         if (notif.timeline_clip_info.hasValue) {
             const tci = notif.timeline_clip_info.value;
@@ -690,6 +698,7 @@ struct TransportModel {
             slot.pluginIndex = pl.plugin_index;
             slot.name = pl.plugin_name.length > 0 ? pl.plugin_name.idup : "Plugin";
             slot.isInstrument = pl.is_instrument;
+            slot.enabled = !pl.bypassed;
             foreach (pm; pl.params) {
                 ParamItemState item;
                 item.id = pm.id;
@@ -861,4 +870,44 @@ unittest {
     c5.clipIndex = 5;
     tr.clips = [c0, c5];
     assert(model.nextClipIndex(tr) == 6);
+
+    // 5. Test PlayheadInfo CPU%, oscilloscope waveform, and TrackInfo mix sync
+    import pb.notifications : TrackInfo;
+    Notification nTel;
+    PlayheadInfo tel;
+    tel.position_sec = 2.0f;
+    tel.bpm = 142.0f;
+    tel.transport_state = TransportState.TRANSPORT_STATE_RECORDING;
+    tel.cpu_percent = 18;
+    tel.oscilloscope = [0.25f, -0.5f, 0.75f];
+    nTel.playhead_info.set(tel);
+    model.applyNotification(nTel);
+    assert(model.isRecording && model.isPlaying);
+    assert(model.cpuPercent == 18);
+    assert(model.oscilloscopeSamples.length == 3 && model.oscilloscopeSamples[1] == -0.5f);
+
+    Notification nMix;
+    TrackInfo ti;
+    ti.track_index = 2;
+    ti.name = "Bass Bus";
+    ti.volume.set(0.65f);
+    ti.pan.set(0.25f);
+    ti.muted = true;
+    ti.soloed = false;
+    nMix.track_info.set(ti);
+    model.applyNotification(nMix);
+    const size_t t2 = model.ensureTrackIndex(2);
+    assert(model.tracks[t2].name == "Bass Bus");
+    assert(model.tracks[t2].muted);
+    assert(model.tracks[t2].volume > 0.64f && model.tracks[t2].volume < 0.66f);
+
+    Notification nByp;
+    ParamList plByp;
+    plByp.track_index = 2;
+    plByp.plugin_index = 0;
+    plByp.plugin_name = "EQ";
+    plByp.bypassed = true;
+    nByp.param_list.set(plByp);
+    model.applyNotification(nByp);
+    assert(!model.findPlugin(2, 0).enabled);
 }

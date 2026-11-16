@@ -31,6 +31,10 @@ void setBpm(ProjectState* state, double bpm);
 double getBpm(const ProjectState* state);
 void setLoop(ProjectState* state, bool enabled, double start_sec,
              double end_sec);
+void setMetronomeEnabled(ProjectState* state, bool enabled);
+void triggerPanic(ProjectState* state);
+void setMasterVolume(ProjectState* state, float vol);
+void setMasterPitch(ProjectState* state, float pitch);
 void stopPlaybackTracks(ProjectState* state);
 
 void sendNotificationTick(ProjectState& state);

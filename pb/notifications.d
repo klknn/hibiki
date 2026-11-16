@@ -25,6 +25,8 @@ struct PlayheadInfo {
     @ProtoField(4) bool loop_enabled = false;
     @ProtoField(5) float loop_start = 0.0f;
     @ProtoField(6) float loop_end = 0.0f;
+    @ProtoField(7) int cpu_percent = 0;
+    @ProtoField(8) float[] oscilloscope;
 }
 
 struct PluginListResponse {
@@ -53,6 +55,7 @@ struct ParamList {
     @ProtoField(3) string plugin_name;
     @ProtoField(4) bool is_instrument = false;
     @ProtoField(5) ParamInfo[] params;
+    @ProtoField(6) bool bypassed = false;
 }
 
 struct ClipInfo {
@@ -101,6 +104,10 @@ struct TrackInfo {
     @ProtoField(4) int output_track_index = 0;
     @ProtoField(5) pb.core.AuxSend[] aux_sends;
     @ProtoField(6) int group_parent_index = 0;
+    @ProtoField(7) ProtoOptional!(float) volume;
+    @ProtoField(8) ProtoOptional!(float) pan;
+    @ProtoField(9) bool muted = false;
+    @ProtoField(10) bool soloed = false;
 }
 
 struct ClipMidiData {

@@ -174,7 +174,7 @@ float getAutomationValue(const ref AutomationLaneD lane, double timeBeats, doubl
 }
 
 class TrackD {
-    enum TrackType { NORMAL = 0, GROUP = 1, AUX = 2 }
+    enum TrackType { NORMAL = 0, GROUP = 1, AUX = 2, MASTER = 3 }
     struct AuxSendInfo {
         int auxTrackIndex = -1;
         float level = 0.0f;

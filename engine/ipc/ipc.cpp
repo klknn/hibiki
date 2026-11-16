@@ -134,13 +134,14 @@ void sendAck(const char* cmd_type, bool success) {
 
 void sendParamList(int track_idx, int plugin_idx,
                    const std::string& plugin_name, bool is_instrument,
-                   const std::vector<VstParamInfo>& params) {
+                   const std::vector<VstParamInfo>& params, bool bypassed) {
   hibiki::pb::notifications::Notification notification;
   auto* list = notification.mutable_param_list();
   list->set_track_index(track_idx);
   list->set_plugin_index(plugin_idx);
   list->set_plugin_name(plugin_name);
   list->set_is_instrument(is_instrument);
+  list->set_bypassed(bypassed);
   for (const auto& p : params) {
     auto* pi = list->add_params();
     pi->set_id(p.id);
@@ -179,6 +180,7 @@ void sendPluginList(const std::string& path,
     pd->set_index(p.index);
     pd->set_name(p.name);
     pd->set_vendor(p.vendor);
+    pd->set_path(path);
     pd->set_is_instrument(p.is_instrument);
   }
   sendProto(notification);
@@ -210,11 +212,35 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
 }
 
 void sendPlayheadInfo(float position_sec, float bpm, bool is_playing,
-                      bool loop_enabled, float loop_start, float loop_end) {
-  sendDEncoded([&](uint8_t* b, int cap) {
-    return d_encode_playhead_info(position_sec, bpm, is_playing, loop_enabled,
-                                  loop_start, loop_end, b, cap);
-  });
+                      bool loop_enabled, float loop_start, float loop_end,
+                      bool is_recording, int cpu_percent,
+                      const std::vector<float>* oscilloscope) {
+  if (!is_recording && cpu_percent == 0 &&
+      (oscilloscope == nullptr || oscilloscope->empty())) {
+    sendDEncoded([&](uint8_t* b, int cap) {
+      return d_encode_playhead_info(position_sec, bpm, is_playing, loop_enabled,
+                                    loop_start, loop_end, b, cap);
+    });
+    return;
+  }
+  hibiki::pb::notifications::Notification notification;
+  auto* phi = notification.mutable_playhead_info();
+  phi->set_position_sec(position_sec);
+  phi->set_bpm(bpm);
+  phi->set_transport_state(
+      is_recording ? hibiki::pb::core::TRANSPORT_STATE_RECORDING
+                   : (is_playing ? hibiki::pb::core::TRANSPORT_STATE_PLAYING
+                                 : hibiki::pb::core::TRANSPORT_STATE_STOPPED));
+  phi->set_loop_enabled(loop_enabled);
+  phi->set_loop_start(loop_start);
+  phi->set_loop_end(loop_end);
+  phi->set_cpu_percent(cpu_percent);
+  if (oscilloscope != nullptr) {
+    for (float s : *oscilloscope) {
+      phi->add_oscilloscope(s);
+    }
+  }
+  sendProto(notification);
 }
 
 void sendBounceFinished(const std::string& path, bool success) {
@@ -229,12 +255,13 @@ void sendTrackInfo(int track_idx, const std::string& name) {
   });
 }
 
-// Extended version with routing info
+// Extended version with routing and mix info
 void sendTrackInfoFull(
     int track_idx, const std::string& name, int track_type,
     int output_track_index,
     const std::vector<std::tuple<int, float, bool>>& aux_sends,
-    int group_parent_index) {
+    int group_parent_index, float volume, float pan, bool has_pan, bool muted,
+    bool soloed) {
   hibiki::pb::notifications::Notification notification;
   auto* ti = notification.mutable_track_info();
   ti->set_track_index(track_idx);
@@ -242,6 +269,10 @@ void sendTrackInfoFull(
   ti->set_track_type(static_cast<hibiki::pb::core::TrackType>(track_type));
   ti->set_output_track_index(output_track_index);
   ti->set_group_parent_index(group_parent_index);
+  if (volume >= 0.0f) ti->set_volume(volume);
+  if (has_pan) ti->set_pan(pan);
+  ti->set_muted(muted);
+  ti->set_soloed(soloed);
   for (const auto& [aux_idx, level, pre] : aux_sends) {
     auto* as = ti->add_aux_sends();
     as->set_aux_track_index(aux_idx);

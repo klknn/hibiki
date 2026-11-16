@@ -27,30 +27,65 @@ import gui_d.workspace : DesktopLayoutPreset, FlDesktopCanvas, FlWindowFrame;
 import pb.commands : TransportCmd;
 import pb.core : MidiEvent;
 import pb.notifications : Notification;
-import std.file : exists;
+import std.file : exists, thisExePath;
 import std.format : format;
-import std.path : baseName;
+import std.path : baseName, buildPath, dirName;
+import std.process : environment;
 import std.string : startsWith;
 import std.utf : toUTF32;
 
 mixin APP_ENTRY_POINT;
 
-/// Resolves `hbk-play` binary path from CLI `--engine=` or default workspace locations.
+/// Resolves `hbk-play` binary path from CLI `--engine=`, Bazel runfiles, exe-relative, or workspace paths.
 private string resolveEnginePath(string[] args) {
     foreach (arg; args) {
         if (arg.startsWith("--engine=")) {
             return arg[9 .. $];
         }
     }
-    foreach (candidate; ["bazel-bin/engine/hbk-play", "engine/hbk-play", "./hbk-play"]) {
-        if (exists(candidate)) return candidate;
+    string[] candidates;
+    try {
+        const exePath = thisExePath();
+        const exeDir = dirName(exePath);
+        candidates ~= buildPath(exeDir, "hbk-play");
+        candidates ~= buildPath(exeDir, "..", "engine", "hbk-play");
+        candidates ~= buildPath(exePath ~ ".runfiles", "_main", "engine", "hbk-play");
+    } catch (Exception) {
+    }
+    const runfilesDir = environment.get("RUNFILES_DIR", "");
+    if (runfilesDir.length > 0) {
+        candidates ~= buildPath(runfilesDir, "_main", "engine", "hbk-play");
+    }
+    candidates ~= ["bazel-bin/engine/hbk-play", "engine/hbk-play", "./hbk-play"];
+    foreach (candidate; candidates) {
+        if (candidate.length > 0 && exists(candidate)) return candidate;
     }
     return "";
+}
+
+/// Mapping from FL typing keyboard keys (`Z..M`) to MIDI note numbers (`C4..B4`).
+private int typingKeyToMidiPitch(uint keyCode) @safe pure nothrow {
+    switch (keyCode) {
+        case KeyCode.KEY_Z: return 60;
+        case KeyCode.KEY_S: return 61;
+        case KeyCode.KEY_X: return 62;
+        case KeyCode.KEY_D: return 63;
+        case KeyCode.KEY_C: return 64;
+        case KeyCode.KEY_V: return 65;
+        case KeyCode.KEY_G: return 66;
+        case KeyCode.KEY_B: return 67;
+        case KeyCode.KEY_H: return 68;
+        case KeyCode.KEY_N: return 69;
+        case KeyCode.KEY_J: return 70;
+        case KeyCode.KEY_M: return 71;
+        default: return -1;
+    }
 }
 
 /// Root layout hosting global keyboard shortcuts and the 33ms prototype playback animation timer.
 private class FlMainRootLayout : VerticalLayout {
     bool delegate(uint keyCode, uint flags) onGlobalKey;
+    bool delegate(uint keyCode, uint flags) onGlobalKeyUp;
     void delegate() onAnimationTick;
 
     this(string id) {
@@ -62,12 +97,15 @@ private class FlMainRootLayout : VerticalLayout {
     }
 
     override bool onKeyEvent(KeyEvent event) {
+        if (window !is null && cast(EditLine)window.focusedWidget !is null) {
+            return super.onKeyEvent(event);
+        }
         if (event.action == KeyAction.KeyDown && onGlobalKey !is null) {
-            // Don't hijack typing while user is typing in Search EditLine
-            if (window !is null && cast(EditLine)window.focusedWidget !is null) {
-                return super.onKeyEvent(event);
-            }
             if (onGlobalKey(event.keyCode, event.flags)) {
+                return true;
+            }
+        } else if (event.action == KeyAction.KeyUp && onGlobalKeyUp !is null) {
+            if (onGlobalKeyUp(event.keyCode, event.flags)) {
                 return true;
             }
         }
@@ -464,10 +502,12 @@ extern (C) int UIAppMain(string[] args) {
     };
     toolbar.onStop = () {
         client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_STOP));
+        client.sendRequest(makePanicRequest());
         client.sendRequest(makeSeekRequest(0.0));
         model.isPlaying = false;
         model.isRecording = false;
         model.playheadPosSec = 0.0;
+        model.oscilloscopeSamples.length = 0;
         foreach (ref trk; model.tracks) {
             trk.peakL = 0.0f;
             trk.peakR = 0.0f;
@@ -489,6 +529,17 @@ extern (C) int UIAppMain(string[] args) {
         model.loopEnabled = !model.loopEnabled;
         client.sendRequest(makeSetLoopRequest(model.loopEnabled, model.loopStartSec, model.loopEndSec));
         refreshUi();
+    };
+    toolbar.onMetronomeToggle = (bool enabled) {
+        client.sendRequest(makeSetMetronomeRequest(enabled));
+        model.hintText = enabled ? "Metronome: ON" : "Metronome: OFF";
+        refreshUi();
+    };
+    toolbar.onMasterVolumeChanged = (float vol) {
+        client.sendRequest(makeSetMasterVolumeRequest(vol));
+    };
+    toolbar.onMasterPitchChanged = (float pitchNorm) {
+        client.sendRequest(makeSetMasterPitchRequest(pitchNorm * 12.0f));
     };
     toolbar.onBpmChanged = (double bpm) {
         client.sendRequest(makeSetBpmRequest(cast(float)bpm));
@@ -529,10 +580,13 @@ extern (C) int UIAppMain(string[] args) {
 
     // Virtual MIDI Audition Helper
     void sendVirtualNote(int trackIdx, uint note) {
+        if (!client.isRunning()) return;
         client.sendRequest(makeSendVirtualMidiRequest(trackIdx, note, 108, true));
         auto t = new Thread(() {
             Thread.sleep(180.msecs);
-            client.sendRequest(makeSendVirtualMidiRequest(trackIdx, note, 0, false));
+            if (client.isRunning()) {
+                client.sendRequest(makeSendVirtualMidiRequest(trackIdx, note, 0, false));
+            }
         });
         t.isDaemon = true;
         t.start();
@@ -822,6 +876,8 @@ extern (C) int UIAppMain(string[] args) {
         refreshUi();
     };
 
+    int[uint] activeTypingNotes; // key: pitch -> trackIdx while key is held
+
     // Global Keyboard Shortcuts (Space, F5..F9, Typing Keyboard to Piano)
     root.onGlobalKey = (uint keyCode, uint flags) {
         if (keyCode == KeyCode.SPACE) {
@@ -850,30 +906,34 @@ extern (C) int UIAppMain(string[] args) {
             refreshUi();
             return true;
         } else if (model.typingKeyboardEnabled) {
-            // FL Studio Typing Keyboard to Piano (Z..M -> C4..B4)
-            int pitch = -1;
-            switch (keyCode) {
-                case KeyCode.KEY_Z: pitch = 60; break;
-                case KeyCode.KEY_S: pitch = 61; break;
-                case KeyCode.KEY_X: pitch = 62; break;
-                case KeyCode.KEY_D: pitch = 63; break;
-                case KeyCode.KEY_C: pitch = 64; break;
-                case KeyCode.KEY_V: pitch = 65; break;
-                case KeyCode.KEY_G: pitch = 66; break;
-                case KeyCode.KEY_B: pitch = 67; break;
-                case KeyCode.KEY_H: pitch = 68; break;
-                case KeyCode.KEY_N: pitch = 69; break;
-                case KeyCode.KEY_J: pitch = 70; break;
-                case KeyCode.KEY_M: pitch = 71; break;
-                default: break;
-            }
+            const int pitch = typingKeyToMidiPitch(keyCode);
             if (pitch >= 0) {
-                const int targetTrk = (model.selectedChannelIndex < cast(int)model.channels.length)
-                    ? model.channels[model.selectedChannelIndex].mixerInsert
-                    : 1;
-                sendVirtualNote(targetTrk, cast(uint)pitch);
-                model.hintText = format("Typing Piano Note: MIDI %d", pitch);
-                refreshUi();
+                if ((cast(uint)pitch in activeTypingNotes) is null) {
+                    const int targetTrk = (model.selectedChannelIndex < cast(int)model.channels.length)
+                        ? model.channels[model.selectedChannelIndex].mixerInsert
+                        : 1;
+                    activeTypingNotes[cast(uint)pitch] = targetTrk;
+                    if (client.isRunning()) {
+                        client.sendRequest(makeSendVirtualMidiRequest(targetTrk, cast(uint)pitch, 108, true));
+                    }
+                    model.hintText = format("Typing Piano Note: MIDI %d", pitch);
+                    refreshUi();
+                }
+                return true;
+            }
+        }
+        return false;
+    };
+
+    root.onGlobalKeyUp = (uint keyCode, uint flags) {
+        const int pitch = typingKeyToMidiPitch(keyCode);
+        if (pitch >= 0) {
+            if (auto trkPtr = cast(uint)pitch in activeTypingNotes) {
+                const int targetTrk = *trkPtr;
+                activeTypingNotes.remove(cast(uint)pitch);
+                if (client.isRunning()) {
+                    client.sendRequest(makeSendVirtualMidiRequest(targetTrk, cast(uint)pitch, 0, false));
+                }
                 return true;
             }
         }

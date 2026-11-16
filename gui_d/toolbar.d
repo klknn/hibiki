@@ -286,23 +286,27 @@ void drawToolbarCanvas(
         buf.fillRect(Rect(scopePanel.left + dp(6), midY, scopePanel.right - dp(6), midY + dp(1)),
                      (pal.borderSubtle & 0x00FFFFFF) | 0xA8000000);
         if (sw > dp(12)) {
-            const float amp = dpf(model.isPlaying ? 8.5f : 1.8f);
-            const float phase = cast(float)(model.playheadPosSec * 14.0);
             float prevX = scopePanel.left + dp(6);
             float prevY = midY;
-            const uint scopeTraceCol = model.isPlaying ? pal.fgText : pal.fgMuted;
+            const bool activeAudio = model.isPlaying || model.oscilloscopeSamples.length > 0;
+            const uint scopeTraceCol = activeAudio ? pal.fgText : pal.fgMuted;
             const uint scopeFillCol = (scopeTraceCol & 0x00FFFFFF) | 0xD2000000;
-            enum int PTS = 56;
-            foreach (i; 1 .. PTS + 1) {
-                const float t = cast(float)i / cast(float)PTS;
+            const size_t pts = model.oscilloscopeSamples.length > 0 ? model.oscilloscopeSamples.length : 56;
+            const float amp = dpf(14.0f);
+            foreach (i; 0 .. pts) {
+                const float t = cast(float)(i + 1) / cast(float)pts;
                 const float sx = scopePanel.left + dp(6) + t * sw;
-                const float env = sinf(t * 3.14159265f);
-                const float wave = sinf(t * 12.56f + phase) * 0.72f + sinf(t * 25.12f - phase * 0.6f) * 0.28f;
-                const float sy = midY + wave * amp * env;
+                float sample = 0.0f;
+                if (model.oscilloscopeSamples.length > 0) {
+                    sample = model.oscilloscopeSamples[i];
+                    if (sample > 1.0f) sample = 1.0f;
+                    if (sample < -1.0f) sample = -1.0f;
+                }
+                const float sy = midY - sample * amp;
                 const int fx0 = cast(int)prevX;
                 const int fx1 = cast(int)(sx + 0.5f);
                 const int fy = cast(int)((prevY + sy) * 0.5f + 0.5f);
-                if (fx1 > fx0) {
+                if (fx1 > fx0 && model.oscilloscopeSamples.length > 0) {
                     const int fTop = fy < midY ? fy : midY;
                     const int fBot = fy > midY ? fy : midY + 1;
                     if (fBot > fTop) {
@@ -356,6 +360,9 @@ class FlToolbarWidget : Widget {
     void delegate() onStop;
     void delegate() onRecordToggle;
     void delegate() onLoopToggle;
+    void delegate(bool enabled) onMetronomeToggle;
+    void delegate(float volume) onMasterVolumeChanged;
+    void delegate(float pitchNormalized) onMasterPitchChanged;
     void delegate(double bpm) onBpmChanged;
     void delegate(bool redo) onUndoRedo;
     void delegate(int delta) onPatternStep;
@@ -400,11 +407,23 @@ class FlToolbarWidget : Widget {
             // 1. Master knobs
             if (tl.masterPanel.isPointInside(event.x, event.y)) {
                 if (event.x < tl.masterPanel.middlex) {
-                    if (event.button == MouseButton.Right) model_.masterVolume = 0.82f;
-                    else { dragMode_ = DragMode.MASTER_VOL; dragStartY_ = event.y; dragStartVal_ = model_.masterVolume; }
+                    if (event.button == MouseButton.Right) {
+                        model_.masterVolume = 0.82f;
+                        if (onMasterVolumeChanged !is null) onMasterVolumeChanged(model_.masterVolume);
+                    } else {
+                        dragMode_ = DragMode.MASTER_VOL;
+                        dragStartY_ = event.y;
+                        dragStartVal_ = model_.masterVolume;
+                    }
                 } else {
-                    if (event.button == MouseButton.Right) model_.masterPitch = 0.0f;
-                    else { dragMode_ = DragMode.MASTER_PITCH; dragStartY_ = event.y; dragStartVal_ = model_.masterPitch; }
+                    if (event.button == MouseButton.Right) {
+                        model_.masterPitch = 0.0f;
+                        if (onMasterPitchChanged !is null) onMasterPitchChanged(model_.masterPitch);
+                    } else {
+                        dragMode_ = DragMode.MASTER_PITCH;
+                        dragStartY_ = event.y;
+                        dragStartVal_ = model_.masterPitch;
+                    }
                 }
                 invalidate();
                 return true;
@@ -445,7 +464,10 @@ class FlToolbarWidget : Widget {
             if (tl.recOptsPanel.isPointInside(event.x, event.y)) {
                 foreach (idx; 0 .. 4) {
                     if (tl.recToggles[idx].isPointInside(event.x, event.y)) {
-                        if (idx == 0) model_.metronomeEnabled = !model_.metronomeEnabled;
+                        if (idx == 0) {
+                            model_.metronomeEnabled = !model_.metronomeEnabled;
+                            if (onMetronomeToggle !is null) onMetronomeToggle(model_.metronomeEnabled);
+                        }
                         else if (idx == 1) model_.countdownEnabled = !model_.countdownEnabled;
                         else if (idx == 2) model_.overdubEnabled = !model_.overdubEnabled;
                         else if (idx == 3) model_.typingKeyboardEnabled = !model_.typingKeyboardEnabled;
@@ -509,10 +531,12 @@ class FlToolbarWidget : Widget {
                 float v = cast(float)dragStartVal_ + cast(float)dy / 100.0f;
                 model_.masterVolume = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
                 model_.hintText = format("Master Volume: %d%%", cast(int)(model_.masterVolume * 100.0f + 0.5f));
+                if (onMasterVolumeChanged !is null) onMasterVolumeChanged(model_.masterVolume);
             } else if (dragMode_ == DragMode.MASTER_PITCH) {
                 float p = cast(float)dragStartVal_ + cast(float)dy / 60.0f;
                 model_.masterPitch = p < -1.0f ? -1.0f : (p > 1.0f ? 1.0f : p);
                 model_.hintText = format("Master Pitch: %+d cents", cast(int)(model_.masterPitch * 1200.0f));
+                if (onMasterPitchChanged !is null) onMasterPitchChanged(model_.masterPitch);
             } else if (dragMode_ == DragMode.BPM) {
                 double newBpm = dragStartVal_ + cast(double)dy * 0.5;
                 if (newBpm < 40.0) newBpm = 40.0;
@@ -529,6 +553,10 @@ class FlToolbarWidget : Widget {
             dragMode_ != DragMode.NONE) {
             if (dragMode_ == DragMode.BPM && onBpmChanged !is null) {
                 onBpmChanged(model_.bpm);
+            } else if (dragMode_ == DragMode.MASTER_VOL && onMasterVolumeChanged !is null) {
+                onMasterVolumeChanged(model_.masterVolume);
+            } else if (dragMode_ == DragMode.MASTER_PITCH && onMasterPitchChanged !is null) {
+                onMasterPitchChanged(model_.masterPitch);
             }
             dragMode_ = DragMode.NONE;
             return true;

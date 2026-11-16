@@ -88,6 +88,41 @@ Request makeSeekRequest(double posSec) @safe {
     return req;
 }
 
+Request makeSetMetronomeRequest(bool enabled) @safe {
+    Request req;
+    TransportCmd cmd;
+    cmd.action = TransportCmd.Action.ACTION_SET_METRONOME;
+    cmd.enabled = enabled;
+    req.transport.set(cmd);
+    return req;
+}
+
+Request makePanicRequest() @safe {
+    Request req;
+    TransportCmd cmd;
+    cmd.action = TransportCmd.Action.ACTION_PANIC;
+    req.transport.set(cmd);
+    return req;
+}
+
+Request makeSetMasterVolumeRequest(float volume) @safe {
+    Request req;
+    TransportCmd cmd;
+    cmd.action = TransportCmd.Action.ACTION_SET_MASTER_VOLUME;
+    cmd.value = volume;
+    req.transport.set(cmd);
+    return req;
+}
+
+Request makeSetMasterPitchRequest(float semitones) @safe {
+    Request req;
+    TransportCmd cmd;
+    cmd.action = TransportCmd.Action.ACTION_SET_MASTER_PITCH;
+    cmd.value = semitones;
+    req.transport.set(cmd);
+    return req;
+}
+
 Request makeSetBpmRequest(float bpm) @safe {
     Request req;
     ProjectCmd cmd;
@@ -489,4 +524,28 @@ unittest {
     assert(bypDec.plugin.value.target.track_index == 3);
     assert(bypDec.plugin.value.target.plugin_index.value == 1);
     assert(!bypDec.plugin.value.flag);
+
+    // 4. Test Metronome / Panic / Master Volume / Master Pitch round-trip
+    auto rMetro = makeSetMetronomeRequest(true);
+    Request metroDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rMetro)[4 .. $], metroDec));
+    assert(metroDec.transport.hasValue && metroDec.transport.value.action == TransportCmd.Action.ACTION_SET_METRONOME);
+    assert(metroDec.transport.value.enabled);
+
+    auto rPanic = makePanicRequest();
+    Request panicDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rPanic)[4 .. $], panicDec));
+    assert(panicDec.transport.hasValue && panicDec.transport.value.action == TransportCmd.Action.ACTION_PANIC);
+
+    auto rMv = makeSetMasterVolumeRequest(0.64f);
+    Request mvDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rMv)[4 .. $], mvDec));
+    assert(mvDec.transport.hasValue && mvDec.transport.value.action == TransportCmd.Action.ACTION_SET_MASTER_VOLUME);
+    assert(mvDec.transport.value.value > 0.63f && mvDec.transport.value.value < 0.65f);
+
+    auto rMp = makeSetMasterPitchRequest(3.0f);
+    Request mpDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rMp)[4 .. $], mpDec));
+    assert(mpDec.transport.hasValue && mpDec.transport.value.action == TransportCmd.Action.ACTION_SET_MASTER_PITCH);
+    assert(mpDec.transport.value.value == 3.0f);
 }

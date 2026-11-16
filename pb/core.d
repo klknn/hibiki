@@ -16,6 +16,7 @@ enum TrackType : int {
     TRACK_NORMAL = 0,
     TRACK_GROUP = 1,
     TRACK_AUX = 2,
+    TRACK_MASTER = 3,
 }
 
 enum TransportState : int {
@@ -147,6 +148,11 @@ struct Track {
     @ProtoField(15) int output_track_index = 0;
     @ProtoField(16) AuxSend[] aux_sends;
     @ProtoField(17) int group_parent_index = 0;
+    @ProtoField(18) ProtoOptional!(float) volume;
+    @ProtoField(19) ProtoOptional!(float) pan;
+    @ProtoField(20) bool muted = false;
+    @ProtoField(21) bool soloed = false;
+    @ProtoField(22) int[] bypassed_plugins;
 }
 
 struct Project {

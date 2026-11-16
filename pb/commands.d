@@ -19,6 +19,10 @@ struct TransportCmd {
         ACTION_SEEK = 3,
         ACTION_RECORD = 4,
         ACTION_SET_LOOP = 5,
+        ACTION_SET_METRONOME = 6,
+        ACTION_PANIC = 7,
+        ACTION_SET_MASTER_VOLUME = 8,
+        ACTION_SET_MASTER_PITCH = 9,
     }
 
     @ProtoField(1) Action action = Action.ACTION_UNSPECIFIED;
@@ -27,6 +31,8 @@ struct TransportCmd {
     @ProtoField(4) bool loop_enabled = false;
     @ProtoField(5) float loop_start = 0.0f;
     @ProtoField(6) float loop_end = 0.0f;
+    @ProtoField(7) bool enabled = false;
+    @ProtoField(8) float value = 0.0f;
 }
 
 struct TrackCmd {

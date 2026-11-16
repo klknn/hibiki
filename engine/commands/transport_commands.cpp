@@ -249,6 +249,29 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
                 << "s]";
       sendAck("SET_LOOP", true);
       break;
+    case pb::commands::TransportCmd::ACTION_SET_METRONOME:
+      state.metronome_enabled = cmd.enabled();
+      sendAck("SET_METRONOME", true);
+      break;
+    case pb::commands::TransportCmd::ACTION_PANIC: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      for (auto& pair : state.tracks) {
+        if (pair.second) {
+          pair.second->Stop();
+          pair.second->panic_requested_.store(true);
+        }
+      }
+      sendAck("PANIC", true);
+      break;
+    }
+    case pb::commands::TransportCmd::ACTION_SET_MASTER_VOLUME:
+      state.master_volume = std::clamp(cmd.value(), 0.0f, 1.5f);
+      sendAck("SET_MASTER_VOLUME", true);
+      break;
+    case pb::commands::TransportCmd::ACTION_SET_MASTER_PITCH:
+      state.master_pitch = std::clamp(cmd.value(), -12.0f, 12.0f);
+      sendAck("SET_MASTER_PITCH", true);
+      break;
     default:
       break;
   }

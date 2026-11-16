@@ -223,6 +223,22 @@ bool dispatchCommandWithFallback(
             hibiki.setLoop(cppState, t.loop_enabled, t.loop_start, t.loop_end);
             hibiki.sendAck("SET_LOOP", true);
             return true;
+        case TransportCmd.Action.ACTION_SET_METRONOME:
+            hibiki.setMetronomeEnabled(cppState, t.enabled);
+            hibiki.sendAck("SET_METRONOME", true);
+            return true;
+        case TransportCmd.Action.ACTION_PANIC:
+            hibiki.triggerPanic(cppState);
+            hibiki.sendAck("PANIC", true);
+            return true;
+        case TransportCmd.Action.ACTION_SET_MASTER_VOLUME:
+            hibiki.setMasterVolume(cppState, t.value);
+            hibiki.sendAck("SET_MASTER_VOLUME", true);
+            return true;
+        case TransportCmd.Action.ACTION_SET_MASTER_PITCH:
+            hibiki.setMasterPitch(cppState, t.value);
+            hibiki.sendAck("SET_MASTER_PITCH", true);
+            return true;
         default:
             break;
         }

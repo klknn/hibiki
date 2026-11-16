@@ -446,4 +446,80 @@ TEST_F(CommandsTest, MidiClipDurationUpdate) {
   EXPECT_DOUBLE_EQ(clip->duration_beats, 4.0);
 }
 
+TEST_F(CommandsTest, TransportMetronomePanicMasterVolPitch) {
+  auto trk = hibiki::GetOrCreateTrack(state, 1);
+  ASSERT_NE(trk, nullptr);
+
+  hibiki::pb::commands::TransportCmd metro;
+  metro.set_action(hibiki::pb::commands::TransportCmd::ACTION_SET_METRONOME);
+  metro.set_enabled(true);
+  hibiki::handleTransportCmd(metro, state);
+  EXPECT_TRUE(state.metronome_enabled);
+
+  hibiki::pb::commands::TransportCmd mv;
+  mv.set_action(hibiki::pb::commands::TransportCmd::ACTION_SET_MASTER_VOLUME);
+  mv.set_value(0.55f);
+  hibiki::handleTransportCmd(mv, state);
+  EXPECT_FLOAT_EQ(state.master_volume, 0.55f);
+
+  hibiki::pb::commands::TransportCmd mp;
+  mp.set_action(hibiki::pb::commands::TransportCmd::ACTION_SET_MASTER_PITCH);
+  mp.set_value(-5.0f);
+  hibiki::handleTransportCmd(mp, state);
+  EXPECT_FLOAT_EQ(state.master_pitch, -5.0f);
+
+  hibiki::pb::commands::TransportCmd panic;
+  panic.set_action(hibiki::pb::commands::TransportCmd::ACTION_PANIC);
+  hibiki::handleTransportCmd(panic, state);
+  EXPECT_TRUE(trk->panic_requested_.load());
+}
+
+TEST_F(CommandsTest, SyncProjectToGuiIncludesMixBypassAndMidi) {
+  auto track = hibiki::GetOrCreateTrack(state, 1);
+  track->name = "Acid Lead";
+  track->track_type = hibiki::Track::TrackType::GROUP;
+  track->output_track_index = 0;
+  track->volume = 0.72f;
+  track->pan = -0.35f;
+  track->muted = true;
+  track->LoadPlugin("builtin://eq", 0, state.sample_rate);
+  track->plugin_bypass[0] = true;
+
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+
+  hibiki::SyncProjectToGui(state);
+
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  bool saw_playhead = false;
+  bool saw_track_mix = false;
+  bool saw_param_bypass = false;
+  for (const auto& n : captured) {
+    if (n.has_playhead_info()) {
+      saw_playhead = true;
+      EXPECT_FLOAT_EQ(n.playhead_info().bpm(), 120.0f);
+    }
+    if (n.has_track_info() && n.track_info().track_index() == 1) {
+      saw_track_mix = true;
+      EXPECT_FLOAT_EQ(n.track_info().volume(), 0.72f);
+      EXPECT_FLOAT_EQ(n.track_info().pan(), -0.35f);
+      EXPECT_TRUE(n.track_info().muted());
+    }
+    if (n.has_param_list() && n.param_list().track_index() == 1) {
+      saw_param_bypass = n.param_list().bypassed();
+    }
+  }
+  EXPECT_TRUE(saw_playhead);
+  EXPECT_TRUE(saw_track_mix);
+  EXPECT_TRUE(saw_param_bypass);
+}
+
 }  // namespace hibiki

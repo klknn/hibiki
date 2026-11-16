@@ -45,6 +45,13 @@ struct ProjectState {
   bool loop_enabled = false;
   double loop_start_sec = 0.0;
   double loop_end_sec = 0.0;
+
+  // Global transport/mixer/telemetry state
+  bool metronome_enabled = false;
+  float master_volume = 0.82f;
+  float master_pitch = 0.0f;
+  int cpu_percent = 0;
+  std::vector<float> oscilloscope;
 };
 
 // Convert a duration in beats to seconds at the given BPM.

@@ -90,6 +90,13 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
       as->set_pre_fader(send.pre_fader);
     }
     ts->set_group_parent_index(track->group_parent_index);
+    ts->set_volume(track->volume);
+    ts->set_pan(track->pan);
+    ts->set_muted(track->muted);
+    ts->set_soloed(track->soloed);
+    for (const auto& [bp_idx, is_bp] : track->plugin_bypass) {
+      if (is_bp) ts->add_bypassed_plugins(bp_idx);
+    }
 
     for (const auto& plugin : track->plugins) {
       auto* ps = ts->add_plugins();
@@ -202,6 +209,18 @@ static void LoadTracksFromProto(ProjectState& state,
       track->aux_sends.push_back(send);
     }
     track->group_parent_index = track_data.group_parent_index();
+    if (track_data.has_volume()) {
+      track->volume = track_data.volume();
+    }
+    if (track_data.has_pan()) {
+      track->pan = track_data.pan();
+    }
+    track->muted = track_data.muted();
+    track->soloed = track_data.soloed();
+    track->plugin_bypass.clear();
+    for (int bp_idx : track_data.bypassed_plugins()) {
+      track->plugin_bypass[bp_idx] = true;
+    }
 
     for (const auto& plugin_data : track_data.plugins()) {
       if (plugin_data.path().empty()) continue;
@@ -484,7 +503,46 @@ absl::Status ApplyProjectState(ProjectState& state,
 
 void SyncProjectToGui(const ProjectState& state) {
   hibiki::sendClearProject();
+  hibiki::sendPlayheadInfo((float)state.playhead_pos_sec, (float)state.bpm,
+                           state.is_timeline_playing, state.loop_enabled,
+                           (float)state.loop_start_sec,
+                           (float)state.loop_end_sec, state.is_recording);
+
+  auto emitMidiNotes = [](int tidx, int sidx, int cidx, const Clip& clip) {
+    if (clip.type != Clip::Type::MIDI) return;
+    constexpr int ppq = 480;
+    std::vector<pb::core::MidiEvent> notes;
+    std::map<int, std::pair<long, int>> active_notes;
+    for (const auto& ev : clip.midi_events) {
+      long tick = std::lround(ev.beats * ppq);
+      if (isNoteOn(ev)) {
+        active_notes[ev.note] = {tick, ev.velocity};
+      } else if (isNoteOff(ev)) {
+        auto it = active_notes.find(ev.note);
+        if (it != active_notes.end()) {
+          pb::core::MidiEvent me;
+          me.set_tick(it->second.first);
+          me.set_pitch(ev.note);
+          me.set_duration_ticks(std::max(1L, tick - it->second.first));
+          me.set_velocity(it->second.second);
+          notes.push_back(me);
+          active_notes.erase(it);
+        }
+      }
+    }
+    hibiki::sendClipMidiData(tidx, sidx, cidx, ppq, notes);
+  };
+
   for (const auto& [tidx, track] : state.tracks) {
+    std::vector<std::tuple<int, float, bool>> aux_tuples;
+    for (const auto& send : track->aux_sends) {
+      aux_tuples.emplace_back(send.aux_track_index, send.level, send.pre_fader);
+    }
+    hibiki::sendTrackInfoFull(
+        tidx, track->name, static_cast<int>(track->track_type),
+        track->output_track_index, aux_tuples, track->group_parent_index,
+        track->volume, track->pan, true, track->muted, track->soloed);
+
     // Sync Session Clips
     for (const auto& [sidx, clip] : track->clips) {
       if (!clip) continue;
@@ -497,10 +555,12 @@ void SyncProjectToGui(const ProjectState& state) {
         cname = "New Clip";
       }
       hibiki::sendClipInfo(tidx, sidx, cname, clip->path);
+      emitMidiNotes(tidx, sidx, -1, *clip);
     }
-    // Sync Plugins
+    // Sync Plugins + current live parameter values
     for (int pidx = 0; pidx < (int)track->plugins.size(); ++pidx) {
       auto& plugin = track->plugins[pidx];
+      if (!plugin) continue;
       std::vector<VstParamInfo> params;
       for (int i = 0; i < plugin->getParameterCount(); ++i) {
         VstParamInfo info;
@@ -508,8 +568,13 @@ void SyncProjectToGui(const ProjectState& state) {
           params.push_back(info);
         }
       }
+      bool bypassed = track->plugin_bypass.count(pidx) > 0;
       hibiki::sendParamList(tidx, pidx, plugin->getName(),
-                            plugin->isInstrument(), params);
+                            plugin->isInstrument(), params, bypassed);
+      for (const auto& info : params) {
+        hibiki::sendParamValueChange(tidx, pidx, info.id,
+                                     (float)plugin->getParameterValue(info.id));
+      }
       if (auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugin.get())) {
         dm->sendAllPadStates();
       }
@@ -540,6 +605,7 @@ void SyncProjectToGui(const ProjectState& state) {
           duration_for_gui, tc->clip->waveform_summary, tc->clip->is_loop,
           tc->alias_source, li_sec, (float)tc->fade_in_sec,
           (float)tc->fade_out_sec, tc->muted);
+      emitMidiNotes(tidx, -1, tc_idx, *tc->clip);
     }
     // Sync Automation Lanes
     if (!track->automation_lanes.empty()) {
@@ -776,6 +842,27 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
       for (int i = 0; i < block_size; ++i) {
         mixBufferL[i] += bufferL[i];
         mixBufferR[i] += bufferR[i];
+      }
+    }
+
+    // Pass 3: Process Master bus track effects if configured
+    for (auto& pair : state.tracks) {
+      Track* track = pair.second.get();
+      if (track->track_type != Track::TrackType::MASTER) continue;
+      for (int i = 0; i < block_size; ++i) {
+        bufferL[i] = mixBufferL[i];
+        bufferR[i] = mixBufferR[i];
+      }
+      for (size_t i = 0; i < track->plugins.size(); ++i) {
+        if (i == 0 && track->plugins[i]->isInstrument()) continue;
+        if (track->plugin_bypass.count((int)i)) continue;
+        track->plugins[i]->process(outChannels, outChannels, block_size,
+                                   context, {});
+      }
+      const float gain = track->muted ? 0.0f : track->volume;
+      for (int i = 0; i < block_size; ++i) {
+        mixBufferL[i] = bufferL[i] * gain;
+        mixBufferR[i] = bufferR[i] * gain;
       }
     }
 

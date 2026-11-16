@@ -1109,11 +1109,10 @@ TEST_F(ProjectTest, TrackInputDeviceSaveLoad) {
   EXPECT_TRUE(rt->input_stereo);
 }
 
-// ── Mixer State Serialization Gap Tests ─────────────────────────────
-// These tests document that volume/pan/mute/solo are NOT serialized,
-// meaning they don't survive undo/redo or save/load.
+// ── Mixer State Serialization Tests ─────────────────────────────────
+// Volume/pan/mute/solo/bypass survive undo/redo snapshots and save/load.
 
-TEST_F(ProjectTest, MixerStateNotSerializedInSnapshot) {
+TEST_F(ProjectTest, MixerStateSerializedInSnapshot) {
   hibiki::ProjectState state;
   state.bpm = 120.0;
   state.sample_rate = 44100.0;
@@ -1123,18 +1122,41 @@ TEST_F(ProjectTest, MixerStateNotSerializedInSnapshot) {
   track->pan = -0.3f;
   track->muted = true;
   track->soloed = true;
+  track->plugin_bypass[1] = true;
 
   auto data = hibiki::CaptureProjectState(state);
   hibiki::ProjectState restored;
   restored.sample_rate = 44100.0;
   ASSERT_THAT(hibiki::ApplyProjectState(restored, data), IsOk());
 
-  // These are default values because they are NOT in the proto
   auto* rt = restored.tracks[0].get();
-  EXPECT_FLOAT_EQ(rt->volume, 0.31623f);  // default = -10 dB
-  EXPECT_FLOAT_EQ(rt->pan, 0.0f);         // default
-  EXPECT_FALSE(rt->muted);                // default
-  EXPECT_FALSE(rt->soloed);               // default
+  EXPECT_FLOAT_EQ(rt->volume, 0.5f);
+  EXPECT_FLOAT_EQ(rt->pan, -0.3f);
+  EXPECT_TRUE(rt->muted);
+  EXPECT_TRUE(rt->soloed);
+  EXPECT_TRUE(rt->plugin_bypass[1]);
+}
+
+TEST_F(ProjectTest, LegacyProjectWithoutOptionalVolumePreservesDefault) {
+  hibiki::pb::core::Project proto;
+  proto.set_bpm(125.0);
+  auto* ts = proto.add_tracks();
+  ts->set_track_index(0);
+  ts->set_name("Legacy Track");
+  std::string str;
+  ASSERT_TRUE(proto.SerializeToString(&str));
+  std::vector<uint8_t> data(str.begin(), str.end());
+
+  hibiki::ProjectState restored;
+  restored.sample_rate = 44100.0;
+  ASSERT_THAT(hibiki::ApplyProjectState(restored, data), IsOk());
+
+  ASSERT_NE(restored.tracks.find(0), restored.tracks.end());
+  auto* rt = restored.tracks[0].get();
+  EXPECT_FLOAT_EQ(rt->volume, 0.31623f);
+  EXPECT_FLOAT_EQ(rt->pan, 0.0f);
+  EXPECT_FALSE(rt->muted);
+  EXPECT_FALSE(rt->soloed);
 }
 
 TEST_F(ProjectTest, AutomationLaneFullRoundTrip) {

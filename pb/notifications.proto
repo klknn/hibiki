@@ -41,6 +41,8 @@ message PlayheadInfo {
   bool loop_enabled = 4;
   float loop_start = 5;
   float loop_end = 6;
+  int32 cpu_percent = 7;
+  repeated float oscilloscope = 8;
 }
 
 // ─── Plugin Discovery ───────────────────────────────────────────────
@@ -79,6 +81,7 @@ message ParamList {
   string plugin_name = 3;
   bool is_instrument = 4;
   repeated ParamInfo params = 5;
+  bool bypassed = 6;
 }
 
 // Session clip metadata.
@@ -134,6 +137,10 @@ message TrackInfo {
   int32 output_track_index = 4;  // -1 = master
   repeated hibiki.pb.core.AuxSend aux_sends = 5;
   int32 group_parent_index = 6;  // -1 = no group parent
+  optional float volume = 7;
+  optional float pan = 8;
+  bool muted = 9;
+  bool soloed = 10;
 }
 
 // MIDI event data for a clip (Piano Roll).

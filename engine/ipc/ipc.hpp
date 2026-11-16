@@ -22,7 +22,8 @@ void sendNotification(const uint8_t* buf, size_t size);
 void sendAck(const char* cmd_type, bool success);
 void sendParamList(int track_idx, int plugin_idx,
                    const std::string& plugin_name, bool is_instrument,
-                   const std::vector<VstParamInfo>& params);
+                   const std::vector<VstParamInfo>& params,
+                   bool bypassed = false);
 void sendLog(const std::string& msg);
 void sendClipInfo(int track_idx, int slot_index, const std::string& name,
                   const std::string& path);
@@ -37,14 +38,17 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
                           float fade_out_sec = 0.0f, bool muted = false);
 void sendPlayheadInfo(float position_sec, float bpm, bool is_playing,
                       bool loop_enabled = false, float loop_start = 0,
-                      float loop_end = 0);
+                      float loop_end = 0, bool is_recording = false,
+                      int cpu_percent = 0,
+                      const std::vector<float>* oscilloscope = nullptr);
 void sendBounceFinished(const std::string& path, bool success);
 void sendTrackInfo(int track_idx, const std::string& name);
 void sendTrackInfoFull(
     int track_idx, const std::string& name, int track_type,
     int output_track_index,
     const std::vector<std::tuple<int, float, bool>>& aux_sends,
-    int group_parent_index = -1);
+    int group_parent_index = -1, float volume = -1.0f, float pan = 0.0f,
+    bool has_pan = false, bool muted = false, bool soloed = false);
 
 // Send clip MIDI data to GUI. Use slot_idx >= 0 for session clips, clip_idx >=
 // 0 for timeline clips

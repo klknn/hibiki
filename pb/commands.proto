@@ -27,6 +27,10 @@ message TransportCmd {
     ACTION_SEEK = 3;
     ACTION_RECORD = 4;
     ACTION_SET_LOOP = 5;  // Set or clear the loop region
+    ACTION_SET_METRONOME = 6;
+    ACTION_PANIC = 7;
+    ACTION_SET_MASTER_VOLUME = 8;
+    ACTION_SET_MASTER_PITCH = 9;
   }
   Action action = 1;
   float seek_pos = 2;
@@ -34,6 +38,8 @@ message TransportCmd {
   bool loop_enabled = 4;
   float loop_start = 5;  // loop start in seconds
   float loop_end = 6;    // loop end in seconds
+  bool enabled = 7;
+  float value = 8;
 }
 
 message TrackCmd {

@@ -18,6 +18,7 @@
 #include "engine/audio/sound.hpp"
 #include "engine/core/audio_file.hpp"
 #include "engine/core/clip.hpp"
+#include "engine/core/math.hpp"
 #include "engine/core/midi.hpp"
 #include "engine/core/project.hpp"
 #include "engine/core/track.hpp"
@@ -29,6 +30,7 @@
 #include "engine/effects/builtin_maxim.hpp"
 #include "engine/effects/builtin_phaser.hpp"
 #include "engine/effects/builtin_reverb.hpp"
+#include "engine/instruments/builtin_drum_machine.hpp"
 #include "engine/ipc/ipc.hpp"
 #include "engine/vst3/vst3_host.hpp"
 #include "pb/commands.pb.h"
@@ -125,6 +127,29 @@ void setLoop(ProjectState* state, bool enabled, double start_sec,
   state->loop_end_sec = end_sec;
 }
 
+void setMetronomeEnabled(ProjectState* state, bool enabled) {
+  if (state) state->metronome_enabled = enabled;
+}
+
+void triggerPanic(ProjectState* state) {
+  if (!state) return;
+  std::lock_guard<std::mutex> lock(state->tracks_mutex);
+  for (auto& pair : state->tracks) {
+    if (pair.second) {
+      pair.second->Stop();
+      pair.second->panic_requested_.store(true);
+    }
+  }
+}
+
+void setMasterVolume(ProjectState* state, float vol) {
+  if (state) state->master_volume = std::clamp(vol, 0.0f, 1.5f);
+}
+
+void setMasterPitch(ProjectState* state, float pitch) {
+  if (state) state->master_pitch = std::clamp(pitch, -12.0f, 12.0f);
+}
+
 void stopPlaybackTracks(ProjectState* state) {
   if (!state) return;
   std::lock_guard<std::mutex> lock(state->tracks_mutex);
@@ -166,10 +191,18 @@ void sendInitialConfig(const ProjectState& state) {
 }
 
 void sendNotificationTick(ProjectState& state) {
+  int cpu_pct = 0;
+  std::vector<float> osc_copy;
+  {
+    std::lock_guard<std::mutex> llock(state.levels_mutex);
+    cpu_pct = state.cpu_percent;
+    osc_copy = state.oscilloscope;
+  }
   hibiki::sendPlayheadInfo((float)state.playhead_pos_sec, (float)state.bpm,
                            state.is_timeline_playing, state.loop_enabled,
                            (float)state.loop_start_sec,
-                           (float)state.loop_end_sec);
+                           (float)state.loop_end_sec, state.is_recording,
+                           cpu_pct, &osc_copy);
 
   hibiki::pb::notifications::Notification notification;
   auto* tl = notification.mutable_track_levels();
@@ -356,6 +389,7 @@ void playback_thread(ProjectState& state) {
   CHECK_GT(time_per_block, 0.0);
 
   while (!state.quit) {
+    const auto block_start_time = std::chrono::steady_clock::now();
     std::vector<double> mixBufferL(block_size, 0.0);
     std::vector<double> mixBufferR(block_size, 0.0);
 
@@ -568,6 +602,13 @@ void playback_thread(ProjectState& state) {
                                ev.sampleOffset / state.sample_rate;
                 tev.event = ev;
                 track->midi_record_buffer.push_back(tev);
+              }
+            }
+            if (int pitch_shift = (int)std::lround(state.master_pitch);
+                pitch_shift != 0 && dynamic_cast<BuiltinDrumMachine*>(
+                                        track->plugins[0].get()) == nullptr) {
+              for (auto& ev : allEvents) {
+                ev.pitch = std::clamp(ev.pitch + pitch_shift, 0, 127);
               }
             }
             if (!track->plugin_bypass.count(0)) {
@@ -786,6 +827,64 @@ void playback_thread(ProjectState& state) {
           renderTrack(pair.second.get(), pair.first, /*render_content=*/false);
         }
       }
+
+      // ---- Metronome click synthesis ----
+      if (state.metronome_enabled && state.is_timeline_playing &&
+          state.bpm > 0.0 && sample_rate > 0.0f) {
+        const double bps = state.bpm / 60.0;
+        const double click_dur_beats = 0.03 * bps;
+        for (int i = 0; i < block_size; ++i) {
+          const double beat_pos =
+              (state.playhead_pos_sec + (double)i / sample_rate) * bps;
+          if (beat_pos < 0.0) continue;
+          const double beat_idx_f = std::floor(beat_pos);
+          const double frac = beat_pos - beat_idx_f;
+          if (frac < click_dur_beats) {
+            const int beat_idx = (int)beat_idx_f;
+            const bool accent = (beat_idx % 4 == 0);
+            const double freq = accent ? 1480.0 : 980.0;
+            const double t_sec = frac / bps;
+            const double env = std::exp(-t_sec * 140.0);
+            const double click = std::sin(2.0 * hibiki::pi * freq * t_sec) *
+                                 env * (accent ? 0.35 : 0.22);
+            mixBufferL[i] += click;
+            mixBufferR[i] += click;
+          }
+        }
+      }
+
+      // ---- Pass 3: Dedicated Master Bus track (if present) ----
+      for (auto& pair : state.tracks) {
+        Track* master_track = pair.second.get();
+        if (master_track->track_type != Track::TrackType::MASTER) continue;
+        std::copy(mixBufferL.begin(), mixBufferL.end(), bufferL);
+        std::copy(mixBufferR.begin(), mixBufferR.end(), bufferR);
+        for (size_t i = 0; i < master_track->plugins.size(); ++i) {
+          if (i == 0 && master_track->plugins[i]->isInstrument()) continue;
+          if (master_track->plugin_bypass.count((int)i)) continue;
+          d_double_to_float_stereo(bufferL, bufferR, plugBufL, plugBufR,
+                                   block_size);
+          master_track->plugins[i]->process(outChannels, outChannels,
+                                            block_size, context, {});
+          d_float_to_double_stereo(plugBufL, plugBufR, bufferL, bufferR,
+                                   block_size);
+        }
+        float pkL = 0.0f, pkR = 0.0f;
+        d_apply_track_gain_and_pan(bufferL, bufferR, block_size,
+                                   master_track->volume, master_track->pan,
+                                   !master_track->muted, &pkL, &pkR);
+        for (int i = 0; i < block_size; ++i) {
+          mixBufferL[i] = bufferL[i];
+          mixBufferR[i] = bufferR[i];
+        }
+      }
+    }
+
+    // Apply Toolbar global master volume before output metering
+    const float global_master_vol = state.master_volume;
+    for (int i = 0; i < block_size; ++i) {
+      mixBufferL[i] *= global_master_vol;
+      mixBufferR[i] *= global_master_vol;
     }
 
     // Mix to output (via @nogc D DSP kernel)
@@ -794,6 +893,30 @@ void playback_thread(ProjectState& state) {
     d_process_master_output(mixBufferL.data(), mixBufferR.data(),
                             interleaved.data(), block_size, &masterPeakL,
                             &masterPeakR);
+
+    // Measure DSP CPU% and capture 56-point oscilloscope snapshot
+    const auto dsp_end_time = std::chrono::steady_clock::now();
+    const double elapsed_sec =
+        std::chrono::duration<double>(dsp_end_time - block_start_time).count();
+    const int inst_cpu = std::clamp(
+        (int)std::lround((elapsed_sec / time_per_block) * 100.0), 0, 100);
+    {
+      std::lock_guard<std::mutex> llock(state.levels_mutex);
+      state.cpu_percent = (state.cpu_percent * 3 + inst_cpu) / 4;
+      constexpr int kOscPoints = 56;
+      state.oscilloscope.resize(kOscPoints);
+      const int step = std::max(1, block_size / kOscPoints);
+      for (int i = 0; i < kOscPoints; ++i) {
+        const int idx = std::min(block_size - 1, i * step);
+        state.oscilloscope[i] =
+            0.5f * (float)(mixBufferL[idx] + mixBufferR[idx]);
+      }
+      if (state.tracks.find(0) == state.tracks.end() ||
+          state.tracks[0]->track_type == Track::TrackType::MASTER) {
+        state.track_levels[0] = {masterPeakL, masterPeakR};
+      }
+    }
+
     CHECK_GE((int)interleaved.size(), block_size * actual_channels);
     audio->write(interleaved, block_size);
 

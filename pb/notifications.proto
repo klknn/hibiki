@@ -85,6 +85,7 @@ message ParamList {
   bool is_instrument = 4;
   repeated ParamInfo params = 5;
   bool bypassed = 6;
+  optional float mix = 7;
 }
 
 // Session clip metadata.
@@ -145,6 +146,10 @@ message TrackInfo {
   optional float pan = 8;
   bool muted = 9;
   bool soloed = 10;
+  optional float eq_low = 11;
+  optional float eq_mid = 12;
+  optional float eq_high = 13;
+  optional float stereo_sep = 14;
 }
 
 // MIDI event data for a clip (Piano Roll).

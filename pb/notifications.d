@@ -59,6 +59,7 @@ struct ParamList {
     @ProtoField(4) bool is_instrument = false;
     @ProtoField(5) ParamInfo[] params;
     @ProtoField(6) bool bypassed = false;
+    @ProtoField(7) ProtoOptional!(float) mix;
 }
 
 struct ClipInfo {
@@ -112,6 +113,10 @@ struct TrackInfo {
     @ProtoField(8) ProtoOptional!(float) pan;
     @ProtoField(9) bool muted = false;
     @ProtoField(10) bool soloed = false;
+    @ProtoField(11) ProtoOptional!(float) eq_low;
+    @ProtoField(12) ProtoOptional!(float) eq_mid;
+    @ProtoField(13) ProtoOptional!(float) eq_high;
+    @ProtoField(14) ProtoOptional!(float) stereo_sep;
 }
 
 struct ClipMidiData {

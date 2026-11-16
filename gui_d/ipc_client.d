@@ -2,9 +2,10 @@ module gui_d.ipc_client;
 
 import core.stdc.string : memcpy;
 import dproto.proto : decodeProto, encodeProto;
-import pb.commands : MidiCmd, PluginCmd, ProjectCmd, Request, SendVirtualMidi,
+import pb.commands : AutomationCmd, MidiCmd, PluginCmd, ProjectCmd, Request, SendVirtualMidi,
                        SequencerCmd, TrackCmd, TransportCmd;
-import pb.core : Clip, EntityRef, MidiEvent, PbPlaybackMode = PlaybackMode, TrackType;
+import pb.core : Clip, EntityRef, MidiEvent, PbAutoPoint = AutomationPoint,
+                   PbPlaybackMode = PlaybackMode, TrackType;
 import pb.notifications : Notification;
 import std.process : Pipe, ProcessPipes, pipeProcess, Redirect, tryWait, wait;
 import std.stdio : stderr;
@@ -545,6 +546,144 @@ Request makeSequencerChannelNotesRequest(int patternIdx, int channelIdx, const(M
     return req;
 }
 
+Request makeTrackEqRequest(int trackIdx, float eqLow, float eqMid, float eqHigh) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_SET_EQ;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    cmd.eq_low = eqLow;
+    cmd.eq_mid = eqMid;
+    cmd.eq_high = eqHigh;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeTrackStereoSepRequest(int trackIdx, float stereoSep) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_SET_STEREO_SEP;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    cmd.value = stereoSep;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makePluginMixRequest(int trackIdx, int pluginIdx, float mix) @safe {
+    Request req;
+    PluginCmd cmd;
+    cmd.action = PluginCmd.Action.ACTION_SET_MIX;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.plugin_index.set(cast(uint)pluginIdx);
+    cmd.target = target;
+    cmd.param_value = mix;
+    req.plugin.set(cmd);
+    return req;
+}
+
+Request makeMoveTimelineClipRequest(int srcTrackIdx, int clipIdx, float newStartSec, int targetTrackIdx) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_MOVE_TIMELINE_CLIP;
+    EntityRef target;
+    target.track_index = srcTrackIdx;
+    target.timeline_clip.set(cast(uint)clipIdx);
+    cmd.target = target;
+    cmd.value = newStartSec;
+    cmd.target_track_index = targetTrackIdx;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeResizeTimelineClipRequest(int trackIdx, int clipIdx, float durBeats, float trimStartBeats = 0.0f) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_RESIZE_TIMELINE_CLIP;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.timeline_clip.set(cast(uint)clipIdx);
+    cmd.target = target;
+    Clip cd;
+    cd.duration_beats = durBeats;
+    cd.trim_start_beats = trimStartBeats;
+    cmd.clip_data = cd;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeSetClipMutedRequest(int trackIdx, int clipIdx, bool muted) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_SET_CLIP_MUTED;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.timeline_clip.set(cast(uint)clipIdx);
+    cmd.target = target;
+    cmd.flag = muted;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeCopyTimelineClipRequest(int srcTrackIdx, int clipIdx, float newStartSec, int targetTrackIdx, bool isAlias = false) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_COPY_TIMELINE_CLIP;
+    EntityRef target;
+    target.track_index = srcTrackIdx;
+    target.timeline_clip.set(cast(uint)clipIdx);
+    cmd.target = target;
+    cmd.value = newStartSec;
+    cmd.target_track_index = targetTrackIdx;
+    cmd.flag = isAlias;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeAutomationAddLaneRequest(int trackIdx, int pluginIdx = 0, uint paramId = 0) @safe {
+    Request req;
+    AutomationCmd cmd;
+    cmd.action = AutomationCmd.Action.ACTION_ADD_LANE;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.plugin_index.set(cast(uint)pluginIdx);
+    cmd.target = target;
+    cmd.param_id = paramId;
+    req.automation.set(cmd);
+    return req;
+}
+
+Request makeAutomationAddClipRequest(int trackIdx, int laneIdx, float startSec, float durBeats) @safe {
+    Request req;
+    AutomationCmd cmd;
+    cmd.action = AutomationCmd.Action.ACTION_ADD_CLIP;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.lane_index.set(cast(uint)laneIdx);
+    cmd.target = target;
+    cmd.start_time_sec = startSec;
+    cmd.duration_beats = durBeats;
+    req.automation.set(cmd);
+    return req;
+}
+
+Request makeAutomationUpdatePointsRequest(int trackIdx, int laneIdx, uint clipIdx, const(PbAutoPoint)[] pts) @safe {
+    Request req;
+    AutomationCmd cmd;
+    cmd.action = AutomationCmd.Action.ACTION_UPDATE_POINTS;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.lane_index.set(cast(uint)laneIdx);
+    cmd.target = target;
+    cmd.clip_index = clipIdx;
+    cmd.points = pts.dup;
+    req.automation.set(cmd);
+    return req;
+}
+
 /// Manages the `hbk-play` child process and its binary Protobuf IPC pipes.
 class EngineProcessClient {
     import core.atomic : atomicLoad, atomicStore;
@@ -760,4 +899,52 @@ unittest {
     Request modeDec;
     assert(decodeProto(encodeLengthPrefixedRequest(rMode)[4 .. $], modeDec));
     assert(modeDec.sequencer.hasValue && modeDec.sequencer.value.playback_mode == PbPlaybackMode.PLAYBACK_MODE_PAT);
+
+    // 6. Test Phase 3 Mixer EQ/Sep/Mix, Playlist Move/Resize/Mute/Copy, and Automation requests
+    auto rEq = makeTrackEqRequest(3, 0.2f, 0.5f, 0.9f);
+    Request eqDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rEq)[4 .. $], eqDec));
+    assert(eqDec.track.hasValue && eqDec.track.value.action == TrackCmd.Action.ACTION_SET_EQ);
+    assert(eqDec.track.value.target.track_index == 3 && eqDec.track.value.eq_high > 0.89f);
+
+    auto rSep = makeTrackStereoSepRequest(2, -0.75f);
+    Request sepDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rSep)[4 .. $], sepDec));
+    assert(sepDec.track.hasValue && sepDec.track.value.action == TrackCmd.Action.ACTION_SET_STEREO_SEP);
+    assert(sepDec.track.value.value < -0.74f);
+
+    auto rMix = makePluginMixRequest(1, 2, 0.45f);
+    Request mixDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rMix)[4 .. $], mixDec));
+    assert(mixDec.plugin.hasValue && mixDec.plugin.value.action == PluginCmd.Action.ACTION_SET_MIX);
+    assert(mixDec.plugin.value.target.plugin_index.value == 2 && mixDec.plugin.value.param_value < 0.46f);
+
+    auto rMove = makeMoveTimelineClipRequest(1, 0, 4.5f, 3);
+    Request moveDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rMove)[4 .. $], moveDec));
+    assert(moveDec.track.hasValue && moveDec.track.value.action == TrackCmd.Action.ACTION_MOVE_TIMELINE_CLIP);
+    assert(moveDec.track.value.target_track_index == 3 && moveDec.track.value.value == 4.5f);
+
+    auto rRes = makeResizeTimelineClipRequest(2, 1, 12.0f, 4.0f);
+    Request resDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rRes)[4 .. $], resDec));
+    assert(resDec.track.hasValue && resDec.track.value.clip_data.duration_beats == 12.0f);
+    assert(resDec.track.value.clip_data.trim_start_beats == 4.0f);
+
+    auto rMuteClip = makeSetClipMutedRequest(1, 0, true);
+    Request muteDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rMuteClip)[4 .. $], muteDec));
+    assert(muteDec.track.hasValue && muteDec.track.value.action == TrackCmd.Action.ACTION_SET_CLIP_MUTED);
+    assert(muteDec.track.value.flag);
+
+    auto rCopy = makeCopyTimelineClipRequest(1, 0, 8.0f, 2, false);
+    Request copyDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rCopy)[4 .. $], copyDec));
+    assert(copyDec.track.hasValue && copyDec.track.value.action == TrackCmd.Action.ACTION_COPY_TIMELINE_CLIP);
+
+    auto rAuto = makeAutomationUpdatePointsRequest(0, 0, 1, [PbAutoPoint(2.0, 0.8f, 0.0f)]);
+    Request autoDec;
+    assert(decodeProto(encodeLengthPrefixedRequest(rAuto)[4 .. $], autoDec));
+    assert(autoDec.automation.hasValue && autoDec.automation.value.clip_index == 1);
+    assert(autoDec.automation.value.points.length == 1);
 }

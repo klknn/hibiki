@@ -63,6 +63,8 @@ struct TrackCmd {
         ACTION_SET_OUTPUT_ROUTING = 23,
         ACTION_SET_AUX_SEND = 24,
         ACTION_SET_GROUP_PARENT = 25,
+        ACTION_SET_EQ = 26,
+        ACTION_SET_STEREO_SEP = 27,
     }
 
     @ProtoField(1) Action action = Action.ACTION_UNSPECIFIED;
@@ -81,6 +83,9 @@ struct TrackCmd {
     @ProtoField(14) int aux_track_index = 0;
     @ProtoField(15) float send_level = 0.0f;
     @ProtoField(16) bool pre_fader = false;
+    @ProtoField(18) float eq_low = 0.0f;
+    @ProtoField(19) float eq_mid = 0.0f;
+    @ProtoField(20) float eq_high = 0.0f;
 }
 
 struct PluginCmd {
@@ -98,6 +103,7 @@ struct PluginCmd {
         ACTION_SET_SIDECHAIN = 10,
         ACTION_SET_BYPASS = 11,
         ACTION_REORDER_PLUGIN = 12,
+        ACTION_SET_MIX = 13,
     }
 
     @ProtoField(1) Action action = Action.ACTION_UNSPECIFIED;

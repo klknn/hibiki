@@ -412,3 +412,275 @@ extern (C++) {
         }
     }
 }
+
+/// 3-band mixer EQ filter state layout: 3 bands x 2 channels x 4 state vars (x1, x2, y1, y2) = 24 doubles.
+enum EQ_NUM_BANDS = 3;
+enum EQ_STATE_DOUBLES = 24;
+
+private struct EqCoeffs {
+    double b0 = 1.0;
+    double b1 = 0.0;
+    double b2 = 0.0;
+    double a1 = 0.0;
+    double a2 = 0.0;
+}
+
+private EqCoeffs computeLowShelfCoeffs(double freqHz, double q, double gainDb, double sampleRate) @nogc nothrow {
+    import core.stdc.math : cos, pow, sin, sqrt;
+    EqCoeffs c;
+    if (sampleRate <= 0.0 || freqHz <= 0.0 || freqHz >= 0.49 * sampleRate) return c;
+    const double a = pow(10.0, gainDb / 40.0);
+    const double w0 = 2.0 * 3.14159265358979323846 * freqHz / sampleRate;
+    const double cosW0 = cos(w0);
+    const double sinW0 = sin(w0);
+    const double alpha = sinW0 / (2.0 * q);
+    const double twoSqrtAAlpha = 2.0 * sqrt(a) * alpha;
+
+    const double a0 = (a + 1.0) + (a - 1.0) * cosW0 + twoSqrtAAlpha;
+    if (fabs(a0) < 1e-18) return c;
+    c.b0 = (a * ((a + 1.0) - (a - 1.0) * cosW0 + twoSqrtAAlpha)) / a0;
+    c.b1 = (2.0 * a * ((a - 1.0) - (a + 1.0) * cosW0)) / a0;
+    c.b2 = (a * ((a + 1.0) - (a - 1.0) * cosW0 - twoSqrtAAlpha)) / a0;
+    c.a1 = (-2.0 * ((a - 1.0) + (a + 1.0) * cosW0)) / a0;
+    c.a2 = ((a + 1.0) + (a - 1.0) * cosW0 - twoSqrtAAlpha) / a0;
+    return c;
+}
+
+private EqCoeffs computeHighShelfCoeffs(double freqHz, double q, double gainDb, double sampleRate) @nogc nothrow {
+    import core.stdc.math : cos, pow, sin, sqrt;
+    EqCoeffs c;
+    if (sampleRate <= 0.0 || freqHz <= 0.0 || freqHz >= 0.49 * sampleRate) return c;
+    const double a = pow(10.0, gainDb / 40.0);
+    const double w0 = 2.0 * 3.14159265358979323846 * freqHz / sampleRate;
+    const double cosW0 = cos(w0);
+    const double sinW0 = sin(w0);
+    const double alpha = sinW0 / (2.0 * q);
+    const double twoSqrtAAlpha = 2.0 * sqrt(a) * alpha;
+
+    const double a0 = (a + 1.0) - (a - 1.0) * cosW0 + twoSqrtAAlpha;
+    if (fabs(a0) < 1e-18) return c;
+    c.b0 = (a * ((a + 1.0) + (a - 1.0) * cosW0 + twoSqrtAAlpha)) / a0;
+    c.b1 = (-2.0 * a * ((a - 1.0) + (a + 1.0) * cosW0)) / a0;
+    c.b2 = (a * ((a + 1.0) + (a - 1.0) * cosW0 - twoSqrtAAlpha)) / a0;
+    c.a1 = (2.0 * ((a - 1.0) - (a + 1.0) * cosW0)) / a0;
+    c.a2 = ((a + 1.0) - (a - 1.0) * cosW0 - twoSqrtAAlpha) / a0;
+    return c;
+}
+
+private EqCoeffs computeBellCoeffs(double freqHz, double q, double gainDb, double sampleRate) @nogc nothrow {
+    import core.stdc.math : cos, pow, sin;
+    EqCoeffs c;
+    if (sampleRate <= 0.0 || freqHz <= 0.0 || freqHz >= 0.49 * sampleRate) return c;
+    const double a = pow(10.0, gainDb / 40.0);
+    const double w0 = 2.0 * 3.14159265358979323846 * freqHz / sampleRate;
+    const double cosW0 = cos(w0);
+    const double sinW0 = sin(w0);
+    const double alpha = sinW0 / (2.0 * q);
+
+    const double a0 = 1.0 + alpha / a;
+    if (fabs(a0) < 1e-18) return c;
+    c.b0 = (1.0 + alpha * a) / a0;
+    c.b1 = (-2.0 * cosW0) / a0;
+    c.b2 = (1.0 - alpha * a) / a0;
+    c.a1 = (-2.0 * cosW0) / a0;
+    c.a2 = (1.0 - alpha / a) / a0;
+    return c;
+}
+
+private void runBiquadStereo(
+    ref const(EqCoeffs) c,
+    double[] bufL,
+    double[] bufR,
+    double* stL4,
+    double* stR4
+) @nogc nothrow {
+    double lx1 = stL4[0], lx2 = stL4[1], ly1 = stL4[2], ly2 = stL4[3];
+    double rx1 = stR4[0], rx2 = stR4[1], ry1 = stR4[2], ry2 = stR4[3];
+    foreach (i; 0 .. bufL.length) {
+        const double xl = bufL[i];
+        const double yl = c.b0 * xl + c.b1 * lx1 + c.b2 * lx2 - c.a1 * ly1 - c.a2 * ly2;
+        lx2 = lx1; lx1 = xl; ly2 = ly1; ly1 = fabs(yl) < 1e-24 ? 0.0 : yl;
+        bufL[i] = yl;
+
+        const double xr = bufR[i];
+        const double yr = c.b0 * xr + c.b1 * rx1 + c.b2 * rx2 - c.a1 * ry1 - c.a2 * ry2;
+        rx2 = rx1; rx1 = xr; ry2 = ry1; ry1 = fabs(yr) < 1e-24 ? 0.0 : yr;
+        bufR[i] = yr;
+    }
+    stL4[0] = lx1; stL4[1] = lx2; stL4[2] = ly1; stL4[3] = ly2;
+    stR4[0] = rx1; stR4[1] = rx2; stR4[2] = ry1; stR4[3] = ry2;
+}
+
+/// Applies 3-band mixer EQ (`[0..1]` centered at `0.5` -> `[-15..+15] dB`)
+/// with 120 Hz low shelf, 1 kHz peaking bell, and 6.5 kHz high shelf.
+void applyTrackEq(
+    double[] bufL,
+    double[] bufR,
+    double sampleRate,
+    float eqLow,
+    float eqMid,
+    float eqHigh,
+    double* eqState24
+) @nogc nothrow {
+    if (bufL.length == 0 || bufL.length != bufR.length || !eqState24) return;
+    if (sampleRate <= 0.0) return;
+
+    const float lowNorm = clampVal(eqLow, 0.0f, 1.0f);
+    const float midNorm = clampVal(eqMid, 0.0f, 1.0f);
+    const float highNorm = clampVal(eqHigh, 0.0f, 1.0f);
+
+    if (fabs(lowNorm - 0.5f) > 1e-4f) {
+        const double db = (lowNorm - 0.5) * 30.0;
+        const auto c = computeLowShelfCoeffs(120.0, 0.7071, db, sampleRate);
+        runBiquadStereo(c, bufL, bufR, eqState24 + 0, eqState24 + 4);
+    } else {
+        foreach (k; 0 .. 8) eqState24[k] = 0.0;
+    }
+    if (fabs(midNorm - 0.5f) > 1e-4f) {
+        const double db = (midNorm - 0.5) * 30.0;
+        const auto c = computeBellCoeffs(1000.0, 0.9, db, sampleRate);
+        runBiquadStereo(c, bufL, bufR, eqState24 + 8, eqState24 + 12);
+    } else {
+        foreach (k; 8 .. 16) eqState24[k] = 0.0;
+    }
+    if (fabs(highNorm - 0.5f) > 1e-4f) {
+        const double db = (highNorm - 0.5) * 30.0;
+        const auto c = computeHighShelfCoeffs(6500.0, 0.7071, db, sampleRate);
+        runBiquadStereo(c, bufL, bufR, eqState24 + 16, eqState24 + 20);
+    } else {
+        foreach (k; 16 .. 24) eqState24[k] = 0.0;
+    }
+}
+
+/// Applies M/S stereo separation (`-1.0` = mono merge, `0.0` = default, `+1.0` = widened stereo).
+void applyStereoSeparation(double[] bufL, double[] bufR, float stereoSep) @nogc nothrow {
+    if (bufL.length == 0 || bufL.length != bufR.length) return;
+    const float s = clampVal(stereoSep, -1.0f, 1.0f);
+    if (fabs(s) < 1e-5f) return;
+    const double sideScale = 1.0 + cast(double)s;
+    foreach (i; 0 .. bufL.length) {
+        const double mid = 0.5 * (bufL[i] + bufR[i]);
+        const double side = 0.5 * (bufL[i] - bufR[i]);
+        bufL[i] = mid + side * sideScale;
+        bufR[i] = mid - side * sideScale;
+    }
+}
+
+/// Blends `dry` into `wet` in-place on `wet` (`mix = 0.0` -> pure dry, `1.0` -> pure wet).
+void blendDryWet(
+    const(double)[] dryL,
+    const(double)[] dryR,
+    double[] wetL,
+    double[] wetR,
+    float mix
+) @nogc nothrow {
+    if (wetL.length == 0 || dryL.length != wetL.length || dryR.length != wetR.length ||
+        wetL.length != wetR.length) return;
+    const float m = clampVal(mix, 0.0f, 1.0f);
+    if (m >= 0.9999f) return;
+    if (m <= 0.0001f) {
+        foreach (i; 0 .. wetL.length) {
+            wetL[i] = dryL[i];
+            wetR[i] = dryR[i];
+        }
+        return;
+    }
+    const double wetGain = cast(double)m;
+    const double dryGain = 1.0 - wetGain;
+    foreach (i; 0 .. wetL.length) {
+        wetL[i] = dryL[i] * dryGain + wetL[i] * wetGain;
+        wetR[i] = dryR[i] * dryGain + wetR[i] * wetGain;
+    }
+}
+
+extern (C) {
+    void d_apply_track_eq_and_stereo_sep(
+        double* bufL,
+        double* bufR,
+        int blockSize,
+        double sampleRate,
+        float eqLow,
+        float eqMid,
+        float eqHigh,
+        float stereoSep,
+        double* eqState24
+    ) @nogc nothrow {
+        if (!bufL || !bufR || blockSize <= 0) return;
+        applyTrackEq(bufL[0 .. blockSize], bufR[0 .. blockSize], sampleRate,
+                     eqLow, eqMid, eqHigh, eqState24);
+        applyStereoSeparation(bufL[0 .. blockSize], bufR[0 .. blockSize], stereoSep);
+    }
+
+    void d_apply_track_eq_and_stereo_sep_f32(
+        float* bufL,
+        float* bufR,
+        int blockSize,
+        double sampleRate,
+        float eqLow,
+        float eqMid,
+        float eqHigh,
+        float stereoSep,
+        double* eqState24
+    ) @nogc nothrow {
+        if (!bufL || !bufR || blockSize <= 0) return;
+        // Stack-scratch in chunks of up to 512 to avoid any heap allocation.
+        double[512] tmpL = void;
+        double[512] tmpR = void;
+        int offset = 0;
+        while (offset < blockSize) {
+            int n = blockSize - offset;
+            if (n > 512) n = 512;
+            foreach (i; 0 .. n) {
+                tmpL[i] = bufL[offset + i];
+                tmpR[i] = bufR[offset + i];
+            }
+            applyTrackEq(tmpL[0 .. n], tmpR[0 .. n], sampleRate,
+                         eqLow, eqMid, eqHigh, eqState24);
+            applyStereoSeparation(tmpL[0 .. n], tmpR[0 .. n], stereoSep);
+            foreach (i; 0 .. n) {
+                bufL[offset + i] = cast(float)tmpL[i];
+                bufR[offset + i] = cast(float)tmpR[i];
+            }
+            offset += n;
+        }
+    }
+
+    void d_blend_dry_wet(
+        const(double)* dryL,
+        const(double)* dryR,
+        double* wetL,
+        double* wetR,
+        int blockSize,
+        float mix
+    ) @nogc nothrow {
+        if (!dryL || !dryR || !wetL || !wetR || blockSize <= 0) return;
+        blendDryWet(dryL[0 .. blockSize], dryR[0 .. blockSize],
+                    wetL[0 .. blockSize], wetR[0 .. blockSize], mix);
+    }
+
+    void d_blend_dry_wet_f32(
+        const(float)* dryL,
+        const(float)* dryR,
+        float* wetL,
+        float* wetR,
+        int blockSize,
+        float mix
+    ) @nogc nothrow {
+        if (!dryL || !dryR || !wetL || !wetR || blockSize <= 0) return;
+        const float m = clampVal(mix, 0.0f, 1.0f);
+        if (m >= 0.9999f) return;
+        if (m <= 0.0001f) {
+            foreach (i; 0 .. blockSize) {
+                wetL[i] = dryL[i];
+                wetR[i] = dryR[i];
+            }
+            return;
+        }
+        const float dryGain = 1.0f - m;
+        foreach (i; 0 .. blockSize) {
+            wetL[i] = dryL[i] * dryGain + wetL[i] * m;
+            wetR[i] = dryR[i] * dryGain + wetR[i] * m;
+        }
+    }
+}
+

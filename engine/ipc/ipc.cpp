@@ -134,7 +134,8 @@ void sendAck(const char* cmd_type, bool success) {
 
 void sendParamList(int track_idx, int plugin_idx,
                    const std::string& plugin_name, bool is_instrument,
-                   const std::vector<VstParamInfo>& params, bool bypassed) {
+                   const std::vector<VstParamInfo>& params, bool bypassed,
+                   float mix) {
   hibiki::pb::notifications::Notification notification;
   auto* list = notification.mutable_param_list();
   list->set_track_index(track_idx);
@@ -142,6 +143,7 @@ void sendParamList(int track_idx, int plugin_idx,
   list->set_plugin_name(plugin_name);
   list->set_is_instrument(is_instrument);
   list->set_bypassed(bypassed);
+  list->set_mix(mix);
   for (const auto& p : params) {
     auto* pi = list->add_params();
     pi->set_id(p.id);
@@ -277,7 +279,7 @@ void sendTrackInfoFull(
     int output_track_index,
     const std::vector<std::tuple<int, float, bool>>& aux_sends,
     int group_parent_index, float volume, float pan, bool has_pan, bool muted,
-    bool soloed) {
+    bool soloed, float eq_low, float eq_mid, float eq_high, float stereo_sep) {
   hibiki::pb::notifications::Notification notification;
   auto* ti = notification.mutable_track_info();
   ti->set_track_index(track_idx);
@@ -289,6 +291,10 @@ void sendTrackInfoFull(
   if (has_pan) ti->set_pan(pan);
   ti->set_muted(muted);
   ti->set_soloed(soloed);
+  ti->set_eq_low(eq_low);
+  ti->set_eq_mid(eq_mid);
+  ti->set_eq_high(eq_high);
+  ti->set_stereo_sep(stereo_sep);
   for (const auto& [aux_idx, level, pre] : aux_sends) {
     auto* as = ti->add_aux_sends();
     as->set_aux_track_index(aux_idx);

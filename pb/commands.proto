@@ -70,6 +70,8 @@ message TrackCmd {
     ACTION_SET_OUTPUT_ROUTING = 23;  // Set output routing to group or master
     ACTION_SET_AUX_SEND = 24;        // Set aux send level
     ACTION_SET_GROUP_PARENT = 25;    // Set/clear group parent
+    ACTION_SET_EQ = 26;          // Set 3-band mixer EQ (low/mid/high in [0, 1])
+    ACTION_SET_STEREO_SEP = 27;  // Set stereo separation [-1, 1]
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -88,6 +90,9 @@ message TrackCmd {
   float send_level = 15;          // Aux send level [0.0, 1.0]
   bool pre_fader = 16;            // Pre-fader send flag
   // 17 reserved (was new_track_index for ACTION_REORDER_TRACK)
+  float eq_low = 18;
+  float eq_mid = 19;
+  float eq_high = 20;
 }
 
 message PluginCmd {
@@ -105,6 +110,7 @@ message PluginCmd {
     ACTION_SET_SIDECHAIN = 10;   // Set/clear sidechain source track
     ACTION_SET_BYPASS = 11;      // Enable/disable (bypass) a plugin
     ACTION_REORDER_PLUGIN = 12;  // Reorder plugin in signal chain
+    ACTION_SET_MIX = 13;         // Set wet/dry mix [0, 1] for an FX slot
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;

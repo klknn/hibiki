@@ -206,6 +206,34 @@ std::unique_ptr<IPlugin> Track::RemovePlugin(size_t pidx) {
   plugins[pidx]->stopEditor();
   auto removed = std::move(plugins[pidx]);
   plugins.erase(plugins.begin() + pidx);
+
+  const int ipidx = static_cast<int>(pidx);
+  std::map<int, bool> new_bypass;
+  for (auto& [idx, val] : plugin_bypass) {
+    if (idx < ipidx)
+      new_bypass[idx] = val;
+    else if (idx > ipidx)
+      new_bypass[idx - 1] = val;
+  }
+  plugin_bypass = std::move(new_bypass);
+
+  std::map<int, float> new_mix;
+  for (auto& [idx, val] : plugin_mix) {
+    if (idx < ipidx)
+      new_mix[idx] = val;
+    else if (idx > ipidx)
+      new_mix[idx - 1] = val;
+  }
+  plugin_mix = std::move(new_mix);
+
+  std::map<int, SidechainRoute> new_sc;
+  for (auto& [idx, val] : plugin_sidechain) {
+    if (idx < ipidx)
+      new_sc[idx] = val;
+    else if (idx > ipidx)
+      new_sc[idx - 1] = val;
+  }
+  plugin_sidechain = std::move(new_sc);
   return removed;
 }
 
@@ -221,7 +249,7 @@ void Track::ReorderPlugin(int from_index, int to_index) {
   plugins.erase(plugins.begin() + from_index);
   plugins.insert(plugins.begin() + to_index, std::move(plugin));
 
-  // Remap index-keyed maps (plugin_bypass, plugin_sidechain)
+  // Remap index-keyed maps (plugin_bypass, plugin_mix, plugin_sidechain)
   // Build a mapping: old_index -> new_index
   auto remap = [&](int old_idx) -> int {
     if (old_idx == from_index) return to_index;
@@ -238,6 +266,10 @@ void Track::ReorderPlugin(int from_index, int to_index) {
   std::map<int, bool> new_bypass;
   for (auto& [idx, val] : plugin_bypass) new_bypass[remap(idx)] = val;
   plugin_bypass = std::move(new_bypass);
+
+  std::map<int, float> new_mix;
+  for (auto& [idx, val] : plugin_mix) new_mix[remap(idx)] = val;
+  plugin_mix = std::move(new_mix);
 
   std::map<int, SidechainRoute> new_sidechain;
   for (auto& [idx, val] : plugin_sidechain) new_sidechain[remap(idx)] = val;

@@ -17,8 +17,12 @@ namespace hibiki {
 void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
                    HistoryManager& history) {
   int tidx = cmd.target().track_index();
-  int sidx = cmd.target().session_slot();
-  int cidx = cmd.target().timeline_clip();
+  int sidx = cmd.target().has_session_slot()
+                 ? static_cast<int>(cmd.target().session_slot())
+                 : -1;
+  int cidx = cmd.target().has_timeline_clip()
+                 ? static_cast<int>(cmd.target().timeline_clip())
+                 : -1;
   switch (cmd.action()) {
     case pb::commands::MidiCmd::ACTION_GET: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);

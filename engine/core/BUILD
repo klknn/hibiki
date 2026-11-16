@@ -182,6 +182,7 @@ cc_library(
         ":audio_file",
         ":status",
         ":track",
+        "//engine:playback_mixer_d",
         "//engine/ipc",
         "//engine/plugin:iplugin",
         "//pb:core_cc_proto",

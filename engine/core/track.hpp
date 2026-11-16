@@ -158,6 +158,11 @@ class Track {
   };
   std::map<int, SidechainRoute> plugin_sidechain;  // key = plugin_index
   std::map<int, bool> plugin_bypass;  // key = plugin_index, true = bypassed
+  std::map<int, float> plugin_mix;  // key = plugin_index, default = 1.0f (wet)
+  float GetPluginMix(int pidx) const {
+    auto it = plugin_mix.find(pidx);
+    return (it != plugin_mix.end()) ? it->second : 1.0f;
+  }
 
   // Track routing
   TrackType track_type = TrackType::NORMAL;
@@ -177,6 +182,11 @@ class Track {
   float pan = 0.0f;  // -1.0 (full left) to 1.0 (full right), 0.0 = center
   bool muted = false;
   bool soloed = false;
+  float eq_low = 0.5f;      // [0..1] 0.5 = 0 dB flat
+  float eq_mid = 0.5f;      // [0..1] 0.5 = 0 dB flat
+  float eq_high = 0.5f;     // [0..1] 0.5 = 0 dB flat
+  float stereo_sep = 0.0f;  // [-1..1] -1 = mono, 0 = default, +1 = wide
+  double eq_filter_state[24] = {0.0};
 
   // Recording state
   enum class RecordMode { RECORD_AUDIO = 0, RECORD_MIDI = 1 };

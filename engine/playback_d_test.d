@@ -1,6 +1,6 @@
 module engine.playback_d_test;
 
-import core.math : fabs;
+import core.math : fabs, sin;
 import engine.playback_mixer;
 
 @nogc nothrow unittest {
@@ -129,4 +129,65 @@ import engine.playback_mixer;
     d_float_to_double_stereo(tmpFltL.ptr, tmpFltR.ptr, dstDblL.ptr, dstDblR.ptr, 2);
     assert(fabs(dstDblL[0] - 0.25) < 1e-6 && fabs(dstDblL[1] + 0.75) < 1e-6);
     assert(fabs(dstDblR[0] + 0.5) < 1e-6 && fabs(dstDblR[1] - 0.5) < 1e-6);
+
+    // 13. Test applyTrackEq (0.5 flat passthrough, 1.0 low-shelf boost on 50Hz, 0.0 cut, bell/high boost)
+    enum double TWO_PI = 6.28318530717958647692;
+    double[24] eqState = 0.0;
+    double[512] flatL = void;
+    double[512] flatR = void;
+    foreach (i; 0 .. 512) {
+        double v = 0.25 * sin(TWO_PI * 50.0 * i / 44100.0);
+        flatL[i] = v;
+        flatR[i] = v;
+    }
+    applyTrackEq(flatL[], flatR[], 44100.0, 0.5f, 0.5f, 0.5f, eqState.ptr);
+    assert(fabs(flatL[100] - 0.25 * sin(TWO_PI * 50.0 * 100 / 44100.0)) < 1e-9);
+
+    eqState[] = 0.0;
+    double[512] lowBoostL = void;
+    double[512] lowBoostR = void;
+    double[512] lowCutL = void;
+    double[512] lowCutR = void;
+    foreach (i; 0 .. 512) {
+        double v = 0.25 * sin(TWO_PI * 50.0 * i / 44100.0);
+        lowBoostL[i] = v;
+        lowBoostR[i] = v;
+        lowCutL[i] = v;
+        lowCutR[i] = v;
+    }
+    applyTrackEq(lowBoostL[], lowBoostR[], 44100.0, 1.0f, 0.5f, 0.5f, eqState.ptr);
+    double[24] eqStateCut = 0.0;
+    applyTrackEq(lowCutL[], lowCutR[], 44100.0, 0.0f, 0.5f, 0.5f, eqStateCut.ptr);
+    double rmsBoost = 0.0;
+    double rmsCut = 0.0;
+    foreach (i; 256 .. 512) {
+        rmsBoost += lowBoostL[i] * lowBoostL[i];
+        rmsCut += lowCutL[i] * lowCutL[i];
+    }
+    assert(rmsBoost > rmsCut * 4.0);
+
+    // 14. Test applyStereoSeparation (-1.0 mono merge, 0.0 passthrough, +1.0 wide)
+    double[2] sepL = [1.0, 0.8];
+    double[2] sepR = [-1.0, 0.0];
+    applyStereoSeparation(sepL[], sepR[], 0.0f);
+    assert(fabs(sepL[0] - 1.0) < 1e-9 && fabs(sepR[0] + 1.0) < 1e-9);
+    applyStereoSeparation(sepL[], sepR[], -1.0f);
+    assert(fabs(sepL[0] - sepR[0]) < 1e-9 && fabs(sepL[1] - sepR[1]) < 1e-9);
+    assert(fabs(sepL[1] - 0.4) < 1e-9);
+
+    double[2] wideL = [0.6, 0.6];
+    double[2] wideR = [0.2, 0.2];
+    applyStereoSeparation(wideL[], wideR[], 1.0f);
+    // Mid=0.4, Side=0.2; scaled by (1 + 1.0)=2 -> Mid +/- 2*Side => 0.8 and 0.0
+    assert(fabs(wideL[0] - 0.8) < 1e-9 && fabs(wideR[0] - 0.0) < 1e-9);
+
+    // 15. Test blendDryWet (0.0 dry, 0.5 midpoint, 1.0 wet)
+    double[2] dryL = [1.0, 0.0];
+    double[2] dryR = [0.5, -0.5];
+    double[2] wetL = [0.0, 1.0];
+    double[2] wetR = [-0.5, 0.5];
+    blendDryWet(dryL[], dryR[], wetL[], wetR[], 0.5f);
+    assert(fabs(wetL[0] - 0.5) < 1e-9 && fabs(wetR[1] - 0.0) < 1e-9);
+    blendDryWet(dryL[], dryR[], wetL[], wetR[], 0.0f);
+    assert(fabs(wetL[0] - 1.0) < 1e-9 && fabs(wetR[0] - 0.5) < 1e-9);
 }

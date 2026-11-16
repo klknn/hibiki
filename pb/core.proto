@@ -184,6 +184,11 @@ message Track {
   bool muted = 20;
   bool soloed = 21;
   repeated int32 bypassed_plugins = 22;
+  optional float eq_low = 23;
+  optional float eq_mid = 24;
+  optional float eq_high = 25;
+  optional float stereo_sep = 26;
+  repeated float plugin_mix = 27;
 }
 
 // Transport state enum. Prefer enum over bool `is_playing`

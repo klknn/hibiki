@@ -471,10 +471,15 @@ private void drawPlaylistClip(
 class TimelineCanvasWidget : Widget {
     private TransportModel* model_;
 
-    private enum DragMode { NONE, PLAYHEAD, MOVE_CLIP, RESIZE_CLIP }
+    private enum DragMode { NONE, PLAYHEAD, MOVE_CLIP, RESIZE_CLIP, AUTO_POINT }
     private DragMode dragMode_ = DragMode.NONE;
     private int dragTrackArrIdx_ = -1;
     private int dragClipArrIdx_ = -1;
+    private int dragOrigTrackIdx_ = -1;
+    private int dragOrigClipIdx_ = -1;
+    private int dragAutoPtIdx_ = -1;
+    private bool dragIsCopy_ = false;
+    private double dragStartSec_ = 0.0;
     private double dragOffsetSec_ = 0.0;
 
     double pixelsPerSec = 52.0;
@@ -484,6 +489,15 @@ class TimelineCanvasWidget : Widget {
     void delegate(int trackIdx, int clipIdx) onSelectTrackClip;
     void delegate(int trackIdx, double startSec) onPaintClip;
     void delegate(int trackIdx, int clipIdx) onDeleteClip;
+    void delegate(int srcTrackIdx, int clipIdx, double newStartSec, int targetTrackIdx) onMoveClip;
+    void delegate(int trackIdx, int clipIdx, double newDurationSec) onResizeClip;
+    void delegate(int trackIdx, int clipIdx, bool muted) onMuteClip;
+    void delegate(int trackIdx, int origClipIdx, double splitSec, int newRightClipIdx, double rightDurSec) onSliceClip;
+    void delegate(int srcTrackIdx, int srcClipIdx, double newStartSec, int targetTrackIdx) onCopyClip;
+    void delegate(int trackIdx, int clipIdx, int patternIdx, PlaylistClipKind kind) onDoubleClickClip;
+    void delegate(int trackIdx, bool muted) onTrackMuteToggle;
+    void delegate(int trackIdx, bool soloed) onTrackSoloToggle;
+    void delegate(int trackIdx, int clipIdx, const(AutomationPoint)[] pts) onAutomationPointsChanged;
 
     this(string id, TransportModel* model) {
         super(id);
@@ -621,13 +635,18 @@ class TimelineCanvasWidget : Widget {
                 const int tIdx = cast(int)laneTracks[laneIdx];
                 auto trk = &model_.tracks[tIdx];
 
-                // Track header mute LED
+                // Track header mute/solo LED
                 if (event.x < arrRc.left) {
                     Rect mLed = Rect(arrRc.left - dp(22), lanesTop + laneIdx * m.laneH + dp(6),
                                      arrRc.left - dp(6), lanesTop + laneIdx * m.laneH + dp(22));
                     if (mLed.isPointInside(event.x, event.y)) {
-                        if (event.button == MouseButton.Right) trk.soloed = !trk.soloed;
-                        else trk.muted = !trk.muted;
+                        if (event.button == MouseButton.Right) {
+                            trk.soloed = !trk.soloed;
+                            if (onTrackSoloToggle !is null) onTrackSoloToggle(trk.index, trk.soloed);
+                        } else {
+                            trk.muted = !trk.muted;
+                            if (onTrackMuteToggle !is null) onTrackMuteToggle(trk.index, trk.muted);
+                        }
                     } else {
                         model_.selectedTrack = trk.index;
                     }
@@ -667,6 +686,7 @@ class TimelineCanvasWidget : Widget {
                     auto clip = &trk.clips[hitArrIdx];
                     if (model_.playlistTool == EditorTool.MUTE) {
                         clip.muted = !clip.muted;
+                        if (onMuteClip !is null) onMuteClip(trk.index, clip.clipIndex, clip.muted);
                         invalidate();
                         return true;
                     }
@@ -674,6 +694,7 @@ class TimelineCanvasWidget : Widget {
                         const double splitSec = snapSec(clickSec);
                         if (splitSec > clip.startTimeSec + 0.1 &&
                             splitSec < clip.startTimeSec + clip.durationSec - 0.1) {
+                            const int origClipIdx = clip.clipIndex;
                             TimelineClipState rightHalf = *clip;
                             rightHalf.clipIndex = model_.nextClipIndex(*trk);
                             rightHalf.startTimeSec = splitSec;
@@ -681,13 +702,80 @@ class TimelineCanvasWidget : Widget {
                             clip.durationSec = splitSec - clip.startTimeSec;
                             trk.clips ~= rightHalf;
                             model_.hintText = "Sliced clip cleanly";
+                            if (onSliceClip !is null) {
+                                onSliceClip(trk.index, origClipIdx, splitSec, rightHalf.clipIndex, rightHalf.durationSec);
+                            }
                             invalidate();
                         }
                         return true;
                     }
+
+                    // Double-click opens Pattern in Channel Rack/Piano Roll or queries MIDI clip notes
+                    if (event.doubleClick && event.button == MouseButton.Left) {
+                        model_.selectedTrack = trk.index;
+                        model_.selectedClipIndex = clip.clipIndex;
+                        if (onDoubleClickClip !is null) {
+                            onDoubleClickClip(trk.index, clip.clipIndex, clip.patternIndex, clip.kind);
+                        }
+                        invalidate();
+                        return true;
+                    }
+
+                    // Automation point hit/add inside automation clip body (below 14dp clip header)
+                    const int laneTopY = lanesTop + laneIdx * m.laneH + dp(2);
+                    const int laneBotY = lanesTop + (laneIdx + 1) * m.laneH - dp(2);
+                    if (clip.kind == PlaylistClipKind.AUTOMATION && event.y > laneTopY + dp(14) &&
+                        event.x < secToPixelX(clip.startTimeSec + clip.durationSec, effPxPerSec, arrRc.left, scrollSec) - dp(8)) {
+                        const double nt = clip.durationSec > 0.0
+                            ? (clickSec - clip.startTimeSec) / clip.durationSec : 0.0;
+                        float nv = 1.0f - cast(float)(event.y - (laneTopY + dp(14))) /
+                                          cast(float)((laneBotY - (laneTopY + dp(14))) > dp(4) ? (laneBotY - (laneTopY + dp(14))) : dp(4));
+                        if (nv < 0.0f) nv = 0.0f;
+                        if (nv > 1.0f) nv = 1.0f;
+                        int ptHit = -1;
+                        double bestDist = 0.04;
+                        foreach (pi, const ref pt; clip.autoPoints) {
+                            const double d = pt.normTime > nt ? (pt.normTime - nt) : (nt - pt.normTime);
+                            if (d < bestDist) {
+                                bestDist = d;
+                                ptHit = cast(int)pi;
+                            }
+                        }
+                        if (ptHit < 0) {
+                            clip.autoPoints ~= AutomationPoint(nt, nv);
+                            import std.algorithm : sort;
+                            clip.autoPoints.sort!((a, b) => a.normTime < b.normTime);
+                            foreach (pi, const ref pt; clip.autoPoints) {
+                                if (pt.normTime == nt) { ptHit = cast(int)pi; break; }
+                            }
+                        } else {
+                            clip.autoPoints[ptHit].value = nv;
+                        }
+                        dragMode_ = DragMode.AUTO_POINT;
+                        dragTrackArrIdx_ = tIdx;
+                        dragClipArrIdx_ = hitArrIdx;
+                        dragOrigTrackIdx_ = trk.index;
+                        dragOrigClipIdx_ = clip.clipIndex;
+                        dragAutoPtIdx_ = ptHit;
+                        invalidate();
+                        return true;
+                    }
+
+                    // Shift+Drag clones the clip before moving it cleanly
+                    dragIsCopy_ = (event.flags & (MouseFlag.Shift | MouseFlag.Alt)) != 0;
+                    const int origTrackIdx = trk.index;
+                    const int origClipIdx = clip.clipIndex;
+                    if (dragIsCopy_) {
+                        TimelineClipState cloned = *clip;
+                        cloned.clipIndex = model_.nextClipIndex(*trk);
+                        trk.clips ~= cloned;
+                        hitArrIdx = cast(int)trk.clips.length - 1;
+                        clip = &trk.clips[hitArrIdx];
+                    }
+
                     // Check right-edge resize (within dp(8) of clip right edge)
                     const int cx1 = secToPixelX(clip.startTimeSec + clip.durationSec, effPxPerSec, arrRc.left, scrollSec);
-                    if (event.x >= cx1 - dp(8)) {
+                    if (!dragIsCopy_ && event.x >= cx1 - dp(8)) {
                         dragMode_ = DragMode.RESIZE_CLIP;
                     } else {
                         dragMode_ = DragMode.MOVE_CLIP;
@@ -695,6 +783,9 @@ class TimelineCanvasWidget : Widget {
                     }
                     dragTrackArrIdx_ = tIdx;
                     dragClipArrIdx_ = hitArrIdx;
+                    dragOrigTrackIdx_ = origTrackIdx;
+                    dragOrigClipIdx_ = origClipIdx;
+                    dragStartSec_ = clip.startTimeSec;
                     model_.selectedTrack = trk.index;
                     model_.selectedClipIndex = clip.clipIndex;
                     if (onSelectTrackClip !is null) onSelectTrackClip(trk.index, clip.clipIndex);
@@ -740,11 +831,51 @@ class TimelineCanvasWidget : Widget {
                 auto clip = &model_.tracks[dragTrackArrIdx_].clips[dragClipArrIdx_];
                 if (dragMode_ == DragMode.MOVE_CLIP) {
                     clip.startTimeSec = snapSec(curSec - dragOffsetSec_);
+                    // Support vertical cross-track drag
+                    size_t[] laneTracks;
+                    foreach (idx, ref t; model_.tracks) {
+                        if (t.index != 0) laneTracks ~= idx;
+                    }
+                    int hoverLane = (event.y - lanesTop) / m.laneH;
+                    if (hoverLane >= 0 && hoverLane < cast(int)laneTracks.length) {
+                        const int destArrIdx = cast(int)laneTracks[hoverLane];
+                        if (destArrIdx != dragTrackArrIdx_) {
+                            TimelineClipState moved = *clip;
+                            auto srcClips = model_.tracks[dragTrackArrIdx_].clips;
+                            model_.tracks[dragTrackArrIdx_].clips =
+                                srcClips[0 .. dragClipArrIdx_] ~ srcClips[dragClipArrIdx_ + 1 .. $];
+                            moved.clipIndex = model_.nextClipIndex(model_.tracks[destArrIdx]);
+                            model_.tracks[destArrIdx].clips ~= moved;
+                            dragTrackArrIdx_ = destArrIdx;
+                            dragClipArrIdx_ = cast(int)model_.tracks[destArrIdx].clips.length - 1;
+                        }
+                    }
                 } else if (dragMode_ == DragMode.RESIZE_CLIP) {
                     const double minDur = beatDurationSec(model_.bpm) * 0.5;
                     double newDur = snapSec(curSec) - clip.startTimeSec;
                     if (newDur < minDur) newDur = minDur;
                     clip.durationSec = newDur;
+                } else if (dragMode_ == DragMode.AUTO_POINT &&
+                           dragAutoPtIdx_ >= 0 && dragAutoPtIdx_ < cast(int)clip.autoPoints.length) {
+                    size_t[] laneTracks;
+                    foreach (idx, ref t; model_.tracks) {
+                        if (t.index != 0) laneTracks ~= idx;
+                    }
+                    int laneIdx = 0;
+                    foreach (li, arrIdx; laneTracks) {
+                        if (cast(int)arrIdx == dragTrackArrIdx_) { laneIdx = cast(int)li; break; }
+                    }
+                    const int laneTopY = lanesTop + laneIdx * m.laneH + dp(16);
+                    const int laneBotY = lanesTop + (laneIdx + 1) * m.laneH - dp(2);
+                    float nv = 1.0f - cast(float)(event.y - laneTopY) /
+                                      cast(float)((laneBotY - laneTopY) > dp(4) ? (laneBotY - laneTopY) : dp(4));
+                    if (nv < 0.0f) nv = 0.0f;
+                    if (nv > 1.0f) nv = 1.0f;
+                    double nt = clip.durationSec > 0.0 ? (curSec - clip.startTimeSec) / clip.durationSec : 0.0;
+                    if (nt < 0.0) nt = 0.0;
+                    if (nt > 1.0) nt = 1.0;
+                    clip.autoPoints[dragAutoPtIdx_].normTime = nt;
+                    clip.autoPoints[dragAutoPtIdx_].value = nv;
                 }
                 invalidate();
             }
@@ -753,9 +884,36 @@ class TimelineCanvasWidget : Widget {
 
         if ((event.action == MouseAction.ButtonUp || event.action == MouseAction.Cancel) &&
             dragMode_ != DragMode.NONE) {
+            if (event.action == MouseAction.ButtonUp &&
+                dragTrackArrIdx_ >= 0 && dragTrackArrIdx_ < cast(int)model_.tracks.length &&
+                dragClipArrIdx_ >= 0 && dragClipArrIdx_ < cast(int)model_.tracks[dragTrackArrIdx_].clips.length) {
+                const auto destTrack = &model_.tracks[dragTrackArrIdx_];
+                const auto finClip = &destTrack.clips[dragClipArrIdx_];
+                if (dragMode_ == DragMode.MOVE_CLIP) {
+                    if (dragIsCopy_) {
+                        if (onCopyClip !is null) {
+                            onCopyClip(dragOrigTrackIdx_, dragOrigClipIdx_, finClip.startTimeSec, destTrack.index);
+                        }
+                    } else if (onMoveClip !is null) {
+                        onMoveClip(dragOrigTrackIdx_, dragOrigClipIdx_, finClip.startTimeSec, destTrack.index);
+                    }
+                } else if (dragMode_ == DragMode.RESIZE_CLIP) {
+                    if (onResizeClip !is null) {
+                        onResizeClip(destTrack.index, finClip.clipIndex, finClip.durationSec);
+                    }
+                } else if (dragMode_ == DragMode.AUTO_POINT) {
+                    if (onAutomationPointsChanged !is null) {
+                        onAutomationPointsChanged(destTrack.index, finClip.clipIndex, finClip.autoPoints);
+                    }
+                }
+            }
             dragMode_ = DragMode.NONE;
             dragTrackArrIdx_ = -1;
             dragClipArrIdx_ = -1;
+            dragOrigTrackIdx_ = -1;
+            dragOrigClipIdx_ = -1;
+            dragAutoPtIdx_ = -1;
+            dragIsCopy_ = false;
             return true;
         }
 
@@ -841,4 +999,34 @@ unittest {
     model.playlistTool = EditorTool.ZOOM;
     tl.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)sliceX, cast(short)lane0Y));
     assert(tl.pixelsPerSec > prevZoom, "Expected EditorTool.ZOOM click to zoom in");
+
+    // Phase 3: Track M/S, Clip MUTE, Double-click, and Move fire backend callbacks
+    int muteTrk = -1;
+    bool muteState = false;
+    tl.onTrackMuteToggle = (int t, bool m) { muteTrk = t; muteState = m; };
+    tl.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
+                                   cast(short)(PICKER_W + HEADER_W - 22), cast(short)(TOOLBAR_H + RULER_H + 14)));
+    assert(muteTrk == 3 && muteState, "Expected Track M button click to fire onTrackMuteToggle");
+
+    int dblTrk = -1;
+    int dblClip = -1;
+    tl.onDoubleClickClip = (int t, int c, int p, PlaylistClipKind k) { dblTrk = t; dblClip = c; };
+    model.playlistTool = EditorTool.DRAW;
+    const short dcX = cast(short)(PICKER_W + HEADER_W + 10);
+    const short dcY = cast(short)lane0Y;
+    auto dblEv = new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, dcX, dcY);
+    dblEv.lbutton.down(dcX, dcY, MouseFlag.LButton);
+    dblEv.lbutton.up(dcX, dcY, 0);
+    dblEv.lbutton.down(dcX, dcY, MouseFlag.LButton);
+    assert(dblEv.doubleClick);
+    tl.onMouseEvent(dblEv);
+    assert(dblTrk == 3 && dblClip == 0, "Expected double-click on clip to fire onDoubleClickClip");
+
+    int mutedClipIdx = -1;
+    bool clipMuted = false;
+    tl.onMuteClip = (int t, int c, bool m) { mutedClipIdx = c; clipMuted = m; };
+    model.playlistTool = EditorTool.MUTE;
+    tl.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
+                                   cast(short)(PICKER_W + HEADER_W + 10), cast(short)lane0Y));
+    assert(mutedClipIdx == 0 && clipMuted, "Expected MUTE tool click to toggle clip muted and fire onMuteClip");
 }

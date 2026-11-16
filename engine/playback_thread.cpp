@@ -69,6 +69,14 @@ extern void d_render_session_audio_clip_block(const float* audioData,
 extern void d_compute_waveform_summary(const float* recordBuffer,
                                        int totalSamples, int numChannels,
                                        float* outSummary, int summarySize);
+extern "C" {
+void d_apply_track_eq_and_stereo_sep(double* bufL, double* bufR, int blockSize,
+                                     double sampleRate, float eqLow,
+                                     float eqMid, float eqHigh, float stereoSep,
+                                     double* eqState24);
+void d_blend_dry_wet(const double* dryL, const double* dryR, double* wetL,
+                     double* wetR, int blockSize, float mix);
+}
 
 namespace hibiki {
 
@@ -374,6 +382,8 @@ void playback_thread(ProjectState& state) {
   // Double-precision mixing buffers for accumulation
   alignas(32) double bufferL[512];
   alignas(32) double bufferR[512];
+  alignas(32) double dryBufL[512];
+  alignas(32) double dryBufR[512];
   // Float shim buffers for plugin I/O (plugins use float**)
   alignas(32) float plugBufL[512];
   alignas(32) float plugBufR[512];
@@ -794,10 +804,17 @@ void playback_thread(ProjectState& state) {
           }
         }
 
-        // 4. Process effects (skip instrument at slot 0)
+        // 4. Process effects (skip instrument at slot 0) with per-slot wet/dry
+        // mix
         for (size_t i = 0; i < track->plugins.size(); ++i) {
           if (i == 0 && track->plugins[i]->isInstrument()) continue;
           if (track->plugin_bypass.count((int)i)) continue;
+          const float mix = track->GetPluginMix(static_cast<int>(i));
+          if (mix <= 0.0001f) continue;
+          if (mix < 0.9999f) {
+            std::copy(bufferL, bufferL + block_size, dryBufL);
+            std::copy(bufferR, bufferR + block_size, dryBufR);
+          }
           float** sc_ptr = nullptr;
           float* sc_ch[2] = {nullptr, nullptr};
           auto sc_it = track->plugin_sidechain.find((int)i);
@@ -816,7 +833,17 @@ void playback_thread(ProjectState& state) {
                                      context, {}, sc_ptr);
           d_float_to_double_stereo(plugBufL, plugBufR, bufferL, bufferR,
                                    block_size);
+          if (mix < 0.9999f) {
+            d_blend_dry_wet(dryBufL, dryBufR, bufferL, bufferR, block_size,
+                            mix);
+          }
         }
+
+        // 4a. Strip 3-band EQ & Stereo Separation (via @nogc D DSP kernel)
+        d_apply_track_eq_and_stereo_sep(
+            bufferL, bufferR, block_size, state.sample_rate, track->eq_low,
+            track->eq_mid, track->eq_high, track->stereo_sep,
+            track->eq_filter_state);
 
         // 4b. Capture post-effects output for sidechain
         {
@@ -923,13 +950,27 @@ void playback_thread(ProjectState& state) {
         for (size_t i = 0; i < master_track->plugins.size(); ++i) {
           if (i == 0 && master_track->plugins[i]->isInstrument()) continue;
           if (master_track->plugin_bypass.count((int)i)) continue;
+          const float mix = master_track->GetPluginMix(static_cast<int>(i));
+          if (mix <= 0.0001f) continue;
+          if (mix < 0.9999f) {
+            std::copy(bufferL, bufferL + block_size, dryBufL);
+            std::copy(bufferR, bufferR + block_size, dryBufR);
+          }
           d_double_to_float_stereo(bufferL, bufferR, plugBufL, plugBufR,
                                    block_size);
           master_track->plugins[i]->process(outChannels, outChannels,
                                             block_size, context, {});
           d_float_to_double_stereo(plugBufL, plugBufR, bufferL, bufferR,
                                    block_size);
+          if (mix < 0.9999f) {
+            d_blend_dry_wet(dryBufL, dryBufR, bufferL, bufferR, block_size,
+                            mix);
+          }
         }
+        d_apply_track_eq_and_stereo_sep(
+            bufferL, bufferR, block_size, state.sample_rate,
+            master_track->eq_low, master_track->eq_mid, master_track->eq_high,
+            master_track->stereo_sep, master_track->eq_filter_state);
         float pkL = 0.0f, pkR = 0.0f;
         d_apply_track_gain_and_pan(bufferL, bufferR, block_size,
                                    master_track->volume, master_track->pan,

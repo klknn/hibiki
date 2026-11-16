@@ -25,7 +25,7 @@ import gui_d.toolbar : FlToolbarWidget;
 import gui_d.transport_model;
 import gui_d.workspace : DesktopLayoutPreset, FlDesktopCanvas, FlWindowFrame;
 import pb.commands : TransportCmd;
-import pb.core : MidiEvent, PbPlaybackMode = PlaybackMode, TrackType;
+import pb.core : MidiEvent, PbAutoPoint = AutomationPoint, PbPlaybackMode = PlaybackMode, TrackType;
 import pb.notifications : Notification;
 import std.file : exists, thisExePath;
 import std.format : format;
@@ -276,9 +276,17 @@ extern (C) int UIAppMain(string[] args) {
             }
             client.sendRequest(makeTrackVolumeRequest(trk.index, trk.volume));
             client.sendRequest(makeTrackPanRequest(trk.index, trk.pan));
+            client.sendRequest(makeTrackEqRequest(trk.index, trk.eqLow, trk.eqMid, trk.eqHigh));
+            client.sendRequest(makeTrackStereoSepRequest(trk.index, trk.stereoSep));
             foreach (ref plug; trk.plugins) {
                 if (plug.uri.length > 0) {
                     client.sendRequest(makePluginLoadRequest(trk.index, plug.uri, plug.pluginIndex));
+                    if (!plug.enabled) {
+                        client.sendRequest(makePluginBypassRequest(trk.index, plug.pluginIndex, false));
+                    }
+                    if (plug.mix != 1.0f) {
+                        client.sendRequest(makePluginMixRequest(trk.index, plug.pluginIndex, plug.mix));
+                    }
                 }
             }
         }
@@ -943,10 +951,112 @@ extern (C) int UIAppMain(string[] args) {
                 AutomationPoint(0.5, 0.85f),
                 AutomationPoint(1.0, 0.3f),
             ];
+            const float autoDurBeats = cast(float)(clip.durationSec * (model.bpm / 60.0));
+            uint autoClipIdx = 0;
+            foreach (const ref existing; model.tracks[idx].clips) {
+                if (existing.kind == PlaylistClipKind.AUTOMATION) ++autoClipIdx;
+            }
+            if (autoClipIdx == 0) {
+                client.sendRequest(makeAutomationAddLaneRequest(trackIdx, 0, 0));
+            }
+            client.sendRequest(makeAutomationAddClipRequest(trackIdx, 0, cast(float)startSec, autoDurBeats));
+            PbAutoPoint[] pbPts;
+            foreach (const ref ap; clip.autoPoints) {
+                pbPts ~= PbAutoPoint(ap.normTime * autoDurBeats, ap.value, 0.0f);
+            }
+            client.sendRequest(makeAutomationUpdatePointsRequest(trackIdx, 0, autoClipIdx, pbPts));
         }
         model.tracks[idx].clips ~= clip;
         model.hintText = format("Painted '%s' at %.2fs on Track %d (Right-click to delete)",
                                 clip.name, startSec, trackIdx);
+        refreshUi();
+    };
+    playlistCanvas.onMoveClip = (int srcTrackIdx, int clipIdx, double newStartSec, int targetTrackIdx) {
+        client.sendRequest(makeMoveTimelineClipRequest(srcTrackIdx, clipIdx, cast(float)newStartSec, targetTrackIdx));
+        refreshUi();
+    };
+    playlistCanvas.onResizeClip = (int trackIdx, int clipIdx, double newDurationSec) {
+        const float durBeats = cast(float)(newDurationSec * (model.bpm / 60.0));
+        client.sendRequest(makeResizeTimelineClipRequest(trackIdx, clipIdx, durBeats));
+        refreshUi();
+    };
+    playlistCanvas.onMuteClip = (int trackIdx, int clipIdx, bool muted) {
+        client.sendRequest(makeSetClipMutedRequest(trackIdx, clipIdx, muted));
+        refreshUi();
+    };
+    playlistCanvas.onSliceClip = (int trackIdx, int origClipIdx, double splitSec, int newRightClipIdx, double rightDurSec) {
+        const size_t tArr = model.ensureTrackIndex(trackIdx);
+        double leftDurSec = 4.0;
+        double leftStartSec = 0.0;
+        PlaylistClipKind sliceKind = PlaylistClipKind.PATTERN;
+        int patIdx = 0;
+        foreach (const ref c; model.tracks[tArr].clips) {
+            if (c.clipIndex == origClipIdx) {
+                leftDurSec = c.durationSec;
+                leftStartSec = c.startTimeSec;
+                sliceKind = c.kind;
+                patIdx = c.patternIndex;
+            } else if (c.clipIndex == newRightClipIdx) {
+                sliceKind = c.kind;
+                patIdx = c.patternIndex;
+            }
+        }
+        const float leftDurBeats = cast(float)(leftDurSec * (model.bpm / 60.0));
+        const float rightDurBeats = cast(float)(rightDurSec * (model.bpm / 60.0));
+        client.sendRequest(makeResizeTimelineClipRequest(trackIdx, origClipIdx, leftDurBeats));
+        if (sliceKind == PlaylistClipKind.PATTERN) {
+            client.sendRequest(makeAddPatternTimelineClipRequest(
+                trackIdx, patIdx, cast(float)splitSec, rightDurBeats));
+        } else if (sliceKind == PlaylistClipKind.AUDIO) {
+            client.sendRequest(makeCopyTimelineClipRequest(trackIdx, origClipIdx, cast(float)splitSec, trackIdx, false));
+            const float trimBeats = cast(float)((splitSec - leftStartSec) * (model.bpm / 60.0));
+            client.sendRequest(makeResizeTimelineClipRequest(trackIdx, newRightClipIdx, rightDurBeats, trimBeats));
+        }
+        refreshUi();
+    };
+    playlistCanvas.onCopyClip = (int srcTrackIdx, int srcClipIdx, double newStartSec, int targetTrackIdx) {
+        client.sendRequest(makeCopyTimelineClipRequest(srcTrackIdx, srcClipIdx, cast(float)newStartSec, targetTrackIdx, false));
+        refreshUi();
+    };
+    playlistCanvas.onDoubleClickClip = (int trackIdx, int clipIdx, int patternIdx, PlaylistClipKind kind) {
+        if (kind == PlaylistClipKind.PATTERN) {
+            model.selectPattern(patternIdx);
+            client.sendRequest(makeSequencerSelectPatternRequest(patternIdx));
+            desktop.showWindow("win_piano_roll");
+        } else if (kind == PlaylistClipKind.AUDIO) {
+            model.activeMidi.trackIndex = trackIdx;
+            model.activeMidi.clipIndex = clipIdx;
+            model.activeMidi.channelIndex = -1;
+            client.sendRequest(makeMidiGetRequest(trackIdx, clipIdx));
+            desktop.showWindow("win_piano_roll");
+        }
+        refreshUi();
+    };
+    playlistCanvas.onTrackMuteToggle = (int trackIdx, bool muted) {
+        client.sendRequest(makeTrackMuteRequest(trackIdx, muted));
+        refreshUi();
+    };
+    playlistCanvas.onTrackSoloToggle = (int trackIdx, bool soloed) {
+        client.sendRequest(makeTrackSoloRequest(trackIdx, soloed));
+        refreshUi();
+    };
+    playlistCanvas.onAutomationPointsChanged = (int trackIdx, int clipIdx, const(AutomationPoint)[] pts) {
+        const size_t tArr = model.ensureTrackIndex(trackIdx);
+        double durSec = 4.0;
+        uint autoClipIdx = 0;
+        foreach (const ref c; model.tracks[tArr].clips) {
+            if (c.clipIndex == clipIdx) {
+                durSec = c.durationSec > 0.0 ? c.durationSec : 4.0;
+                break;
+            }
+            if (c.kind == PlaylistClipKind.AUTOMATION) ++autoClipIdx;
+        }
+        const float durBeats = cast(float)(durSec * (model.bpm / 60.0));
+        PbAutoPoint[] pbPts;
+        foreach (const ref ap; pts) {
+            pbPts ~= PbAutoPoint(ap.normTime * durBeats, ap.value, 0.0f);
+        }
+        client.sendRequest(makeAutomationUpdatePointsRequest(trackIdx, 0, autoClipIdx, pbPts));
         refreshUi();
     };
 
@@ -1047,6 +1157,22 @@ extern (C) int UIAppMain(string[] args) {
         pluginWrapper.setTargetMixerFx(trackIdx, slotIdx);
         winPlugin.windowTitle = format("Fruity Wrapper - Insert %d Slot %d", trackIdx, slotIdx + 1);
         desktop.showWindow("win_plugin");
+        refreshUi();
+    };
+    mixerCanvas.onEqChange = (int trackIdx, float low, float mid, float high) {
+        client.sendRequest(makeTrackEqRequest(trackIdx, low, mid, high));
+        refreshUi();
+    };
+    mixerCanvas.onStereoSepChange = (int trackIdx, float stereoSep) {
+        client.sendRequest(makeTrackStereoSepRequest(trackIdx, stereoSep));
+        refreshUi();
+    };
+    mixerCanvas.onFxMixChange = (int trackIdx, int slotIdx, float mix) {
+        client.sendRequest(makePluginMixRequest(trackIdx, slotIdx, mix));
+        refreshUi();
+    };
+    mixerCanvas.onRouteChange = (int trackIdx, int outputTrackIdx) {
+        client.sendRequest(makeSetOutputRoutingRequest(trackIdx, outputTrackIdx));
         refreshUi();
     };
 

@@ -11,10 +11,34 @@ import gui_d.theme : adjustColorBrightness, dp, dpf, drawBeveledTrackCard, drawC
     getDawFont, getFlPalette, safeWidgetFont, ScopedRetroAntialias, truncateLabel;
 import gui_d.transport_model : PluginSlotState, TrackStripState, TransportModel;
 import gui_d.workspace : activateParentWindow;
+import std.conv : to;
 import std.format : format;
+import std.math : cbrt, log10;
 import std.utf : toUTF32;
 
 private enum int FX_SLOT_COUNT = 10;
+
+/// Maps normalized FL Studio fader position `[0..1]` to linear gain (`0.8 -> 1.0 / 0 dB`, `1.0 -> ~1.95 / +5.8 dB`).
+float flFaderToLinear(float norm) pure nothrow @safe {
+    if (norm <= 0.0f) return 0.0f;
+    if (norm > 1.0f) norm = 1.0f;
+    const float ratio = norm / 0.8f;
+    return ratio * ratio * ratio;
+}
+
+/// Inverse of `flFaderToLinear`: converts linear gain `[0..1.95]` to normalized FL fader thumb `[0..1]`.
+float linearToFlFader(float linear) nothrow @safe {
+    if (linear <= 0.0f) return 0.0f;
+    float norm = 0.8f * cast(float)cbrt(linear);
+    if (norm > 1.0f) norm = 1.0f;
+    return norm;
+}
+
+/// Converts linear amplitude gain to decibels (clamped at `-99.0 dB` near zero).
+float linearGainToDb(float linear) nothrow @safe {
+    if (linear <= 1e-6f) return -99.0f;
+    return 20.0f * cast(float)log10(linear);
+}
 
 /// DPI-scaled layout geometry shared between `drawMixerCanvas` and `MixerCanvasWidget.onMouseEvent`.
 struct MixerMetrics {
@@ -167,7 +191,7 @@ private void drawMixerStrip(
             buf.fillRect(Rect(sm.grooveRc.right + dp(1), ty, sm.grooveRc.right + tSpan, ty + dp(1)), tickCol);
         }
 
-        float vol = trk ? trk.volume : 0.8f;
+        float vol = linearToFlFader(trk ? trk.volume : 1.0f);
         if (vol < 0.0f) vol = 0.0f;
         if (vol > 1.0f) vol = 1.0f;
         const int capY = sm.grooveRc.bottom - cast(int)(vol * trackTravel) - capH;
@@ -190,7 +214,9 @@ private void drawMixerStrip(
     drawThemeCard(buf, sm.routeRc, pal.bgLcd, COLOR_TRANSPARENT, pal, 1.5f, true);
     drawFilledCircle(buf, sm.routeRc.left + dpf(7.5f), cast(float)sm.routeRc.middley + 0.5f,
                      dpf(2.2f), isMaster ? pal.accentCyan : pal.accentOrange);
-    drawCenteredText(buf, smallFnt, sm.routeRc, isMaster ? "OUT"d : "-> M"d, pal.accentOrange);
+    dstring routeLbl = isMaster ? "OUT"d
+        : ((trk && trk.routedTo > 0) ? to!dstring(format("-> %d", trk.routedTo)) : "-> M"d);
+    drawCenteredText(buf, smallFnt, sm.routeRc, routeLbl, pal.accentOrange);
 }
 
 /// Renders the complete FL Studio 2026 Mixer (Current, Master, Insert Strips, 10-Slot FX Rack, 3-Band EQ).
@@ -437,6 +463,10 @@ class MixerCanvasWidget : Widget {
     void delegate(int trackIdx, int slotIdx) onPromptLoadFx;
     void delegate(int trackIdx, int slotIdx) onRemoveFxSlot;
     void delegate(int trackIdx, int slotIdx) onOpenFxPlugin;
+    void delegate(int trackIdx, float low, float mid, float high) onEqChange;
+    void delegate(int trackIdx, float stereoSep) onStereoSepChange;
+    void delegate(int trackIdx, int slotIdx, float mix) onFxMixChange;
+    void delegate(int trackIdx, int outputTrackIdx) onRouteChange;
 
     this(string id, TransportModel* model) {
         super(id);
@@ -505,14 +535,20 @@ class MixerCanvasWidget : Widget {
                     auto trk = &model_.tracks[tArr];
                     const int midX = fxRc.middlex;
                     if (event.x < midX - dp(24)) {
-                        if (event.button == MouseButton.Right) trk.eqLow = 0.5f;
-                        else { dragMode_ = DragMode.EQ_LOW; dragStartVal_ = trk.eqLow; }
+                        if (event.button == MouseButton.Right) {
+                            trk.eqLow = 0.5f;
+                            if (onEqChange !is null) onEqChange(model_.selectedMixerInsert, trk.eqLow, trk.eqMid, trk.eqHigh);
+                        } else { dragMode_ = DragMode.EQ_LOW; dragStartVal_ = trk.eqLow; }
                     } else if (event.x > midX + dp(24)) {
-                        if (event.button == MouseButton.Right) trk.eqHigh = 0.5f;
-                        else { dragMode_ = DragMode.EQ_HIGH; dragStartVal_ = trk.eqHigh; }
+                        if (event.button == MouseButton.Right) {
+                            trk.eqHigh = 0.5f;
+                            if (onEqChange !is null) onEqChange(model_.selectedMixerInsert, trk.eqLow, trk.eqMid, trk.eqHigh);
+                        } else { dragMode_ = DragMode.EQ_HIGH; dragStartVal_ = trk.eqHigh; }
                     } else {
-                        if (event.button == MouseButton.Right) trk.eqMid = 0.5f;
-                        else { dragMode_ = DragMode.EQ_MID; dragStartVal_ = trk.eqMid; }
+                        if (event.button == MouseButton.Right) {
+                            trk.eqMid = 0.5f;
+                            if (onEqChange !is null) onEqChange(model_.selectedMixerInsert, trk.eqLow, trk.eqMid, trk.eqHigh);
+                        } else { dragMode_ = DragMode.EQ_MID; dragStartVal_ = trk.eqMid; }
                     }
                     dragTrackIdx_ = model_.selectedMixerInsert;
                     dragStartY_ = event.y;
@@ -601,6 +637,36 @@ class MixerCanvasWidget : Widget {
                     return true;
                 }
 
+                // Bottom routing badge click: cycle output bus (Master 0 <-> Inserts)
+                if (sm.routeRc.isPointInside(event.x, event.y)) {
+                    if (trackIdx > 0) {
+                        if (event.button == MouseButton.Right) {
+                            trk.routedTo = 0;
+                        } else {
+                            int[] targets = [0];
+                            foreach (const ref candidate; model_.tracks) {
+                                if (candidate.index > 0 && candidate.index != trackIdx) {
+                                    targets ~= candidate.index;
+                                }
+                            }
+                            size_t curPos = 0;
+                            foreach (ti, val; targets) {
+                                if (val == trk.routedTo) {
+                                    curPos = ti;
+                                    break;
+                                }
+                            }
+                            trk.routedTo = targets[(curPos + 1) % targets.length];
+                        }
+                        model_.hintText = (trk.routedTo == 0)
+                            ? format("%s routed -> Master", trk.name)
+                            : format("%s routed -> Insert %d", trk.name, trk.routedTo);
+                        if (onRouteChange !is null) onRouteChange(trackIdx, trk.routedTo);
+                    }
+                    invalidate();
+                    return true;
+                }
+
                 // Pan / Stereo Separation knobs
                 if (event.y >= sm.knobBandTop && event.y <= sm.knobBandBot) {
                     dragTrackIdx_ = trackIdx;
@@ -618,6 +684,7 @@ class MixerCanvasWidget : Widget {
                         if (event.button == MouseButton.Right) {
                             trk.stereoSep = 0.0f;
                             model_.hintText = format("%s Stereo Sep: 0%%", trk.name);
+                            if (onStereoSepChange !is null) onStereoSepChange(trackIdx, 0.0f);
                         } else {
                             dragMode_ = DragMode.STEREO_SEP;
                             dragStartVal_ = trk.stereoSep;
@@ -630,7 +697,8 @@ class MixerCanvasWidget : Widget {
                 // Fader groove region
                 if (event.y >= sm.faderTop && event.y <= sm.faderBot && event.x < stripRc.right - dp(22)) {
                     if (event.button == MouseButton.Right) {
-                        trk.volume = 0.8f;
+                        trk.volume = 1.0f;
+                        model_.hintText = format("%s Fader: 0.0 dB (Unity)", trk.name);
                         if (onVolumeChange !is null) onVolumeChange(trackIdx, trk.volume);
                     } else {
                         dragMode_ = DragMode.FADER;
@@ -687,21 +755,25 @@ class MixerCanvasWidget : Widget {
                     if (sp > 1.0f) sp = 1.0f;
                     trk.stereoSep = sp;
                     model_.hintText = format("%s Stereo Sep: %+d%%", trk.name, cast(int)(sp * 100.0f));
+                    if (onStereoSepChange !is null) onStereoSepChange(dragTrackIdx_, sp);
                     break;
                 case DragMode.EQ_LOW:
                     float vL = dragStartVal_ + delta;
                     trk.eqLow = vL < 0.0f ? 0.0f : (vL > 1.0f ? 1.0f : vL);
                     model_.hintText = format("%s EQ Low: %d%%", trk.name, cast(int)(trk.eqLow * 100.0f + 0.5f));
+                    if (onEqChange !is null) onEqChange(dragTrackIdx_, trk.eqLow, trk.eqMid, trk.eqHigh);
                     break;
                 case DragMode.EQ_MID:
                     float vM = dragStartVal_ + delta;
                     trk.eqMid = vM < 0.0f ? 0.0f : (vM > 1.0f ? 1.0f : vM);
                     model_.hintText = format("%s EQ Mid: %d%%", trk.name, cast(int)(trk.eqMid * 100.0f + 0.5f));
+                    if (onEqChange !is null) onEqChange(dragTrackIdx_, trk.eqLow, trk.eqMid, trk.eqHigh);
                     break;
                 case DragMode.EQ_HIGH:
                     float vH = dragStartVal_ + delta;
                     trk.eqHigh = vH < 0.0f ? 0.0f : (vH > 1.0f ? 1.0f : vH);
                     model_.hintText = format("%s EQ High: %d%%", trk.name, cast(int)(trk.eqHigh * 100.0f + 0.5f));
+                    if (onEqChange !is null) onEqChange(dragTrackIdx_, trk.eqLow, trk.eqMid, trk.eqHigh);
                     break;
                 case DragMode.FX_MIX:
                     foreach (ref plug; trk.plugins) {
@@ -709,6 +781,7 @@ class MixerCanvasWidget : Widget {
                             float mx = dragStartVal_ + delta;
                             plug.mix = mx < 0.0f ? 0.0f : (mx > 1.0f ? 1.0f : mx);
                             model_.hintText = format("%s Mix: %d%%", plug.name, cast(int)(plug.mix * 100.0f + 0.5f));
+                            if (onFxMixChange !is null) onFxMixChange(dragTrackIdx_, dragSlotIdx_, plug.mix);
                             break;
                         }
                     }
@@ -735,9 +808,11 @@ class MixerCanvasWidget : Widget {
         float norm = cast(float)(grooveBot - capHalf - y) / cast(float)(grooveBot - grooveTop - capH);
         if (norm < 0.0f) norm = 0.0f;
         if (norm > 1.0f) norm = 1.0f;
-        model_.tracks[idx].volume = norm;
-        model_.hintText = format("%s Fader: %d%%", model_.tracks[idx].name, cast(int)(norm * 100.0f + 0.5f));
-        if (onVolumeChange !is null) onVolumeChange(trackIdx, norm);
+        const float lin = flFaderToLinear(norm);
+        model_.tracks[idx].volume = lin;
+        model_.hintText = format("%s Fader: %.1f dB (%d%%)", model_.tracks[idx].name,
+                                 linearGainToDb(lin), cast(int)(norm * 100.0f + 0.5f));
+        if (onVolumeChange !is null) onVolumeChange(trackIdx, lin);
     }
 }
 
@@ -788,4 +863,34 @@ unittest {
     panTrack = -1;
     mx.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, 0, 68, 40));
     assert(panTrack == -1, "Expected MouseAction.Cancel to clear Pan drag");
+
+    // Regression 3: FL fader cubic curve round-trips (0.8 -> 1.0 linear / 0 dB)
+    assert(flFaderToLinear(0.8f) > 0.999f && flFaderToLinear(0.8f) < 1.001f);
+    assert(linearToFlFader(1.0f) > 0.799f && linearToFlFader(1.0f) < 0.801f);
+    assert(linearGainToDb(1.0f) > -0.01f && linearGainToDb(1.0f) < 0.01f);
+
+    // Regression 4: Output routing badge click cycles & right-click resets to Master (0)
+    int routedTrack = -1;
+    int routedTarget = -1;
+    mx.scrollInsert = 0;
+    model.selectedMixerInsert = 1;
+    mx.onRouteChange = (int t, int dst) { routedTrack = t; routedTarget = dst; };
+    const mm = computeMixerMetrics(Rect(0, 0, 560, 320), &model);
+    const ins1Rc = Rect(mm.insStartX, mm.bodyTop, mm.insStartX + mm.stripW, mm.bodyBot);
+    const sm1 = computeStripMetrics(ins1Rc);
+    mx.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
+                                   cast(short)(ins1Rc.left + 20), cast(short)(sm1.routeRc.top + 4)));
+    assert(routedTrack == 1 && routedTarget != 0, "Expected Insert 1 route click to cycle target");
+    mx.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Right, MouseFlag.RButton,
+                                   cast(short)(ins1Rc.left + 20), cast(short)(sm1.routeRc.top + 4)));
+    assert(routedTrack == 1 && routedTarget == 0, "Expected Right-click on route badge to reset to Master");
+
+    // Regression 5: 3-Band EQ knob right-click reset fires onEqChange
+    int eqTrack = -1;
+    model.tracks[1].eqLow = 0.9f;
+    mx.onEqChange = (int t, float l, float m, float h) { eqTrack = t; };
+    mx.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Right, MouseFlag.RButton,
+                                   cast(short)(mm.fxRc.left + 20), cast(short)(mm.fxRc.bottom - 10)));
+    assert(eqTrack == 1 && model.tracks[1].eqLow == 0.5f,
+           "Expected right-click on Low EQ knob to reset to 0.5 and fire onEqChange");
 }

@@ -23,7 +23,7 @@ void sendAck(const char* cmd_type, bool success);
 void sendParamList(int track_idx, int plugin_idx,
                    const std::string& plugin_name, bool is_instrument,
                    const std::vector<VstParamInfo>& params,
-                   bool bypassed = false);
+                   bool bypassed = false, float mix = 1.0f);
 void sendLog(const std::string& msg);
 void sendClipInfo(int track_idx, int slot_index, const std::string& name,
                   const std::string& path);
@@ -52,7 +52,9 @@ void sendTrackInfoFull(
     int output_track_index,
     const std::vector<std::tuple<int, float, bool>>& aux_sends,
     int group_parent_index = -1, float volume = -1.0f, float pan = 0.0f,
-    bool has_pan = false, bool muted = false, bool soloed = false);
+    bool has_pan = false, bool muted = false, bool soloed = false,
+    float eq_low = 0.5f, float eq_mid = 0.5f, float eq_high = 0.5f,
+    float stereo_sep = 0.0f);
 
 // Send clip MIDI data to GUI. Use slot_idx >= 0 for session clips, clip_idx >=
 // 0 for timeline clips

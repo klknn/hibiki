@@ -657,4 +657,128 @@ TEST_F(CommandsTest, SequencerCmdChannelRoutingStepsNotesAndSync) {
   EXPECT_TRUE(saw_pat_clip);
 }
 
+TEST_F(CommandsTest, TrackEqStereoSepAndPluginMixCommandsAndSync) {
+  auto* t1 = hibiki::GetOrCreateTrack(state, 1);
+  t1->track_type = hibiki::Track::TrackType::GROUP;
+  ASSERT_GE(t1->LoadPlugin("builtin://eq", 0, 44100.0).index, 0);
+
+  // 1. Set 3-band EQ
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_EQ);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.set_eq_low(0.8f);
+    cmd.set_eq_mid(0.35f);
+    cmd.set_eq_high(0.9f);
+    hibiki::handleTrackCmd(cmd, state, history);
+  }
+  EXPECT_FLOAT_EQ(t1->eq_low, 0.8f);
+  EXPECT_FLOAT_EQ(t1->eq_mid, 0.35f);
+  EXPECT_FLOAT_EQ(t1->eq_high, 0.9f);
+
+  // 2. Set Stereo Separation
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_STEREO_SEP);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.set_value(-0.6f);
+    hibiki::handleTrackCmd(cmd, state, history);
+  }
+  EXPECT_FLOAT_EQ(t1->stereo_sep, -0.6f);
+
+  // 3. Set Plugin Wet/Dry Mix
+  {
+    hibiki::pb::commands::PluginCmd cmd;
+    cmd.set_action(hibiki::pb::commands::PluginCmd::ACTION_SET_MIX);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.mutable_target()->set_plugin_index(0);
+    cmd.set_param_value(0.42f);
+    hibiki::handlePluginCmd(cmd, state, history);
+  }
+  EXPECT_FLOAT_EQ(t1->GetPluginMix(0), 0.42f);
+
+  // 4. Setting routing preserves eq/sep and volume instead of resetting them
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.set_target_track_index(0);
+    hibiki::handleTrackCmd(cmd, state, history);
+  }
+  EXPECT_FLOAT_EQ(t1->eq_low, 0.8f);
+  EXPECT_FLOAT_EQ(t1->stereo_sep, -0.6f);
+
+  // 5. SyncProjectToGui emits TrackInfo EQ/StereoSep and ParamList Mix
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+  hibiki::SyncProjectToGui(state);
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  bool saw_track_eq = false;
+  bool saw_plugin_mix = false;
+  for (const auto& n : captured) {
+    if (n.has_track_info() && n.track_info().track_index() == 1) {
+      saw_track_eq = true;
+      EXPECT_FLOAT_EQ(n.track_info().eq_low(), 0.8f);
+      EXPECT_FLOAT_EQ(n.track_info().eq_mid(), 0.35f);
+      EXPECT_FLOAT_EQ(n.track_info().eq_high(), 0.9f);
+      EXPECT_FLOAT_EQ(n.track_info().stereo_sep(), -0.6f);
+    }
+    if (n.has_param_list() && n.param_list().track_index() == 1 &&
+        n.param_list().plugin_index() == 0) {
+      saw_plugin_mix = true;
+      EXPECT_FLOAT_EQ(n.param_list().mix(), 0.42f);
+    }
+  }
+  EXPECT_TRUE(saw_track_eq);
+  EXPECT_TRUE(saw_plugin_mix);
+}
+
+TEST_F(CommandsTest, MidiClipTimelineTargetNotShadowedByUnsetSessionSlot) {
+  auto* t0 = hibiki::GetOrCreateTrack(state, 0);
+  // Populate both session slot 0 and timeline clip 0; target timeline_clip(0)
+  // explicitly without setting session_slot.
+  t0->clips[0] = std::make_unique<hibiki::Clip>();
+  t0->clips[0]->type = hibiki::Clip::Type::MIDI;
+  {
+    hibiki::MidiEvent slotEv{};
+    slotEv.beats = 0.0;
+    slotEv.type = 0x90;
+    slotEv.channel = 0;
+    slotEv.note = 36;
+    slotEv.velocity = 100;
+    t0->clips[0]->midi_events.push_back(slotEv);
+  }
+  auto tc = std::make_unique<hibiki::TimelineClip>();
+  tc->clip = std::make_unique<hibiki::Clip>();
+  tc->clip->type = hibiki::Clip::Type::MIDI;
+  t0->timeline_clips.push_back(std::move(tc));
+
+  hibiki::pb::commands::MidiCmd cmd;
+  cmd.set_action(hibiki::pb::commands::MidiCmd::ACTION_UPDATE);
+  cmd.mutable_target()->set_track_index(0);
+  cmd.mutable_target()->set_timeline_clip(0);
+  cmd.set_resolution(480);
+  auto* ev = cmd.add_events();
+  ev->set_tick(0);
+  ev->set_pitch(72);
+  ev->set_duration_ticks(240);
+  ev->set_velocity(100);
+  hibiki::handleMidiCmd(cmd, state, history);
+
+  // Session slot 0 must stay untouched (note 36), while timeline clip 0 gets
+  // note 72
+  ASSERT_EQ(t0->clips[0]->midi_events.size(), 1u);
+  EXPECT_EQ(t0->clips[0]->midi_events[0].note, 36);
+  ASSERT_GE(t0->timeline_clips[0]->clip->midi_events.size(), 1u);
+  EXPECT_EQ(t0->timeline_clips[0]->clip->midi_events[0].note, 72);
+}
+
 }  // namespace hibiki

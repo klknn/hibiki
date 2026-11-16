@@ -525,13 +525,14 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       auto track = GetOrCreateTrack(state, tidx);
       int type_val = cmd.record_mode();  // Reuse record_mode field for type int
       track->track_type = static_cast<Track::TrackType>(type_val);
-      // Build aux sends tuple vector for IPC
       std::vector<std::tuple<int, float, bool>> sends;
       for (const auto& s : track->aux_sends)
         sends.emplace_back(s.aux_track_index, s.level, s.pre_fader);
       sendTrackInfoFull(tidx, track->name, static_cast<int>(track->track_type),
                         track->output_track_index, sends,
-                        track->group_parent_index);
+                        track->group_parent_index, track->volume, track->pan,
+                        true, track->muted, track->soloed, track->eq_low,
+                        track->eq_mid, track->eq_high, track->stereo_sep);
       sendAck("SET_TRACK_TYPE", true);
       break;
     }
@@ -544,7 +545,9 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
         sends.emplace_back(s.aux_track_index, s.level, s.pre_fader);
       sendTrackInfoFull(tidx, track->name, static_cast<int>(track->track_type),
                         track->output_track_index, sends,
-                        track->group_parent_index);
+                        track->group_parent_index, track->volume, track->pan,
+                        true, track->muted, track->soloed, track->eq_low,
+                        track->eq_mid, track->eq_high, track->stereo_sep);
       sendAck("SET_OUTPUT_ROUTING", true);
       break;
     }
@@ -554,7 +557,6 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       int aux_idx = cmd.aux_track_index();
       float level = cmd.send_level();
       bool pre = cmd.pre_fader();
-      // Find existing send to this aux, or add new one
       bool found = false;
       for (auto& send : track->aux_sends) {
         if (send.aux_track_index == aux_idx) {
@@ -567,7 +569,6 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       if (!found && level > 0.0f) {
         track->aux_sends.push_back({aux_idx, level, pre});
       }
-      // Remove sends with zero level
       track->aux_sends.erase(
           std::remove_if(
               track->aux_sends.begin(), track->aux_sends.end(),
@@ -578,7 +579,9 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
         sends.emplace_back(s.aux_track_index, s.level, s.pre_fader);
       sendTrackInfoFull(tidx, track->name, static_cast<int>(track->track_type),
                         track->output_track_index, sends,
-                        track->group_parent_index);
+                        track->group_parent_index, track->volume, track->pan,
+                        true, track->muted, track->soloed, track->eq_low,
+                        track->eq_mid, track->eq_high, track->stereo_sep);
       sendAck("SET_AUX_SEND", true);
       break;
     }
@@ -591,8 +594,26 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
         sends.emplace_back(s.aux_track_index, s.level, s.pre_fader);
       sendTrackInfoFull(tidx, track->name, static_cast<int>(track->track_type),
                         track->output_track_index, sends,
-                        track->group_parent_index);
+                        track->group_parent_index, track->volume, track->pan,
+                        true, track->muted, track->soloed, track->eq_low,
+                        track->eq_mid, track->eq_high, track->stereo_sep);
       sendAck("SET_GROUP_PARENT", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_EQ: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->eq_low = std::max(0.0f, std::min(1.0f, cmd.eq_low()));
+      track->eq_mid = std::max(0.0f, std::min(1.0f, cmd.eq_mid()));
+      track->eq_high = std::max(0.0f, std::min(1.0f, cmd.eq_high()));
+      sendAck("SET_EQ", true);
+      break;
+    }
+    case pb::commands::TrackCmd::ACTION_SET_STEREO_SEP: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->stereo_sep = std::max(-1.0f, std::min(1.0f, cmd.value()));
+      sendAck("SET_STEREO_SEP", true);
       break;
     }
     default:

@@ -1976,4 +1976,86 @@ TEST_F(ProjectTest, BounceProjectRendersRoutedGeneratorInPatMode) {
   std::remove(out_wav.c_str());
 }
 
+TEST_F(ProjectTest, MixerEqStereoSepAndPluginMixRoundTrip) {
+  hibiki::ProjectState state;
+  state.bpm = 128.0;
+  state.sample_rate = 44100.0;
+
+  auto* t1 = hibiki::GetOrCreateTrack(state, 1);
+  t1->track_type = hibiki::Track::TrackType::GROUP;
+  t1->eq_low = 0.75f;
+  t1->eq_mid = 0.25f;
+  t1->eq_high = 0.85f;
+  t1->stereo_sep = -0.5f;
+  ASSERT_GE(t1->LoadPlugin("builtin://eq", 0, state.sample_rate).index, 0);
+  t1->plugin_mix[0] = 0.35f;
+
+  auto data = hibiki::CaptureProjectState(state);
+  hibiki::ProjectState restored;
+  restored.sample_rate = 44100.0;
+  ASSERT_THAT(hibiki::ApplyProjectState(restored, data), IsOk());
+
+  ASSERT_NE(restored.tracks.find(1), restored.tracks.end());
+  auto* rt = restored.tracks[1].get();
+  EXPECT_FLOAT_EQ(rt->eq_low, 0.75f);
+  EXPECT_FLOAT_EQ(rt->eq_mid, 0.25f);
+  EXPECT_FLOAT_EQ(rt->eq_high, 0.85f);
+  EXPECT_FLOAT_EQ(rt->stereo_sep, -0.5f);
+  EXPECT_FLOAT_EQ(rt->GetPluginMix(0), 0.35f);
+}
+
+TEST_F(ProjectTest, BounceProjectAppliesEqStereoSepAndFxMix) {
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+  state.playback_mode = hibiki::SequencerPlaybackMode::PAT;
+  state.selected_pattern_index = 0;
+
+  auto* master = hibiki::GetOrCreateTrack(state, 0);
+  master->track_type = hibiki::Track::TrackType::MASTER;
+  master->volume = 1.0f;
+
+  auto* gen = hibiki::GetOrCreateTrack(state, 100);
+  gen->track_type = hibiki::Track::TrackType::NORMAL;
+  gen->output_track_index = 0;
+  gen->volume = 1.0f;
+  gen->pan = 0.8f;          // Distinct L/R amplitudes before stereo sep
+  gen->stereo_sep = -1.0f;  // Merge 100% -> must produce mono L == R!
+  ASSERT_GE(gen->LoadPlugin("builtin://3xosc", 0, state.sample_rate).index, 0);
+
+  hibiki::SequencerChannel ch;
+  ch.channel_index = 0;
+  ch.name = "3x Osc";
+  ch.uri = "builtin://3xosc";
+  ch.mixer_insert = 0;
+  state.sequencer_channels.push_back(ch);
+
+  hibiki::SequencerPattern pat;
+  pat.pattern_index = 0;
+  pat.length_steps = 16;
+  hibiki::ChannelPatternStepData cpd;
+  cpd.steps[0] = true;
+  pat.channels[0] = cpd;
+  state.sequencer_patterns.push_back(pat);
+
+  const std::string out_wav = "test_bounce_stereo_merge.wav";
+  hibiki::BounceProject(state, out_wav);
+
+  std::vector<float> audio;
+  int nch = 0;
+  double dur = 0.0;
+  ASSERT_THAT(hibiki::LoadWav(out_wav, audio, nch, dur), IsOk());
+  ASSERT_EQ(nch, 2);
+  float max_diff = 0.0f;
+  float peak = 0.0f;
+  for (size_t i = 0; i + 1 < audio.size(); i += 2) {
+    peak = std::max(peak, std::abs(audio[i]));
+    max_diff = std::max(max_diff, std::abs(audio[i] - audio[i + 1]));
+  }
+  EXPECT_GT(peak, 0.01f);
+  EXPECT_LT(max_diff, 1e-4f)
+      << "stereo_sep = -1.0f should merge L and R into identical mono signal";
+  std::remove(out_wav.c_str());
+}
+
 }  // namespace hibiki

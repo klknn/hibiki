@@ -61,8 +61,10 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
         int target_idx = result.index;
         if (target_idx != -1) {
           auto& plugin = track->plugins[target_idx];
+          bool bp = track->plugin_bypass.count(target_idx) > 0;
           sendParamList(tidx, target_idx, plugin->getName(),
-                        plugin->isInstrument(), collectParams(*plugin));
+                        plugin->isInstrument(), collectParams(*plugin), bp,
+                        track->GetPluginMix(target_idx));
           // Push all current param values to UI so knobs reflect
           // the state set during load() (e.g. DX7 preset import).
           for (int i = 0; i < plugin->getParameterCount(); ++i) {
@@ -78,8 +80,9 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
             for (int i = 0; i < (int)track->plugins.size(); ++i) {
               if (i == target_idx) continue;
               auto& p = track->plugins[i];
+              bool pbp = track->plugin_bypass.count(i) > 0;
               sendParamList(tidx, i, p->getName(), p->isInstrument(),
-                            collectParams(*p));
+                            collectParams(*p), pbp, track->GetPluginMix(i));
             }
           }
         } else {
@@ -109,8 +112,9 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
           // Re-send param lists for all remaining plugins at their new indices
           for (int i = 0; i < (int)track->plugins.size(); ++i) {
             auto& p = track->plugins[i];
+            bool pbp = track->plugin_bypass.count(i) > 0;
             sendParamList(tidx, i, p->getName(), p->isInstrument(),
-                          collectParams(*p));
+                          collectParams(*p), pbp, track->GetPluginMix(i));
           }
         }
       }
@@ -291,13 +295,23 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
         // Re-send param lists for all plugins at their new indices
         for (int i = 0; i < (int)track->plugins.size(); ++i) {
           auto& p = track->plugins[i];
+          bool pbp = track->plugin_bypass.count(i) > 0;
           sendParamList(tidx, i, p->getName(), p->isInstrument(),
-                        collectParams(*p));
+                        collectParams(*p), pbp, track->GetPluginMix(i));
         }
       }
       LOG(INFO) << "Reordered plugin on track " << tidx << ": " << from_idx
                 << " -> " << to_idx;
       sendAck("REORDER_PLUGIN", true);
+      break;
+    }
+    case pb::commands::PluginCmd::ACTION_SET_MIX: {
+      int pidx = cmd.target().plugin_index();
+      float mix = std::max(0.0f, std::min(1.0f, cmd.param_value()));
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->plugin_mix[pidx] = mix;
+      sendAck("SET_PLUGIN_MIX", true);
       break;
     }
     default:

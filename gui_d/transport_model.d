@@ -190,7 +190,7 @@ struct TrackStripState {
     int index = 0;
     string name = "Track";
     uint color = 0x00385770;
-    float volume = 0.8f;
+    float volume = 1.0f;    // linear gain (1.0 = 0 dB unity = 0.80 FL fader)
     float pan = 0.0f;       // [-1..1]
     float stereoSep = 0.0f; // [-1..1] (Merged <-> Separated)
     bool muted = false;
@@ -829,6 +829,10 @@ struct TransportModel {
                 if (ti.name.length > 0) tracks[idx].name = ti.name.idup;
                 if (ti.volume.hasValue) tracks[idx].volume = ti.volume.value;
                 if (ti.pan.hasValue) tracks[idx].pan = ti.pan.value;
+                if (ti.eq_low.hasValue) tracks[idx].eqLow = ti.eq_low.value;
+                if (ti.eq_mid.hasValue) tracks[idx].eqMid = ti.eq_mid.value;
+                if (ti.eq_high.hasValue) tracks[idx].eqHigh = ti.eq_high.value;
+                if (ti.stereo_sep.hasValue) tracks[idx].stereoSep = ti.stereo_sep.value;
                 tracks[idx].muted = ti.muted;
                 tracks[idx].soloed = ti.soloed;
                 tracks[idx].routedTo = ti.output_track_index < 0 ? 0 : ti.output_track_index;
@@ -850,6 +854,7 @@ struct TransportModel {
                         if (tci.name.length > 0) c.name = tci.name.idup;
                         c.startTimeSec = tci.start_time;
                         c.durationSec = tci.duration;
+                        c.muted = tci.muted;
                         c.waveform = tci.waveform.dup;
                         if (isPat) {
                             c.kind = PlaylistClipKind.PATTERN;
@@ -870,6 +875,7 @@ struct TransportModel {
                     c.color = isPat ? patColor : (tci.waveform.length > 0 ? palette().clipAudio : palette().clipPattern);
                     c.startTimeSec = tci.start_time;
                     c.durationSec = tci.duration;
+                    c.muted = tci.muted;
                     c.waveform = tci.waveform.dup;
                     c.kind = isPat ? PlaylistClipKind.PATTERN
                                    : (tci.waveform.length > 0 ? PlaylistClipKind.AUDIO : PlaylistClipKind.PATTERN);
@@ -885,6 +891,7 @@ struct TransportModel {
             slot.name = pl.plugin_name.length > 0 ? pl.plugin_name.idup : "Plugin";
             slot.isInstrument = pl.is_instrument;
             slot.enabled = !pl.bypassed;
+            if (pl.mix.hasValue) slot.mix = pl.mix.value;
             foreach (pm; pl.params) {
                 ParamItemState item;
                 item.id = pm.id;

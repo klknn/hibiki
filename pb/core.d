@@ -160,6 +160,11 @@ struct Track {
     @ProtoField(20) bool muted = false;
     @ProtoField(21) bool soloed = false;
     @ProtoField(22) int[] bypassed_plugins;
+    @ProtoField(23) ProtoOptional!(float) eq_low;
+    @ProtoField(24) ProtoOptional!(float) eq_mid;
+    @ProtoField(25) ProtoOptional!(float) eq_high;
+    @ProtoField(26) ProtoOptional!(float) stereo_sep;
+    @ProtoField(27) float[] plugin_mix;
 }
 
 struct ChannelPatternData {

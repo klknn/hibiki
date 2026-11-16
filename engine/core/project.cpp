@@ -11,6 +11,15 @@
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
 
+extern "C" {
+void d_apply_track_eq_and_stereo_sep_f32(float* bufL, float* bufR,
+                                         int blockSize, double sampleRate,
+                                         float eqLow, float eqMid, float eqHigh,
+                                         float stereoSep, double* eqState24);
+void d_blend_dry_wet_f32(const float* dryL, const float* dryR, float* wetL,
+                         float* wetR, int blockSize, float mix);
+}
+
 namespace hibiki {
 
 double beatsToSec(double beats, double bpm) {
@@ -94,8 +103,15 @@ static hibiki::pb::core::Project BuildProjectProto(const ProjectState& state) {
     ts->set_pan(track->pan);
     ts->set_muted(track->muted);
     ts->set_soloed(track->soloed);
+    ts->set_eq_low(track->eq_low);
+    ts->set_eq_mid(track->eq_mid);
+    ts->set_eq_high(track->eq_high);
+    ts->set_stereo_sep(track->stereo_sep);
     for (const auto& [bp_idx, is_bp] : track->plugin_bypass) {
       if (is_bp) ts->add_bypassed_plugins(bp_idx);
+    }
+    for (size_t pi = 0; pi < track->plugins.size(); ++pi) {
+      ts->add_plugin_mix(track->GetPluginMix(static_cast<int>(pi)));
     }
 
     for (const auto& plugin : track->plugins) {
@@ -254,9 +270,21 @@ static void LoadTracksFromProto(ProjectState& state,
     }
     track->muted = track_data.muted();
     track->soloed = track_data.soloed();
+    if (track_data.has_eq_low()) track->eq_low = track_data.eq_low();
+    if (track_data.has_eq_mid()) track->eq_mid = track_data.eq_mid();
+    if (track_data.has_eq_high()) track->eq_high = track_data.eq_high();
+    if (track_data.has_stereo_sep())
+      track->stereo_sep = track_data.stereo_sep();
+    std::fill(std::begin(track->eq_filter_state),
+              std::end(track->eq_filter_state), 0.0);
     track->plugin_bypass.clear();
     for (int bp_idx : track_data.bypassed_plugins()) {
       track->plugin_bypass[bp_idx] = true;
+    }
+    track->plugin_mix.clear();
+    for (int mi = 0; mi < track_data.plugin_mix_size(); ++mi) {
+      track->plugin_mix[mi] =
+          std::max(0.0f, std::min(1.0f, track_data.plugin_mix(mi)));
     }
 
     for (const auto& plugin_data : track_data.plugins()) {
@@ -629,7 +657,8 @@ void SyncProjectToGui(const ProjectState& state) {
     hibiki::sendTrackInfoFull(
         tidx, track->name, static_cast<int>(track->track_type),
         track->output_track_index, aux_tuples, track->group_parent_index,
-        track->volume, track->pan, true, track->muted, track->soloed);
+        track->volume, track->pan, true, track->muted, track->soloed,
+        track->eq_low, track->eq_mid, track->eq_high, track->stereo_sep);
 
     // Sync Session Clips
     for (const auto& [sidx, clip] : track->clips) {
@@ -658,7 +687,8 @@ void SyncProjectToGui(const ProjectState& state) {
       }
       bool bypassed = track->plugin_bypass.count(pidx) > 0;
       hibiki::sendParamList(tidx, pidx, plugin->getName(),
-                            plugin->isInstrument(), params, bypassed);
+                            plugin->isInstrument(), params, bypassed,
+                            track->GetPluginMix(pidx));
       for (const auto& info : params) {
         hibiki::sendParamValueChange(tidx, pidx, info.id,
                                      (float)plugin->getParameterValue(info.id));
@@ -929,6 +959,8 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
 
   alignas(32) float bufferL[512];
   alignas(32) float bufferR[512];
+  alignas(32) float dryBufL[512];
+  alignas(32) float dryBufR[512];
   float* outChannels[] = {bufferL, bufferR};
 
   double time_per_block = block_size / (double)sample_rate;
@@ -1092,9 +1124,24 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
       for (size_t i = 0; i < track->plugins.size(); ++i) {
         if (i == 0 && track->plugins[i]->isInstrument()) continue;
         if (track->plugin_bypass.count((int)i)) continue;  // bypassed
+        const float mix = track->GetPluginMix((int)i);
+        if (mix <= 0.0001f) continue;
+        if (mix < 0.9999f) {
+          std::copy(bufferL, bufferL + block_size, dryBufL);
+          std::copy(bufferR, bufferR + block_size, dryBufR);
+        }
         track->plugins[i]->process(outChannels, outChannels, block_size,
                                    context, {});
+        if (mix < 0.9999f) {
+          d_blend_dry_wet_f32(dryBufL, dryBufR, bufferL, bufferR, block_size,
+                              mix);
+        }
       }
+
+      d_apply_track_eq_and_stereo_sep_f32(
+          bufferL, bufferR, block_size, sample_rate, track->eq_low,
+          track->eq_mid, track->eq_high, track->stereo_sep,
+          track->eq_filter_state);
 
       // Route to group bus or master
       int out_idx = track->output_track_index;
@@ -1134,9 +1181,24 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
       for (size_t i = 0; i < track->plugins.size(); ++i) {
         if (i == 0 && track->plugins[i]->isInstrument()) continue;
         if (track->plugin_bypass.count((int)i)) continue;
+        const float mix = track->GetPluginMix((int)i);
+        if (mix <= 0.0001f) continue;
+        if (mix < 0.9999f) {
+          std::copy(bufferL, bufferL + block_size, dryBufL);
+          std::copy(bufferR, bufferR + block_size, dryBufR);
+        }
         track->plugins[i]->process(outChannels, outChannels, block_size,
                                    context, {});
+        if (mix < 0.9999f) {
+          d_blend_dry_wet_f32(dryBufL, dryBufR, bufferL, bufferR, block_size,
+                              mix);
+        }
       }
+
+      d_apply_track_eq_and_stereo_sep_f32(
+          bufferL, bufferR, block_size, sample_rate, track->eq_low,
+          track->eq_mid, track->eq_high, track->stereo_sep,
+          track->eq_filter_state);
 
       for (int i = 0; i < block_size; ++i) {
         mixBufferL[i] += bufferL[i];
@@ -1155,9 +1217,23 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
       for (size_t i = 0; i < track->plugins.size(); ++i) {
         if (i == 0 && track->plugins[i]->isInstrument()) continue;
         if (track->plugin_bypass.count((int)i)) continue;
+        const float mix = track->GetPluginMix((int)i);
+        if (mix <= 0.0001f) continue;
+        if (mix < 0.9999f) {
+          std::copy(bufferL, bufferL + block_size, dryBufL);
+          std::copy(bufferR, bufferR + block_size, dryBufR);
+        }
         track->plugins[i]->process(outChannels, outChannels, block_size,
                                    context, {});
+        if (mix < 0.9999f) {
+          d_blend_dry_wet_f32(dryBufL, dryBufR, bufferL, bufferR, block_size,
+                              mix);
+        }
       }
+      d_apply_track_eq_and_stereo_sep_f32(
+          bufferL, bufferR, block_size, sample_rate, track->eq_low,
+          track->eq_mid, track->eq_high, track->stereo_sep,
+          track->eq_filter_state);
       const float gain = track->muted ? 0.0f : track->volume;
       for (int i = 0; i < block_size; ++i) {
         mixBufferL[i] = bufferL[i] * gain;

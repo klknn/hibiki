@@ -38,6 +38,7 @@ void runIpcLoop(hibiki.ProjectState* state) {
     }
 
     hibiki.setStateQuit(state, true);
+    hibiki.stopVst3MainLoop();
 }
 
 private bool tryHandleListFlag(string[] args) {

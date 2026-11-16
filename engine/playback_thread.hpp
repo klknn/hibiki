@@ -12,6 +12,7 @@ namespace hibiki {
 void playback_thread(ProjectState& state);
 void listVst3Plugins(const char* path_ptr, size_t path_len);
 void runVst3MainLoop();
+void stopVst3MainLoop();
 
 ProjectState* createProjectState();
 void destroyProjectState(ProjectState* state);

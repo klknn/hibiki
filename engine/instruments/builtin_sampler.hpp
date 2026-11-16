@@ -46,6 +46,8 @@ class BuiltinSampler : public IPlugin {
             double sample_rate = 44100.0) override;
   bool loadSample(const std::string& path);
   const std::vector<float>& getWaveformSummary() const;
+  /// Returns loaded sample duration in seconds, or 0.0 if unloaded.
+  double getSampleDurationSec() const;
 
   void showEditor() override {}
   void stopEditor() override {}

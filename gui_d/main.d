@@ -241,22 +241,17 @@ extern (C) int UIAppMain(string[] args) {
     }
 
     string enginePath = resolveEnginePath(args);
-    size_t expectedSyncChannels = 0;
-    size_t expectedSyncPatterns = 0;
+    FlSettingsDialog activeSettingsDlg;
 
     client = new EngineProcessClient((Notification notif) {
         const bool structural = notif.plugin_list.hasValue || notif.clear_project.hasValue ||
                                 notif.sequencer_sync.hasValue;
         window.executeInUiThread(() {
-            if (expectedSyncChannels > 0 && notif.sequencer_sync.hasValue) {
-                const ss = notif.sequencer_sync.value;
-                if (ss.channels.length < expectedSyncChannels || ss.patterns.length < expectedSyncPatterns) {
-                    return;
-                }
-                expectedSyncChannels = 0;
-                expectedSyncPatterns = 0;
-            }
             model.applyNotification(notif);
+            if ((notif.audio_input_list.hasValue || notif.midi_input_list.hasValue) &&
+                activeSettingsDlg !is null) {
+                activeSettingsDlg.refreshDeviceSummary();
+            }
             refreshUi(structural);
         });
     });
@@ -264,8 +259,6 @@ extern (C) int UIAppMain(string[] args) {
     void syncTemplateToEngine() {
         if (!client.isRunning()) return;
         model.saveCurrentPatternToStore();
-        expectedSyncChannels = model.channels.length;
-        expectedSyncPatterns = model.patterns.length;
 
         client.sendRequest(makeSetBpmRequest(cast(float)model.bpm));
 
@@ -335,6 +328,8 @@ extern (C) int UIAppMain(string[] args) {
         }
 
         foreach (ref trk; model.tracks) {
+            bool addedAutoLane = false;
+            uint autoClipIdx = 0;
             foreach (ref cl; trk.clips) {
                 const float durBeats = cast(float)(cl.durationSec * (model.bpm / 60.0));
                 if (cl.kind == PlaylistClipKind.PATTERN) {
@@ -346,6 +341,19 @@ extern (C) int UIAppMain(string[] args) {
                         client.sendRequest(makeAddTimelineClipRequest(
                             trk.index, audioPath, cast(float)cl.startTimeSec, durBeats));
                     }
+                } else if (cl.kind == PlaylistClipKind.AUTOMATION) {
+                    if (!addedAutoLane) {
+                        client.sendRequest(makeAutomationAddLaneRequest(trk.index, 0, 0));
+                        addedAutoLane = true;
+                    }
+                    client.sendRequest(makeAutomationAddClipRequest(
+                        trk.index, 0, cast(float)cl.startTimeSec, durBeats));
+                    PbAutoPoint[] pbPts;
+                    foreach (const ref ap; cl.autoPoints) {
+                        pbPts ~= PbAutoPoint(ap.normTime * durBeats, ap.value, 0.0f);
+                    }
+                    client.sendRequest(makeAutomationUpdatePointsRequest(trk.index, 0, autoClipIdx, pbPts));
+                    ++autoClipIdx;
                 }
             }
         }
@@ -639,6 +647,7 @@ extern (C) int UIAppMain(string[] args) {
                 client.sendRequest(makeListAudioInputsRequest());
                 client.sendRequest(makeListMidiInputsRequest());
                 auto dlg = new FlSettingsDialog(window, &model);
+                activeSettingsDlg = dlg;
                 dlg.onRefreshDevices = () {
                     client.sendRequest(makeListAudioInputsRequest());
                     client.sendRequest(makeListMidiInputsRequest());
@@ -656,6 +665,7 @@ extern (C) int UIAppMain(string[] args) {
                     refreshUi(true);
                 };
                 dlg.onApplySettings = (int latMs, bool dbl, bool sb, bool ov, bool cd) {
+                    activeSettingsDlg = null;
                     model.bufferLatencyMs = latMs;
                     model.useDoublePrecision = dbl;
                     model.sandboxPlugins = sb;
@@ -738,9 +748,19 @@ extern (C) int UIAppMain(string[] args) {
             : "Playback Mode: SONG (plays Playlist arrangement)";
         refreshUi();
     };
+    int armedRecordTrackIdx = -1;
+    void disarmRecordTrackIfNeeded() {
+        if (armedRecordTrackIdx >= 0) {
+            client.sendRequest(makeTrackArmRecordRequest(armedRecordTrackIdx));
+            armedRecordTrackIdx = -1;
+        }
+    }
+
     toolbar.onPlayToggle = () {
         if (model.isPlaying) {
+            const bool wasRec = model.isRecording;
             client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_STOP));
+            if (wasRec) disarmRecordTrackIfNeeded();
             model.isPlaying = false;
             model.isRecording = false;
         } else {
@@ -751,6 +771,7 @@ extern (C) int UIAppMain(string[] args) {
     };
     toolbar.onStop = () {
         client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_STOP));
+        disarmRecordTrackIfNeeded();
         client.sendRequest(makePanicRequest());
         client.sendRequest(makeSeekRequest(0.0));
         model.isPlaying = false;
@@ -766,6 +787,15 @@ extern (C) int UIAppMain(string[] args) {
     toolbar.onRecordToggle = () {
         model.isRecording = !model.isRecording;
         if (model.isRecording) {
+            const int recTarget = (model.selectedChannelIndex >= 0 &&
+                                   model.selectedChannelIndex < cast(int)model.channels.length)
+                ? (100 + model.selectedChannelIndex) : 1;
+            if (armedRecordTrackIdx != recTarget) {
+                disarmRecordTrackIfNeeded();
+                client.sendRequest(makeTrackSetRecordModeRequest(recTarget, 1));
+                client.sendRequest(makeTrackArmRecordRequest(recTarget));
+                armedRecordTrackIdx = recTarget;
+            }
             if (model.countdownEnabled && !model.metronomeEnabled) {
                 model.metronomeEnabled = true;
                 client.sendRequest(makeSetMetronomeRequest(true));
@@ -773,12 +803,13 @@ extern (C) int UIAppMain(string[] args) {
             model.isPlaying = true;
             client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_RECORD));
             model.hintText = model.overdubEnabled
-                ? (model.countdownEnabled ? "Recording (Overdub + Pre-count active)" : "Recording (Overdub active)")
-                : "Recording live input...";
+                ? (model.countdownEnabled ? "Recording MIDI (Overdub + Metronome)" : "Recording MIDI (Overdub)")
+                : format("Recording MIDI into Channel %d...", model.selectedChannelIndex + 1);
         } else {
             model.isPlaying = false;
             client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_STOP));
-            model.hintText = "Recording stopped — saved take to timeline";
+            disarmRecordTrackIfNeeded();
+            model.hintText = "Recording stopped — saved MIDI take to pattern & timeline";
         }
         refreshUi();
     };
@@ -894,8 +925,8 @@ extern (C) int UIAppMain(string[] args) {
         client.sendRequest(makeAddTimelineClipRequest(targetLane, path, cast(float)model.playheadPosSec, 8.0f));
         const size_t tArr = model.ensureTrackIndex(targetLane);
         TimelineClipState c;
-        c.clipIndex = model.nextClipIndex(model.tracks[tArr]);
         c.kind = PlaylistClipKind.AUDIO;
+        c.clipIndex = model.nextClipIndex(model.tracks[tArr], c.kind);
         c.name = baseName(path);
         c.color = model.palette().clipAudio;
         c.startTimeSec = model.playheadPosSec;
@@ -1038,15 +1069,19 @@ extern (C) int UIAppMain(string[] args) {
         client.sendRequest(makeSeekRequest(seekSec));
         refreshUi();
     };
-    playlistCanvas.onDeleteClip = (int trackIdx, int clipIdx) {
-        client.sendRequest(makeRemoveTimelineClipRequest(trackIdx, clipIdx));
+    playlistCanvas.onDeleteTypedClip = (int trackIdx, int clipIdx, PlaylistClipKind kind, int laneIdx) {
+        if (kind == PlaylistClipKind.AUTOMATION) {
+            client.sendRequest(makeAutomationRemoveClipRequest(trackIdx, laneIdx, cast(uint)clipIdx));
+        } else {
+            client.sendRequest(makeRemoveTimelineClipRequest(trackIdx, clipIdx));
+        }
         refreshUi();
     };
     playlistCanvas.onPaintClip = (int trackIdx, double startSec) {
         const idx = model.ensureTrackIndex(trackIdx);
         TimelineClipState clip;
-        clip.clipIndex = model.nextClipIndex(model.tracks[idx]);
         clip.kind = model.activePickerKind;
+        clip.clipIndex = model.nextClipIndex(model.tracks[idx], clip.kind, clip.laneIndex);
         clip.startTimeSec = startSec;
         clip.durationSec = 4.0 * beatDurationSec(model.bpm) * 2.0;
 
@@ -1100,13 +1135,24 @@ extern (C) int UIAppMain(string[] args) {
                                 clip.name, startSec, trackIdx);
         refreshUi();
     };
-    playlistCanvas.onMoveClip = (int srcTrackIdx, int clipIdx, double newStartSec, int targetTrackIdx) {
-        client.sendRequest(makeMoveTimelineClipRequest(srcTrackIdx, clipIdx, cast(float)newStartSec, targetTrackIdx));
+    playlistCanvas.onMoveTypedClip = (int srcTrackIdx, int clipIdx, double newStartSec, int targetTrackIdx,
+                                      PlaylistClipKind kind, int laneIdx) {
+        if (kind == PlaylistClipKind.AUTOMATION) {
+            client.sendRequest(makeAutomationMoveClipRequest(
+                srcTrackIdx, laneIdx, cast(uint)clipIdx, cast(float)newStartSec));
+        } else {
+            client.sendRequest(makeMoveTimelineClipRequest(srcTrackIdx, clipIdx, cast(float)newStartSec, targetTrackIdx));
+        }
         refreshUi();
     };
-    playlistCanvas.onResizeClip = (int trackIdx, int clipIdx, double newDurationSec) {
+    playlistCanvas.onResizeTypedClip = (int trackIdx, int clipIdx, double newDurationSec,
+                                        PlaylistClipKind kind, int laneIdx) {
         const float durBeats = cast(float)(newDurationSec * (model.bpm / 60.0));
-        client.sendRequest(makeResizeTimelineClipRequest(trackIdx, clipIdx, durBeats));
+        if (kind == PlaylistClipKind.AUTOMATION) {
+            client.sendRequest(makeAutomationResizeClipRequest(trackIdx, laneIdx, cast(uint)clipIdx, durBeats));
+        } else {
+            client.sendRequest(makeResizeTimelineClipRequest(trackIdx, clipIdx, durBeats));
+        }
         refreshUi();
     };
     playlistCanvas.onMuteClip = (int trackIdx, int clipIdx, bool muted) {
@@ -1117,9 +1163,11 @@ extern (C) int UIAppMain(string[] args) {
         const size_t tArr = model.ensureTrackIndex(trackIdx);
         double leftDurSec = 4.0;
         double leftStartSec = 0.0;
+        double rightTrimBeats = 0.0;
         PlaylistClipKind sliceKind = PlaylistClipKind.PATTERN;
         int patIdx = 0;
         foreach (const ref c; model.tracks[tArr].clips) {
+            if (c.kind == PlaylistClipKind.AUTOMATION) continue;
             if (c.clipIndex == origClipIdx) {
                 leftDurSec = c.durationSec;
                 leftStartSec = c.startTimeSec;
@@ -1128,6 +1176,7 @@ extern (C) int UIAppMain(string[] args) {
             } else if (c.clipIndex == newRightClipIdx) {
                 sliceKind = c.kind;
                 patIdx = c.patternIndex;
+                rightTrimBeats = c.trimStartBeats;
             }
         }
         const float leftDurBeats = cast(float)(leftDurSec * (model.bpm / 60.0));
@@ -1138,7 +1187,9 @@ extern (C) int UIAppMain(string[] args) {
                 trackIdx, patIdx, cast(float)splitSec, rightDurBeats));
         } else if (sliceKind == PlaylistClipKind.AUDIO) {
             client.sendRequest(makeCopyTimelineClipRequest(trackIdx, origClipIdx, cast(float)splitSec, trackIdx, false));
-            const float trimBeats = cast(float)((splitSec - leftStartSec) * (model.bpm / 60.0));
+            const float trimBeats = rightTrimBeats > 0.0
+                ? cast(float)rightTrimBeats
+                : cast(float)((splitSec - leftStartSec) * (model.bpm / 60.0));
             client.sendRequest(makeResizeTimelineClipRequest(trackIdx, newRightClipIdx, rightDurBeats, trimBeats));
         }
         refreshUi();
@@ -1172,20 +1223,23 @@ extern (C) int UIAppMain(string[] args) {
     playlistCanvas.onAutomationPointsChanged = (int trackIdx, int clipIdx, const(AutomationPoint)[] pts) {
         const size_t tArr = model.ensureTrackIndex(trackIdx);
         double durSec = 4.0;
+        int laneIdx = 0;
         uint autoClipIdx = 0;
         foreach (const ref c; model.tracks[tArr].clips) {
+            if (c.kind != PlaylistClipKind.AUTOMATION) continue;
             if (c.clipIndex == clipIdx) {
                 durSec = c.durationSec > 0.0 ? c.durationSec : 4.0;
+                laneIdx = c.laneIndex;
+                autoClipIdx = cast(uint)c.clipIndex;
                 break;
             }
-            if (c.kind == PlaylistClipKind.AUTOMATION) ++autoClipIdx;
         }
         const float durBeats = cast(float)(durSec * (model.bpm / 60.0));
         PbAutoPoint[] pbPts;
         foreach (const ref ap; pts) {
             pbPts ~= PbAutoPoint(ap.normTime * durBeats, ap.value, 0.0f);
         }
-        client.sendRequest(makeAutomationUpdatePointsRequest(trackIdx, 0, autoClipIdx, pbPts));
+        client.sendRequest(makeAutomationUpdatePointsRequest(trackIdx, laneIdx, autoClipIdx, pbPts));
         refreshUi();
     };
 
@@ -1271,13 +1325,14 @@ extern (C) int UIAppMain(string[] args) {
             const int ci = id - 800;
             if (ci >= 0 && ci < cast(int)choices.length) {
                 const size_t tArr = model.ensureTrackIndex(trackIdx);
-                auto slot = TransportModel.makeDefaultPluginSlot(choices[ci].name, choices[ci].uri, false, slotIdx);
+                const int actualSlot = cast(int)model.tracks[tArr].plugins.length;
+                auto slot = TransportModel.makeDefaultPluginSlot(choices[ci].name, choices[ci].uri, false, actualSlot);
                 model.tracks[tArr].plugins ~= slot;
-                client.sendRequest(makePluginLoadRequest(trackIdx, choices[ci].uri, slotIdx));
-                pluginWrapper.setTargetMixerFx(trackIdx, slotIdx);
-                winPlugin.windowTitle = format("Fruity Wrapper - Insert %d Slot %d", trackIdx, slotIdx + 1);
+                client.sendRequest(makePluginLoadRequest(trackIdx, choices[ci].uri, actualSlot));
+                pluginWrapper.setTargetMixerFx(trackIdx, actualSlot);
+                winPlugin.windowTitle = format("Fruity Wrapper - Insert %d Slot %d", trackIdx, actualSlot + 1);
                 desktop.showWindow("win_plugin");
-                model.hintText = format("Loaded '%s' -> Insert %d Slot %d", choices[ci].name, trackIdx, slotIdx + 1);
+                model.hintText = format("Loaded '%s' -> Insert %d Slot %d", choices[ci].name, trackIdx, actualSlot + 1);
                 refreshUi();
             }
         });
@@ -1334,16 +1389,23 @@ extern (C) int UIAppMain(string[] args) {
         client.sendRequest(makePluginSendEditorInputRequest(
             trackIdx, plugIdx, inputType, x, y, btn, key, delta));
     };
-    pluginWrapper.onLoadSample = (int trackIdx, int plugIdx) {
-        import std.file : dirEntries, SpanMode;
+    string[] collectScanWavs() {
+        import std.file : dirEntries, isDir, SpanMode;
         string[] wavs;
-        if (exists("testdata")) {
-            foreach (e; dirEntries("testdata", "*.wav", SpanMode.depth)) {
-                wavs ~= e.name;
+        foreach (dir; model.sampleScanDirs) {
+            if (exists(dir) && isDir(dir)) {
+                foreach (e; dirEntries(dir, "*.wav", SpanMode.depth)) {
+                    wavs ~= e.name;
+                }
             }
         }
+        return wavs;
+    }
+
+    pluginWrapper.onLoadSample = (int trackIdx, int plugIdx) {
+        string[] wavs = collectScanWavs();
         if (wavs.length == 0) {
-            model.hintText = "No .wav files found in testdata/";
+            model.hintText = "No .wav files found in configured sample folders";
             refreshUi();
             return;
         }
@@ -1363,6 +1425,26 @@ extern (C) int UIAppMain(string[] args) {
     pluginWrapper.onTriggerPad = (int trackIdx, uint notePitch) {
         sendVirtualNote(trackIdx, notePitch);
         refreshUi();
+    };
+    pluginWrapper.onPromptPadSample = (int trackIdx, int plugIdx, int padIdx) {
+        string[] wavs = collectScanWavs();
+        if (wavs.length == 0) {
+            model.hintText = "No .wav files found in configured sample folders";
+            refreshUi();
+            return;
+        }
+        auto m = new MenuItem();
+        foreach (i, wp; wavs) {
+            m.add(new Action(940 + cast(int)i, toUTF32(baseName(wp))));
+        }
+        showMenuPopup(pluginWrapper, m, (int id) {
+            const int wi = id - 940;
+            if (wi >= 0 && wi < cast(int)wavs.length) {
+                client.sendRequest(makeDrumPadLoadSampleRequest(trackIdx, plugIdx, padIdx, wavs[wi]));
+                model.hintText = format("Loading pad %d sample '%s'", padIdx + 1, baseName(wavs[wi]));
+                refreshUi();
+            }
+        });
     };
 
     int[uint] activeTypingNotes; // key: pitch -> trackIdx while key is held

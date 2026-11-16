@@ -2123,4 +2123,128 @@ TEST_F(ProjectTest, SaveClearLoadAndUndoRedoFullProjectRoundTrip) {
   std::remove(proj_path.c_str());
 }
 
+TEST_F(ProjectTest, SongModePatternClipStopsNotesAtClipEnd) {
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+  state.playback_mode = hibiki::SequencerPlaybackMode::SONG;
+  state.loop_enabled = false;
+  state.loop_start_sec = 0.0;
+  state.loop_end_sec = 0.0;
+
+  auto* master = hibiki::GetOrCreateTrack(state, 0);
+  master->track_type = hibiki::Track::TrackType::MASTER;
+  master->volume = 1.0f;
+
+  auto* gen = hibiki::GetOrCreateTrack(state, 100);
+  gen->track_type = hibiki::Track::TrackType::NORMAL;
+  gen->output_track_index = 0;
+  gen->volume = 1.0f;
+  ASSERT_GE(gen->LoadPlugin("builtin://3xosc", 0, state.sample_rate).index, 0);
+  gen->plugins[0]->setParameterValue(17, 1.0);   // P_GAIN_S = 1.0
+  gen->plugins[0]->setParameterValue(18, 0.01);  // P_GAIN_R = fast
+
+  hibiki::SequencerChannel ch;
+  ch.channel_index = 0;
+  ch.name = "3x Osc";
+  ch.uri = "builtin://3xosc";
+  ch.mixer_insert = 0;
+  state.sequencer_channels.push_back(ch);
+
+  hibiki::SequencerPattern pat;
+  pat.pattern_index = 0;
+  pat.length_steps = 16;
+  hibiki::ChannelPatternStepData cpd;
+  hibiki::pb::core::MidiEvent ev;
+  ev.set_tick(0);
+  ev.set_pitch(60);
+  ev.set_duration_ticks(1440);  // 3 beats (1.5s at 120 BPM) > 2-beat clip
+  ev.set_velocity(110);
+  cpd.notes.push_back(ev);
+  pat.channels[0] = cpd;
+  state.sequencer_patterns.push_back(pat);
+
+  // Place 2-beat (1.0s) pattern clip on Track 1, then silence up to 3.0s.
+  auto* t1 = hibiki::GetOrCreateTrack(state, 1);
+  t1->track_type = hibiki::Track::TrackType::GROUP;
+  t1->AddTimelineClip("pattern://0", 0.0, state.bpm, 2.0, state.sample_rate);
+
+  const std::string out_wav = "test_song_pat_end_noteoff.wav";
+  hibiki::BounceProject(state, out_wav);
+
+  std::vector<float> audio;
+  int nch = 0;
+  double dur = 0.0;
+  ASSERT_THAT(hibiki::LoadWav(out_wav, audio, nch, dur), IsOk());
+  ASSERT_EQ(nch, 2);
+
+  auto rmsRange = [&](double start_s, double end_s) {
+    size_t i0 = static_cast<size_t>(start_s * 44100.0) * 2;
+    size_t i1 =
+        std::min(audio.size(), static_cast<size_t>(end_s * 44100.0) * 2);
+    double sum = 0.0;
+    size_t cnt = 0;
+    for (size_t i = i0; i < i1; ++i) {
+      sum += static_cast<double>(audio[i]) * audio[i];
+      ++cnt;
+    }
+    return cnt > 0 ? std::sqrt(sum / cnt) : 0.0;
+  };
+
+  EXPECT_GT(rmsRange(0.2, 0.8), 0.02);
+  EXPECT_LT(rmsRange(1.8, 2.5), 0.002)
+      << "Note started inside SONG pattern clip must receive NoteOff when "
+         "clip ends at 1.0s";
+  std::remove(out_wav.c_str());
+}
+
+TEST_F(ProjectTest, PatternLoopFourBeatNoteAtTickZeroIsAudible) {
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+  state.playback_mode = hibiki::SequencerPlaybackMode::PAT;
+  state.selected_pattern_index = 0;
+
+  auto* gen = hibiki::GetOrCreateTrack(state, 100);
+  gen->track_type = hibiki::Track::TrackType::NORMAL;
+  gen->output_track_index = 0;
+  gen->volume = 1.0f;
+  ASSERT_GE(gen->LoadPlugin("builtin://3xosc", 0, state.sample_rate).index, 0);
+  gen->plugins[0]->setParameterValue(17, 1.0);  // P_GAIN_S
+
+  hibiki::SequencerChannel ch;
+  ch.channel_index = 0;
+  ch.name = "3x Osc";
+  ch.uri = "builtin://3xosc";
+  ch.mixer_insert = 0;
+  state.sequencer_channels.push_back(ch);
+
+  hibiki::SequencerPattern pat;
+  pat.pattern_index = 0;
+  pat.length_steps = 16;  // 4.0 beats
+  hibiki::ChannelPatternStepData cpd;
+  hibiki::pb::core::MidiEvent ev;
+  ev.set_tick(0);
+  ev.set_pitch(60);
+  ev.set_duration_ticks(1920);  // Exactly 4.0 beats (full 1-bar note)
+  ev.set_velocity(110);
+  cpd.notes.push_back(ev);
+  pat.channels[0] = cpd;
+  state.sequencer_patterns.push_back(pat);
+
+  const std::string out_wav = "test_pat_4beat_note.wav";
+  hibiki::BounceProject(state, out_wav);
+
+  std::vector<float> audio;
+  int nch = 0;
+  double dur = 0.0;
+  ASSERT_THAT(hibiki::LoadWav(out_wav, audio, nch, dur), IsOk());
+  float peak = 0.0f;
+  for (float s : audio) peak = std::max(peak, std::abs(s));
+  EXPECT_GT(peak, 0.02f)
+      << "A full 4-beat (1-bar) note at tick 0 in a 16-step pattern must not "
+         "self-cancel on beat 0 via fmod";
+  std::remove(out_wav.c_str());
+}
+
 }  // namespace hibiki

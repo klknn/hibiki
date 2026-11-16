@@ -11,7 +11,7 @@ import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText,
     getFlPalette, safeWidgetFont, ScopedRetroAntialias, truncateLabel;
 import gui_d.transport_model : DrumPadSlotState, ParamItemState, PluginSlotState, TransportModel;
 import gui_d.workspace : activateParentWindow;
-import std.algorithm : canFind;
+import std.algorithm : canFind, startsWith;
 import std.format : format;
 import std.string : toLower;
 import std.utf : toUTF32;
@@ -423,6 +423,7 @@ class PluginWrapperWidget : Widget {
     void delegate(int trackIdx, int pluginIdx, int inputType, int x, int y, int btn, int key, int delta) onEditorInput;
     void delegate(int trackIdx, int pluginIdx) onLoadSample;
     void delegate(int trackIdx, uint notePitch) onTriggerPad;
+    void delegate(int trackIdx, int pluginIdx, int padIdx) onPromptPadSample;
 
     this(string id, TransportModel* model) {
         super(id);
@@ -563,6 +564,18 @@ class PluginWrapperWidget : Widget {
                     return true;
                 }
                 if (m.guiRc.isPointInside(event.x, event.y)) {
+                    if (plug.uri.startsWith("builtin://") || plug.uri.length == 0) {
+                        if (plug.remoteEditorOpen) {
+                            plug.remoteEditorOpen = false;
+                            if (onToggleRemoteEditor !is null) {
+                                onToggleRemoteEditor(trk, plug.pluginIndex, false);
+                            }
+                        } else {
+                            model_.hintText = "Built-in plugin uses inline knobs";
+                        }
+                        invalidate();
+                        return true;
+                    }
                     const bool nextOpen = !plug.remoteEditorOpen;
                     plug.remoteEditorOpen = nextOpen;
                     if (onToggleRemoteEditor !is null) {
@@ -595,19 +608,25 @@ class PluginWrapperWidget : Widget {
                 return true;
             }
 
-            // Drum Machine 8-pad trigger hit test inside scopeRc
+            // Drum Machine 8-pad trigger (left-click) / load sample (right-click) hit test inside scopeRc
             if (isDrumPlugin(plug) && m.scopeRc.isPointInside(event.x, event.y)) {
                 const int scopePad = dp(8);
                 const int sw = m.scopeRc.width - scopePad * 2;
                 if (sw > 0) {
                     const int pIdx = (event.x - (m.scopeRc.left + scopePad)) * 8 / sw;
                     if (pIdx >= 0 && pIdx < 8) {
-                        uint notePitch = cast(uint)(36 + pIdx);
-                        if (pIdx < cast(int)plug.drumPads.length) {
-                            plug.drumPads[pIdx].activeFlash = true;
-                            if (plug.drumPads[pIdx].triggerNote > 0) notePitch = plug.drumPads[pIdx].triggerNote;
+                        if (event.button == MouseButton.Right) {
+                            if (onPromptPadSample !is null) {
+                                onPromptPadSample(resolveTargetMixerTrack(), plug.pluginIndex, pIdx);
+                            }
+                        } else {
+                            uint notePitch = cast(uint)(36 + pIdx);
+                            if (pIdx < cast(int)plug.drumPads.length) {
+                                plug.drumPads[pIdx].activeFlash = true;
+                                if (plug.drumPads[pIdx].triggerNote > 0) notePitch = plug.drumPads[pIdx].triggerNote;
+                            }
+                            if (onTriggerPad !is null) onTriggerPad(resolveTargetMixerTrack(), notePitch);
                         }
-                        if (onTriggerPad !is null) onTriggerPad(resolveTargetMixerTrack(), notePitch);
                         invalidate();
                         return true;
                     }
@@ -764,4 +783,11 @@ unittest {
     pw.onToggleRemoteEditor = (int t, int p, bool open) { edState = open; };
     pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)(440 - 50), cast(short)16));
     assert(!edState && !plug.remoteEditorOpen, "Expected EDITOR click to toggle remote editor off");
+
+    // Regression: Clicking EDITOR on a built-in plugin (builtin://...) must NOT activate remoteEditorOpen polling
+    assert(plug.uri == "builtin://acid_bass");
+    edState = false;
+    pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)(440 - 50), cast(short)16));
+    assert(!plug.remoteEditorOpen && !edState,
+           "Expected EDITOR button on builtin:// plugin not to enter remoteEditorOpen polling state");
 }

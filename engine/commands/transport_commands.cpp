@@ -125,6 +125,93 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
                 (float)state.record_start_sec, (float)duration_sec,
                 track->timeline_clips[clip_idx]->clip->waveform_summary);
 
+            // If this is a Channel Rack generator track (>= 100), also append
+            // recorded notes into the active SequencerPattern so Piano Roll
+            // and PAT/SONG sequencer reflect the take immediately.
+            if (pair.first >= 100) {
+              const int ch_idx = pair.first - 100;
+              SequencerPattern* active_pat = nullptr;
+              for (auto& pat : state.sequencer_patterns) {
+                if (pat.pattern_index == state.selected_pattern_index) {
+                  active_pat = &pat;
+                  break;
+                }
+              }
+              if (active_pat) {
+                auto& dst_notes = active_pat->channels[ch_idx].notes;
+                constexpr double kPpq = 480.0;
+                std::map<int, std::pair<long, int>> active_notes;
+                for (const auto& me :
+                     track->timeline_clips[clip_idx]->clip->midi_events) {
+                  const long tick = std::max(
+                      0L, static_cast<long>(std::llround(me.beats * kPpq)));
+                  if (me.type == 0x90 && me.velocity > 0) {
+                    active_notes[me.note] = {tick, me.velocity};
+                  } else if (me.type == 0x80 ||
+                             (me.type == 0x90 && me.velocity == 0)) {
+                    auto it = active_notes.find(me.note);
+                    if (it != active_notes.end()) {
+                      pb::core::MidiEvent pe;
+                      pe.set_tick(it->second.first);
+                      pe.set_pitch(me.note);
+                      pe.set_duration_ticks(
+                          std::max(120L, tick - it->second.first));
+                      pe.set_velocity(it->second.second);
+                      dst_notes.push_back(pe);
+                      active_notes.erase(it);
+                    }
+                  }
+                }
+                for (const auto& [note, info] : active_notes) {
+                  pb::core::MidiEvent pe;
+                  pe.set_tick(info.first);
+                  pe.set_pitch(note);
+                  pe.set_duration_ticks(240);
+                  pe.set_velocity(info.second);
+                  dst_notes.push_back(pe);
+                }
+                pb::notifications::SequencerSync sync;
+                sync.set_playback_mode(state.playback_mode ==
+                                               SequencerPlaybackMode::SONG
+                                           ? pb::core::PLAYBACK_MODE_SONG
+                                           : pb::core::PLAYBACK_MODE_PAT);
+                sync.set_swing_amount(state.swing_amount);
+                sync.set_selected_pattern_index(state.selected_pattern_index);
+                for (const auto& ch : state.sequencer_channels) {
+                  auto* sc = sync.add_channels();
+                  sc->set_channel_index(ch.channel_index);
+                  sc->set_name(ch.name);
+                  sc->set_uri(ch.uri);
+                  sc->set_category(ch.category);
+                  sc->set_color(ch.color);
+                  sc->set_mixer_insert(ch.mixer_insert);
+                  sc->set_volume(ch.volume);
+                  sc->set_pan(ch.pan);
+                  sc->set_muted(ch.muted);
+                  sc->set_soloed(ch.soloed);
+                }
+                for (const auto& pat : state.sequencer_patterns) {
+                  auto* sp = sync.add_patterns();
+                  sp->set_pattern_index(pat.pattern_index);
+                  sp->set_name(pat.name);
+                  sp->set_color(pat.color);
+                  sp->set_length_steps(pat.length_steps);
+                  for (const auto& [cidx, data] : pat.channels) {
+                    auto* cp = sp->add_channels();
+                    cp->set_channel_index(cidx);
+                    for (bool b : data.steps) cp->add_steps(b);
+                    for (float v : data.step_velocities)
+                      cp->add_step_velocities(v);
+                    for (float p : data.step_pitches) cp->add_step_pitches(p);
+                    for (float pa : data.step_pans) cp->add_step_pans(pa);
+                    for (float sh : data.step_shifts) cp->add_step_shifts(sh);
+                    for (const auto& ev : data.notes) *cp->add_notes() = ev;
+                  }
+                }
+                sendSequencerSync(sync);
+              }
+            }
+
             track->midi_record_buffer.clear();
           } else {
             // Finalize audio recording

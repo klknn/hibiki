@@ -2,6 +2,7 @@
 #include <mutex>
 
 #include "engine/commands/commands.hpp"
+#include "engine/instruments/builtin_drum_machine.hpp"
 #include "engine/ipc/ipc.hpp"
 
 namespace hibiki {
@@ -89,7 +90,30 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       Track* trk = syncChannelGeneratorTrack(state, *ch);
       if (!ch->uri.empty() &&
           (trk->plugins.empty() || trk->plugins[0]->getPath() != ch->uri)) {
-        trk->LoadPlugin(ch->uri, 0, state.sample_rate, state.plugin_host_mode);
+        auto res = trk->LoadPlugin(ch->uri, 0, state.sample_rate,
+                                   state.plugin_host_mode);
+        if (res.index >= 0 &&
+            res.index < static_cast<int>(trk->plugins.size()) &&
+            trk->plugins[res.index]) {
+          auto& plugin = trk->plugins[res.index];
+          std::vector<VstParamInfo> params;
+          for (int i = 0; i < plugin->getParameterCount(); ++i) {
+            VstParamInfo info;
+            if (plugin->getParameterInfo(i, info)) params.push_back(info);
+          }
+          const bool bp = trk->plugin_bypass.count(res.index) > 0;
+          sendParamList(trk->index, res.index, plugin->getName(),
+                        plugin->isInstrument(), params, bp,
+                        trk->GetPluginMix(res.index));
+          for (const auto& info : params) {
+            sendParamValueChange(
+                trk->index, res.index, info.id,
+                static_cast<float>(plugin->getParameterValue(info.id)));
+          }
+          if (auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugin.get())) {
+            dm->sendAllPadStates();
+          }
+        }
       }
       sendAck("SEQ_ADD_CHANNEL", true);
       break;

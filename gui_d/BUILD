@@ -98,3 +98,19 @@ d_binary(
         "@dlangui",
     ],
 )
+
+d_test(
+    name = "gui_e2e_test",
+    size = "medium",
+    srcs = ["e2e_ipc_test.d"],
+    data = [
+        "//engine:hbk-play",
+        "//testdata",
+    ],
+    deps = [
+        ":gui_model",
+        "//pb:commands_d_proto",
+        "//pb:core_d_proto",
+        "//pb:notifications_d_proto",
+    ],
+)

@@ -110,6 +110,15 @@ void CollectPatternBlockMidiEvents(const SequencerPattern& pat, int ch_idx,
                                    bool wrap_loop,
                                    std::vector<MidiNoteEvent>& out);
 
+/// Collects SONG-mode pattern clip MIDI events for generator channel `ch_idx`
+/// across `[block_start_sec, block_start_sec + time_per_block)`, clipping
+/// sample offsets cleanly and emitting NoteOffs when a pattern clip ends.
+void CollectSongPatternClipBlockEvents(const ProjectState& state, int ch_idx,
+                                       double block_start_sec,
+                                       double time_per_block, float sample_rate,
+                                       int block_size,
+                                       std::vector<MidiNoteEvent>& out);
+
 absl::Status SaveProject(const ProjectState& state, const std::string& path);
 absl::Status LoadProject(ProjectState& state, const std::string& path);
 

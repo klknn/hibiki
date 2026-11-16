@@ -62,14 +62,16 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
         if (target_idx != -1) {
           auto& plugin = track->plugins[target_idx];
           bool bp = track->plugin_bypass.count(target_idx) > 0;
+          const auto params = collectParams(*plugin);
           sendParamList(tidx, target_idx, plugin->getName(),
-                        plugin->isInstrument(), collectParams(*plugin), bp,
+                        plugin->isInstrument(), params, bp,
                         track->GetPluginMix(target_idx));
           // Push all current param values to UI so knobs reflect
           // the state set during load() (e.g. DX7 preset import).
-          for (int i = 0; i < plugin->getParameterCount(); ++i) {
-            sendParamValueChange(tidx, target_idx, i,
-                                 plugin->getParameterValue(i));
+          for (const auto& info : params) {
+            sendParamValueChange(
+                tidx, target_idx, info.id,
+                static_cast<float>(plugin->getParameterValue(info.id)));
           }
           if (auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugin.get())) {
             dm->sendAllPadStates();
@@ -235,6 +237,7 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
             sd->set_sample_name(slash != std::string::npos
                                     ? sample_path.substr(slash + 1)
                                     : sample_path);
+            sd->set_sample_duration_sec(sampler->getSampleDurationSec());
             std::string data;
             notification.SerializeToString(&data);
             sendNotification(reinterpret_cast<const uint8_t*>(data.data()),

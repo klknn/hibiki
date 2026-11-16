@@ -29,6 +29,7 @@ extern (C++, hibiki) {
 
     void listVst3Plugins(const(char)* path_ptr, size_t path_len);
     void runVst3MainLoop();
+    void stopVst3MainLoop();
 
     void loadConfig(ref ProjectState state);
     void playback_thread(ref ProjectState state);

@@ -1,7 +1,7 @@
 module gui_d.ipc_client;
 
 import core.stdc.string : memcpy;
-import dproto.proto : decodeProto, encodeProto;
+import dproto.proto : Arena, computeProtoSize, decodeProto, encodeProto;
 import pb.commands : AudioEditorCmd, AutomationCmd, DrumPadCmd, ListAudioInputs, ListMidiInputs,
                        MidiCmd, PluginCmd, PluginHostMode, ProjectCmd, Request, ScanRemotePlugins,
                        SendVirtualMidi, SequencerCmd, SetAudioBufferSize, SetPluginHostMode,
@@ -20,15 +20,40 @@ enum uint MAX_IPC_FRAME_BYTES = 4 * 1024 * 1024;
 
 /// Encodes a Protobuf `Request` with a 4-byte little-endian length prefix for `hbk-play` stdin.
 ubyte[] encodeLengthPrefixedRequest(const ref Request req) @safe {
-    ubyte[] payload = encodeProto(req);
+    const size_t needed = computeProtoSize(req);
+    ubyte[] payload;
+    if (needed > 0) {
+        auto raw = new ubyte[needed];
+        const size_t written = encodeProto(req, raw);
+        payload = raw[0 .. written];
+    }
     const uint len = cast(uint)payload.length;
     auto framed = new ubyte[4 + payload.length];
     framed[0] = cast(ubyte)(len & 0xFF);
     framed[1] = cast(ubyte)((len >> 8) & 0xFF);
     framed[2] = cast(ubyte)((len >> 16) & 0xFF);
     framed[3] = cast(ubyte)((len >> 24) & 0xFF);
-    framed[4 .. $] = payload[];
+    if (payload.length > 0) {
+        framed[4 .. $] = payload[];
+    }
     return framed;
+}
+
+/// Deserializes a Protobuf message into a per-message GC-owned Arena so queued notifications
+/// never alias a shared static scratch buffer.
+bool decodeProtoOwned(T)(const(ubyte)[] payload, out T msg) @safe {
+    size_t cap = payload.length * 8 + 4096;
+    if (cap < 4096) cap = 4096;
+    while (cap <= 32 * 1024 * 1024) {
+        T candidate;
+        Arena arena = Arena(new ubyte[cap]);
+        if (decodeProto(payload, candidate, arena)) {
+            msg = candidate;
+            return true;
+        }
+        cap *= 2;
+    }
+    return false;
 }
 
 /// Extracts one `HBKI`-framed payload from `rxBuf`, advancing `rxBuf` past the consumed frame.
@@ -672,6 +697,29 @@ Request makeAutomationAddClipRequest(int trackIdx, int laneIdx, float startSec, 
     return req;
 }
 
+Request makeTrackArmRecordRequest(int trackIdx) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_ARM_RECORD;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    req.track.set(cmd);
+    return req;
+}
+
+Request makeTrackSetRecordModeRequest(int trackIdx, int recordMode) @safe {
+    Request req;
+    TrackCmd cmd;
+    cmd.action = TrackCmd.Action.ACTION_SET_RECORD_MODE;
+    EntityRef target;
+    target.track_index = trackIdx;
+    cmd.target = target;
+    cmd.record_mode = recordMode;
+    req.track.set(cmd);
+    return req;
+}
+
 Request makeAutomationUpdatePointsRequest(int trackIdx, int laneIdx, uint clipIdx, const(PbAutoPoint)[] pts) @safe {
     Request req;
     AutomationCmd cmd;
@@ -682,6 +730,47 @@ Request makeAutomationUpdatePointsRequest(int trackIdx, int laneIdx, uint clipId
     cmd.target = target;
     cmd.clip_index = clipIdx;
     cmd.points = pts.dup;
+    req.automation.set(cmd);
+    return req;
+}
+
+Request makeAutomationRemoveClipRequest(int trackIdx, int laneIdx, uint clipIdx) @safe {
+    Request req;
+    AutomationCmd cmd;
+    cmd.action = AutomationCmd.Action.ACTION_REMOVE_CLIP;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.lane_index.set(cast(uint)laneIdx);
+    cmd.target = target;
+    cmd.clip_index = clipIdx;
+    req.automation.set(cmd);
+    return req;
+}
+
+Request makeAutomationMoveClipRequest(int trackIdx, int laneIdx, uint clipIdx, float startSec) @safe {
+    Request req;
+    AutomationCmd cmd;
+    cmd.action = AutomationCmd.Action.ACTION_MOVE_CLIP;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.lane_index.set(cast(uint)laneIdx);
+    cmd.target = target;
+    cmd.clip_index = clipIdx;
+    cmd.start_time_sec = startSec;
+    req.automation.set(cmd);
+    return req;
+}
+
+Request makeAutomationResizeClipRequest(int trackIdx, int laneIdx, uint clipIdx, float durBeats) @safe {
+    Request req;
+    AutomationCmd cmd;
+    cmd.action = AutomationCmd.Action.ACTION_RESIZE_CLIP;
+    EntityRef target;
+    target.track_index = trackIdx;
+    target.lane_index.set(cast(uint)laneIdx);
+    cmd.target = target;
+    cmd.clip_index = clipIdx;
+    cmd.duration_beats = durBeats;
     req.automation.set(cmd);
     return req;
 }
@@ -945,6 +1034,14 @@ class EngineProcessClient {
         try {
             wait(pipes_.pid);
         } catch (Exception) {}
+        if (readerThread_ !is null) {
+            try {
+                readerThread_.join(false);
+            } catch (Exception) {}
+        }
+        try {
+            pipes_.stdout.close();
+        } catch (Exception) {}
     }
 
     private void readLoop() {
@@ -963,7 +1060,7 @@ class EngineProcessClient {
             ubyte[] payload;
             while (atomicLoad(running_) && extractNextFrame(rxBuf, payload)) {
                 Notification notif;
-                if (decodeProto(payload, notif) && onNotification_ !is null && atomicLoad(running_)) {
+                if (decodeProtoOwned(payload, notif) && onNotification_ !is null && atomicLoad(running_)) {
                     onNotification_(notif);
                 }
             }

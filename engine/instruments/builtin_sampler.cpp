@@ -33,6 +33,15 @@ const std::vector<float>& BuiltinSampler::getWaveformSummary() const {
   return waveform_summary_;
 }
 
+double BuiltinSampler::getSampleDurationSec() const {
+  if (sample_rate_file_ <= 0.0 || sample_channels_ <= 0 ||
+      sample_data_.empty()) {
+    return 0.0;
+  }
+  return static_cast<double>(sample_data_.size()) /
+         (static_cast<double>(sample_channels_) * sample_rate_file_);
+}
+
 void BuiltinSampler::process(float** /*inputs*/, float** outputs,
                              int num_samples, const HostProcessContext& context,
                              const std::vector<MidiNoteEvent>& events,

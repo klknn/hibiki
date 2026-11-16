@@ -1,6 +1,8 @@
 #include "engine/core/project.hpp"
 
+#include <filesystem>
 #include <fstream>
+#include <set>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
@@ -244,7 +246,6 @@ static void LoadTracksFromProto(ProjectState& state,
 
     if (!track_data.name().empty()) {
       track->name = track_data.name();
-      sendTrackInfo(track_data.track_index(), track->name);
     }
     track->record_armed = track_data.record_armed();
     track->input_device_id = track_data.input_device_id();
@@ -624,6 +625,46 @@ void SyncProjectToGui(const ProjectState& state) {
                            static_cast<int>(state.playback_mode),
                            state.swing_amount, state.selected_pattern_index);
 
+  if (!state.sequencer_channels.empty() || !state.sequencer_patterns.empty()) {
+    pb::notifications::SequencerSync sync;
+    sync.set_playback_mode(state.playback_mode == SequencerPlaybackMode::SONG
+                               ? pb::core::PLAYBACK_MODE_SONG
+                               : pb::core::PLAYBACK_MODE_PAT);
+    sync.set_swing_amount(state.swing_amount);
+    sync.set_selected_pattern_index(state.selected_pattern_index);
+    for (const auto& ch : state.sequencer_channels) {
+      auto* sc = sync.add_channels();
+      sc->set_channel_index(ch.channel_index);
+      sc->set_name(ch.name);
+      sc->set_uri(ch.uri);
+      sc->set_category(ch.category);
+      sc->set_color(ch.color);
+      sc->set_mixer_insert(ch.mixer_insert);
+      sc->set_volume(ch.volume);
+      sc->set_pan(ch.pan);
+      sc->set_muted(ch.muted);
+      sc->set_soloed(ch.soloed);
+    }
+    for (const auto& pat : state.sequencer_patterns) {
+      auto* sp = sync.add_patterns();
+      sp->set_pattern_index(pat.pattern_index);
+      sp->set_name(pat.name);
+      sp->set_color(pat.color);
+      sp->set_length_steps(pat.length_steps);
+      for (const auto& [ch_idx, data] : pat.channels) {
+        auto* cp = sp->add_channels();
+        cp->set_channel_index(ch_idx);
+        for (bool b : data.steps) cp->add_steps(b);
+        for (float v : data.step_velocities) cp->add_step_velocities(v);
+        for (float p : data.step_pitches) cp->add_step_pitches(p);
+        for (float pa : data.step_pans) cp->add_step_pans(pa);
+        for (float sh : data.step_shifts) cp->add_step_shifts(sh);
+        for (const auto& ev : data.notes) *cp->add_notes() = ev;
+      }
+    }
+    hibiki::sendSequencerSync(sync);
+  }
+
   auto emitMidiNotes = [](int tidx, int sidx, int cidx, const Clip& clip) {
     if (clip.type != Clip::Type::MIDI) return;
     constexpr int ppq = 480;
@@ -731,46 +772,6 @@ void SyncProjectToGui(const ProjectState& state) {
                                       track->plugins);
     }
   }
-
-  if (!state.sequencer_channels.empty() || !state.sequencer_patterns.empty()) {
-    pb::notifications::SequencerSync sync;
-    sync.set_playback_mode(state.playback_mode == SequencerPlaybackMode::SONG
-                               ? pb::core::PLAYBACK_MODE_SONG
-                               : pb::core::PLAYBACK_MODE_PAT);
-    sync.set_swing_amount(state.swing_amount);
-    sync.set_selected_pattern_index(state.selected_pattern_index);
-    for (const auto& ch : state.sequencer_channels) {
-      auto* sc = sync.add_channels();
-      sc->set_channel_index(ch.channel_index);
-      sc->set_name(ch.name);
-      sc->set_uri(ch.uri);
-      sc->set_category(ch.category);
-      sc->set_color(ch.color);
-      sc->set_mixer_insert(ch.mixer_insert);
-      sc->set_volume(ch.volume);
-      sc->set_pan(ch.pan);
-      sc->set_muted(ch.muted);
-      sc->set_soloed(ch.soloed);
-    }
-    for (const auto& pat : state.sequencer_patterns) {
-      auto* sp = sync.add_patterns();
-      sp->set_pattern_index(pat.pattern_index);
-      sp->set_name(pat.name);
-      sp->set_color(pat.color);
-      sp->set_length_steps(pat.length_steps);
-      for (const auto& [ch_idx, data] : pat.channels) {
-        auto* cp = sp->add_channels();
-        cp->set_channel_index(ch_idx);
-        for (bool b : data.steps) cp->add_steps(b);
-        for (float v : data.step_velocities) cp->add_step_velocities(v);
-        for (float p : data.step_pitches) cp->add_step_pitches(p);
-        for (float pa : data.step_pans) cp->add_step_pans(pa);
-        for (float sh : data.step_shifts) cp->add_step_shifts(sh);
-        for (const auto& ev : data.notes) *cp->add_notes() = ev;
-      }
-    }
-    hibiki::sendSequencerSync(sync);
-  }
 }
 
 void CollectPatternBlockMidiEvents(const SequencerPattern& pat, int ch_idx,
@@ -830,7 +831,12 @@ void CollectPatternBlockMidiEvents(const SequencerPattern& pat, int ch_idx,
             : 0.0;
     const double on_beat = s * 0.25 + swing_beats + shift_beats;
     double off_beat = on_beat + 0.20;
-    if (!wrap_loop && off_beat >= loop_beats) {
+    if (wrap_loop && loop_beats > 0.0) {
+      if (off_beat >= loop_beats && on_beat < loop_beats &&
+          (off_beat - on_beat) >= loop_beats - 1e-4) {
+        off_beat = std::max(on_beat + 1e-4, loop_beats - 1e-4);
+      }
+    } else if (!wrap_loop && off_beat >= loop_beats) {
       off_beat = std::max(on_beat + 0.01, loop_beats - 0.001);
     }
     const float p_norm =
@@ -865,7 +871,16 @@ void CollectPatternBlockMidiEvents(const SequencerPattern& pat, int ch_idx,
     const double on_beat = ev.tick() / kPpq;
     const double dur_beats = std::max(1, (int)ev.duration_ticks()) / kPpq;
     double off_beat = on_beat + dur_beats;
-    if (!wrap_loop && off_beat >= loop_beats) {
+    if (wrap_loop && loop_beats > 0.0) {
+      // Avoid modulo wrap colliding off_beat onto on_beat in the same block.
+      double on_mod = std::fmod(on_beat, loop_beats);
+      if (on_mod < 0.0) on_mod += loop_beats;
+      double off_mod = std::fmod(off_beat, loop_beats);
+      if (off_mod < 0.0) off_mod += loop_beats;
+      if (std::abs(off_mod - on_mod) < 1e-4) {
+        off_beat = std::max(on_beat + 1e-4, off_beat - 1e-3);
+      }
+    } else if (!wrap_loop && off_beat >= loop_beats) {
       off_beat = std::max(on_beat + 0.01, loop_beats - 0.001);
     }
     int off = 0;
@@ -886,6 +901,96 @@ void CollectPatternBlockMidiEvents(const SequencerPattern& pat, int ch_idx,
       e.isNoteOn = false;
       e.velocity = 0.0f;
       out.push_back(e);
+    }
+  }
+}
+
+void CollectSongPatternClipBlockEvents(const ProjectState& state, int ch_idx,
+                                       double block_start_sec,
+                                       double time_per_block, float sample_rate,
+                                       int block_size,
+                                       std::vector<MidiNoteEvent>& out) {
+  if (state.bpm <= 0.0 || time_per_block <= 0.0 || block_size <= 0 ||
+      state.sequencer_patterns.empty()) {
+    return;
+  }
+  const double bps = state.bpm / 60.0;
+  const double block_end_sec = block_start_sec + time_per_block;
+
+  for (const auto& [lane_idx, lane_track] : state.tracks) {
+    for (const auto& tc : lane_track->timeline_clips) {
+      if (tc->muted || tc->pattern_index < 0) continue;
+      const double clip_dur = (tc->duration_beats > 0)
+                                  ? tc->duration_beats * 60.0 / state.bpm
+                                  : tc->duration_sec;
+      if (clip_dur <= 0.0) continue;
+      const double clip_end_sec = tc->start_time_sec + clip_dur;
+      if (block_end_sec <= tc->start_time_sec ||
+          block_start_sec >= clip_end_sec) {
+        continue;
+      }
+
+      for (const auto& pat : state.sequencer_patterns) {
+        if (pat.pattern_index != tc->pattern_index) continue;
+        const double pat_loop_beats =
+            (pat.length_steps > 0 ? pat.length_steps : 16) * 0.25;
+        const double ov_start_sec =
+            std::max(block_start_sec, tc->start_time_sec);
+        const double ov_end_sec = std::min(block_end_sec, clip_end_sec);
+        if (ov_end_sec > ov_start_sec) {
+          const int sample_shift = std::clamp(
+              (int)std::llround((ov_start_sec - block_start_sec) * sample_rate),
+              0, std::max(0, block_size - 1));
+          const int sub_block = std::max(1, block_size - sample_shift);
+          std::vector<MidiNoteEvent> clip_events;
+          CollectPatternBlockMidiEvents(
+              pat, ch_idx, state.swing_amount, pat_loop_beats,
+              (ov_start_sec - tc->start_time_sec) * bps,
+              (ov_end_sec - ov_start_sec) * bps, state.bpm, sample_rate,
+              sub_block, true, clip_events);
+          for (auto& ev : clip_events) {
+            ev.sampleOffset =
+                std::clamp(ev.sampleOffset + sample_shift, 0, block_size - 1);
+            out.push_back(ev);
+          }
+        }
+
+        // If this block crosses the end of the pattern clip, emit NoteOffs for
+        // all pitches used by this channel in the pattern so long notes stop.
+        if (block_start_sec < clip_end_sec && block_end_sec >= clip_end_sec) {
+          auto it = pat.channels.find(ch_idx);
+          if (it != pat.channels.end()) {
+            const int end_offset =
+                std::clamp((int)std::llround((clip_end_sec - block_start_sec) *
+                                             sample_rate),
+                           0, block_size - 1);
+            std::set<int> pitches;
+            const int max_steps =
+                std::min((int)it->second.steps.size(),
+                         pat.length_steps > 0 ? pat.length_steps : 16);
+            for (int s = 0; s < max_steps; ++s) {
+              if (!it->second.steps[s]) continue;
+              const float p_norm = (s < (int)it->second.step_pitches.size())
+                                       ? it->second.step_pitches[s]
+                                       : 0.0f;
+              pitches.insert(
+                  std::clamp(60 + (int)std::lround(p_norm * 12.0f), 0, 127));
+            }
+            for (const auto& nev : it->second.notes) {
+              pitches.insert(std::clamp((int)nev.pitch(), 0, 127));
+            }
+            for (int pitch : pitches) {
+              MidiNoteEvent off_ev;
+              off_ev.sampleOffset = end_offset;
+              off_ev.channel = 0;
+              off_ev.pitch = pitch;
+              off_ev.isNoteOn = false;
+              off_ev.velocity = 0.0f;
+              out.push_back(off_ev);
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -1078,31 +1183,19 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
                 sample_rate, block_size, true, combinedMidi);
           }
         } else {
-          for (const auto& [lane_idx, lane_track] : state.tracks) {
-            for (const auto& tc : lane_track->timeline_clips) {
-              if (tc->muted || tc->pattern_index < 0) continue;
-              double clip_dur = (tc->duration_beats > 0)
-                                    ? tc->duration_beats * 60.0 / state.bpm
-                                    : tc->duration_sec;
-              if (state.playhead_pos_sec + time_per_block >
-                      tc->start_time_sec &&
-                  state.playhead_pos_sec < tc->start_time_sec + clip_dur) {
-                for (const auto& pat : state.sequencer_patterns) {
-                  if (pat.pattern_index != tc->pattern_index) continue;
-                  const double pat_loop_beats =
-                      (pat.length_steps > 0 ? pat.length_steps : 16) * 0.25;
-                  double local_sec = std::max(
-                      0.0, state.playhead_pos_sec - tc->start_time_sec);
-                  CollectPatternBlockMidiEvents(
-                      pat, ch_idx, state.swing_amount, pat_loop_beats,
-                      local_sec * bps, time_per_block * bps, state.bpm,
-                      sample_rate, block_size, true, combinedMidi);
-                }
-              }
-            }
-          }
+          CollectSongPatternClipBlockEvents(
+              state, ch_idx, state.playhead_pos_sec, time_per_block,
+              sample_rate, block_size, combinedMidi);
         }
       }
+
+      std::stable_sort(combinedMidi.begin(), combinedMidi.end(),
+                       [](const MidiNoteEvent& a, const MidiNoteEvent& b) {
+                         if (a.sampleOffset != b.sampleOffset) {
+                           return a.sampleOffset < b.sampleOffset;
+                         }
+                         return !a.isNoteOn && b.isNoteOn;
+                       });
 
       if (!track->plugins.empty() && track->plugins[0]->isInstrument() &&
           !track->plugin_bypass.count(0)) {
@@ -1251,6 +1344,11 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
     context.projectTimeMusic = state.playhead_pos_sec * (context.tempo / 60.0);
   }
 
+  const auto parent_dir = std::filesystem::path(path).parent_path();
+  if (!parent_dir.empty()) {
+    std::error_code ec;
+    std::filesystem::create_directories(parent_dir, ec);
+  }
   auto status = SaveWav(path, output_buffer, actual_channels, sample_rate);
   if (!status.ok()) {
     LOG(ERROR) << "Bounce save failed: " << status.message();

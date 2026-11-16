@@ -574,9 +574,13 @@ class MixerCanvasWidget : Widget {
                             auto plug = &trk.plugins[plugArrIdx];
                             if (event.button == MouseButton.Right) {
                                 const string rName = plug.name;
+                                const int removedPlugIdx = plug.pluginIndex;
                                 trk.plugins = trk.plugins[0 .. plugArrIdx] ~ trk.plugins[plugArrIdx + 1 .. $];
+                                foreach (ref rem; trk.plugins) {
+                                    if (rem.pluginIndex > removedPlugIdx) rem.pluginIndex -= 1;
+                                }
                                 model_.hintText = format("Removed FX slot %d (%s)", slotIdx + 1, rName);
-                                if (onRemoveFxSlot !is null) onRemoveFxSlot(model_.selectedMixerInsert, slotIdx);
+                                if (onRemoveFxSlot !is null) onRemoveFxSlot(model_.selectedMixerInsert, removedPlugIdx);
                             } else if (event.x >= fxRc.right - dp(22)) {
                                 plug.enabled = !plug.enabled;
                                 model_.hintText = format("%s: %s", plug.name, plug.enabled ? "Active" : "Bypassed");
@@ -594,6 +598,7 @@ class MixerCanvasWidget : Widget {
                             if (onPromptLoadFx !is null) {
                                 onPromptLoadFx(model_.selectedMixerInsert, slotIdx);
                             } else {
+                                const int appendSlot = cast(int)trk.plugins.length;
                                 static immutable string[6] QUICK_URIS = [
                                     "builtin://eq", "builtin://compressor", "builtin://reverb",
                                     "builtin://delay", "builtin://hott", "builtin://limiter"
@@ -603,10 +608,10 @@ class MixerCanvasWidget : Widget {
                                     "Ping-Pong Delay", "HOTT Multiband", "Fruity Limiter"
                                 ];
                                 const size_t q = slotIdx % QUICK_URIS.length;
-                                auto newPlug = TransportModel.makeDefaultPluginSlot(QUICK_NAMES[q], QUICK_URIS[q], false, slotIdx);
+                                auto newPlug = TransportModel.makeDefaultPluginSlot(QUICK_NAMES[q], QUICK_URIS[q], false, appendSlot);
                                 trk.plugins ~= newPlug;
-                                if (onLoadFxSlot !is null) onLoadFxSlot(model_.selectedMixerInsert, slotIdx, QUICK_URIS[q]);
-                                if (onOpenFxPlugin !is null) onOpenFxPlugin(model_.selectedMixerInsert, slotIdx);
+                                if (onLoadFxSlot !is null) onLoadFxSlot(model_.selectedMixerInsert, appendSlot, QUICK_URIS[q]);
+                                if (onOpenFxPlugin !is null) onOpenFxPlugin(model_.selectedMixerInsert, appendSlot);
                             }
                         }
                         invalidate();
@@ -893,4 +898,13 @@ unittest {
                                    cast(short)(mm.fxRc.left + 20), cast(short)(mm.fxRc.bottom - 10)));
     assert(eqTrack == 1 && model.tracks[1].eqLow == 0.5f,
            "Expected right-click on Low EQ knob to reset to 0.5 and fire onEqChange");
+
+    // Regression 6: Right-click removing slot 0 on Insert 1 shifts remaining slot 1 -> pluginIndex=0
+    model.selectedMixerInsert = 1;
+    assert(model.tracks[1].plugins.length == 2);
+    mx.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Right, MouseFlag.RButton,
+                                   cast(short)(mm.fxRc.left + 30), cast(short)(mm.slotsTop + 4)));
+    assert(model.tracks[1].plugins.length == 1);
+    assert(model.tracks[1].plugins[0].pluginIndex == 0,
+           "Expected remaining FX slot after removing slot 0 to shift to pluginIndex 0");
 }

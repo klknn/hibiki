@@ -181,6 +181,12 @@ void runVst3MainLoop() {
 #endif
 }
 
+void stopVst3MainLoop() {
+#if defined(__APPLE__)
+  Vst3Plugin::stopMainLoop();
+#endif
+}
+
 void sendInitialConfig(const ProjectState& state) {
   pb::commands::HibikiConfig config;
   config.set_plugin_host_mode(
@@ -409,6 +415,7 @@ void playback_thread(ProjectState& state) {
         sc_buffers;
 
     context.tempo = state.bpm;
+    bool track0_is_master_or_absent = false;
 
     {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
@@ -586,34 +593,19 @@ void playback_thread(ProjectState& state) {
                       timelineMidiEvents);
                 }
               } else {
-                for (const auto& [lane_idx, lane_track] : state.tracks) {
-                  for (const auto& tc : lane_track->timeline_clips) {
-                    if (tc->muted || tc->pattern_index < 0) continue;
-                    double clip_dur =
-                        (tc->duration_beats > 0)
-                            ? tc->duration_beats * 60.0 / state.bpm
-                            : tc->duration_sec;
-                    if (state.playhead_pos_sec + time_per_block >
-                            tc->start_time_sec &&
-                        state.playhead_pos_sec <
-                            tc->start_time_sec + clip_dur) {
-                      for (const auto& pat : state.sequencer_patterns) {
-                        if (pat.pattern_index != tc->pattern_index) continue;
-                        const double pat_loop_beats =
-                            (pat.length_steps > 0 ? pat.length_steps : 16) *
-                            0.25;
-                        double local_sec = std::max(
-                            0.0, state.playhead_pos_sec - tc->start_time_sec);
-                        CollectPatternBlockMidiEvents(
-                            pat, ch_idx, state.swing_amount, pat_loop_beats,
-                            local_sec * bps, time_per_block * bps, state.bpm,
-                            sample_rate, block_size, true, timelineMidiEvents);
-                      }
-                    }
-                  }
-                }
+                CollectSongPatternClipBlockEvents(
+                    state, ch_idx, state.playhead_pos_sec, time_per_block,
+                    sample_rate, block_size, timelineMidiEvents);
               }
             }
+            std::stable_sort(
+                timelineMidiEvents.begin(), timelineMidiEvents.end(),
+                [](const MidiNoteEvent& a, const MidiNoteEvent& b) {
+                  if (a.sampleOffset != b.sampleOffset) {
+                    return a.sampleOffset < b.sampleOffset;
+                  }
+                  return !a.isNoteOn && b.isNoteOn;
+                });
           }
 
           // 1c. Merge live MIDI + virtual MIDI + timeline MIDI
@@ -980,6 +972,10 @@ void playback_thread(ProjectState& state) {
           mixBufferR[i] = bufferR[i];
         }
       }
+      auto it0 = state.tracks.find(0);
+      track0_is_master_or_absent =
+          (it0 == state.tracks.end() ||
+           it0->second->track_type == Track::TrackType::MASTER);
     }
 
     // Apply Toolbar global master volume before output metering
@@ -1013,8 +1009,7 @@ void playback_thread(ProjectState& state) {
         state.oscilloscope[i] =
             0.5f * (float)(mixBufferL[idx] + mixBufferR[idx]);
       }
-      if (state.tracks.find(0) == state.tracks.end() ||
-          state.tracks[0]->track_type == Track::TrackType::MASTER) {
+      if (track0_is_master_or_absent) {
         state.track_levels[0] = {masterPeakL, masterPeakR};
       }
     }

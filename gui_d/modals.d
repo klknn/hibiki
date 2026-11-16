@@ -181,6 +181,11 @@ class FlSettingsDialog : Dialog {
         }
     }
 
+    void refreshDeviceSummary() {
+        syncToggleStyles();
+        invalidate();
+    }
+
     private void syncToggleStyles() {
         const pal = model_ ? model_.palette() : getFlPalette();
         static immutable int[4] LATS = [5, 10, 20, 40];

@@ -93,12 +93,14 @@ struct TimeMarkerState {
 /// Timeline / Playlist clip state for a track.
 struct TimelineClipState {
     int clipIndex = 0;
+    int laneIndex = 0;
     int patternIndex = 0;
     PlaylistClipKind kind = PlaylistClipKind.PATTERN;
     string name = "Pattern 1";
     uint color = 0x00385770;
     double startTimeSec = 0.0;
     double durationSec = 4.0;
+    double trimStartBeats = 0.0;
     bool muted = false;
     float[] waveform;
     AutomationPoint[] autoPoints;
@@ -772,6 +774,40 @@ struct TransportModel {
         return maxIdx + 1;
     }
 
+    /// Returns the next unique backend-aligned clipIndex for `trk` within `kind` (`AUTOMATION` vs timeline clips).
+    int nextClipIndex(ref const(TrackStripState) trk, PlaylistClipKind kind, int laneIdx = 0) const pure nothrow @safe {
+        int maxIdx = -1;
+        foreach (ref c; trk.clips) {
+            if (kind == PlaylistClipKind.AUTOMATION) {
+                if (c.kind == PlaylistClipKind.AUTOMATION && c.laneIndex == laneIdx && c.clipIndex > maxIdx) {
+                    maxIdx = c.clipIndex;
+                }
+            } else if (c.kind != PlaylistClipKind.AUTOMATION) {
+                if (c.clipIndex > maxIdx) maxIdx = c.clipIndex;
+            }
+        }
+        return maxIdx + 1;
+    }
+
+    /// Resequences clip indices on `trk` to stay 1:1 with backend `timeline_clips` (`0..N-1`) and `automation_lanes[lane].clips` (`0..K-1`).
+    void resequenceTrackClips(ref TrackStripState trk) const pure nothrow @safe {
+        int nextTimelineIdx = 0;
+        foreach (i, ref c; trk.clips) {
+            if (c.kind == PlaylistClipKind.AUTOMATION) {
+                int autoIdx = 0;
+                foreach (j; 0 .. i) {
+                    if (trk.clips[j].kind == PlaylistClipKind.AUTOMATION &&
+                        trk.clips[j].laneIndex == c.laneIndex) {
+                        autoIdx++;
+                    }
+                }
+                c.clipIndex = autoIdx;
+            } else {
+                c.clipIndex = nextTimelineIdx++;
+            }
+        }
+    }
+
     /// Ensures a track slot exists for `trackIndex` and returns its array index.
     size_t ensureTrackIndex(int trackIndex) @safe {
         foreach (i, ref t; tracks) {
@@ -878,7 +914,7 @@ struct TransportModel {
                     if (ti.pan.hasValue) channels[chIdx].pan = ti.pan.value;
                     channels[chIdx].muted = ti.muted;
                     channels[chIdx].soloed = ti.soloed;
-                    if (ti.output_track_index > 0) channels[chIdx].mixerInsert = ti.output_track_index;
+                    if (ti.output_track_index >= 0) channels[chIdx].mixerInsert = ti.output_track_index;
                 }
             } else {
                 const idx = ensureTrackIndex(ti.track_index);
@@ -906,7 +942,7 @@ struct TransportModel {
                 }
                 bool found = false;
                 foreach (ref c; tracks[idx].clips) {
-                    if (c.clipIndex == tci.clip_index) {
+                    if (c.kind != PlaylistClipKind.AUTOMATION && c.clipIndex == tci.clip_index) {
                         if (tci.name.length > 0) c.name = tci.name.idup;
                         c.startTimeSec = tci.start_time;
                         c.durationSec = tci.duration;
@@ -942,43 +978,69 @@ struct TransportModel {
         }
         if (notif.param_list.hasValue) {
             const pl = notif.param_list.value;
-            PluginSlotState* target = findPlugin(pl.track_index, pl.plugin_index);
-            PluginSlotState slot;
-            if (target !is null) {
-                slot = *target;
-            }
-            slot.pluginIndex = pl.plugin_index;
-            if (pl.plugin_name.length > 0) slot.name = pl.plugin_name.idup;
-            else if (slot.name.length == 0) slot.name = "Plugin";
-            slot.isInstrument = pl.is_instrument;
-            slot.enabled = !pl.bypassed;
-            if (pl.mix.hasValue) slot.mix = pl.mix.value;
-            if (slot.presets.length == 0) {
-                slot.presets = ["Default", "Warm Analog", "Punchy Club", "Wide Stereo", "Init"];
-            }
-            slot.params.length = 0;
-            foreach (pm; pl.params) {
-                ParamItemState item;
-                item.id = pm.id;
-                item.name = pm.name.idup;
-                item.defaultValue = pm.default_value;
-                item.currentValue = pm.default_value;
-                slot.params ~= item;
-            }
-            if (pl.track_index >= 100) {
-                const int chIdx = pl.track_index - 100;
-                if (chIdx >= 0 && chIdx < cast(int)channels.length) {
-                    channels[chIdx].generatorPlugin = slot;
+            if (pl.plugin_name.length == 0 && pl.params.length == 0) {
+                if (pl.track_index >= 100) {
+                    const int chIdx = pl.track_index - 100;
+                    if (chIdx >= 0 && chIdx < cast(int)channels.length) {
+                        channels[chIdx].generatorPlugin = PluginSlotState.init;
+                    }
+                } else {
+                    foreach (ref t; tracks) {
+                        if (t.index != pl.track_index) continue;
+                        PluginSlotState[] kept;
+                        foreach (ref p; t.plugins) {
+                            if (p.pluginIndex == pl.plugin_index) continue;
+                            if (p.pluginIndex > pl.plugin_index) p.pluginIndex -= 1;
+                            kept ~= p;
+                        }
+                        t.plugins = kept;
+                        if (selectedTrack == pl.track_index &&
+                            selectedPluginIndex >= cast(int)t.plugins.length) {
+                            selectedPluginIndex = t.plugins.length > 0
+                                ? cast(int)t.plugins.length - 1 : 0;
+                        }
+                        break;
+                    }
                 }
-            } else if (target !is null) {
-                *target = slot;
-                selectedTrack = pl.track_index;
-                selectedPluginIndex = pl.plugin_index;
             } else {
-                const idx = ensureTrackIndex(pl.track_index);
-                tracks[idx].plugins ~= slot;
-                selectedTrack = pl.track_index;
-                selectedPluginIndex = pl.plugin_index;
+                PluginSlotState* target = findPlugin(pl.track_index, pl.plugin_index);
+                PluginSlotState slot;
+                if (target !is null) {
+                    slot = *target;
+                }
+                slot.pluginIndex = pl.plugin_index;
+                if (pl.plugin_name.length > 0) slot.name = pl.plugin_name.idup;
+                else if (slot.name.length == 0) slot.name = "Plugin";
+                slot.isInstrument = pl.is_instrument;
+                slot.enabled = !pl.bypassed;
+                if (pl.mix.hasValue) slot.mix = pl.mix.value;
+                if (slot.presets.length == 0) {
+                    slot.presets = ["Default", "Warm Analog", "Punchy Club", "Wide Stereo", "Init"];
+                }
+                slot.params.length = 0;
+                foreach (pm; pl.params) {
+                    ParamItemState item;
+                    item.id = pm.id;
+                    item.name = pm.name.idup;
+                    item.defaultValue = pm.default_value;
+                    item.currentValue = pm.default_value;
+                    slot.params ~= item;
+                }
+                if (pl.track_index >= 100) {
+                    const int chIdx = pl.track_index - 100;
+                    if (chIdx >= 0 && chIdx < cast(int)channels.length) {
+                        channels[chIdx].generatorPlugin = slot;
+                    }
+                } else if (target !is null) {
+                    *target = slot;
+                    selectedTrack = pl.track_index;
+                    selectedPluginIndex = pl.plugin_index;
+                } else {
+                    const idx = ensureTrackIndex(pl.track_index);
+                    tracks[idx].plugins ~= slot;
+                    selectedTrack = pl.track_index;
+                    selectedPluginIndex = pl.plugin_index;
+                }
             }
         }
         if (notif.param_value_change.hasValue) {
@@ -1039,7 +1101,7 @@ struct TransportModel {
                 ch.uri = sc.uri.idup;
                 ch.category = sc.category.length > 0 ? sc.category.idup : "Synths";
                 ch.color = sc.color != 0 ? sc.color : palette().clipPattern;
-                ch.mixerInsert = sc.mixer_insert > 0 ? sc.mixer_insert : 1;
+                ch.mixerInsert = sc.mixer_insert >= 0 ? sc.mixer_insert : 1;
                 ch.volume = sc.volume;
                 ch.pan = sc.pan;
                 ch.muted = sc.muted;
@@ -1188,6 +1250,46 @@ struct TransportModel {
             midiInputs.length = 0;
             foreach (d; notif.midi_input_list.value.devices) {
                 midiInputs ~= InputDeviceInfo(d.id.idup, d.name.idup, d.port_count);
+            }
+        }
+        if (notif.automation_lanes_data.hasValue) {
+            const ald = notif.automation_lanes_data.value;
+            if (ald.track_index >= 0 && ald.track_index < 100) {
+                const idx = ensureTrackIndex(ald.track_index);
+                TimelineClipState[] nonAuto;
+                foreach (ref existing; tracks[idx].clips) {
+                    if (existing.kind != PlaylistClipKind.AUTOMATION) nonAuto ~= existing;
+                }
+                const double secPerBeat = 60.0 / (bpm > 0.0 ? bpm : 140.0);
+                foreach (ref lane; ald.lanes) {
+                    foreach (ci, ref ptc; lane.clips) {
+                        TimelineClipState ac;
+                        ac.clipIndex = cast(int)ci;
+                        ac.laneIndex = lane.lane_index;
+                        ac.kind = PlaylistClipKind.AUTOMATION;
+                        ac.color = palette().clipAutomation;
+                        ac.name = ptc.clip.name.length > 0
+                            ? ptc.clip.name.idup
+                            : (lane.param_name.length > 0 ? lane.param_name.idup : "Automation");
+                        ac.startTimeSec = ptc.start_time_sec;
+                        const double durBeats = ptc.duration_beats > 0.0f
+                            ? cast(double)ptc.duration_beats
+                            : (ptc.clip.duration_beats > 0.0f ? cast(double)ptc.clip.duration_beats : 4.0);
+                        ac.durationSec = durBeats * secPerBeat;
+                        ac.muted = ptc.muted;
+                        foreach (ref pt; ptc.clip.automation_points) {
+                            double nt = durBeats > 0.0 ? (cast(double)pt.time_beats / durBeats) : 0.0;
+                            if (nt < 0.0) nt = 0.0;
+                            else if (nt > 1.0) nt = 1.0;
+                            float v = pt.value;
+                            if (v < 0.0f) v = 0.0f;
+                            else if (v > 1.0f) v = 1.0f;
+                            ac.autoPoints ~= AutomationPoint(nt, v);
+                        }
+                        nonAuto ~= ac;
+                    }
+                }
+                tracks[idx].clips = nonAuto;
             }
         }
         if (notif.bounce_finished.hasValue) {
@@ -1574,4 +1676,70 @@ unittest {
     nAe.audio_editor_data.set(aed);
     model.applyNotification(nAe);
     assert(model.samplePreview.name == "loop140.wav" && model.samplePreview.waveform.length == 3);
+
+    // Regression: mixer_insert == 0 (Master) must be preserved in SequencerSync & TrackInfo
+    SequencerSync ssMaster = ss;
+    ssMaster.channels[0].mixer_insert = 0;
+    Notification nSeqMaster;
+    nSeqMaster.sequencer_sync.set(ssMaster);
+    model.applyNotification(nSeqMaster);
+    assert(model.channels[0].mixerInsert == 0,
+           "Expected SequencerSync mixer_insert == 0 (Master) to be preserved, not coerced to 1");
+
+    import pb.notifications : AutomationLaneInfo, AutomationLanesData, TrackInfo;
+    import pb.core : PbAutoClip = Clip, PbAutoPt = AutomationPoint, PbTimelineClip = TimelineClip;
+    TrackInfo tiGen;
+    tiGen.track_index = 100;
+    tiGen.output_track_index = 0;
+    Notification nTiGen;
+    nTiGen.track_info.set(tiGen);
+    model.channels[0].mixerInsert = 3;
+    model.applyNotification(nTiGen);
+    assert(model.channels[0].mixerInsert == 0,
+           "Expected TrackInfo output_track_index == 0 on generator track to route channel to Master (0)");
+
+    // Regression: Empty ParamList (sent by ACTION_REMOVE) must remove the slot instead of creating a zombie 'Plugin'
+    model.ensureTrackIndex(2);
+    model.tracks[model.ensureTrackIndex(2)].plugins = [
+        TransportModel.makeDefaultPluginSlot("EQ", "builtin://eq", false, 0),
+        TransportModel.makeDefaultPluginSlot("Delay", "builtin://delay", false, 1),
+    ];
+    Notification nRemPlug;
+    ParamList plEmpty;
+    plEmpty.track_index = 2;
+    plEmpty.plugin_index = 0;
+    plEmpty.plugin_name = "";
+    nRemPlug.param_list.set(plEmpty);
+    model.applyNotification(nRemPlug);
+    assert(model.findPlugin(2, 0) is null || model.findPlugin(2, 0).name != "Plugin",
+           "Expected empty ParamList from ACTION_REMOVE not to leave a zombie 'Plugin' slot");
+
+    // Regression: AutomationLanesData notification restores Playlist AUTOMATION clips after ClearProject
+    Notification nClear;
+    nClear.clear_project.set(ClearProject.init);
+    model.applyNotification(nClear);
+    AutomationLanesData ald;
+    ald.track_index = 4;
+    AutomationLaneInfo ali;
+    ali.track_index = 4;
+    ali.lane_index = 0;
+    ali.param_name = "Acid Cutoff Env";
+    PbTimelineClip ptc;
+    ptc.start_time_sec = 0.0f;
+    PbAutoClip pac;
+    pac.name = "Acid Cutoff Env";
+    pac.duration_beats = 8.0f;
+    pac.automation_points ~= PbAutoPt(0.0f, 0.2f, 0.0f);
+    pac.automation_points ~= PbAutoPt(8.0f, 0.9f, 0.0f);
+    ptc.clip = pac;
+    ali.clips ~= ptc;
+    ald.lanes ~= ali;
+    Notification nAld;
+    nAld.automation_lanes_data.set(ald);
+    model.applyNotification(nAld);
+    const size_t t4 = model.ensureTrackIndex(4);
+    assert(model.tracks[t4].clips.length == 1 &&
+           model.tracks[t4].clips[0].kind == PlaylistClipKind.AUTOMATION &&
+           model.tracks[t4].clips[0].autoPoints.length == 2,
+           "Expected AutomationLanesData to restore Playlist automation clips after ClearProject");
 }

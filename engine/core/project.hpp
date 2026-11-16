@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <limits>
 #include <map>
 #include <string>
@@ -45,50 +46,51 @@ struct SequencerChannel {
 
 struct ProjectState {
   std::map<int, std::unique_ptr<Track>> tracks;
-  double bpm =
-      std::numeric_limits<double>::quiet_NaN();  // NaN to catch uninitialized
-                                                 // BPM bugs
-  bool is_playing = false;
-  double sample_rate =
-      std::numeric_limits<double>::quiet_NaN();  // NaN to catch uninitialized
-                                                 // sample_rate bugs
+  std::atomic<double> bpm{
+      std::numeric_limits<double>::quiet_NaN()};  // NaN to catch uninitialized
+                                                  // BPM bugs
+  std::atomic<bool> is_playing{false};
+  std::atomic<double> sample_rate{
+      std::numeric_limits<double>::quiet_NaN()};  // NaN to catch uninitialized
+                                                  // sample_rate bugs
 
-  double playhead_pos_sec = 0.0;
-  bool is_timeline_playing = false;
+  std::atomic<double> playhead_pos_sec{0.0};
+  std::atomic<bool> is_timeline_playing{false};
   std::vector<float> levels = {0.0f, 0.0f};
 
   std::map<int, std::pair<float, float>> track_levels;
   std::mutex tracks_mutex;
   std::mutex levels_mutex;
-  bool quit = false;
+  std::atomic<bool> quit{false};
 
   // Plugin hosting mode (set via SetPluginHostMode command)
   PluginHostMode plugin_host_mode = PluginHostMode::IN_PROCESS;
   std::vector<std::string> remote_hosts;  // ["host:port", ...] for REMOTE mode
-  int buffer_latency_ms = 200;  // Audio buffer latency in ms (configurable)
-  bool use_double_precision = false;  // 64-bit float engine processing
+  std::atomic<int> buffer_latency_ms{200};        // Audio buffer latency in ms
+  std::atomic<bool> use_double_precision{false};  // 64-bit float engine path
+  std::atomic<bool> audio_restart_requested{false};
 
   // Recording state
-  bool is_recording = false;
-  double record_start_sec = 0.0;  // Playhead position when recording started
-  std::string project_dir;        // "" = unsaved, set on save/load
+  std::atomic<bool> is_recording{false};
+  std::atomic<double> record_start_sec{0.0};  // Playhead position at rec start
+  std::string project_dir;                    // "" = unsaved, set on save/load
 
   // Loop region
-  bool loop_enabled = false;
-  double loop_start_sec = 0.0;
-  double loop_end_sec = 0.0;
+  std::atomic<bool> loop_enabled{false};
+  std::atomic<double> loop_start_sec{0.0};
+  std::atomic<double> loop_end_sec{0.0};
 
   // Global transport/mixer/telemetry state
-  bool metronome_enabled = false;
-  float master_volume = 0.82f;
-  float master_pitch = 0.0f;
+  std::atomic<bool> metronome_enabled{false};
+  std::atomic<float> master_volume{0.82f};
+  std::atomic<float> master_pitch{0.0f};
   int cpu_percent = 0;
   std::vector<float> oscilloscope;
 
   // Channel Rack & Pattern Sequencer state
-  SequencerPlaybackMode playback_mode = SequencerPlaybackMode::PAT;
-  float swing_amount = 0.0f;
-  int selected_pattern_index = 0;
+  std::atomic<SequencerPlaybackMode> playback_mode{SequencerPlaybackMode::PAT};
+  std::atomic<float> swing_amount{0.0f};
+  std::atomic<int> selected_pattern_index{0};
   std::vector<SequencerChannel> sequencer_channels;
   std::vector<SequencerPattern> sequencer_patterns;
 };

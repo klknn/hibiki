@@ -552,6 +552,89 @@ void applyTrackEq(
     }
 }
 
+private void storeEqCoeffs(double* dst5, const ref EqCoeffs c) @nogc nothrow {
+    dst5[0] = c.b0;
+    dst5[1] = c.b1;
+    dst5[2] = c.b2;
+    dst5[3] = c.a1;
+    dst5[4] = c.a2;
+}
+
+private EqCoeffs loadEqCoeffs(const(double)* src5) @nogc nothrow {
+    EqCoeffs c;
+    c.b0 = src5[0];
+    c.b1 = src5[1];
+    c.b2 = src5[2];
+    c.a1 = src5[3];
+    c.a2 = src5[4];
+    return c;
+}
+
+/// Applies 3-band mixer EQ while caching Biquad coefficients inside `eqState48[24..42]`
+/// so static EQ curves avoid trigonometric recomputation on every audio block.
+void applyTrackEqCached(
+    double[] bufL,
+    double[] bufR,
+    double sampleRate,
+    float eqLow,
+    float eqMid,
+    float eqHigh,
+    double* eqState48
+) @nogc nothrow {
+    if (bufL.length == 0 || bufL.length != bufR.length || !eqState48) return;
+    if (sampleRate <= 0.0) return;
+
+    const float lowNorm = clampVal(eqLow, 0.0f, 1.0f);
+    const float midNorm = clampVal(eqMid, 0.0f, 1.0f);
+    const float highNorm = clampVal(eqHigh, 0.0f, 1.0f);
+
+    const bool srChanged = (eqState48[24] != sampleRate);
+    if (srChanged || eqState48[25] != cast(double)lowNorm) {
+        if (fabs(lowNorm - 0.5f) > 1e-4f) {
+            const double db = (lowNorm - 0.5) * 30.0;
+            const auto c = computeLowShelfCoeffs(120.0, 0.7071, db, sampleRate);
+            storeEqCoeffs(eqState48 + 28, c);
+        }
+        eqState48[25] = cast(double)lowNorm;
+    }
+    if (srChanged || eqState48[26] != cast(double)midNorm) {
+        if (fabs(midNorm - 0.5f) > 1e-4f) {
+            const double db = (midNorm - 0.5) * 30.0;
+            const auto c = computeBellCoeffs(1000.0, 0.9, db, sampleRate);
+            storeEqCoeffs(eqState48 + 33, c);
+        }
+        eqState48[26] = cast(double)midNorm;
+    }
+    if (srChanged || eqState48[27] != cast(double)highNorm) {
+        if (fabs(highNorm - 0.5f) > 1e-4f) {
+            const double db = (highNorm - 0.5) * 30.0;
+            const auto c = computeHighShelfCoeffs(6500.0, 0.7071, db, sampleRate);
+            storeEqCoeffs(eqState48 + 38, c);
+        }
+        eqState48[27] = cast(double)highNorm;
+    }
+    eqState48[24] = sampleRate;
+
+    if (fabs(lowNorm - 0.5f) > 1e-4f) {
+        const auto c = loadEqCoeffs(eqState48 + 28);
+        runBiquadStereo(c, bufL, bufR, eqState48 + 0, eqState48 + 4);
+    } else {
+        foreach (k; 0 .. 8) eqState48[k] = 0.0;
+    }
+    if (fabs(midNorm - 0.5f) > 1e-4f) {
+        const auto c = loadEqCoeffs(eqState48 + 33);
+        runBiquadStereo(c, bufL, bufR, eqState48 + 8, eqState48 + 12);
+    } else {
+        foreach (k; 8 .. 16) eqState48[k] = 0.0;
+    }
+    if (fabs(highNorm - 0.5f) > 1e-4f) {
+        const auto c = loadEqCoeffs(eqState48 + 38);
+        runBiquadStereo(c, bufL, bufR, eqState48 + 16, eqState48 + 20);
+    } else {
+        foreach (k; 16 .. 24) eqState48[k] = 0.0;
+    }
+}
+
 /// Applies M/S stereo separation (`-1.0` = mono merge, `0.0` = default, `+1.0` = widened stereo).
 void applyStereoSeparation(double[] bufL, double[] bufR, float stereoSep) @nogc nothrow {
     if (bufL.length == 0 || bufL.length != bufR.length) return;
@@ -603,11 +686,11 @@ extern (C) {
         float eqMid,
         float eqHigh,
         float stereoSep,
-        double* eqState24
+        double* eqState48
     ) @nogc nothrow {
         if (!bufL || !bufR || blockSize <= 0) return;
-        applyTrackEq(bufL[0 .. blockSize], bufR[0 .. blockSize], sampleRate,
-                     eqLow, eqMid, eqHigh, eqState24);
+        applyTrackEqCached(bufL[0 .. blockSize], bufR[0 .. blockSize], sampleRate,
+                           eqLow, eqMid, eqHigh, eqState48);
         applyStereoSeparation(bufL[0 .. blockSize], bufR[0 .. blockSize], stereoSep);
     }
 
@@ -620,7 +703,7 @@ extern (C) {
         float eqMid,
         float eqHigh,
         float stereoSep,
-        double* eqState24
+        double* eqState48
     ) @nogc nothrow {
         if (!bufL || !bufR || blockSize <= 0) return;
         // Stack-scratch in chunks of up to 512 to avoid any heap allocation.
@@ -634,8 +717,8 @@ extern (C) {
                 tmpL[i] = bufL[offset + i];
                 tmpR[i] = bufR[offset + i];
             }
-            applyTrackEq(tmpL[0 .. n], tmpR[0 .. n], sampleRate,
-                         eqLow, eqMid, eqHigh, eqState24);
+            applyTrackEqCached(tmpL[0 .. n], tmpR[0 .. n], sampleRate,
+                               eqLow, eqMid, eqHigh, eqState48);
             applyStereoSeparation(tmpL[0 .. n], tmpR[0 .. n], stereoSep);
             foreach (i; 0 .. n) {
                 bufL[offset + i] = cast(float)tmpL[i];

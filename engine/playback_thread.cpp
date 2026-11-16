@@ -94,7 +94,7 @@ HistoryManager* createHistoryManager() { return new HistoryManager(); }
 void destroyHistoryManager(HistoryManager* history) { delete history; }
 
 bool isStateQuit(const ProjectState* state) {
-  return state ? state->quit : true;
+  return state ? state->quit.load() : true;
 }
 
 void setStateQuit(ProjectState* state, bool quit) {
@@ -106,11 +106,11 @@ void setTimelinePlaying(ProjectState* state, bool playing) {
 }
 
 bool isTimelinePlaying(const ProjectState* state) {
-  return state ? state->is_timeline_playing : false;
+  return state ? state->is_timeline_playing.load() : false;
 }
 
 bool isRecording(const ProjectState* state) {
-  return state ? state->is_recording : false;
+  return state ? state->is_recording.load() : false;
 }
 
 void setPlayheadPos(ProjectState* state, double pos) {
@@ -118,14 +118,16 @@ void setPlayheadPos(ProjectState* state, double pos) {
 }
 
 double getPlayheadPos(const ProjectState* state) {
-  return state ? state->playhead_pos_sec : 0.0;
+  return state ? state->playhead_pos_sec.load() : 0.0;
 }
 
 void setBpm(ProjectState* state, double bpm) {
   if (state && bpm > 0) state->bpm = bpm;
 }
 
-double getBpm(const ProjectState* state) { return state ? state->bpm : 120.0; }
+double getBpm(const ProjectState* state) {
+  return state ? state->bpm.load() : 120.0;
+}
 
 void setLoop(ProjectState* state, bool enabled, double start_sec,
              double end_sec) {
@@ -217,7 +219,7 @@ void sendNotificationTick(ProjectState& state) {
                            (float)state.loop_start_sec,
                            (float)state.loop_end_sec, state.is_recording,
                            cpu_pct, &osc_copy,
-                           static_cast<int>(state.playback_mode),
+                           static_cast<int>(state.playback_mode.load()),
                            state.swing_amount, state.selected_pattern_index);
 
   hibiki::pb::notifications::Notification notification;
@@ -406,16 +408,34 @@ void playback_thread(ProjectState& state) {
   double time_per_block = block_size / (double)sample_rate;
   CHECK_GT(time_per_block, 0.0);
 
+  std::vector<double> mixBufferL(block_size, 0.0);
+  std::vector<double> mixBufferR(block_size, 0.0);
+  std::vector<float> interleaved(block_size * actual_channels, 0.0f);
+  std::vector<MidiNoteEvent> clipMidiEvents;
+  clipMidiEvents.reserve(512);
+  std::vector<MidiNoteEvent> timelineMidiEvents;
+  timelineMidiEvents.reserve(512);
+  std::vector<MidiNoteEvent> allEvents;
+  allEvents.reserve(512);
+  std::vector<float> input_block;
+  input_block.reserve(block_size * 8);
+
   while (!state.quit) {
     const auto block_start_time = std::chrono::steady_clock::now();
-    std::vector<double> mixBufferL(block_size, 0.0);
-    std::vector<double> mixBufferR(block_size, 0.0);
+    std::fill(mixBufferL.begin(), mixBufferL.end(), 0.0);
+    std::fill(mixBufferR.begin(), mixBufferR.end(), 0.0);
 
-    std::map<int, std::pair<std::array<float, 512>, std::array<float, 512>>>
-        sc_buffers;
-
-    context.tempo = state.bpm;
+    const double cur_bpm = state.bpm.load(std::memory_order_relaxed);
+    const double cur_playhead =
+        state.playhead_pos_sec.load(std::memory_order_relaxed);
+    const bool cur_playing =
+        state.is_timeline_playing.load(std::memory_order_relaxed);
+    const bool cur_recording =
+        state.is_recording.load(std::memory_order_relaxed);
+    context.tempo = cur_bpm;
     bool track0_is_master_or_absent = false;
+    bool pat_loop_active = false;
+    double pat_end_sec = 0.0;
 
     {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
@@ -432,13 +452,12 @@ void playback_thread(ProjectState& state) {
         }
       }
 
-      std::map<int, std::pair<std::vector<double>, std::vector<double>>>
-          bus_input_buffers;
       for (const auto& p : state.tracks) {
+        p.second->rt_sc_valid = false;
         if (p.second->track_type == Track::TrackType::GROUP ||
             p.second->track_type == Track::TrackType::AUX) {
-          bus_input_buffers[p.first] = {std::vector<double>(block_size, 0.0),
-                                        std::vector<double>(block_size, 0.0)};
+          std::fill_n(p.second->rt_bus_in_l.data(), block_size, 0.0);
+          std::fill_n(p.second->rt_bus_in_r.data(), block_size, 0.0);
         }
       }
 
@@ -448,7 +467,7 @@ void playback_thread(ProjectState& state) {
 
         if (render_content) {
           // 1. Session clip playback
-          std::vector<MidiNoteEvent> clipMidiEvents;
+          clipMidiEvents.clear();
           if (track->playing_slot >= 0 &&
               track->clips.count(track->playing_slot) &&
               track->clips[track->playing_slot]) {
@@ -494,8 +513,8 @@ void playback_thread(ProjectState& state) {
           }
 
           // 1b. Collect timeline MIDI events
-          std::vector<MidiNoteEvent> timelineMidiEvents;
-          if (state.is_timeline_playing) {
+          timelineMidiEvents.clear();
+          if (cur_playing) {
             for (const auto& tc : track->timeline_clips) {
               if (tc->muted || tc->pattern_index >= 0 || !tc->clip ||
                   tc->clip->type != Clip::Type::MIDI)
@@ -610,17 +629,11 @@ void playback_thread(ProjectState& state) {
 
           // 1c. Merge live MIDI + virtual MIDI + timeline MIDI
           if (!track->plugins.empty() && track->plugins[0]->isInstrument()) {
-            std::vector<MidiNoteEvent> allEvents(std::move(clipMidiEvents));
+            allEvents.clear();
+            allEvents.insert(allEvents.end(), clipMidiEvents.begin(),
+                             clipMidiEvents.end());
             allEvents.insert(allEvents.end(), timelineMidiEvents.begin(),
                              timelineMidiEvents.end());
-            if (!track->midi_input_device &&
-                !track->midi_input_device_id.empty()) {
-              track->midi_input_device = MidiInput::create();
-              if (!track->midi_input_device->open(
-                      track->midi_input_device_id)) {
-                track->midi_input_device.reset();
-              }
-            }
             if (track->midi_input_device) {
               auto hwEvents = track->midi_input_device->read();
               allEvents.insert(allEvents.end(), hwEvents.begin(),
@@ -644,19 +657,13 @@ void playback_thread(ProjectState& state) {
                 allEvents.push_back(e);
               }
             }
-            if (state.is_recording && track->record_armed &&
+            if (cur_recording && track->record_armed &&
                 track->record_mode == Track::RecordMode::RECORD_MIDI) {
-              if (!allEvents.empty()) {
-                LOG_EVERY_N_SEC(INFO, 1)
-                    << "[MIDI_CAP] track=" << track_idx
-                    << " events=" << allEvents.size()
-                    << " buf_size=" << track->midi_record_buffer.size()
-                    << " playhead=" << state.playhead_pos_sec;
-              }
               for (const auto& ev : allEvents) {
                 Track::TimestampedMidiEvent tev;
-                tev.time_sec = state.playhead_pos_sec +
-                               ev.sampleOffset / state.sample_rate;
+                tev.time_sec = cur_playhead +
+                               ev.sampleOffset / state.sample_rate.load(
+                                                     std::memory_order_relaxed);
                 tev.event = ev;
                 track->midi_record_buffer.push_back(tev);
               }
@@ -724,9 +731,9 @@ void playback_thread(ProjectState& state) {
           }
 
           // 2a. Recording input capture
-          if (state.is_recording && track->record_armed &&
-              track->input_device && track->input_device->is_ready()) {
-            std::vector<float> input_block;
+          if (cur_recording && track->record_armed && track->input_device &&
+              track->input_device->is_ready()) {
+            input_block.clear();
             int input_ch = track->input_device->get_channels();
             if (track->input_device->read(input_block, block_size)) {
               int ch_start = track->input_channel_start;
@@ -760,12 +767,9 @@ void playback_thread(ProjectState& state) {
 
         // For group/aux tracks: load their accumulated input from bus buffers
         if (!render_content) {
-          auto it = bus_input_buffers.find(track_idx);
-          if (it != bus_input_buffers.end()) {
-            for (int i = 0; i < block_size; ++i) {
-              bufferL[i] = it->second.first[i];
-              bufferR[i] = it->second.second[i];
-            }
+          for (int i = 0; i < block_size; ++i) {
+            bufferL[i] = track->rt_bus_in_l[i];
+            bufferR[i] = track->rt_bus_in_r[i];
           }
         }
 
@@ -812,10 +816,10 @@ void playback_thread(ProjectState& state) {
           auto sc_it = track->plugin_sidechain.find((int)i);
           if (sc_it != track->plugin_sidechain.end() &&
               sc_it->second.source_track_index >= 0) {
-            auto buf_it = sc_buffers.find(sc_it->second.source_track_index);
-            if (buf_it != sc_buffers.end()) {
-              sc_ch[0] = buf_it->second.first.data();
-              sc_ch[1] = buf_it->second.second.data();
+            auto src_it = state.tracks.find(sc_it->second.source_track_index);
+            if (src_it != state.tracks.end() && src_it->second->rt_sc_valid) {
+              sc_ch[0] = src_it->second->rt_sc_l.data();
+              sc_ch[1] = src_it->second->rt_sc_r.data();
               sc_ptr = sc_ch;
             }
           }
@@ -838,19 +842,19 @@ void playback_thread(ProjectState& state) {
             track->eq_filter_state);
 
         // 4b. Capture post-effects output for sidechain
-        {
-          auto& buf = sc_buffers[track_idx];
-          d_double_to_float_stereo(bufferL, bufferR, buf.first.data(),
-                                   buf.second.data(), block_size);
-        }
+        d_double_to_float_stereo(bufferL, bufferR, track->rt_sc_l.data(),
+                                 track->rt_sc_r.data(), block_size);
+        track->rt_sc_valid = true;
 
         // 4c. Send to aux buses (pre-fader sends use pre-volume signal)
         for (const auto& send : track->aux_sends) {
-          auto it = bus_input_buffers.find(send.aux_track_index);
-          if (it == bus_input_buffers.end()) continue;
-          d_accumulate_aux_send(bufferL, bufferR, it->second.first.data(),
-                                it->second.second.data(), block_size,
-                                send.level);
+          auto it = state.tracks.find(send.aux_track_index);
+          if (it == state.tracks.end() ||
+              it->second->track_type != Track::TrackType::AUX)
+            continue;
+          d_accumulate_aux_send(
+              bufferL, bufferR, it->second->rt_bus_in_l.data(),
+              it->second->rt_bus_in_r.data(), block_size, send.level);
         }
 
         // 5. Apply volume and pan (via @nogc D DSP kernel)
@@ -871,18 +875,19 @@ void playback_thread(ProjectState& state) {
         if (out_idx < 0 && track->group_parent_index >= 0) {
           out_idx = track->group_parent_index;
         }
-        auto* dest_l = &mixBufferL;
-        auto* dest_r = &mixBufferR;
+        double* dest_l = mixBufferL.data();
+        double* dest_r = mixBufferR.data();
         if (out_idx >= 0) {
-          auto git = bus_input_buffers.find(out_idx);
-          if (git != bus_input_buffers.end()) {
-            dest_l = &git->second.first;
-            dest_r = &git->second.second;
+          auto git = state.tracks.find(out_idx);
+          if (git != state.tracks.end() &&
+              (git->second->track_type == Track::TrackType::GROUP ||
+               git->second->track_type == Track::TrackType::AUX)) {
+            dest_l = git->second->rt_bus_in_l.data();
+            dest_r = git->second->rt_bus_in_r.data();
           }
         }
 
-        d_accumulate_mix(bufferL, bufferR, dest_l->data(), dest_r->data(),
-                         block_size);
+        d_accumulate_mix(bufferL, bufferR, dest_l, dest_r, block_size);
         {
           std::lock_guard<std::mutex> llock(state.levels_mutex);
           state.track_levels[track_idx] = {peakL, peakR};
@@ -976,17 +981,36 @@ void playback_thread(ProjectState& state) {
       track0_is_master_or_absent =
           (it0 == state.tracks.end() ||
            it0->second->track_type == Track::TrackType::MASTER);
+
+      const bool loop_en = state.loop_enabled.load(std::memory_order_relaxed);
+      pat_loop_active = (!loop_en &&
+                         state.playback_mode.load(std::memory_order_relaxed) ==
+                             SequencerPlaybackMode::PAT &&
+                         !state.sequencer_patterns.empty() && cur_bpm > 0.0);
+      if (pat_loop_active) {
+        int psteps = 16;
+        const int sel_pat =
+            state.selected_pattern_index.load(std::memory_order_relaxed);
+        for (const auto& pat : state.sequencer_patterns) {
+          if (pat.pattern_index == sel_pat) {
+            psteps = pat.length_steps > 0 ? pat.length_steps : 16;
+            break;
+          }
+        }
+        pat_end_sec = (psteps * 0.25) * (60.0 / cur_bpm);
+      }
     }
 
     // Apply Toolbar global master volume before output metering
-    const float global_master_vol = state.master_volume;
+    const float global_master_vol =
+        state.master_volume.load(std::memory_order_relaxed);
     for (int i = 0; i < block_size; ++i) {
       mixBufferL[i] *= global_master_vol;
       mixBufferR[i] *= global_master_vol;
     }
 
-    // Mix to output (via @nogc D DSP kernel)
-    std::vector<float> interleaved(block_size * actual_channels, 0.0f);
+    // Mix to output (via @nogc D DSP kernel) using pre-allocated buffer
+    std::fill(interleaved.begin(), interleaved.end(), 0.0f);
     float masterPeakL = 0.0f, masterPeakR = 0.0f;
     d_process_master_output(mixBufferL.data(), mixBufferR.data(),
                             interleaved.data(), block_size, &masterPeakL,
@@ -1017,33 +1041,36 @@ void playback_thread(ProjectState& state) {
     CHECK_GE((int)interleaved.size(), block_size * actual_channels);
     audio->write(interleaved, block_size);
 
-    if (state.is_timeline_playing) {
-      double next_pos = state.playhead_pos_sec;
-      bool pat_loop_active =
-          (!state.loop_enabled &&
-           state.playback_mode == SequencerPlaybackMode::PAT &&
-           !state.sequencer_patterns.empty() && state.bpm > 0.0);
-      double pat_end_sec = 0.0;
-      if (pat_loop_active) {
-        int psteps = 16;
-        for (const auto& pat : state.sequencer_patterns) {
-          if (pat.pattern_index == state.selected_pattern_index) {
-            psteps = pat.length_steps > 0 ? pat.length_steps : 16;
-            break;
-          }
-        }
-        pat_end_sec = (psteps * 0.25) * (60.0 / state.bpm);
-      }
-      d_advance_playhead(state.playhead_pos_sec, time_per_block,
-                         state.loop_enabled || pat_loop_active,
-                         state.loop_enabled ? state.loop_start_sec : 0.0,
-                         state.loop_enabled ? state.loop_end_sec : pat_end_sec,
-                         &next_pos);
-      state.playhead_pos_sec = next_pos;
+    double updated_pos = cur_playhead;
+    if (cur_playing) {
+      const bool loop_en = state.loop_enabled.load(std::memory_order_relaxed);
+      double next_pos = cur_playhead;
+      d_advance_playhead(
+          cur_playhead, time_per_block, loop_en || pat_loop_active,
+          loop_en ? state.loop_start_sec.load(std::memory_order_relaxed) : 0.0,
+          loop_en ? state.loop_end_sec.load(std::memory_order_relaxed)
+                  : pat_end_sec,
+          &next_pos);
+      state.playhead_pos_sec.store(next_pos, std::memory_order_relaxed);
+      updated_pos = next_pos;
     }
-    context.continuousTimeSamples =
-        (int64_t)(state.playhead_pos_sec * context.sampleRate);
-    context.projectTimeMusic = state.playhead_pos_sec * (context.tempo / 60.0);
+    context.continuousTimeSamples = (int64_t)(updated_pos * context.sampleRate);
+    context.projectTimeMusic = updated_pos * (context.tempo / 60.0);
+
+    if (state.audio_restart_requested.exchange(false)) {
+      auto new_audio = SoundDevice::create(
+          (int)sample_rate, actual_channels,
+          state.buffer_latency_ms.load(std::memory_order_relaxed));
+      if (new_audio && new_audio->is_ready()) {
+        audio = std::move(new_audio);
+        sample_rate = (float)audio->get_sample_rate();
+        actual_channels = audio->get_channels();
+        state.sample_rate.store((double)sample_rate, std::memory_order_relaxed);
+        context.sampleRate = sample_rate;
+        time_per_block = block_size / (double)sample_rate;
+        interleaved.resize(block_size * actual_channels, 0.0f);
+      }
+    }
   }
 }
 

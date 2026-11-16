@@ -184,11 +184,11 @@ void AndroidEngineContext::setPlayback(bool play) {
 }
 
 bool AndroidEngineContext::isPlaying() const {
-  return state_ ? state_->is_playing : false;
+  return state_ ? state_->is_playing.load() : false;
 }
 
 double AndroidEngineContext::getPlaybackPosition() const {
-  return state_ ? state_->playhead_pos_sec : 0.0;
+  return state_ ? state_->playhead_pos_sec.load() : 0.0;
 }
 
 void AndroidEngineContext::setBpm(double bpm) {
@@ -201,7 +201,7 @@ void AndroidEngineContext::setBpm(double bpm) {
 }
 
 double AndroidEngineContext::getBpm() const {
-  return state_ ? state_->bpm : 120.0;
+  return state_ ? state_->bpm.load() : 120.0;
 }
 
 void AndroidEngineContext::audioThreadLoop() {
@@ -219,7 +219,8 @@ void AndroidEngineContext::audioThreadLoop() {
 
   int block_size = 512;
   std::vector<float> out_buffer(block_size * 2, 0.0f);
-  double sample_rate = state_->sample_rate > 0 ? state_->sample_rate : 44100.0;
+  double sample_rate =
+      state_->sample_rate > 0 ? state_->sample_rate.load() : 44100.0;
   double dt = static_cast<double>(block_size) / sample_rate;
   std::vector<MidiNoteEvent> empty_events;
 
@@ -274,11 +275,11 @@ void AndroidEngineContext::audioThreadLoop() {
       }
 
       if (is_playing) {
-        state_->playhead_pos_sec += dt;
-        if (state_->loop_enabled &&
-            state_->playhead_pos_sec >= state_->loop_end_sec) {
-          state_->playhead_pos_sec = state_->loop_start_sec;
+        double next_pos = state_->playhead_pos_sec.load() + dt;
+        if (state_->loop_enabled && next_pos >= state_->loop_end_sec) {
+          next_pos = state_->loop_start_sec.load();
         }
+        state_->playhead_pos_sec.store(next_pos);
       }
     }
 

@@ -185,10 +185,10 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
                                     track->plugins);
           }
         }
-        state.playhead_pos_sec *= scale;
-        state.record_start_sec *= scale;
-        state.loop_start_sec *= scale;
-        state.loop_end_sec *= scale;
+        state.playhead_pos_sec.store(state.playhead_pos_sec.load() * scale);
+        state.record_start_sec.store(state.record_start_sec.load() * scale);
+        state.loop_start_sec.store(state.loop_start_sec.load() * scale);
+        state.loop_end_sec.store(state.loop_end_sec.load() * scale);
       } else if (new_bpm > 0) {
         state.bpm = new_bpm;
       }
@@ -346,7 +346,8 @@ void handleSetAudioBufferSize(const pb::commands::SetAudioBufferSize& cmd,
   if (ms < 5) ms = 5;
   if (ms > 2000) ms = 2000;
   state.buffer_latency_ms = ms;
-  LOG(INFO) << "Audio buffer size set to " << ms << " ms (restart to apply)";
+  state.audio_restart_requested.store(true);
+  LOG(INFO) << "Audio buffer size set to " << ms << " ms";
   sendAck("SET_AUDIO_BUFFER_SIZE", true);
   saveConfig(state);
 }

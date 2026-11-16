@@ -490,7 +490,7 @@ TEST_F(ProjectTest, InMemoryMidiClipUndoRedo) {
 
   // Apply to a new project state
   hibiki::ProjectState restored_state;
-  restored_state.sample_rate = state.sample_rate;
+  restored_state.sample_rate = state.sample_rate.load();
   auto status = hibiki::ApplyProjectState(restored_state, snapshot);
   ASSERT_THAT(status, IsOk());
 

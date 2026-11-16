@@ -11,7 +11,8 @@ import dlangui.widgets.scroll : ScrollWidget;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.theme : activeDawUiFontFace, dp, drawCard, drawDetailedWaveform, drawThemeCard, drawVCenteredText,
     FlCompactButton, FlPalette, getDawFont, getFlPalette, safeWidgetFont, ScopedRetroAntialias, truncateLabel;
-import gui_d.transport_model : BrowserCategory, generateSampleWaveform, PatternState, TransportModel;
+import gui_d.transport_model : BrowserCategory, generateSampleWaveform, PatternState, PlaylistClipKind,
+    TransportModel;
 import std.algorithm : canFind, sort;
 import std.conv : to;
 import std.file : dirEntries, exists, isDir, read, SpanMode;
@@ -548,6 +549,7 @@ class BrowserPanel : VerticalLayout {
                         if (model_) {
                             model_.samplePreview.name = baseName(entry.uri);
                             model_.samplePreview.path = entry.uri;
+                            model_.activePickerKind = PlaylistClipKind.AUDIO;
                             int sr = 44100;
                             int bits = 16;
                             auto peaks = loadWavPreviewPeaks(entry.uri, 512, &sr, &bits);
@@ -560,9 +562,10 @@ class BrowserPanel : VerticalLayout {
                                 model_.samplePreview.waveform =
                                     generateSampleWaveform(512, seed, canFind(toLower(entry.uri), "loop"));
                             }
+                            model_.hintText = format("Previewing '%s' (double-click to add to Playlist)",
+                                                     baseName(entry.uri));
                         }
                         if (onAuditionSample !is null) onAuditionSample(entry.uri);
-                        if (onAddSampleClip !is null) onAddSampleClip(entry.uri);
                     } else if (entry.category == BrowserCategory.RECENT) {
                         if (onLoadProject !is null) onLoadProject(entry.uri);
                     } else if (entry.category == BrowserCategory.PROJECT) {
@@ -573,6 +576,17 @@ class BrowserPanel : VerticalLayout {
                     previewWidget_.invalidate();
                     return true;
                 };
+                if (entry.category == BrowserCategory.SAMPLES) {
+                    btn.mouseEvent = delegate(Widget src, MouseEvent ev) {
+                        if (ev.action == MouseAction.ButtonDown &&
+                            ((ev.button == MouseButton.Left && ev.doubleClick) ||
+                             ev.button == MouseButton.Right)) {
+                            if (onAddSampleClip !is null) onAddSampleClip(entry.uri);
+                            return true;
+                        }
+                        return false;
+                    };
+                }
                 listBody_.addChild(btn);
             }
         }
@@ -732,4 +746,32 @@ unittest {
     auto peaks = loadWavPreviewPeaks(wavPath, 4, &decSr, &decBits);
     assert(peaks.length == 4 && decSr == 44100 && decBits == 16);
     assert(peaks[0] > 0.49f && peaks[1] < -0.49f);
+
+    // Regression: single-click sample auditions without adding clip; double-click adds clip
+    int auditionCount = 0;
+    int addedClipCount = 0;
+    bp.onAuditionSample = (string p) { ++auditionCount; };
+    bp.onAddSampleClip = (string p) { ++addedClipCount; };
+    model.sampleScanDirs = [scanDir];
+    bp.activeCat_ = BrowserCategory.SAMPLES;
+    bp.refresh();
+    Widget sampleBtn;
+    foreach (li; 0 .. bp.listBody_.childCount) {
+        auto w = bp.listBody_.child(li);
+        if (w.click.assigned && canFind(toUTF8(w.text), "tone.wav")) {
+            sampleBtn = w;
+            break;
+        }
+    }
+    assert(sampleBtn !is null, "Expected SAMPLES listBody_ to contain scanned tone.wav");
+    sampleBtn.click(sampleBtn);
+    assert(auditionCount == 1 && addedClipCount == 0,
+           "Expected single-click on sample to only audition, not add clip");
+    auto dbl = new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, 5, 5);
+    dbl.lbutton.down(5, 5, MouseFlag.LButton);
+    dbl.lbutton.up(5, 5, 0);
+    dbl.lbutton.down(5, 5, MouseFlag.LButton);
+    sampleBtn.onMouseEvent(dbl);
+    assert(addedClipCount == 1,
+           "Expected double-click on sample to add clip to Playlist");
 }

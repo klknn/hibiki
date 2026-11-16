@@ -42,10 +42,17 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       int sidx = cmd.target().session_slot();
       std::string mpath = cmd.clip_data().path();
       bool is_loop = cmd.clip_data().is_loop();
+      double sr = state.sample_rate.load();
+      auto loaded = hibiki::LoadClip(mpath, is_loop, sr);
+      if (!loaded.ok()) {
+        sendLog("Failed to load clip: " + mpath);
+        break;
+      }
+      auto clip = std::make_unique<Clip>(std::move(*loaded));
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       history.pushState(CaptureProjectState(state));
       auto track = GetOrCreateTrack(state, tidx);
-      if (track->LoadClip(sidx, mpath, is_loop, state.sample_rate)) {
+      if (track->InsertLoadedClip(sidx, std::move(clip), mpath)) {
         sendAck("LOAD_CLIP", true);
         std::string name = mpath;
         size_t last_slash = mpath.find_last_of("/\\");
@@ -118,11 +125,16 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       std::string path = cmd.clip_data().path();
       double start = cmd.value();
       double dur_beats = cmd.clip_data().duration_beats();
+      double sr = state.sample_rate.load();
+      int pattern_idx = -1;
+      auto clip = Track::PrepareTimelineClip(path, dur_beats, sr, pattern_idx);
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       history.pushState(CaptureProjectState(state));
-      GetOrCreateTrack(state, tidx)
-          ->AddTimelineClip(path, start, state.bpm, dur_beats,
-                            state.sample_rate);
+      auto* track = GetOrCreateTrack(state, tidx);
+      if (clip) {
+        track->InsertPreparedTimelineClip(std::move(clip), path, start,
+                                          state.bpm.load(), pattern_idx);
+      }
       sendAck("ADD_TIMELINE_CLIP", true);
       break;
     }
@@ -457,29 +469,68 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
       break;
     }
     case pb::commands::TrackCmd::ACTION_ARM_RECORD: {
-      std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      auto track = GetOrCreateTrack(state, tidx);
-      track->record_armed = !track->record_armed;
+      bool should_arm = false;
+      std::string dev_id;
+      bool needs_midi_open = false;
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        auto track = GetOrCreateTrack(state, tidx);
+        should_arm = !track->record_armed;
+        track->record_armed = should_arm;
+        if (should_arm) {
+          track->record_buffer.reserve(44100 * 16);
+          track->midi_record_buffer.reserve(4096);
+          if (!track->midi_input_device &&
+              !track->midi_input_device_id.empty()) {
+            dev_id = track->midi_input_device_id;
+            needs_midi_open = true;
+          }
+        }
+      }
+      if (needs_midi_open) {
+        auto midi = MidiInput::create();
+        if (midi && midi->open(dev_id)) {
+          std::lock_guard<std::mutex> lock(state.tracks_mutex);
+          auto* track = GetOrCreateTrack(state, tidx);
+          if (!track->midi_input_device &&
+              track->midi_input_device_id == dev_id) {
+            track->midi_input_device = std::move(midi);
+          }
+        }
+      }
       sendAck("ARM_RECORD", true);
       break;
     }
     case pb::commands::TrackCmd::ACTION_SET_INPUT_DEVICE: {
-      std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      auto track = GetOrCreateTrack(state, tidx);
-      track->input_device_id = cmd.input_device_id();
-      track->input_channel_start = cmd.input_channel_start();
-      track->input_stereo = cmd.input_stereo();
-      // Reset existing device so next recording opens with new settings
-      track->input_device.reset();
+      std::unique_ptr<SoundDevice> old_dev;
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        auto track = GetOrCreateTrack(state, tidx);
+        track->input_device_id = cmd.input_device_id();
+        track->input_channel_start = cmd.input_channel_start();
+        track->input_stereo = cmd.input_stereo();
+        old_dev = std::move(track->input_device);
+      }
       sendAck("SET_INPUT_DEVICE", true);
       break;
     }
     case pb::commands::TrackCmd::ACTION_SET_MIDI_INPUT: {
-      std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      auto track = GetOrCreateTrack(state, tidx);
-      track->midi_input_device_id = cmd.midi_input_device_id();
-      // Reset existing MIDI device so it reopens with new settings
-      track->midi_input_device.reset();
+      const std::string dev_id = cmd.midi_input_device_id();
+      std::unique_ptr<MidiInput> new_midi;
+      if (!dev_id.empty()) {
+        new_midi = MidiInput::create();
+        if (new_midi && !new_midi->open(dev_id)) {
+          new_midi.reset();
+        }
+      }
+      std::unique_ptr<MidiInput> old_midi;
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        auto track = GetOrCreateTrack(state, tidx);
+        track->midi_input_device_id = dev_id;
+        old_midi = std::move(track->midi_input_device);
+        track->midi_input_device = std::move(new_midi);
+      }
       sendAck("SET_MIDI_INPUT", true);
       break;
     }

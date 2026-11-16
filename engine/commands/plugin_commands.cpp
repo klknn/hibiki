@@ -44,6 +44,18 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
     case pb::commands::PluginCmd::ACTION_LOAD: {
       std::string vpath = cmd.path();
       int pidx = cmd.target().plugin_index();
+      double sr = state.sample_rate.load();
+      if (std::isnan(sr) || sr <= 0.0) sr = 44100.0;
+      PluginHostMode host_mode = PluginHostMode::IN_PROCESS;
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        host_mode = state.plugin_host_mode;
+      }
+      LOG(INFO) << "BACKEND: Loading plugin: " << vpath;
+      sendLog("Loading plugin: " + vpath + " ...");
+      auto loaded_plugin = Track::CreateAndLoadPlugin(
+          vpath, pidx, tidx, sr, host_mode, cmd.remote_host());
+
       // Displaced plugin must be destroyed OUTSIDE tracks_mutex to avoid
       // blocking the audio thread during VST3 teardown (editor thread join,
       // COM release, etc.)
@@ -52,11 +64,7 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
         std::lock_guard<std::mutex> lock(state.tracks_mutex);
         history.pushState(CaptureProjectState(state));
         auto track = GetOrCreateTrack(state, tidx);
-        LOG(INFO) << "BACKEND: Loading plugin: " << vpath;
-        sendLog("Loading plugin: " + vpath + " ...");
-        auto result =
-            track->LoadPlugin(vpath, pidx, state.sample_rate,
-                              state.plugin_host_mode, cmd.remote_host());
+        auto result = track->InsertLoadedPlugin(std::move(loaded_plugin));
         displaced = std::move(result.displaced);
         int target_idx = result.index;
         if (target_idx != -1) {

@@ -13,6 +13,7 @@ namespace hibiki {
 
 absl::Status AudioEditor::Load(const std::string& path,
                                double target_sample_rate) {
+  PreviewStop();
   std::vector<float> data;
   int channels = 0;
   int sr = 0;

@@ -48,7 +48,6 @@ Track* syncChannelGeneratorTrack(ProjectState& state,
 
 void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
                         ProjectState& state, HistoryManager& /*history*/) {
-  std::lock_guard<std::mutex> lock(state.tracks_mutex);
   const int pat_idx = static_cast<int>(cmd.pattern_index());
   const int ch_idx = static_cast<int>(cmd.channel_index());
 
@@ -67,12 +66,14 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       break;
     }
     case pb::commands::SequencerCmd::ACTION_SELECT_PATTERN: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
       state.selected_pattern_index = std::max(0, pat_idx);
       findOrCreatePattern(state, state.selected_pattern_index);
       sendAck("SEQ_SELECT_PATTERN", true);
       break;
     }
     case pb::commands::SequencerCmd::ACTION_ADD_PATTERN: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
       SequencerPattern* pat = findOrCreatePattern(state, pat_idx);
       if (!cmd.name().empty()) pat->name = cmd.name();
       if (cmd.color() != 0) pat->color = cmd.color();
@@ -81,37 +82,53 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       break;
     }
     case pb::commands::SequencerCmd::ACTION_ADD_CHANNEL: {
-      SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
-      if (!cmd.name().empty()) ch->name = cmd.name();
-      if (!cmd.uri().empty()) ch->uri = cmd.uri();
-      if (!cmd.category().empty()) ch->category = cmd.category();
-      if (cmd.color() != 0) ch->color = cmd.color();
-      ch->mixer_insert = cmd.mixer_insert();
-      Track* trk = syncChannelGeneratorTrack(state, *ch);
-      if (!ch->uri.empty() &&
-          (trk->plugins.empty() || trk->plugins[0]->getPath() != ch->uri)) {
-        auto res = trk->LoadPlugin(ch->uri, 0, state.sample_rate,
-                                   state.plugin_host_mode);
-        if (res.index >= 0 &&
-            res.index < static_cast<int>(trk->plugins.size()) &&
-            trk->plugins[res.index]) {
-          auto& plugin = trk->plugins[res.index];
-          std::vector<VstParamInfo> params;
-          for (int i = 0; i < plugin->getParameterCount(); ++i) {
-            VstParamInfo info;
-            if (plugin->getParameterInfo(i, info)) params.push_back(info);
-          }
-          const bool bp = trk->plugin_bypass.count(res.index) > 0;
-          sendParamList(trk->index, res.index, plugin->getName(),
-                        plugin->isInstrument(), params, bp,
-                        trk->GetPluginMix(res.index));
-          for (const auto& info : params) {
-            sendParamValueChange(
-                trk->index, res.index, info.id,
-                static_cast<float>(plugin->getParameterValue(info.id)));
-          }
-          if (auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugin.get())) {
-            dm->sendAllPadStates();
+      std::unique_ptr<IPlugin> preloaded;
+      if (!cmd.uri().empty()) {
+        double sr = state.sample_rate.load();
+        if (std::isnan(sr) || sr <= 0.0) sr = 44100.0;
+        PluginHostMode host_mode = PluginHostMode::IN_PROCESS;
+        {
+          std::lock_guard<std::mutex> lock(state.tracks_mutex);
+          host_mode = state.plugin_host_mode;
+        }
+        preloaded = Track::CreateAndLoadPlugin(cmd.uri(), 0, 100 + ch_idx, sr,
+                                               host_mode);
+      }
+      std::unique_ptr<IPlugin> displaced;
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
+        if (!cmd.name().empty()) ch->name = cmd.name();
+        if (!cmd.uri().empty()) ch->uri = cmd.uri();
+        if (!cmd.category().empty()) ch->category = cmd.category();
+        if (cmd.color() != 0) ch->color = cmd.color();
+        ch->mixer_insert = cmd.mixer_insert();
+        Track* trk = syncChannelGeneratorTrack(state, *ch);
+        if (!ch->uri.empty() &&
+            (trk->plugins.empty() || trk->plugins[0]->getPath() != ch->uri)) {
+          auto res = trk->InsertLoadedPlugin(std::move(preloaded));
+          displaced = std::move(res.displaced);
+          if (res.index >= 0 &&
+              res.index < static_cast<int>(trk->plugins.size()) &&
+              trk->plugins[res.index]) {
+            auto& plugin = trk->plugins[res.index];
+            std::vector<VstParamInfo> params;
+            for (int i = 0; i < plugin->getParameterCount(); ++i) {
+              VstParamInfo info;
+              if (plugin->getParameterInfo(i, info)) params.push_back(info);
+            }
+            const bool bp = trk->plugin_bypass.count(res.index) > 0;
+            sendParamList(trk->index, res.index, plugin->getName(),
+                          plugin->isInstrument(), params, bp,
+                          trk->GetPluginMix(res.index));
+            for (const auto& info : params) {
+              sendParamValueChange(
+                  trk->index, res.index, info.id,
+                  static_cast<float>(plugin->getParameterValue(info.id)));
+            }
+            if (auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugin.get())) {
+              dm->sendAllPadStates();
+            }
           }
         }
       }
@@ -119,6 +136,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       break;
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_ROUTE: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
       SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
       ch->mixer_insert = cmd.mixer_insert();
       syncChannelGeneratorTrack(state, *ch);
@@ -126,6 +144,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       break;
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_MUTE: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
       SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
       ch->muted = cmd.enabled();
       syncChannelGeneratorTrack(state, *ch);
@@ -133,6 +152,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       break;
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_SOLO: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
       SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
       ch->soloed = cmd.enabled();
       syncChannelGeneratorTrack(state, *ch);
@@ -140,6 +160,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       break;
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_VOLUME: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
       SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
       ch->volume = std::clamp(cmd.value(), 0.0f, 1.5f);
       syncChannelGeneratorTrack(state, *ch);
@@ -147,6 +168,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       break;
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_PAN: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
       SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
       ch->pan = std::clamp(cmd.value(), -1.0f, 1.0f);
       syncChannelGeneratorTrack(state, *ch);
@@ -154,6 +176,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       break;
     }
     case pb::commands::SequencerCmd::ACTION_SET_STEP: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
       SequencerPattern* pat = findOrCreatePattern(state, pat_idx);
       auto& data = pat->channels[ch_idx];
       const int sidx = static_cast<int>(cmd.step_index());
@@ -164,6 +187,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       break;
     }
     case pb::commands::SequencerCmd::ACTION_SET_STEP_GRAPH: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
       SequencerPattern* pat = findOrCreatePattern(state, pat_idx);
       auto& data = pat->channels[ch_idx];
       const int sidx = static_cast<int>(cmd.step_index());
@@ -189,6 +213,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       break;
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_NOTES: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
       SequencerPattern* pat = findOrCreatePattern(state, pat_idx);
       auto& data = pat->channels[ch_idx];
       data.notes.assign(cmd.notes().begin(), cmd.notes().end());

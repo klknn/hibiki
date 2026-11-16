@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cmath>
 #include <map>
 #include <memory>
@@ -186,7 +187,16 @@ class Track {
   float eq_mid = 0.5f;      // [0..1] 0.5 = 0 dB flat
   float eq_high = 0.5f;     // [0..1] 0.5 = 0 dB flat
   float stereo_sep = 0.0f;  // [-1..1] -1 = mono, 0 = default, +1 = wide
-  double eq_filter_state[24] = {0.0};
+  double eq_filter_state[48] = {0.0};
+
+  // Pre-allocated real-time audio scratch buffers (avoids per-block heap
+  // allocation and std::map lookups on the audio thread).
+  static constexpr int kMaxRealtimeBlockSize = 4096;
+  std::array<double, kMaxRealtimeBlockSize> rt_bus_in_l{};
+  std::array<double, kMaxRealtimeBlockSize> rt_bus_in_r{};
+  std::array<float, kMaxRealtimeBlockSize> rt_sc_l{};
+  std::array<float, kMaxRealtimeBlockSize> rt_sc_r{};
+  bool rt_sc_valid = false;
 
   // Recording state
   enum class RecordMode { RECORD_AUDIO = 0, RECORD_MIDI = 1 };
@@ -208,7 +218,7 @@ class Track {
 
   // MIDI input state
   std::string midi_input_device_id = MIDI_GLOBAL_ID;  // Default: global
-  std::unique_ptr<MidiInput> midi_input_device;       // Lazily created
+  std::unique_ptr<MidiInput> midi_input_device;
 
   // Virtual MIDI queue (from PC keyboard / on-screen piano)
   std::mutex virtual_midi_mutex;
@@ -218,11 +228,18 @@ class Track {
     int index = -1;                      // slot index, -1 on failure
     std::unique_ptr<IPlugin> displaced;  // old plugin displaced by replacement
   };
+  static std::unique_ptr<IPlugin> CreateAndLoadPlugin(
+      const std::string& path, int plugin_index, int track_index,
+      double sample_rate, PluginHostMode host_mode = PluginHostMode::IN_PROCESS,
+      const std::string& remote_host = "");
+  LoadResult InsertLoadedPlugin(std::unique_ptr<IPlugin> plugin);
   LoadResult LoadPlugin(const std::string& path, int plugin_index,
                         double sample_rate,
                         PluginHostMode host_mode = PluginHostMode::IN_PROCESS,
                         const std::string& remote_host = "");
   bool DeleteClip(int slot);
+  bool InsertLoadedClip(int slot, std::unique_ptr<Clip> clip,
+                        const std::string& path);
   bool LoadClip(int slot, const std::string& path, bool is_loop = false,
                 double sample_rate = 0.0);
   void SetClipLoop(int slot, bool is_loop);
@@ -232,6 +249,14 @@ class Track {
   std::unique_ptr<IPlugin> RemovePlugin(size_t pidx);
   void ReorderPlugin(int from_index, int to_index);
 
+  static std::unique_ptr<Clip> PrepareTimelineClip(const std::string& path,
+                                                   double duration_beats,
+                                                   double sample_rate,
+                                                   int& out_pattern_idx);
+  void InsertPreparedTimelineClip(std::unique_ptr<Clip> clip,
+                                  const std::string& path,
+                                  double start_time_sec, double bpm,
+                                  int pattern_idx);
   void AddTimelineClip(const std::string& path, double start_time_sec,
                        double bpm, double duration_beats = 0,
                        double sample_rate = 0.0);

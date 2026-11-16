@@ -238,4 +238,18 @@ TEST(AudioEditorTest, AudioDataAccessor) {
   std::remove(path.c_str());
 }
 
+TEST(AudioEditorTest, LoadWhilePreviewPlayingStopsPreviewCleanly) {
+  auto path1 = createTestWav(44100, 1, 0.4f);
+  auto path2 = createTestWav(22050, 2, 0.8f);
+  AudioEditor editor;
+  ASSERT_THAT(editor.Load(path1, 44100.0), IsOk());
+  editor.PreviewPlay();
+  // Loading a new file while PreviewPlay thread may be active must join cleanly
+  ASSERT_THAT(editor.Load(path2, 44100.0), IsOk());
+  editor.PreviewStop();
+  EXPECT_EQ(editor.num_channels(), 2);
+  std::remove(path1.c_str());
+  std::remove(path2.c_str());
+}
+
 }  // namespace hibiki

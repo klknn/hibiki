@@ -111,7 +111,8 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
                                       : finalized->clip->midi_events[0].beats;
               sendLog(
                   "MIDI_REC track=" + std::to_string(pair.first) +
-                  " record_start=" + std::to_string(state.record_start_sec) +
+                  " record_start=" +
+                  std::to_string(state.record_start_sec.load()) +
                   " clip_start=" + std::to_string(finalized->start_time_sec) +
                   " dur_beats=" + std::to_string(dur_beats) +
                   " dur_sec=" + std::to_string(duration_sec) +
@@ -297,8 +298,8 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
     }
     case pb::commands::TransportCmd::ACTION_RECORD: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      state.record_start_sec = state.playhead_pos_sec;
-      // Create input devices for armed tracks
+      state.record_start_sec.store(state.playhead_pos_sec.load());
+      // Create input devices and pre-reserve buffers for armed tracks
       for (auto& pair : state.tracks) {
         Track* track = pair.second.get();
         if (track->record_armed) {
@@ -315,7 +316,9 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
             }
           }
           track->record_buffer.clear();
+          track->record_buffer.reserve(44100 * 16);
           track->midi_record_buffer.clear();
+          track->midi_record_buffer.reserve(4096);
         }
       }
       state.is_recording = true;

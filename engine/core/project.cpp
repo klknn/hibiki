@@ -622,7 +622,7 @@ void SyncProjectToGui(const ProjectState& state) {
                            (float)state.loop_start_sec,
                            (float)state.loop_end_sec, state.is_recording,
                            state.cpu_percent, nullptr,
-                           static_cast<int>(state.playback_mode),
+                           static_cast<int>(state.playback_mode.load()),
                            state.swing_amount, state.selected_pattern_index);
 
   if (!state.sequencer_channels.empty() || !state.sequencer_patterns.empty()) {
@@ -964,7 +964,7 @@ void CollectSongPatternClipBlockEvents(const ProjectState& state, int ch_idx,
                 std::clamp((int)std::llround((clip_end_sec - block_start_sec) *
                                              sample_rate),
                            0, block_size - 1);
-            std::set<int> pitches;
+            bool active_pitches[128]{};
             const int max_steps =
                 std::min((int)it->second.steps.size(),
                          pat.length_steps > 0 ? pat.length_steps : 16);
@@ -973,13 +973,14 @@ void CollectSongPatternClipBlockEvents(const ProjectState& state, int ch_idx,
               const float p_norm = (s < (int)it->second.step_pitches.size())
                                        ? it->second.step_pitches[s]
                                        : 0.0f;
-              pitches.insert(
-                  std::clamp(60 + (int)std::lround(p_norm * 12.0f), 0, 127));
+              active_pitches[std::clamp(60 + (int)std::lround(p_norm * 12.0f),
+                                        0, 127)] = true;
             }
             for (const auto& nev : it->second.notes) {
-              pitches.insert(std::clamp((int)nev.pitch(), 0, 127));
+              active_pitches[std::clamp((int)nev.pitch(), 0, 127)] = true;
             }
-            for (int pitch : pitches) {
+            for (int pitch = 0; pitch < 128; ++pitch) {
+              if (!active_pitches[pitch]) continue;
               MidiNoteEvent off_ev;
               off_ev.sampleOffset = end_offset;
               off_ev.channel = 0;
@@ -1046,8 +1047,12 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
   }
 
   ProjectState state;
-  state.sample_rate = live_state.sample_rate;
-  ApplyProjectState(state, snapshot);
+  state.sample_rate = live_state.sample_rate.load();
+  if (auto status = ApplyProjectState(state, snapshot); !status.ok()) {
+    LOG(ERROR) << "Bounce ApplyProjectState failed: " << status.message();
+    hibiki::sendBounceFinished(path, false);
+    return;
+  }
   state.is_timeline_playing = true;
   state.playhead_pos_sec = start_sec;
 
@@ -1339,7 +1344,8 @@ void BounceProject(ProjectState& live_state, const std::string& path) {
       output_buffer.push_back(mixBufferR[i]);
     }
 
-    state.playhead_pos_sec += time_per_block;
+    state.playhead_pos_sec.store(state.playhead_pos_sec.load() +
+                                 time_per_block);
     context.continuousTimeSamples = state.playhead_pos_sec * sample_rate;
     context.projectTimeMusic = state.playhead_pos_sec * (context.tempo / 60.0);
   }
@@ -1503,7 +1509,8 @@ bool BounceTrackClip(
       output_buffer.push_back(bufferR[i]);
     }
 
-    state.playhead_pos_sec += time_per_block;
+    state.playhead_pos_sec.store(state.playhead_pos_sec.load() +
+                                 time_per_block);
     context.continuousTimeSamples = state.playhead_pos_sec * sample_rate;
     context.projectTimeMusic = state.playhead_pos_sec * (bpm / 60.0);
   }

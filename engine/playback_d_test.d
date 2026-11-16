@@ -190,4 +190,27 @@ import engine.playback_mixer;
     assert(fabs(wetL[0] - 0.5) < 1e-9 && fabs(wetR[1] - 0.0) < 1e-9);
     blendDryWet(dryL[], dryR[], wetL[], wetR[], 0.0f);
     assert(fabs(wetL[0] - 1.0) < 1e-9 && fabs(wetR[0] - 0.5) < 1e-9);
+
+    // 16. Test applyTrackEqCached matches applyTrackEq bit-identically across blocks
+    double[24] refState = 0.0;
+    double[48] cachedState = 0.0;
+    double[512] refL = void;
+    double[512] refR = void;
+    double[512] cL = void;
+    double[512] cR = void;
+    foreach (blk; 0 .. 3) {
+        foreach (i; 0 .. 512) {
+            const double v = 0.2 * sin(TWO_PI * 220.0 * (blk * 512 + i) / 44100.0);
+            refL[i] = v;
+            refR[i] = -v;
+            cL[i] = v;
+            cR[i] = -v;
+        }
+        applyTrackEq(refL[], refR[], 44100.0, 0.8f, 0.3f, 0.7f, refState.ptr);
+        applyTrackEqCached(cL[], cR[], 44100.0, 0.8f, 0.3f, 0.7f, cachedState.ptr);
+        foreach (i; 0 .. 512) {
+            assert(fabs(refL[i] - cL[i]) < 1e-12);
+            assert(fabs(refR[i] - cR[i]) < 1e-12);
+        }
+    }
 }

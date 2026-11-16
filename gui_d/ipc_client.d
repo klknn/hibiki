@@ -74,7 +74,8 @@ bool extractNextFrame(ref ubyte[] rxBuf, out ubyte[] outPayload) @safe {
                          (cast(uint)rxBuf[6] << 16) |
                          (cast(uint)rxBuf[7] << 24);
         if (len > MAX_IPC_FRAME_BYTES) {
-            rxBuf = rxBuf[4 .. $];
+            // Resynchronize by scanning forward 1 byte in case a valid HBKI header starts inside [1..3].
+            rxBuf = rxBuf[1 .. $];
             continue;
         }
         if (rxBuf.length < 8 + len) {
@@ -1004,12 +1005,15 @@ class EngineProcessClient {
     private ProcessPipes pipes_;
     private Mutex writeMutex_;
     private Thread readerThread_;
+    private Thread stderrThread_;
     private shared bool running_ = false;
     private void delegate(Notification) onNotification_;
+    void delegate(string) onError;
 
-    this(void delegate(Notification) onNotification) {
+    this(void delegate(Notification) onNotification, void delegate(string) onErrorCb = null) {
         writeMutex_ = new Mutex();
         onNotification_ = onNotification;
+        onError = onErrorCb;
     }
 
     bool isRunning() const {
@@ -1018,21 +1022,27 @@ class EngineProcessClient {
 
     bool start(string engineBinaryPath) {
         try {
-            pipes_ = pipeProcess([engineBinaryPath], Redirect.stdin | Redirect.stdout);
+            pipes_ = pipeProcess([engineBinaryPath], Redirect.stdin | Redirect.stdout | Redirect.stderr);
         } catch (Exception e) {
-            stderr.writeln("Failed to start engine ", engineBinaryPath, ": ", e.msg);
+            const string msg = "Failed to start engine " ~ engineBinaryPath ~ ": " ~ e.msg;
+            stderr.writeln(msg);
+            if (onError !is null) onError(msg);
             return false;
         }
         atomicStore(running_, true);
         readerThread_ = new Thread(&readLoop);
         readerThread_.isDaemon = true;
         readerThread_.start();
+        stderrThread_ = new Thread(&stderrLoop);
+        stderrThread_.isDaemon = true;
+        stderrThread_.start();
         return true;
     }
 
     void sendRequest(Request req) {
         if (!atomicLoad(running_)) return;
         ubyte[] framed = encodeLengthPrefixedRequest(req);
+        bool failed = false;
         synchronized (writeMutex_) {
             if (!atomicLoad(running_)) return;
             try {
@@ -1040,7 +1050,11 @@ class EngineProcessClient {
                 pipes_.stdin.flush();
             } catch (Exception) {
                 atomicStore(running_, false);
+                failed = true;
             }
+        }
+        if (failed && onError !is null) {
+            onError("Engine IPC pipe disconnected while sending command");
         }
     }
 
@@ -1059,9 +1073,49 @@ class EngineProcessClient {
                 readerThread_.join(false);
             } catch (Exception) {}
         }
+        if (stderrThread_ !is null) {
+            try {
+                stderrThread_.join(false);
+            } catch (Exception) {}
+        }
         try {
             pipes_.stdout.close();
         } catch (Exception) {}
+        try {
+            pipes_.stderr.close();
+        } catch (Exception) {}
+    }
+
+    private void stderrLoop() {
+        import std.string : strip;
+        char[2048] chunk;
+        string pending;
+        while (true) {
+            char[] got;
+            try {
+                got = pipes_.stderr.rawRead(chunk[]);
+            } catch (Exception) {
+                break;
+            }
+            if (got.length == 0) break;
+            pending ~= got;
+            while (true) {
+                ptrdiff_t nl = -1;
+                foreach (idx, c; pending) {
+                    if (c == '\n') { nl = cast(ptrdiff_t)idx; break; }
+                }
+                if (nl < 0) break;
+                const string line = strip(pending[0 .. nl]).idup;
+                pending = pending[nl + 1 .. $];
+                if (line.length > 0 && onError !is null) {
+                    onError(line);
+                }
+            }
+        }
+        const string tail = strip(pending).idup;
+        if (tail.length > 0 && onError !is null) {
+            onError(tail);
+        }
     }
 
     private void readLoop() {
@@ -1326,4 +1380,37 @@ unittest {
     Request audDec;
     assert(decodeProto(encodeLengthPrefixedRequest(rAud)[4 .. $], audDec));
     assert(audDec.audio_editor.hasValue && audDec.audio_editor.value.action == AudioEditorCmd.Action.AE_ACTION_LOAD);
+
+    // 9. Test resynchronization by 1 byte when a false HBKI header with oversized length precedes a real shifted frame
+    Notification notif2;
+    PlayheadInfo pi2;
+    pi2.bpm = 152.0f;
+    notif2.playhead_info.set(pi2);
+    ubyte[] payload2 = encodeProto(notif2);
+    const uint plen2 = cast(uint)payload2.length;
+
+    // Bytes [0..3] = HBKI, byte 4..7 = length > MAX_IPC_FRAME_BYTES, Wait: put a real HBKI at byte offset 1..4!
+    // HBKI bytes are 0x49 ('I'), 0x4B ('K'), 0x42 ('B'), 0x48 ('H').
+    // Construct buffer starting with 0x49, then immediately HBKI header at offset 1!
+    // Wait: if offset 0..3 had 0x49, 0x4B, 0x42, 0x48 AND offset 3..6 had another? No, simpler:
+    // Offset 0..3 = HBKI, offset 4..7 = bogus oversized length whose byte [4..7] starts with 'H','B' or offset 2..5 starts HBKI:
+    // If we use 0xFF garbage + fake HBKI at index 0 with bogus len where real HBKI starts at index 2 (not aligned to 4!):
+    ubyte[] resyncBuf;
+    resyncBuf ~= [0x49, 0x4B, 0x42, 0x48]; // bogus HBKI at index 0
+    // index 4..7 = 0xFFFFFFFF (> MAX_IPC_FRAME_BYTES); index 5..8 starts a REAL frame if wait:
+    // Wait: if offset 1..4 is NOT HBKI, what if index 5..8 is HBKI (shift 1 mod 4 from 4)!
+    resyncBuf ~= [0xFF]; // index 4 (high length byte, makes len > 4MiB since uint is 0x424B49FF or similar)
+    resyncBuf ~= [0x49, 0x4B, 0x42, 0x48]; // real HBKI at index 5! len bytes at index 5..7 are >= 0x42000000 > MAX
+    resyncBuf ~= [
+        cast(ubyte)(plen2 & 0xFF),
+        cast(ubyte)((plen2 >> 8) & 0xFF),
+        cast(ubyte)((plen2 >> 16) & 0xFF),
+        cast(ubyte)((plen2 >> 24) & 0xFF),
+    ];
+    resyncBuf ~= payload2;
+    ubyte[] outP2;
+    assert(extractNextFrame(resyncBuf, outP2), "Expected extractNextFrame to recover shifted HBKI frame via 1-byte stride");
+    Notification decoded2;
+    assert(decodeProto(outP2, decoded2) && decoded2.playhead_info.hasValue);
+    assert(decoded2.playhead_info.value.bpm > 151.0f && decoded2.playhead_info.value.bpm < 153.0f);
 }

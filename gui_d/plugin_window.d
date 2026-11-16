@@ -415,6 +415,8 @@ class PluginWrapperWidget : Widget {
     private int dragStartY_ = 0;
     private float dragStartVal_ = 0.0f;
     private ColorDrawBuf remoteBuf_;
+    private const(PluginSlotState)* lastSyncedPlug_ = null;
+    private uint lastSyncedRevision_ = 0;
 
     void delegate(int trackIdx, int pluginIdx, uint paramId, float value) onSetParam;
     void delegate(int trackIdx, int pluginIdx, bool enabled) onSetBypass;
@@ -473,6 +475,10 @@ class PluginWrapperWidget : Widget {
             plug.editorRgba.length < cast(size_t)(plug.editorW * plug.editorH * 4)) {
             return;
         }
+        if (lastSyncedPlug_ == plug && lastSyncedRevision_ == plug.editorRevision &&
+            remoteBuf_ !is null && remoteBuf_.width == plug.editorW && remoteBuf_.height == plug.editorH) {
+            return;
+        }
         if (remoteBuf_ is null || remoteBuf_.width != plug.editorW || remoteBuf_.height != plug.editorH) {
             if (remoteBuf_ !is null) destroy(remoteBuf_);
             remoteBuf_ = new ColorDrawBuf(plug.editorW, plug.editorH);
@@ -488,6 +494,8 @@ class PluginWrapperWidget : Widget {
                 row[x] = (r << 16) | (g << 8) | b;
             }
         }
+        lastSyncedPlug_ = plug;
+        lastSyncedRevision_ = plug.editorRevision;
     }
 
     override void onDraw(DrawBuf buf) {
@@ -790,4 +798,17 @@ unittest {
     pw.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)(440 - 50), cast(short)16));
     assert(!plug.remoteEditorOpen && !edState,
            "Expected EDITOR button on builtin:// plugin not to enter remoteEditorOpen polling state");
+
+    // Regression: syncRemoteFrameBuffer caches ColorDrawBuf across identical editorRevision frames
+    plug.remoteEditorOpen = true;
+    const uint revBefore = plug.editorRevision;
+    pw.syncRemoteFrameBuffer(plug);
+    auto firstBuf = pw.remoteBuf_;
+    assert(firstBuf !is null && pw.lastSyncedRevision_ == revBefore);
+    pw.syncRemoteFrameBuffer(plug);
+    assert(pw.remoteBuf_ is firstBuf && pw.lastSyncedRevision_ == revBefore);
+    model.applyNotification(nEf);
+    assert(plug.editorRevision == revBefore + 1);
+    pw.syncRemoteFrameBuffer(plug);
+    assert(pw.lastSyncedRevision_ == revBefore + 1);
 }

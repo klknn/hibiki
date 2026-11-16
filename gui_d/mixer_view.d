@@ -92,6 +92,7 @@ MixerMetrics computeMixerMetrics(Rect rc, const(TransportModel)* model) nothrow 
 struct StripMetrics {
     Rect muteRc;
     Rect soloRc;
+    Rect armRc;
     int panX;
     int sepX;
     int knobY;
@@ -106,8 +107,9 @@ struct StripMetrics {
 
 StripMetrics computeStripMetrics(Rect stripRc) nothrow @safe {
     StripMetrics sm;
-    sm.muteRc = Rect(stripRc.left + dp(6), stripRc.top + dp(38), stripRc.left + dp(32), stripRc.top + dp(50));
-    sm.soloRc = Rect(stripRc.left + dp(32), stripRc.top + dp(38), stripRc.left + dp(58), stripRc.top + dp(50));
+    sm.muteRc = Rect(stripRc.left + dp(6), stripRc.top + dp(38), stripRc.left + dp(24), stripRc.top + dp(50));
+    sm.soloRc = Rect(stripRc.left + dp(24), stripRc.top + dp(38), stripRc.left + dp(41), stripRc.top + dp(50));
+    sm.armRc = Rect(stripRc.left + dp(41), stripRc.top + dp(38), stripRc.left + dp(58), stripRc.top + dp(50));
     sm.panX = stripRc.left + dp(18);
     sm.sepX = stripRc.left + dp(46);
     sm.knobY = stripRc.top + dp(66);
@@ -154,12 +156,15 @@ private void drawMixerStrip(
 
     const bool muted = trk ? trk.muted : false;
     const bool soloed = trk ? trk.soloed : false;
+    const bool armed = trk ? trk.recordArmed : false;
     const sm = computeStripMetrics(stripRc);
 
-    // Mute LED & Solo LED
+    // Mute LED, Solo LED & Record Arm LED
     drawThemeCard(buf, sm.muteRc, muted ? pal.ledOff : pal.accentGreen, COLOR_TRANSPARENT, pal, 1.5f, false);
     drawThemeCard(buf, sm.soloRc, soloed ? pal.accentAmber : pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, soloed && pal.retroBevel);
     drawCenteredText(buf, smallFnt, sm.soloRc, "S"d, soloed ? pal.bgLcd : pal.fgMuted);
+    drawThemeCard(buf, sm.armRc, armed ? pal.accentRed : pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, armed && pal.retroBevel);
+    drawCenteredText(buf, smallFnt, sm.armRc, "R"d, armed ? pal.bgLcd : pal.fgMuted);
 
     // Pan knob (left) & Stereo Separation knob (right)
     const float pan = trk ? trk.pan : 0.0f;
@@ -458,6 +463,7 @@ class MixerCanvasWidget : Widget {
     void delegate(int trackIdx, float pan) onPanChange;
     void delegate(int trackIdx, bool muted) onMuteToggle;
     void delegate(int trackIdx, bool soloed) onSoloToggle;
+    void delegate(int trackIdx, bool armed) onArmToggle;
     void delegate(int trackIdx, int slotIdx, bool enabled) onFxBypass;
     void delegate(int trackIdx, int slotIdx, string uri) onLoadFxSlot;
     void delegate(int trackIdx, int slotIdx) onPromptLoadFx;
@@ -638,6 +644,12 @@ class MixerCanvasWidget : Widget {
                 if (sm.soloRc.isPointInside(event.x, event.y)) {
                     trk.soloed = !trk.soloed;
                     if (onSoloToggle !is null) onSoloToggle(trackIdx, trk.soloed);
+                    invalidate();
+                    return true;
+                }
+                if (sm.armRc.isPointInside(event.x, event.y)) {
+                    trk.recordArmed = !trk.recordArmed;
+                    if (onArmToggle !is null) onArmToggle(trackIdx, trk.recordArmed);
                     invalidate();
                     return true;
                 }
@@ -907,4 +919,13 @@ unittest {
     assert(model.tracks[1].plugins.length == 1);
     assert(model.tracks[1].plugins[0].pluginIndex == 0,
            "Expected remaining FX slot after removing slot 0 to shift to pluginIndex 0");
+
+    // Regression 7: Clicking Record Arm button toggles recordArmed and emits onArmToggle
+    int armTrk = -1;
+    bool armState = false;
+    mx.onArmToggle = (int t, bool a) { armTrk = t; armState = a; };
+    mx.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
+                                   cast(short)sm1.armRc.middlex, cast(short)sm1.armRc.middley));
+    assert(armTrk == 1 && armState && model.tracks[1].recordArmed,
+           "Expected Record Arm button click on Insert 1 to arm track and emit onArmToggle");
 }

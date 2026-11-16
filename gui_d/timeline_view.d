@@ -107,7 +107,8 @@ void drawTimelineCanvas(
     const(TransportModel)* model,
     double pixelsPerSec = 52.0,
     double scrollSec = 0.0,
-    FontRef fnt = FontRef.init
+    FontRef fnt = FontRef.init,
+    Rect marqueeRect = Rect.init
 ) {
     const pal = model ? model.palette() : getFlPalette();
     auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
@@ -354,9 +355,15 @@ void drawTimelineCanvas(
             if (y0 >= rc.bottom - dp(4)) break;
             if (y1 > rc.bottom) y1 = rc.bottom;
             foreach (const ref clip; model.tracks[tIdx].clips) {
-                drawPlaylistClip(buf, arrRc, y0, y1, clip, pal, pixelsPerSec, scrollSec, smallFnt);
+                const bool isSel = (model.tracks[tIdx].index == model.selectedTrack &&
+                                    clip.clipIndex == model.selectedClipIndex);
+                drawPlaylistClip(buf, arrRc, y0, y1, clip, pal, pixelsPerSec, scrollSec, smallFnt, isSel);
             }
         }
+    }
+    if (!marqueeRect.empty) {
+        buf.fillRect(marqueeRect, (pal.accentOrange & 0x00FFFFFF) | 0xCC000000);
+        buf.drawFrame(marqueeRect, pal.accentOrange, Rect(bw, bw, bw, bw), 0);
     }
 
     // Playhead cap, subtle column glint & vertical line
@@ -379,7 +386,8 @@ private void drawPlaylistClip(
     const ref FlPalette pal,
     double pixelsPerSec,
     double scrollSec,
-    FontRef fnt
+    FontRef fnt,
+    bool isSelected = false
 ) {
     int cx0 = secToPixelX(clip.startTimeSec, pixelsPerSec, arrRc.left, scrollSec);
     int cx1 = secToPixelX(clip.startTimeSec + clip.durationSec, pixelsPerSec, arrRc.left, scrollSec);
@@ -398,9 +406,11 @@ private void drawPlaylistClip(
 
     Rect clipRc = Rect(cx0, topY, cx1, botY);
     const uint clipBodyCol = (baseCol & 0x00FFFFFF) | 0x62000000;
-    const uint clipBorderCol = clip.muted
-        ? ((pal.fgDim & 0x00FFFFFF) | 0x48000000)
-        : ((adjustColorBrightness(baseCol, -18) & 0x00FFFFFF) | 0x48000000);
+    const uint clipBorderCol = isSelected
+        ? pal.accentOrange
+        : (clip.muted
+            ? ((pal.fgDim & 0x00FFFFFF) | 0x48000000)
+            : ((adjustColorBrightness(baseCol, -18) & 0x00FFFFFF) | 0x48000000));
     drawThemeCard(buf, clipRc, clipBodyCol, clipBorderCol, pal, 2.5f, false);
 
     // Opaque clip header bar for high readability while body reveals background grid
@@ -479,7 +489,7 @@ private void drawPlaylistClip(
 class TimelineCanvasWidget : Widget {
     private TransportModel* model_;
 
-    private enum DragMode { NONE, PLAYHEAD, MOVE_CLIP, RESIZE_CLIP, AUTO_POINT }
+    private enum DragMode { NONE, PLAYHEAD, MOVE_CLIP, RESIZE_CLIP, SLIP_CLIP, SELECT_MARQUEE, AUTO_POINT }
     private DragMode dragMode_ = DragMode.NONE;
     private int dragTrackArrIdx_ = -1;
     private int dragClipArrIdx_ = -1;
@@ -491,6 +501,10 @@ class TimelineCanvasWidget : Widget {
     private bool dragIsCopy_ = false;
     private double dragStartSec_ = 0.0;
     private double dragOffsetSec_ = 0.0;
+    private float dragOrigTrimBeats_ = 0.0f;
+    private int dragAnchorX_ = 0;
+    private int dragAnchorY_ = 0;
+    private Rect marqueeRc_;
 
     double pixelsPerSec = 52.0;
     double scrollSec = 0.0;
@@ -504,6 +518,7 @@ class TimelineCanvasWidget : Widget {
     void delegate(int srcTrackIdx, int clipIdx, double newStartSec, int targetTrackIdx, PlaylistClipKind kind, int laneIdx) onMoveTypedClip;
     void delegate(int trackIdx, int clipIdx, double newDurationSec) onResizeClip;
     void delegate(int trackIdx, int clipIdx, double newDurationSec, PlaylistClipKind kind, int laneIdx) onResizeTypedClip;
+    void delegate(int trackIdx, int clipIdx, double durationSec, float trimStartBeats) onSlipClip;
     void delegate(int trackIdx, int clipIdx, bool muted) onMuteClip;
     void delegate(int trackIdx, int origClipIdx, double splitSec, int newRightClipIdx, double rightDurSec) onSliceClip;
     void delegate(int srcTrackIdx, int srcClipIdx, double newStartSec, int targetTrackIdx) onCopyClip;
@@ -803,13 +818,26 @@ class TimelineCanvasWidget : Widget {
                         clip = &trk.clips[hitArrIdx];
                     }
 
-                    // Check right-edge resize (within dp(8) of clip right edge)
-                    const int cx1 = secToPixelX(clip.startTimeSec + clip.durationSec, effPxPerSec, arrRc.left, scrollSec);
-                    if (!dragIsCopy_ && event.x >= cx1 - dp(8)) {
-                        dragMode_ = DragMode.RESIZE_CLIP;
+                    // Check slip / select / right-edge resize / move
+                    if (model_.playlistTool == EditorTool.SLIP && clip.kind != PlaylistClipKind.AUTOMATION) {
+                        dragMode_ = DragMode.SLIP_CLIP;
+                        dragOffsetSec_ = clickSec;
+                        dragOrigTrimBeats_ = clip.trimStartBeats;
+                    } else if (model_.playlistTool == EditorTool.SELECT) {
+                        dragMode_ = DragMode.NONE;
+                        model_.selectedTrack = trk.index;
+                        model_.selectedClipIndex = clip.clipIndex;
+                        if (onSelectTrackClip !is null) onSelectTrackClip(trk.index, clip.clipIndex);
+                        invalidate();
+                        return true;
                     } else {
-                        dragMode_ = DragMode.MOVE_CLIP;
-                        dragOffsetSec_ = clickSec - clip.startTimeSec;
+                        const int cx1 = secToPixelX(clip.startTimeSec + clip.durationSec, effPxPerSec, arrRc.left, scrollSec);
+                        if (!dragIsCopy_ && event.x >= cx1 - dp(8)) {
+                            dragMode_ = DragMode.RESIZE_CLIP;
+                        } else {
+                            dragMode_ = DragMode.MOVE_CLIP;
+                            dragOffsetSec_ = clickSec - clip.startTimeSec;
+                        }
                     }
                     dragTrackArrIdx_ = tIdx;
                     dragClipArrIdx_ = hitArrIdx;
@@ -821,6 +849,15 @@ class TimelineCanvasWidget : Widget {
                     model_.selectedTrack = trk.index;
                     model_.selectedClipIndex = clip.clipIndex;
                     if (onSelectTrackClip !is null) onSelectTrackClip(trk.index, clip.clipIndex);
+                    invalidate();
+                    return true;
+                }
+
+                if (event.button == MouseButton.Left && model_.playlistTool == EditorTool.SELECT) {
+                    dragMode_ = DragMode.SELECT_MARQUEE;
+                    dragAnchorX_ = event.x;
+                    dragAnchorY_ = event.y;
+                    marqueeRc_ = Rect(event.x, event.y, event.x, event.y);
                     invalidate();
                     return true;
                 }
@@ -857,6 +894,33 @@ class TimelineCanvasWidget : Widget {
                 handleSeekAtX(event.x, arrRc);
                 return true;
             }
+            if (dragMode_ == DragMode.SELECT_MARQUEE) {
+                const int mx0 = (dragAnchorX_ < event.x) ? dragAnchorX_ : event.x;
+                const int mx1 = (dragAnchorX_ > event.x) ? dragAnchorX_ : event.x;
+                const int my0 = (dragAnchorY_ < event.y) ? dragAnchorY_ : event.y;
+                const int my1 = (dragAnchorY_ > event.y) ? dragAnchorY_ : event.y;
+                marqueeRc_ = Rect(mx0, my0, mx1, my1);
+                size_t[] laneTracks;
+                foreach (idx, ref t; model_.tracks) {
+                    if (t.index != 0) laneTracks ~= idx;
+                }
+                foreach (li, tIdx; laneTracks) {
+                    const int ly0 = lanesTop + cast(int)li * m.laneH;
+                    const int ly1 = ly0 + m.laneH;
+                    if (ly1 < my0 || ly0 > my1) continue;
+                    foreach (const ref c; model_.tracks[tIdx].clips) {
+                        const int cx0 = secToPixelX(c.startTimeSec, effPxPerSec, arrRc.left, scrollSec);
+                        const int cx1 = secToPixelX(c.startTimeSec + c.durationSec, effPxPerSec, arrRc.left, scrollSec);
+                        if (cx1 >= mx0 && cx0 <= mx1) {
+                            model_.selectedTrack = model_.tracks[tIdx].index;
+                            model_.selectedClipIndex = c.clipIndex;
+                            break;
+                        }
+                    }
+                }
+                invalidate();
+                return true;
+            }
             if (dragTrackArrIdx_ >= 0 && dragTrackArrIdx_ < cast(int)model_.tracks.length &&
                 dragClipArrIdx_ >= 0 && dragClipArrIdx_ < cast(int)model_.tracks[dragTrackArrIdx_].clips.length) {
                 const double curSec = pixelXToSec(event.x, effPxPerSec, arrRc.left, scrollSec);
@@ -888,6 +952,13 @@ class TimelineCanvasWidget : Widget {
                     double newDur = snapSec(curSec) - clip.startTimeSec;
                     if (newDur < minDur) newDur = minDur;
                     clip.durationSec = newDur;
+                } else if (dragMode_ == DragMode.SLIP_CLIP) {
+                    const double bps = (model_.bpm > 0.0 ? model_.bpm : 140.0) / 60.0;
+                    const float deltaBeats = cast(float)((dragOffsetSec_ - curSec) * bps);
+                    float newTrim = dragOrigTrimBeats_ + deltaBeats;
+                    if (newTrim < 0.0f) newTrim = 0.0f;
+                    clip.trimStartBeats = newTrim;
+                    model_.hintText = format("Slip '%s': trim %.2f beats", clip.name, newTrim);
                 } else if (dragMode_ == DragMode.AUTO_POINT &&
                            dragAutoPtIdx_ >= 0 && dragAutoPtIdx_ < cast(int)clip.autoPoints.length) {
                     size_t[] laneTracks;
@@ -944,6 +1015,10 @@ class TimelineCanvasWidget : Widget {
                     if (onResizeClip !is null) {
                         onResizeClip(destTrack.index, finClip.clipIndex, finClip.durationSec);
                     }
+                } else if (dragMode_ == DragMode.SLIP_CLIP) {
+                    if (onSlipClip !is null) {
+                        onSlipClip(destTrack.index, finClip.clipIndex, finClip.durationSec, finClip.trimStartBeats);
+                    }
                 } else if (dragMode_ == DragMode.AUTO_POINT) {
                     if (onAutomationPointsChanged !is null) {
                         onAutomationPointsChanged(destTrack.index, finClip.clipIndex, finClip.autoPoints);
@@ -959,15 +1034,41 @@ class TimelineCanvasWidget : Widget {
             dragOrigLaneIdx_ = 0;
             dragAutoPtIdx_ = -1;
             dragIsCopy_ = false;
+            marqueeRc_ = Rect.init;
+            invalidate();
             return true;
         }
 
         return super.onMouseEvent(event);
     }
 
+    override bool onKeyEvent(KeyEvent event) {
+        if (model_ && event.action == KeyAction.KeyDown &&
+            (event.keyCode == KeyCode.DEL || event.keyCode == KeyCode.BACK)) {
+            foreach (ref trk; model_.tracks) {
+                if (trk.index != model_.selectedTrack) continue;
+                foreach (ci, const ref cl; trk.clips) {
+                    if (cl.clipIndex == model_.selectedClipIndex) {
+                        const PlaylistClipKind kind = cl.kind;
+                        const int laneId = cl.laneIndex;
+                        const int cid = cl.clipIndex;
+                        trk.clips = trk.clips[0 .. ci] ~ trk.clips[ci + 1 .. $];
+                        model_.resequenceTrackClips(trk);
+                        if (onDeleteTypedClip !is null) onDeleteTypedClip(trk.index, cid, kind, laneId);
+                        if (onDeleteClip !is null) onDeleteClip(trk.index, cid);
+                        invalidate();
+                        return true;
+                    }
+                }
+            }
+        }
+        return super.onKeyEvent(event);
+    }
+
     override void onDraw(DrawBuf buf) {
         if (visibility != Visibility.Visible) return;
-        drawTimelineCanvas(buf, _pos, model_, effectivePxPerSec(), scrollSec, safeWidgetFont(this));
+        drawTimelineCanvas(buf, _pos, model_, effectivePxPerSec(), scrollSec, safeWidgetFont(this),
+                           dragMode_ == DragMode.SELECT_MARQUEE ? marqueeRc_ : Rect.init);
     }
 }
 
@@ -1086,4 +1187,29 @@ unittest {
     assert(model.tracks[idx3].clips.length == 1);
     assert(model.tracks[idx3].clips[0].clipIndex == 0,
            "Expected remaining clipIndex to resequence to 0 after deleting clip 0");
+
+    // Regression 3 (P2): SLIP drag shifts trimStartBeats and emits onSlipClip
+    float slippedTrim = -1.0f;
+    tl.onSlipClip = (int t, int c, double d, float trim) { slippedTrim = trim; };
+    model.playlistTool = EditorTool.SLIP;
+    model.tracks[idx3].clips[0].startTimeSec = 0.0;
+    model.tracks[idx3].clips[0].durationSec = 4.0;
+    model.tracks[idx3].clips[0].trimStartBeats = 0.0f;
+    const short slipStartX = cast(short)secToPixelX(2.0, tl.pixelsPerSec, PICKER_W + HEADER_W);
+    const short slipEndX = cast(short)secToPixelX(1.0, tl.pixelsPerSec, PICKER_W + HEADER_W);
+    tl.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, slipStartX, cast(short)lane0Y));
+    tl.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, MouseFlag.LButton, slipEndX, cast(short)lane0Y));
+    tl.onMouseEvent(new MouseEvent(MouseAction.ButtonUp, MouseButton.Left, 0, slipEndX, cast(short)lane0Y));
+    assert(model.tracks[idx3].clips[0].trimStartBeats > 0.5f && slippedTrim > 0.5f,
+           "Expected SLIP drag left to advance trimStartBeats and emit onSlipClip");
+
+    // Regression 4 (P2): SELECT tool selects clip and KeyCode.DEL deletes it
+    model.playlistTool = EditorTool.SELECT;
+    tl.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
+                                   cast(short)(PICKER_W + HEADER_W + 10), cast(short)lane0Y));
+    assert(model.selectedTrack == 3 && model.selectedClipIndex == 0);
+    deletedId = -1;
+    tl.onKeyEvent(new KeyEvent(KeyAction.KeyDown, KeyCode.DEL, 0));
+    assert(deletedId == 0 && model.tracks[idx3].clips.length == 0,
+           "Expected KeyCode.DEL after SELECT to delete selected Playlist clip");
 }

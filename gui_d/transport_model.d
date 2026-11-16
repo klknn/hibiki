@@ -161,6 +161,7 @@ struct PluginSlotState {
     int editorW = 0;
     int editorH = 0;
     ubyte[] editorRgba;
+    uint editorRevision = 0;
 }
 
 /// Channel Rack generator/sampler row with 16-step sequencer, Graph Editor values, and mixer routing.
@@ -234,6 +235,7 @@ struct TrackStripState {
     float stereoSep = 0.0f; // [-1..1] (Merged <-> Separated)
     bool muted = false;
     bool soloed = false;
+    bool recordArmed = false;
     bool locked = false;
     float peakL = 0.0f;
     float peakR = 0.0f;
@@ -1246,6 +1248,7 @@ struct TransportModel {
                     plug.editorH = ef.height;
                     plug.editorRgba = ef.image_data.dup;
                     plug.remoteEditorOpen = true;
+                    ++plug.editorRevision;
                 }
             }
         }

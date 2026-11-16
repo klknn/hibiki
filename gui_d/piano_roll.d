@@ -84,7 +84,9 @@ void drawPianoRollCanvas(
     int keyWidth = 54,
     int rowHeight = 14,
     FontRef fnt = FontRef.init,
-    double scrollBeats = 0.0
+    double scrollBeats = 0.0,
+    const(size_t)[] selectedNotes = null,
+    Rect marqueeRect = Rect.init
 ) {
     const pal = model ? model.palette() : getFlPalette();
     auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
@@ -250,7 +252,7 @@ void drawPianoRollCanvas(
 
     // 5. Active MIDI Note Bars
     const(MidiEvent)[] events = model ? model.activeMidi.events : null;
-    foreach (const ref ev; events) {
+    foreach (idx, const ref ev; events) {
         if (ev.cc_number != 0 || ev.velocity == 0) continue;
         const int p = cast(int)ev.pitch;
         if (p < pitchLow || p > pitchHigh) continue;
@@ -269,15 +271,25 @@ void drawPianoRollCanvas(
         if (x0 < gridLeft) x0 = gridLeft;
         if (x1 > gridRight) x1 = gridRight;
 
+        bool isSelected = false;
+        foreach (sIdx; selectedNotes) {
+            if (sIdx == idx) { isSelected = true; break; }
+        }
         Rect noteRc = Rect(x0, y0, x1, y1);
-        drawThemeCard(buf, noteRc, pal.noteFill, pal.borderStrong, pal, 2.5f, false);
+        drawThemeCard(buf, noteRc, pal.noteFill, isSelected ? pal.accentOrange : pal.borderStrong,
+                      pal, 2.5f, false);
         // Brighter left attack bar
         const int attackW = dp(4);
-        buf.fillRect(Rect(x0 + bw, y0 + bw, x0 + attackW < x1 ? x0 + attackW : x1, y1 - bw), pal.accentGreen);
+        buf.fillRect(Rect(x0 + bw, y0 + bw, x0 + attackW < x1 ? x0 + attackW : x1, y1 - bw),
+                     isSelected ? pal.accentOrange : pal.accentGreen);
         if ((x1 - x0) >= dp(24) && (y1 - y0) >= dp(11)) {
             drawVCenteredText(buf, noteFnt, x0 + dp(5), noteRc, toUTF32(noteName(p)),
                               contrastTextColor(pal.noteFill));
         }
+    }
+    if (!marqueeRect.empty) {
+        buf.fillRect(marqueeRect, (pal.accentOrange & 0x00FFFFFF) | 0xCC000000);
+        buf.drawFrame(marqueeRect, pal.accentOrange, Rect(bw, bw, bw, bw), 0);
     }
 
     // Playhead cap & vertical line in Piano Roll ruler & grid
@@ -324,11 +336,15 @@ void drawPianoRollCanvas(
 class PianoRollCanvasWidget : Widget {
     private TransportModel* model_;
 
-    private enum DragMode { NONE, MOVE_NOTE, RESIZE_NOTE, VELOCITY }
+    private enum DragMode { NONE, MOVE_NOTE, RESIZE_NOTE, VELOCITY, SELECT_MARQUEE }
     private DragMode dragMode_ = DragMode.NONE;
     private ptrdiff_t dragNoteIdx_ = -1;
     private long dragOffsetTick_ = 0;
     private bool dirtyDrag_ = false;
+    private size_t[] selectedNotes_;
+    private int dragAnchorX_ = 0;
+    private int dragAnchorY_ = 0;
+    private Rect marqueeRc_;
 
     int pitchLow = 48;
     int pitchHigh = 72;
@@ -346,6 +362,7 @@ class PianoRollCanvasWidget : Widget {
     this(string id, TransportModel* model) {
         super(id);
         model_ = model;
+        focusable = true;
         layoutWidth = FILL_PARENT;
         layoutHeight = FILL_PARENT;
     }
@@ -362,7 +379,8 @@ class PianoRollCanvasWidget : Widget {
         if (visibility != Visibility.Visible) return;
         drawPianoRollCanvas(buf, _pos, model_, pitchLow, pitchHigh,
                             pixelsPerBeat * uiScale(), numBeats,
-                            dp(KEY_WIDTH), dp(ROW_HEIGHT), safeWidgetFont(this), scrollBeats);
+                            dp(KEY_WIDTH), dp(ROW_HEIGHT), safeWidgetFont(this), scrollBeats,
+                            selectedNotes_, dragMode_ == DragMode.SELECT_MARQUEE ? marqueeRc_ : Rect.init);
     }
 
     override bool onMouseEvent(MouseEvent event) {
@@ -381,7 +399,8 @@ class PianoRollCanvasWidget : Widget {
         const int gridTop = m.gridTop;
         const int velTop = m.velTop;
         const int res = (model_.activeMidi.resolution > 0) ? model_.activeMidi.resolution : 480;
-        const long stepTicks = res / 4;
+        const double snapB = model_.snapBeats();
+        const long stepTicks = (snapB > 0.0) ? cast(long)(snapB * res + 0.5) : 1L;
 
         if (event.action == MouseAction.Wheel) {
             if ((event.flags & MouseFlag.Control) != 0) {
@@ -526,6 +545,29 @@ class PianoRollCanvasWidget : Widget {
                     }
                     return true;
                 }
+                if (model_.pianoRollTool == EditorTool.SELECT) {
+                    const size_t hIdx = cast(size_t)hitIdx;
+                    if ((event.flags & MouseFlag.Shift) != 0) {
+                        bool existed = false;
+                        size_t[] kept;
+                        foreach (sIdx; selectedNotes_) {
+                            if (sIdx == hIdx) existed = true;
+                            else kept ~= sIdx;
+                        }
+                        if (!existed) kept ~= hIdx;
+                        selectedNotes_ = kept;
+                    } else {
+                        selectedNotes_ = [hIdx];
+                    }
+                    const auto ev = model_.activeMidi.events[hitIdx];
+                    dragMode_ = DragMode.MOVE_NOTE;
+                    dragOffsetTick_ = clickTick - ev.tick;
+                    dragNoteIdx_ = hitIdx;
+                    dirtyDrag_ = false;
+                    if (onPreviewNote !is null) onPreviewNote(cast(uint)pitch);
+                    invalidate();
+                    return true;
+                }
                 const auto ev = model_.activeMidi.events[hitIdx];
                 const int x1 = gridLeft + cast(int)((cast(double)(ev.tick + ev.duration_ticks) / res - scrollBeats) * effPxPerBeat);
                 if (event.x >= x1 - dp(7)) {
@@ -537,6 +579,18 @@ class PianoRollCanvasWidget : Widget {
                 dragNoteIdx_ = hitIdx;
                 dirtyDrag_ = false;
                 if (onPreviewNote !is null) onPreviewNote(cast(uint)pitch);
+                return true;
+            }
+
+            if (event.button == MouseButton.Left && model_.pianoRollTool == EditorTool.SELECT) {
+                if ((event.flags & MouseFlag.Shift) == 0) {
+                    selectedNotes_.length = 0;
+                }
+                dragMode_ = DragMode.SELECT_MARQUEE;
+                dragAnchorX_ = event.x;
+                dragAnchorY_ = event.y;
+                marqueeRc_ = Rect(event.x, event.y, event.x, event.y);
+                invalidate();
                 return true;
             }
 
@@ -559,6 +613,32 @@ class PianoRollCanvasWidget : Widget {
                 invalidate();
                 return true;
             }
+            return true;
+        }
+
+        if (event.action == MouseAction.Move && dragMode_ == DragMode.SELECT_MARQUEE) {
+            const int x0 = (dragAnchorX_ < event.x) ? dragAnchorX_ : event.x;
+            const int x1 = (dragAnchorX_ > event.x) ? dragAnchorX_ : event.x;
+            const int y0 = (dragAnchorY_ < event.y) ? dragAnchorY_ : event.y;
+            const int y1 = (dragAnchorY_ > event.y) ? dragAnchorY_ : event.y;
+            marqueeRc_ = Rect(x0, y0, x1, y1);
+            selectedNotes_.length = 0;
+            foreach (idx, const ref ev; model_.activeMidi.events) {
+                if (ev.cc_number != 0 || ev.velocity == 0) continue;
+                const int p = cast(int)ev.pitch;
+                if (p < pitchLow || p > pitchHigh) continue;
+                const int r = pitchHigh - p;
+                const int ny0 = gridTop + r * effRowHeight;
+                const int ny1 = ny0 + effRowHeight;
+                const double sb = cast(double)ev.tick / cast(double)res;
+                const double db = (ev.duration_ticks > 0) ? (cast(double)ev.duration_ticks / cast(double)res) : 0.25;
+                const int nx0 = gridLeft + cast(int)((sb - scrollBeats) * effPxPerBeat + 0.5);
+                const int nx1 = gridLeft + cast(int)((sb + db - scrollBeats) * effPxPerBeat + 0.5);
+                if (nx1 >= x0 && nx0 <= x1 && ny1 >= y0 && ny0 <= y1) {
+                    selectedNotes_ ~= idx;
+                }
+            }
+            invalidate();
             return true;
         }
 
@@ -603,10 +683,34 @@ class PianoRollCanvasWidget : Widget {
             dragMode_ = DragMode.NONE;
             dragNoteIdx_ = -1;
             dirtyDrag_ = false;
+            marqueeRc_ = Rect.init;
+            invalidate();
             return true;
         }
 
         return super.onMouseEvent(event);
+    }
+
+    override bool onKeyEvent(KeyEvent event) {
+        if (model_ && event.action == KeyAction.KeyDown &&
+            (event.keyCode == KeyCode.DEL || event.keyCode == KeyCode.BACK) &&
+            selectedNotes_.length > 0) {
+            MidiEvent[] kept;
+            foreach (idx, const ref ev; model_.activeMidi.events) {
+                bool sel = false;
+                foreach (sIdx; selectedNotes_) {
+                    if (sIdx == idx) { sel = true; break; }
+                }
+                if (!sel) kept ~= ev;
+            }
+            model_.activeMidi.events = kept;
+            selectedNotes_.length = 0;
+            syncActiveNotesToChannel();
+            if (onNotesChanged !is null) onNotesChanged(model_.activeMidi.events);
+            invalidate();
+            return true;
+        }
+        return super.onKeyEvent(event);
     }
 
     private void updateVelocityFromY(ptrdiff_t noteIdx, int my, int velTop) {
@@ -681,4 +785,29 @@ unittest {
     model.pianoRollTool = EditorTool.ZOOM;
     pr.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)noteMidX, cast(short)noteY));
     assert(pr.pixelsPerBeat > prevBeatPx, "Expected ZOOM in Piano Roll to zoom in");
+
+    // Regression 4: stepTicks follows model.snapMode dynamically (e.g. BEAT = 480 ticks vs STEP = 120)
+    import gui_d.transport_model : SnapMode;
+    model.snapMode = SnapMode.BEAT;
+    model.pianoRollTool = EditorTool.DRAW;
+    model.activeMidi.events = [];
+    // Click at beat 1.75 (54 + 1.75 * 64 = 166) -> BEAT snap rounds down to beat 1 (tick 480)
+    pr.pixelsPerBeat = 64.0;
+    const int beat175X = 54 + cast(int)(1.75 * 64.0);
+    pr.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)beat175X, cast(short)noteY));
+    assert(model.activeMidi.events.length == 1 && model.activeMidi.events[0].tick == 480,
+           "Expected BEAT snap mode to quantize drawn note to tick 480 instead of hardcoded res/4");
+    model.snapMode = SnapMode.STEP;
+
+    // Regression 5: EditorTool.SELECT selects note and KeyCode.DEL removes it
+    model.pianoRollTool = EditorTool.SELECT;
+    const int drawnNoteX = 54 + 64 + 8;
+    pr.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton, cast(short)drawnNoteX, cast(short)noteY));
+    pr.onMouseEvent(new MouseEvent(MouseAction.ButtonUp, MouseButton.Left, 0, cast(short)drawnNoteX, cast(short)noteY));
+    assert(pr.selectedNotes_.length == 1 && pr.selectedNotes_[0] == 0);
+    int cbNotes = -1;
+    pr.onNotesChanged = (const(MidiEvent)[] evs) { cbNotes = cast(int)evs.length; };
+    pr.onKeyEvent(new KeyEvent(KeyAction.KeyDown, KeyCode.DEL, 0));
+    assert(model.activeMidi.events.length == 0 && cbNotes == 0,
+           "Expected DEL key in Piano Roll SELECT mode to remove selected note and fire onNotesChanged");
 }

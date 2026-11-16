@@ -88,6 +88,7 @@ private class FlMainRootLayout : VerticalLayout {
     bool delegate(uint keyCode, uint flags) onGlobalKey;
     bool delegate(uint keyCode, uint flags) onGlobalKeyUp;
     void delegate() onAnimationTick;
+    void delegate() onRootFocusOut;
 
     this(string id) {
         super(id);
@@ -95,6 +96,13 @@ private class FlMainRootLayout : VerticalLayout {
 
     @property override bool wantsKeyTracking() {
         return true;
+    }
+
+    override bool onMouseEvent(MouseEvent event) {
+        if (event.action == MouseAction.FocusOut && onRootFocusOut !is null) {
+            onRootFocusOut();
+        }
+        return super.onMouseEvent(event);
     }
 
     override bool onKeyEvent(KeyEvent event) {
@@ -253,6 +261,11 @@ extern (C) int UIAppMain(string[] args) {
                 activeSettingsDlg.refreshDeviceSummary();
             }
             refreshUi(structural);
+        });
+    }, (string errLine) {
+        window.executeInUiThread(() {
+            model.hintText = "Engine: " ~ errLine;
+            refreshUi();
         });
     });
 
@@ -750,7 +763,9 @@ extern (C) int UIAppMain(string[] args) {
         refreshUi();
     };
     int armedRecordTrackIdx = -1;
+    int recCountdownTicks = 0;
     void disarmRecordTrackIfNeeded() {
+        recCountdownTicks = 0;
         if (armedRecordTrackIdx >= 0) {
             client.sendRequest(makeTrackArmRecordRequest(armedRecordTrackIdx));
             armedRecordTrackIdx = -1;
@@ -758,6 +773,7 @@ extern (C) int UIAppMain(string[] args) {
     }
 
     toolbar.onPlayToggle = () {
+        recCountdownTicks = 0;
         if (model.isPlaying) {
             const bool wasRec = model.isRecording;
             client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_STOP));
@@ -771,6 +787,7 @@ extern (C) int UIAppMain(string[] args) {
         refreshUi();
     };
     toolbar.onStop = () {
+        recCountdownTicks = 0;
         client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_STOP));
         disarmRecordTrackIfNeeded();
         client.sendRequest(makePanicRequest());
@@ -788,25 +805,45 @@ extern (C) int UIAppMain(string[] args) {
     toolbar.onRecordToggle = () {
         model.isRecording = !model.isRecording;
         if (model.isRecording) {
-            const int recTarget = (model.selectedChannelIndex >= 0 &&
-                                   model.selectedChannelIndex < cast(int)model.channels.length)
-                ? (100 + model.selectedChannelIndex) : 1;
+            const int chIdx = model.selectedChannelIndex;
+            const int recTarget = (chIdx >= 0 && chIdx < cast(int)model.channels.length)
+                ? (100 + chIdx) : 1;
             if (armedRecordTrackIdx != recTarget) {
                 disarmRecordTrackIfNeeded();
                 client.sendRequest(makeTrackSetRecordModeRequest(recTarget, 1));
                 client.sendRequest(makeTrackArmRecordRequest(recTarget));
                 armedRecordTrackIdx = recTarget;
             }
-            if (model.countdownEnabled && !model.metronomeEnabled) {
-                model.metronomeEnabled = true;
-                client.sendRequest(makeSetMetronomeRequest(true));
+            if (!model.overdubEnabled && chIdx >= 0 && chIdx < cast(int)model.channels.length) {
+                model.channels[chIdx].notes.length = 0;
+                if (model.activeMidi.channelIndex == chIdx) {
+                    model.activeMidi.events.length = 0;
+                }
+                model.saveCurrentPatternToStore();
+                client.sendRequest(makeSequencerChannelNotesRequest(model.selectedPatternIndex, chIdx, null));
             }
-            model.isPlaying = true;
-            client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_RECORD));
-            model.hintText = model.overdubEnabled
-                ? (model.countdownEnabled ? "Recording MIDI (Overdub + Metronome)" : "Recording MIDI (Overdub)")
-                : format("Recording MIDI into Channel %d...", model.selectedChannelIndex + 1);
+            if (model.countdownEnabled) {
+                if (!model.metronomeEnabled) {
+                    model.metronomeEnabled = true;
+                    client.sendRequest(makeSetMetronomeRequest(true));
+                }
+                const double barSec = 4.0 * beatDurationSec(model.bpm);
+                recCountdownTicks = cast(int)((barSec * 1000.0 / 33.0) + 0.5);
+                if (recCountdownTicks < 4) recCountdownTicks = 4;
+                model.isPlaying = true;
+                client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_PLAY));
+                model.hintText = model.overdubEnabled
+                    ? "Countdown Pre-roll (Overdub)..." : "Countdown Pre-roll (1 bar)...";
+            } else {
+                recCountdownTicks = 0;
+                model.isPlaying = true;
+                client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_RECORD));
+                model.hintText = model.overdubEnabled
+                    ? "Recording MIDI (Overdub)"
+                    : format("Recording MIDI into Channel %d...", chIdx + 1);
+            }
         } else {
+            recCountdownTicks = 0;
             model.isPlaying = false;
             client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_STOP));
             disarmRecordTrackIfNeeded();
@@ -872,18 +909,18 @@ extern (C) int UIAppMain(string[] args) {
         refreshUi();
     };
 
-    // Virtual MIDI Audition Helper
+    // Virtual MIDI Audition Helper (scheduled in 33ms UI timer instead of per-note threads)
+    struct PendingNoteOff {
+        int trackIdx;
+        uint note;
+        int ticksLeft;
+    }
+    PendingNoteOff[] pendingNoteOffs;
+
     void sendVirtualNote(int trackIdx, uint note) {
         if (!client.isRunning()) return;
         client.sendRequest(makeSendVirtualMidiRequest(trackIdx, note, 108, true));
-        auto t = new Thread(() {
-            Thread.sleep(180.msecs);
-            if (client.isRunning()) {
-                client.sendRequest(makeSendVirtualMidiRequest(trackIdx, note, 0, false));
-            }
-        });
-        t.isDaemon = true;
-        t.start();
+        pendingNoteOffs ~= PendingNoteOff(trackIdx, note, 6);
     }
 
     // Browser Callbacks
@@ -1177,6 +1214,11 @@ extern (C) int UIAppMain(string[] args) {
         }
         refreshUi();
     };
+    playlistCanvas.onSlipClip = (int trackIdx, int clipIdx, double durationSec, float trimStartBeats) {
+        const float durBeats = cast(float)(durationSec * (model.bpm / 60.0));
+        client.sendRequest(makeResizeTimelineClipRequest(trackIdx, clipIdx, durBeats, trimStartBeats));
+        refreshUi();
+    };
     playlistCanvas.onMuteClip = (int trackIdx, int clipIdx, bool muted) {
         client.sendRequest(makeSetClipMutedRequest(trackIdx, clipIdx, muted));
         refreshUi();
@@ -1324,6 +1366,12 @@ extern (C) int UIAppMain(string[] args) {
     };
     mixerCanvas.onSoloToggle = (int trackIdx, bool soloed) {
         client.sendRequest(makeTrackSoloRequest(trackIdx, soloed));
+        refreshUi();
+    };
+    mixerCanvas.onArmToggle = (int trackIdx, bool armed) {
+        client.sendRequest(makeTrackSetRecordModeRequest(trackIdx, 1));
+        client.sendRequest(makeTrackArmRecordRequest(trackIdx));
+        model.hintText = format("Insert %d Record Arm: %s", trackIdx, armed ? "ON" : "OFF");
         refreshUi();
     };
     mixerCanvas.onFxBypass = (int trackIdx, int slotIdx, bool enabled) {
@@ -1556,11 +1604,46 @@ extern (C) int UIAppMain(string[] args) {
         }
         return false;
     };
+    root.onRootFocusOut = () {
+        if (activeTypingNotes.length == 0) return;
+        foreach (pitch, targetTrk; activeTypingNotes) {
+            if (client.isRunning()) {
+                client.sendRequest(makeSendVirtualMidiRequest(targetTrk, pitch, 0, false));
+            }
+        }
+        activeTypingNotes.clear();
+    };
 
     int uiAnimTickCount = 0;
     // 33ms animation & remote-GUI poll tick (local meter animation runs only if engine is not connected)
     root.onAnimationTick = () {
         ++uiAnimTickCount;
+        // Flush scheduled virtual MIDI audition note-offs cleanly on UI thread
+        if (pendingNoteOffs.length > 0) {
+            PendingNoteOff[] stillPending;
+            foreach (ref p; pendingNoteOffs) {
+                --p.ticksLeft;
+                if (p.ticksLeft <= 0) {
+                    if (client.isRunning()) {
+                        client.sendRequest(makeSendVirtualMidiRequest(p.trackIdx, p.note, 0, false));
+                    }
+                } else {
+                    stillPending ~= p;
+                }
+            }
+            pendingNoteOffs = stillPending;
+        }
+        // Handle 1-bar countdown pre-roll before starting MIDI/audio recording
+        if (recCountdownTicks > 0) {
+            --recCountdownTicks;
+            if (recCountdownTicks == 0 && model.isRecording) {
+                client.sendRequest(makeTransportRequest(TransportCmd.Action.ACTION_RECORD));
+                model.hintText = model.overdubEnabled
+                    ? "Recording MIDI (Overdub)"
+                    : format("Recording MIDI into Channel %d...", model.selectedChannelIndex + 1);
+                refreshUi();
+            }
+        }
         if (winPlugin.visibility == Visibility.Visible) {
             if (auto wp = resolveActiveWrapperPlugin(&model, pluginWrapper.targetKind,
                                                      pluginWrapper.targetIndex, pluginWrapper.targetFxSlot)) {

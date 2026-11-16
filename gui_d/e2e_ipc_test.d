@@ -217,7 +217,90 @@ unittest {
     assert(waitUntil(() => model.lastBouncePath == bounceWav && exists(bounceWav) && getSize(bounceWav) > 44, 15000),
            "Expected ACTION_BOUNCE to create parent dirs and render non-empty WAV");
 
-    // Wipe model, load saved .hbk back, and verify channels + automation clips come back from engine
+    // Verify bounced mix.wav contains non-silent audio samples
+    {
+        import std.file : read;
+        const ubyte[] wavBytes = cast(const(ubyte)[])read(bounceWav);
+        assert(wavBytes.length > 44 && wavBytes[0 .. 4] == cast(const(ubyte)[])"RIFF",
+               "Expected valid RIFF WAV header from ACTION_BOUNCE");
+        const ushort audioFmt = cast(ushort)(wavBytes[20] | (wavBytes[21] << 8));
+        const ushort bitsPerSample = cast(ushort)(wavBytes[34] | (wavBytes[35] << 8));
+        // Scan 'data' chunk payload after finding "data" marker
+        size_t dataOff = 36;
+        uint dataSize = 0;
+        while (dataOff + 8 <= wavBytes.length) {
+            const uint chunkSz = cast(uint)wavBytes[dataOff + 4] |
+                                 (cast(uint)wavBytes[dataOff + 5] << 8) |
+                                 (cast(uint)wavBytes[dataOff + 6] << 16) |
+                                 (cast(uint)wavBytes[dataOff + 7] << 24);
+            if (wavBytes[dataOff .. dataOff + 4] == cast(const(ubyte)[])"data") {
+                dataOff += 8;
+                dataSize = chunkSz;
+                break;
+            }
+            dataOff += 8 + chunkSz;
+        }
+        assert(dataSize > 0 && dataOff + dataSize <= wavBytes.length, "Expected non-empty WAV data chunk");
+        double peakAmp = 0.0;
+        if (audioFmt == 1 && bitsPerSample == 16) {
+            for (size_t i = dataOff; i + 1 < dataOff + dataSize; i += 2) {
+                const short s = cast(short)(wavBytes[i] | (wavBytes[i + 1] << 8));
+                const double a = (s < 0 ? -cast(double)s : cast(double)s) / 32768.0;
+                if (a > peakAmp) peakAmp = a;
+            }
+        } else if (audioFmt == 1 && bitsPerSample == 24) {
+            for (size_t i = dataOff; i + 2 < dataOff + dataSize; i += 3) {
+                int v = wavBytes[i] | (wavBytes[i + 1] << 8) | (wavBytes[i + 2] << 16);
+                if ((v & 0x800000) != 0) v |= 0xFF000000;
+                const double a = (v < 0 ? -cast(double)v : cast(double)v) / 8388608.0;
+                if (a > peakAmp) peakAmp = a;
+            }
+        } else {
+            // Fallback non-zero byte check for IEEE float or other valid PCM formats
+            foreach (b; wavBytes[dataOff .. dataOff + dataSize]) {
+                if (b != 0) { peakAmp = 0.5; break; }
+            }
+        }
+        assert(peakAmp > 0.001, "Expected bounced mix.wav to contain non-silent audio waveform");
+    }
+
+    // 5. Verify PAT/SONG switch, 32-step toggle, Undo/Redo, and ACTION_CLEAR_HISTORY
+    client.sendRequest(makeSequencerModeRequest(PbPlaybackMode.PLAYBACK_MODE_PAT));
+    assert(waitUntil(() => model.playbackMode == PlaybackMode.PAT, 4000),
+           "Expected PLAYBACK_MODE_PAT sync");
+    client.sendRequest(makeSequencerModeRequest(PbPlaybackMode.PLAYBACK_MODE_SONG));
+    assert(waitUntil(() => model.playbackMode == PlaybackMode.SONG, 4000),
+           "Expected PLAYBACK_MODE_SONG sync");
+
+    client.sendRequest(makeSequencerPatternLengthRequest(0, 32));
+    client.sendRequest(makeSequencerStepRequest(0, 0, 20, true));
+
+    // Corrupt local flags so assertions prove notifications came back from engine SyncProjectToGui
+    model.patterns[0].lengthSteps = 16;
+    model.channels[0].steps[20] = true;
+    client.sendRequest(makeUndoRedoRequest(false));
+    assert(waitUntil(() => model.patterns.length > 0 && model.patterns[0].lengthSteps == 32 &&
+                           model.channels.length > 0 && !model.channels[0].steps[20], 4000),
+           "Expected Undo to revert sequencer step 20 while retaining 32-step pattern length");
+
+    client.sendRequest(makeUndoRedoRequest(true));
+    assert(waitUntil(() => model.channels.length > 0 && model.channels[0].steps[20], 4000),
+           "Expected Redo to restore sequencer step 20");
+
+    client.sendRequest(makeClearHistoryRequest());
+    client.sendRequest(makeUndoRedoRequest(false));
+    const string proj32Path = buildPath(testDir, "nested", "dir", "song32.hbk");
+    client.sendRequest(makeProjectSaveRequest(proj32Path));
+    assert(waitUntil(() => exists(proj32Path) && getSize(proj32Path) > 0, 4000),
+           "Expected Save after ClearHistory to succeed");
+    model.patterns[0].lengthSteps = 16;
+    model.channels[0].steps[20] = false;
+    client.sendRequest(makeProjectLoadRequest(proj32Path));
+    assert(waitUntil(() => model.patterns.length > 0 && model.patterns[0].lengthSteps == 32 &&
+                           model.channels.length > 0 && model.channels[0].steps[20], 4000),
+           "Expected ACTION_CLEAR_HISTORY + Save/Load to prove Undo left step 20 active in 32-step pattern");
+
+    // 6. Wipe model, load saved .hbk back, and verify channels + automation clips come back from engine
     model.channels.length = 0;
     model.patterns.length = 0;
     client.sendRequest(makeProjectLoadRequest(projPath));
@@ -232,4 +315,10 @@ unittest {
            }, 5000),
            "Expected ACTION_LOAD round-trip to restore channels, patterns, and Track 4 automation clips");
     assert(model.channels[0].mixerInsert == 0, "Expected mixerInsert=0 preserved after Save/Load");
+
+    // 7. Verify EngineProcessClient.onError surfaces process spawn failure
+    string capturedErr;
+    auto errClient = new EngineProcessClient((Notification n) {}, (string err) { capturedErr = err; });
+    assert(!errClient.start("/nonexistent_hibiki_engine_binary_path_xyz"));
+    assert(capturedErr.length > 0, "Expected failed start() to invoke EngineProcessClient.onError");
 }

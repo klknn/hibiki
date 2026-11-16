@@ -133,6 +133,8 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
     private Rect restoreBounds_;
     private int minW_ = 280;
     private int minH_ = 160;
+    private int minWpx_ = 0;
+    private int minHpx_ = 0;
 
     private enum DragMode { NONE, MOVE, RESIZE_BR }
     private DragMode dragMode_ = DragMode.NONE;
@@ -170,8 +172,12 @@ class FlWindowFrame : WidgetGroupDefaultDrawing {
         }
     }
 
-    package @property int minWindowW() const nothrow @safe { return dp(minW_); }
-    package @property int minWindowH() const nothrow @safe { return dp(minH_); }
+    package @property int minWindowW() const nothrow @safe { return minWpx_ > 0 ? minWpx_ : dp(minW_); }
+    package @property int minWindowH() const nothrow @safe { return minHpx_ > 0 ? minHpx_ : dp(minH_); }
+    void setMinPixelSize(int minWpx, int minHpx) nothrow @safe {
+        minWpx_ = minWpx;
+        minHpx_ = minHpx;
+    }
     package void applyClampedBounds(Rect rc) nothrow @safe { bounds_ = rc; }
 
     @property bool isActive() const pure nothrow @safe { return isActive_; }
@@ -596,7 +602,6 @@ class FlDesktopCanvas : WidgetGroupDefaultDrawing {
                 }
                 if (pg) {
                     pg.visibility = Visibility.Gone;
-                    pg.windowBounds = Rect(W / 4, H / 5, (W * 3) / 4, (H * 4) / 5);
                 }
                 if (pl) bringToFront(pl);
                 if (cr) bringToFront(cr);

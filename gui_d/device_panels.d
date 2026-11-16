@@ -40,6 +40,8 @@ enum BuiltinDeviceKind {
     ORGAN,
     DRUM_MACHINE,
     DR8_MODULE,
+    FILM,
+    AUX,
 }
 
 /// Maps a plugin URI/name to its custom builtin device UI variant (`GENERIC` if none).
@@ -67,7 +69,56 @@ BuiltinDeviceKind resolveBuiltinDeviceKind(const(PluginSlotState)* plug) pure no
     if (u == "builtin://organ") return BuiltinDeviceKind.ORGAN;
     if (u == "builtin://drum_machine") return BuiltinDeviceKind.DRUM_MACHINE;
     if (u.length >= 14 && u[0 .. 14] == "builtin://dr8_") return BuiltinDeviceKind.DR8_MODULE;
+    if (u == "builtin://film" || (u.length >= 14 && u[0 .. 14] == "builtin://film")) return BuiltinDeviceKind.FILM;
+    if (u == "builtin://aux") return BuiltinDeviceKind.AUX;
     return BuiltinDeviceKind.GENERIC;
+}
+
+/// Natural logical-dp body dimensions `(w, h)` matching each Swing device panel's proportions.
+struct DevicePreferredSize {
+    int width;
+    int height;
+}
+
+DevicePreferredSize preferredDeviceBodySize(BuiltinDeviceKind kind) pure nothrow @safe {
+    final switch (kind) {
+        case BuiltinDeviceKind.AUX:             return DevicePreferredSize(220, 175);
+        case BuiltinDeviceKind.LIMITER:         return DevicePreferredSize(280, 195);
+        case BuiltinDeviceKind.CONVOLVER:       return DevicePreferredSize(340, 185);
+        case BuiltinDeviceKind.DR8_MODULE:      return DevicePreferredSize(320, 215);
+        case BuiltinDeviceKind.STEREO_WIDTH:    return DevicePreferredSize(340, 200);
+        case BuiltinDeviceKind.BITCRUSHER:      return DevicePreferredSize(350, 205);
+        case BuiltinDeviceKind.COMPRESSOR:      return DevicePreferredSize(380, 235);
+        case BuiltinDeviceKind.CHORUS:          return DevicePreferredSize(400, 210);
+        case BuiltinDeviceKind.VOCODEY:         return DevicePreferredSize(430, 225);
+        case BuiltinDeviceKind.DELAY:           return DevicePreferredSize(440, 235);
+        case BuiltinDeviceKind.REVERB:          return DevicePreferredSize(440, 235);
+        case BuiltinDeviceKind.ENVELOPE_SHAPER: return DevicePreferredSize(440, 250);
+        case BuiltinDeviceKind.EQ:              return DevicePreferredSize(460, 255);
+        case BuiltinDeviceKind.MAXIM:           return DevicePreferredSize(450, 260);
+        case BuiltinDeviceKind.EPIANO:          return DevicePreferredSize(460, 235);
+        case BuiltinDeviceKind.ORGAN:           return DevicePreferredSize(480, 255);
+        case BuiltinDeviceKind.PHASER:          return DevicePreferredSize(500, 250);
+        case BuiltinDeviceKind.ACID_BASS:       return DevicePreferredSize(520, 240);
+        case BuiltinDeviceKind.HOTT:            return DevicePreferredSize(540, 255);
+        case BuiltinDeviceKind.SAMPLER:         return DevicePreferredSize(440, 320);
+        case BuiltinDeviceKind.THREE_OSC:       return DevicePreferredSize(440, 330);
+        case BuiltinDeviceKind.DRUM_MACHINE:    return DevicePreferredSize(580, 320);
+        case BuiltinDeviceKind.FILM:            return DevicePreferredSize(740, 380);
+        case BuiltinDeviceKind.GENERIC:         return DevicePreferredSize(420, 240);
+    }
+}
+
+/// Clamps oversized `bodyRc` to each device's natural max aspect box so controls never stretch thinly.
+Rect fitDeviceBodyRect(Rect bodyRc, BuiltinDeviceKind kind) nothrow @safe {
+    const sz = preferredDeviceBodySize(kind);
+    const int maxW = dp((sz.width * 5) / 4);
+    const int maxH = dp((sz.height * 23) / 20);
+    const int w = (bodyRc.width > maxW) ? maxW : bodyRc.width;
+    const int h = (bodyRc.height > maxH) ? maxH : bodyRc.height;
+    const int x0 = bodyRc.left + (bodyRc.width - w) / 2;
+    const int y0 = bodyRc.top + (bodyRc.height - h) / 2;
+    return Rect(x0, y0, x0 + w, y0 + h);
 }
 
 /// Returns true when the builtin device provides a dedicated Swing-ported custom panel.
@@ -89,6 +140,8 @@ struct BuiltinDeviceUiState {
     int drumSelPad = 0;
     int envDragPoint = -1;
     int acidActiveNote = -1;
+    int filmTab = 0;      // 0=MAIN, 1..6=OP1..6, 7..9=F1..3
+    int filmDragCell = -1; // 0..71 inside FilM 6x12 matrix
 
     int activeDragParamId = -1;
     int dragStartY = 0;
@@ -263,9 +316,11 @@ private string formatRatio(float n) @safe {
 
 struct DeviceLayout {
     BuiltinDeviceKind kind = BuiltinDeviceKind.GENERIC;
+    Rect panelRc;
     Rect canvasRc;
     Rect footerRc;
     Rect auxRc;
+    Rect filmMatrixRc;
     DeviceKnobSpec[] knobs;
     DevicePillSpec[] pills;
     Rect[] drawbarRcs; // Organ drawbars 0..8
@@ -273,6 +328,7 @@ struct DeviceLayout {
     Rect[] bandMeterRcs;
     Rect[3] hottBarRcs;
     Rect[3] hottInspectorRcs;
+    Rect[72] filmMatrixCells;
 }
 
 private void appendKnobRow(
@@ -319,10 +375,12 @@ DeviceLayout buildBuiltinDeviceLayout(
 ) @safe {
     DeviceLayout dl;
     dl.kind = resolveBuiltinDeviceKind(plug);
-    if (bodyRc.width < dp(180) || bodyRc.height < dp(120)) return dl;
+    if (bodyRc.width < dp(160) || bodyRc.height < dp(120)) return dl;
 
+    Rect fitted = fitDeviceBodyRect(bodyRc, dl.kind);
+    dl.panelRc = fitted;
     const int pad = dp(8);
-    Rect inner = Rect(bodyRc.left + pad, bodyRc.top + dp(6), bodyRc.right - pad, bodyRc.bottom - dp(6));
+    Rect inner = Rect(fitted.left + pad, fitted.top + dp(5), fitted.right - pad, fitted.bottom - dp(5));
 
     switch (dl.kind) {
         case BuiltinDeviceKind.EQ: {
@@ -913,6 +971,122 @@ DeviceLayout buildBuiltinDeviceLayout(
             appendKnobRow(dl.knobs, kArea, plug, ids, lbls, defs, null, null, pal);
             break;
         }
+        case BuiltinDeviceKind.FILM: {
+            // Sytrus-inspired FilM 6-Op FM Synth: Left tabbed MAIN/OP1..6/F1..3 | Right 6x12 Mod Matrix
+            const int hdrH = dp(18);
+            dl.auxRc = Rect(inner.left, inner.top, inner.right, inner.top + hdrH);
+            Rect body = Rect(inner.left, dl.auxRc.bottom + dp(4), inner.right, inner.bottom);
+            const int leftW = (body.width * 53) / 100;
+            Rect leftRc = Rect(body.left, body.top, body.left + leftW, body.bottom);
+            Rect rightRc = Rect(leftRc.right + dp(6), body.top, body.right, body.bottom);
+
+            // Left Top Tab Row (MAIN, OP1..6, F1..3)
+            const int tabH = dp(19);
+            const int tabW = leftRc.width / 10;
+            static immutable string[10] FTABS = ["MAIN", "OP1", "OP2", "OP3", "OP4", "OP5", "OP6", "F1", "F2", "F3"];
+            foreach (ti; 0 .. 10) {
+                const uint tc = (ti == 0 || ti <= 6) ? 0x00D4B84A : 0x009B7EC8;
+                dl.pills ~= DevicePillSpec(
+                    Rect(leftRc.left + ti * tabW, leftRc.top, leftRc.left + (ti + 1) * tabW - dp(1), leftRc.top + tabH),
+                    FTABS[ti], ui.filmTab == ti, tc, 2, 0, 0.0f, ti
+                );
+            }
+            Rect leftBody = Rect(leftRc.left, leftRc.top + tabH + dp(4), leftRc.right, leftRc.bottom);
+            if (ui.filmTab == 0) {
+                // MAIN tab: Global knobs (Vol, Algo, Porta, Voices, Detune, Spread) + OP1 Gain Env
+                const int kH = (leftBody.height * 46) / 100;
+                appendKnobRow(dl.knobs, Rect(leftBody.left, leftBody.top, leftBody.right, leftBody.top + kH), plug,
+                    [265u, 264u, 270u, 267u, 268u, 269u],
+                    ["Vol", "Algo", "Porta", "Voices", "Detune", "Spread"],
+                    [0.8f, 0.0f, 0.0f, 0.0f, 0.0f, 0.5f], null,
+                    [0x00D4B84A, 0x00D4B84A, 0x00D4B84A, 0x009B7EC8, 0x009B7EC8, 0x009B7EC8], pal);
+                dl.canvasRc = Rect(leftBody.left, leftBody.top + kH + dp(4), leftBody.right, leftBody.bottom);
+            } else if (ui.filmTab >= 1 && ui.filmTab <= 6) {
+                // OP1..6 tab: Waveform buttons + Level/Ratio/Fine/FB/Pan + ADSR knobs & Env curve
+                const int op = ui.filmTab - 1;
+                const uint opBase = cast(uint)(op * 38);
+                static immutable string[5] WAVES = ["Sin", "Saw", "Sq", "Tri", "Nse"];
+                static immutable float[5] WNORMS = [0.0f, 0.3f, 0.5f, 0.7f, 0.9f];
+                const float wVal = readPlugParam(plug, opBase + 0, 0.0f);
+                const int curW = (wVal < 0.15f) ? 0 : (wVal < 0.4f ? 1 : (wVal < 0.6f ? 2 : (wVal < 0.8f ? 3 : 4)));
+                const int ww = leftBody.width / 5;
+                foreach (wi; 0 .. 5) {
+                    dl.pills ~= DevicePillSpec(
+                        Rect(leftBody.left + wi * ww, leftBody.top, leftBody.left + (wi + 1) * ww - dp(2), leftBody.top + dp(18)),
+                        WAVES[wi], curW == wi, 0x00D4B84A, 0, opBase + 0, WNORMS[wi], wi
+                    );
+                }
+                const int kTop = leftBody.top + dp(21);
+                const int kH = (leftBody.bottom - kTop) / 2;
+                appendKnobRow(dl.knobs, Rect(leftBody.left, kTop, leftBody.right, kTop + kH), plug,
+                    [opBase + 1, opBase + 2, opBase + 3, opBase + 8, opBase + 9],
+                    ["Level", "Ratio", "Fine", "FB", "Pan"],
+                    [op == 0 ? 1.0f : 0.0f, 0.5f, 0.5f, 0.0f, 0.5f], null,
+                    [0x00D4B84A, 0x00D4B84A, 0x00D4B84A, 0x009B7EC8, 0x009B7EC8], pal);
+                const int envTop = kTop + kH + dp(2);
+                const int envW = (leftBody.width * 38) / 100;
+                dl.canvasRc = Rect(leftBody.left, envTop, leftBody.left + envW, leftBody.bottom);
+                appendKnobRow(dl.knobs, Rect(dl.canvasRc.right + dp(4), envTop, leftBody.right, leftBody.bottom), plug,
+                    [opBase + 4, opBase + 5, opBase + 6, opBase + 7],
+                    ["Atk", "Dec", "Sus", "Rel"],
+                    [0.0f, 0.2f, 0.7f, 0.3f], null,
+                    [0x00D4B84A, 0x00D4B84A, 0x00D4B84A, 0x00D4B84A], pal);
+            } else {
+                // F1..F3 tab: Filter Type + Cutoff/Res/EnvDpt/Mix + Filter Env curve
+                const int f = ui.filmTab - 7;
+                const uint fBase = cast(uint)(228 + f * 12);
+                static immutable string[6] FNAMES = ["LP", "HP", "BP", "LS", "HS", "Bell"];
+                static immutable float[6] FNORMS = [0.0f, 0.2f, 0.4f, 0.6f, 0.8f, 1.0f];
+                const float ft = readPlugParam(plug, fBase + 0, 0.0f);
+                const int curFt = (ft < 0.1f) ? 0 : (ft < 0.3f ? 1 : (ft < 0.5f ? 2 : (ft < 0.7f ? 3 : (ft < 0.9f ? 4 : 5))));
+                const int fw = leftBody.width / 6;
+                foreach (fi; 0 .. 6) {
+                    dl.pills ~= DevicePillSpec(
+                        Rect(leftBody.left + fi * fw, leftBody.top, leftBody.left + (fi + 1) * fw - dp(2), leftBody.top + dp(18)),
+                        FNAMES[fi], curFt == fi, 0x009B7EC8, 0, fBase + 0, FNORMS[fi], fi
+                    );
+                }
+                const int kTop = leftBody.top + dp(22);
+                const int kH = (leftBody.bottom - kTop) / 2;
+                appendKnobRow(dl.knobs, Rect(leftBody.left, kTop, leftBody.right, kTop + kH), plug,
+                    [fBase + 1, fBase + 2, fBase + 7, fBase + 8],
+                    ["Cutoff", "Reso", "EnvDpt", "Mix"],
+                    [1.0f, 0.0f, 0.5f, 1.0f], null,
+                    [0x009B7EC8, 0x009B7EC8, 0x00D4B84A, 0x009B7EC8], pal);
+                dl.canvasRc = Rect(leftBody.left, kTop + kH + dp(4), leftBody.right, leftBody.bottom);
+            }
+
+            // Right half: Sytrus 6x12 Modulation Matrix + FM/RM switch
+            dl.filmMatrixRc = rightRc;
+            const bool isRm = readPlugParam(plug, 271, 0.0f) >= 0.5f;
+            dl.pills ~= DevicePillSpec(
+                Rect(rightRc.right - dp(46), rightRc.top + dp(2), rightRc.right - dp(4), rightRc.top + dp(18)),
+                isRm ? "RM" : "FM", isRm, 0x00FF6644, 1, 271, 1.0f, 0
+            );
+            const int lblW = dp(16);
+            const int hdrRowH = dp(16);
+            const int gridX0 = rightRc.left + lblW + dp(2);
+            const int gridY0 = rightRc.top + dp(20) + hdrRowH;
+            const int gridW = rightRc.width - lblW - dp(6);
+            const int gridH = rightRc.bottom - dp(6) - gridY0;
+            const int cw = gridW / 12;
+            const int ch = gridH / 6;
+            foreach (r; 0 .. 6) {
+                foreach (col; 0 .. 12) {
+                    const int x0 = gridX0 + col * cw;
+                    const int y0 = gridY0 + r * ch;
+                    dl.filmMatrixCells[r * 12 + col] = Rect(x0, y0, x0 + cw - dp(1), y0 + ch - dp(1));
+                }
+            }
+            break;
+        }
+        case BuiltinDeviceKind.AUX: {
+            dl.canvasRc = Rect(inner.left, inner.top, inner.right, inner.top + dp(56));
+            Rect kArea = Rect(inner.left, dl.canvasRc.bottom + dp(6), inner.right, inner.bottom);
+            appendKnobRow(dl.knobs, kArea, plug, [0u, 1u], ["Gain", "Pan"], [0.8f, 0.5f], null,
+                [pal.accentCyan, pal.accentOrange], pal);
+            break;
+        }
         default:
             break;
     }
@@ -1012,7 +1186,7 @@ void drawBuiltinDevicePanel(
     const ref BuiltinDeviceUiState ui,
     FontRef fnt
 ) {
-    if (!plug || bodyRc.width < dp(180) || bodyRc.height < dp(120)) return;
+    if (!plug || bodyRc.width < dp(160) || bodyRc.height < dp(120)) return;
     const pal = model ? model.palette() : getFlPalette();
     auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
 
@@ -1022,8 +1196,9 @@ void drawBuiltinDevicePanel(
     FontRef uiFnt = getDawFont(10, fnt, FontWeight.Normal);
     FontRef valFnt = getDawMonoFont(9, fnt, FontWeight.Normal);
 
-    // Subtle device frame
-    drawThemeCard(buf, Rect(bodyRc.left + dp(6), bodyRc.top + dp(3), bodyRc.right - dp(6), bodyRc.bottom - dp(4)),
+    // Tight chassis frame sized cleanly to `dl.panelRc` (never stretched thinly inside large windows)
+    drawThemeCard(buf, Rect(dl.panelRc.left + dp(4), dl.panelRc.top + dp(2),
+                            dl.panelRc.right - dp(4), dl.panelRc.bottom - dp(3)),
                   pal.bgPanel, pal.borderStrong, pal, 3.0f, false);
 
     // 1. Device-specific visualizers
@@ -1733,6 +1908,94 @@ void drawBuiltinDevicePanel(
             }
             break;
         }
+        case BuiltinDeviceKind.FILM: {
+            // Sytrus-inspired FilM purple header + envelope curve + right 6x12 purple/gold FM Matrix
+            drawThemeCard(buf, dl.auxRc, 0x004A3570, 0x007B5EA7, pal, 2.0f, false);
+            drawVCenteredText(buf, uiFnt, dl.auxRc.left + dp(8), dl.auxRc,
+                              "FilM  ·  6-OP FM SYNTHESIZER"d, 0x00D4B84A);
+
+            // Envelope visual box for selected tab (OP1 Gain / OP1..6 / F1..3)
+            Rect c = dl.canvasRc;
+            drawThemeCard(buf, c, pal.bgLcd, pal.borderSubtle, pal, 2.0f, true);
+            const int pad = dp(6);
+            const int ew = c.width - pad * 2;
+            const int eh = c.height - pad * 2;
+            if (ew > dp(12) && eh > dp(10)) {
+                uint envBase = 4;
+                uint envCol = 0x00D4B84A;
+                if (ui.filmTab >= 1 && ui.filmTab <= 6) {
+                    envBase = cast(uint)((ui.filmTab - 1) * 38 + 4);
+                } else if (ui.filmTab >= 7) {
+                    envBase = cast(uint)(228 + (ui.filmTab - 7) * 12 + 3);
+                    envCol = 0x009B7EC8;
+                }
+                const float a = readPlugParam(plug, envBase + 0, 0.0f) * 0.25f;
+                const float d = readPlugParam(plug, envBase + 1, 0.2f) * 0.25f;
+                const float s = readPlugParam(plug, envBase + 2, 0.7f);
+                const float r = readPlugParam(plug, envBase + 3, 0.3f) * 0.3f;
+                const float x0 = c.left + pad;
+                const float yBase = c.bottom - pad;
+                const float x1 = x0 + a * ew;
+                const float x2 = x1 + d * ew;
+                const float x3 = c.right - pad - r * ew;
+                const float x4 = c.right - pad;
+                drawThickLine(buf, x0, yBase, x1, c.top + pad, dpf(1.8f), envCol);
+                drawThickLine(buf, x1, c.top + pad, x2, yBase - s * eh, dpf(1.8f), envCol);
+                drawThickLine(buf, x2, yBase - s * eh, x3, yBase - s * eh, dpf(1.8f), envCol);
+                drawThickLine(buf, x3, yBase - s * eh, x4, yBase, dpf(1.8f), envCol);
+            }
+
+            // Right 6x12 Modulation Matrix card
+            Rect mRc = dl.filmMatrixRc;
+            drawThemeCard(buf, mRc, 0x001E1E24, 0x00333340, pal, 2.0f, true);
+            drawVCenteredText(buf, uiFnt, mRc.left + dp(8),
+                              Rect(mRc.left, mRc.top + dp(2), mRc.right - dp(50), mRc.top + dp(18)),
+                              "MATRIX (FM / RM)"d, 0x00D4B84A);
+
+            static immutable string[12] MCOLS = ["1", "2", "3", "4", "5", "6", "F1", "F2", "F3", "P", "FX", "O"];
+            static immutable uint[6] OP_COLS = [
+                0x00D4B84A, 0x00C9A83E, 0x00BE9832, 0x009B7EC8, 0x008B6EB8, 0x007B5EA7
+            ];
+            foreach (col; 0 .. 12) {
+                Rect topCell = dl.filmMatrixCells[col];
+                const uint cc = (col < 6) ? 0x00D4B84A : (col < 9 ? 0x009B7EC8 : 0x009096A4);
+                drawCenteredText(buf, valFnt, Rect(topCell.left, topCell.top - dp(15), topCell.right, topCell.top - dp(1)),
+                                 toUTF32(MCOLS[col]), cc);
+            }
+            foreach (r; 0 .. 6) {
+                Rect firstCell = dl.filmMatrixCells[r * 12];
+                drawCenteredText(buf, valFnt, Rect(mRc.left + dp(2), firstCell.top, firstCell.left - dp(2), firstCell.bottom),
+                                 toUTF32(format("%d", r + 1)), OP_COLS[r]);
+                foreach (col; 0 .. 12) {
+                    const int idx = r * 12 + col;
+                    Rect cr = dl.filmMatrixCells[idx];
+                    buf.fillRect(cr, 0x0024242C);
+                    const uint pid = cast(uint)(272 + idx);
+                    const float defV = (col == 11 && r == 0) ? 0.75f : 0.5f;
+                    const float val = readPlugParam(plug, pid, defV);
+                    const float diff = val - 0.5f;
+                    const bool inactive = (diff > -0.015f && diff < 0.015f);
+                    const float rDial = (cr.width < cr.height ? cr.width : cr.height) * 0.36f;
+                    if (rDial >= 3.0f) {
+                        const uint arcCol = (r == col) ? OP_COLS[r] : (col < 6 ? 0x00D4B84A : 0x009B7EC8);
+                        if (inactive) {
+                            drawOpenArc(buf, cr.middlex, cr.middley, rDial, 135.0f, 405.0f, dpf(1.3f), 0x00444450);
+                        } else {
+                            drawOpenArc(buf, cr.middlex, cr.middley, rDial, 135.0f, 405.0f, dpf(1.3f), 0x002E2E38);
+                            drawOpenArc(buf, cr.middlex, cr.middley, rDial, 135.0f, 135.0f + 270.0f * val, dpf(1.6f), arcCol);
+                        }
+                    }
+                }
+            }
+            break;
+        }
+        case BuiltinDeviceKind.AUX: {
+            Rect c = dl.canvasRc;
+            drawThemeCard(buf, c, pal.bgLcd, pal.borderSubtle, pal, 2.0f, true);
+            const float g = readPlugParam(plug, 0, 0.8f);
+            drawCenteredText(buf, uiFnt, c, toUTF32(format("AUX SEND  ·  %.0f%%", g * 100.0f)), pal.accentCyan);
+            break;
+        }
         default:
             break;
     }
@@ -1821,6 +2084,8 @@ bool handleBuiltinDeviceMouse(
                     ui.hottTab = pl.uiTabVal;
                 } else if (dl.kind == BuiltinDeviceKind.MAXIM) {
                     ui.maximBandTab = pl.uiTabVal;
+                } else if (dl.kind == BuiltinDeviceKind.FILM) {
+                    ui.filmTab = pl.uiTabVal;
                 }
             } else if (pl.actionKind == 3) {
                 if (dl.kind == BuiltinDeviceKind.ACID_BASS) {
@@ -2006,10 +2271,36 @@ bool handleBuiltinDeviceMouse(
             }
         }
 
+        // 6b. FilM 6x12 interactive modulation matrix cell vertical drag / right-click reset
+        if (dl.kind == BuiltinDeviceKind.FILM && dl.filmMatrixRc.isPointInside(event.x, event.y)) {
+            foreach (ci; 0 .. 72) {
+                if (!dl.filmMatrixCells[ci].isPointInside(event.x, event.y)) continue;
+                const uint pid = cast(uint)(272 + ci);
+                const int col = ci % 12;
+                const int row = ci / 12;
+                const float defV = (col == 11 && row == 0) ? 0.75f : 0.5f;
+                if (event.button == MouseButton.Right) {
+                    emitParam(pid, defV, defV, format("M[%d,%d]", row + 1, col + 1));
+                } else {
+                    ui.filmDragCell = ci;
+                    ui.dragStartY = event.y;
+                    ui.dragStartVal = readPlugParam(plug, pid, defV);
+                    ui.dragDefaultVal = defV;
+                }
+                return true;
+            }
+        }
+
         return true;
     }
 
     if (event.action == MouseAction.Move) {
+        if (ui.filmDragCell >= 0 && ui.filmDragCell < 72 && dl.kind == BuiltinDeviceKind.FILM) {
+            const float v = clamp01(ui.dragStartVal + cast(float)(ui.dragStartY - event.y) / dpf(90.0f));
+            const uint pid = cast(uint)(272 + ui.filmDragCell);
+            emitParam(pid, v, ui.dragDefaultVal, "Matrix");
+            return true;
+        }
         if (ui.hottDragBand >= 0 && ui.hottDragBand < 3 && dl.kind == BuiltinDeviceKind.HOTT) {
             static immutable uint[3] DOWN_PIDS = [11u, 10u, 9u];
             static immutable uint[3] UP_PIDS   = [14u, 13u, 12u];
@@ -2080,6 +2371,7 @@ bool handleBuiltinDeviceMouse(
     if (event.action == MouseAction.ButtonUp || event.action == MouseAction.Cancel) {
         ui.eqDragBand = -1;
         ui.hottDragBand = -1;
+        ui.filmDragCell = -1;
         ui.envDragPoint = -1;
         ui.acidActiveNote = -1;
         ui.activeDragParamId = -1;
@@ -2100,12 +2392,13 @@ unittest {
     Rect bodyRc = Rect(0, 32, 440, 260);
 
     // 1. Test every builtin URI maps to non-GENERIC device UI & renders cleanly across modern & WIN95 themes
-    static immutable string[20] URIS = [
+    static immutable string[22] URIS = [
         "builtin://eq", "builtin://compressor", "builtin://limiter", "builtin://hott",
         "builtin://maxim", "builtin://delay", "builtin://reverb", "builtin://phaser",
         "builtin://chorus", "builtin://bitcrusher", "builtin://envelope_shaper", "builtin://convolver",
         "builtin://vocodey", "builtin://stereo_width", "builtin://acid_bass", "builtin://3xosc",
-        "builtin://sampler", "builtin://epiano", "builtin://organ", "builtin://dr8_kick"
+        "builtin://sampler", "builtin://epiano", "builtin://organ", "builtin://dr8_kick",
+        "builtin://film", "builtin://aux"
     ];
     foreach (u; URIS) {
         PluginSlotState slot;
@@ -2115,6 +2408,17 @@ unittest {
         BuiltinDeviceUiState ui;
         drawBuiltinDevicePanel(buf, bodyRc, &model, &slot, ui, FontRef.init);
     }
+
+    // Verify per-device preferred dimensions differ meaningfully (no uniform-box distortion)
+    const limSz = preferredDeviceBodySize(BuiltinDeviceKind.LIMITER);
+    const acidSz = preferredDeviceBodySize(BuiltinDeviceKind.ACID_BASS);
+    const sampSz = preferredDeviceBodySize(BuiltinDeviceKind.SAMPLER);
+    const filmSz = preferredDeviceBodySize(BuiltinDeviceKind.FILM);
+    assert(limSz.width < acidSz.width && acidSz.height < sampSz.height && filmSz.width > acidSz.width,
+           "Expected distinct device proportions per Swing device panel");
+    const fittedLim = fitDeviceBodyRect(Rect(0, 0, 800, 600), BuiltinDeviceKind.LIMITER);
+    assert(fittedLim.width < 500 && fittedLim.height < 350,
+           "Expected oversized window not to stretch compact Limiter device");
 
     // Also test DrumMachine + WIN95 retro theme
     model.themeId = FlThemeId.WIN95;
@@ -2182,4 +2486,29 @@ unittest {
         null, null, null, null);
     assert(hottPid == 11 || hottPid == 14,
            "Expected OTT High band bar click to adjust High Down/Up threshold param");
+
+    // 4. Test FilM (FM Synth) tabs & 6x12 modulation matrix vertical drag
+    PluginSlotState filmSlot;
+    filmSlot.uri = "builtin://film";
+    filmSlot.name = "FilM";
+    BuiltinDeviceUiState filmUi;
+    Rect filmRc = Rect(0, 32, 740, 412);
+    auto filmBuf = new ColorDrawBuf(740, 420);
+    drawBuiltinDevicePanel(filmBuf, filmRc, &model, &filmSlot, filmUi, FontRef.init);
+    const dlFilm = buildBuiltinDeviceLayout(filmRc, &filmSlot, filmUi, model.palette());
+    int filmPid = -1;
+    const auto cell0 = dlFilm.filmMatrixCells[0];
+    handleBuiltinDeviceMouse(
+        new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
+                       cast(short)cell0.middlex, cast(short)cell0.middley),
+        filmRc, &model, &filmSlot, filmUi, 100,
+        (int t, int p, uint pid, float v) { filmPid = cast(int)pid; },
+        null, null, null, null);
+    handleBuiltinDeviceMouse(
+        new MouseEvent(MouseAction.Move, MouseButton.None, MouseFlag.LButton,
+                       cast(short)cell0.middlex, cast(short)(cell0.middley - 20)),
+        filmRc, &model, &filmSlot, filmUi, 100,
+        (int t, int p, uint pid, float v) { filmPid = cast(int)pid; },
+        null, null, null, null);
+    assert(filmPid == 272, "Expected FilM matrix cell[0,0] drag to emit param 272");
 }

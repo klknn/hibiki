@@ -6,7 +6,8 @@ import dlangui.graphics.drawbuf : ColorDrawBuf, DrawBuf;
 import dlangui.graphics.fonts : FontWeight;
 import dlangui.widgets.widget : Visibility, Widget;
 import gui_d.device_panels : buildBuiltinDeviceLayout, BuiltinDeviceUiState, drawBuiltinDevicePanel,
-    handleBuiltinDeviceMouse, hasCustomBuiltinDeviceUi;
+    handleBuiltinDeviceMouse, hasCustomBuiltinDeviceUi, preferredDeviceBodySize,
+    resolveBuiltinDeviceKind;
 import gui_d.icons : DawIcon, drawDawIcon;
 import gui_d.theme : adjustColorBrightness, dp, dpf, drawCard, drawCenteredText, drawRotaryKnob,
     drawThemeCard, drawThickLine, drawVCenteredText, FlPalette, getDawFont, getDawMonoFont,
@@ -48,17 +49,45 @@ PluginWrapperMetrics computePluginWrapperMetrics(Rect rc) nothrow @safe {
     m.hdrH = dp(WRAP_HDR_H);
     m.scopeH = dp(SCOPE_H);
     m.hdrRc = Rect(rc.left, rc.top, rc.right, rc.top + m.hdrH);
-    m.prevRc = Rect(m.hdrRc.left + dp(150), m.hdrRc.top + dp(5), m.hdrRc.left + dp(172), m.hdrRc.bottom - dp(5));
-    m.presRc = Rect(m.hdrRc.left + dp(172), m.hdrRc.top + dp(5), m.hdrRc.left + dp(288), m.hdrRc.bottom - dp(5));
-    m.nextRc = Rect(m.hdrRc.left + dp(288), m.hdrRc.top + dp(5), m.hdrRc.left + dp(310), m.hdrRc.bottom - dp(5));
     m.guiRc = Rect(m.hdrRc.right - dp(86), m.hdrRc.top + dp(5), m.hdrRc.right - dp(28), m.hdrRc.bottom - dp(5));
     m.bypRc = Rect(m.hdrRc.right - dp(28), m.hdrRc.top + dp(5), m.hdrRc.right - dp(8), m.hdrRc.bottom - dp(5));
+    if (rc.width >= dp(410)) {
+        m.prevRc = Rect(m.hdrRc.left + dp(150), m.hdrRc.top + dp(5), m.hdrRc.left + dp(172), m.hdrRc.bottom - dp(5));
+        m.presRc = Rect(m.hdrRc.left + dp(172), m.hdrRc.top + dp(5), m.hdrRc.left + dp(288), m.hdrRc.bottom - dp(5));
+        m.nextRc = Rect(m.hdrRc.left + dp(288), m.hdrRc.top + dp(5), m.hdrRc.left + dp(310), m.hdrRc.bottom - dp(5));
+    } else {
+        const int nextR = m.guiRc.left - dp(6);
+        const int btnW = dp(18);
+        const int presW = (rc.width >= dp(300)) ? dp(76) : dp(48);
+        m.nextRc = Rect(nextR - btnW, m.hdrRc.top + dp(5), nextR, m.hdrRc.bottom - dp(5));
+        m.presRc = Rect(m.nextRc.left - presW, m.hdrRc.top + dp(5), m.nextRc.left, m.hdrRc.bottom - dp(5));
+        m.prevRc = Rect(m.presRc.left - btnW, m.hdrRc.top + dp(5), m.presRc.left, m.hdrRc.bottom - dp(5));
+    }
     m.scopeRc = Rect(rc.left + dp(10), m.hdrRc.bottom + dp(8), rc.right - dp(10), m.hdrRc.bottom + dp(8) + m.scopeH);
     m.sampleLoadRc = Rect(m.scopeRc.right - dp(86), m.scopeRc.top + dp(4), m.scopeRc.right - dp(4), m.scopeRc.top + dp(22));
     m.editorDstRc = Rect(rc.left + dp(8), m.hdrRc.bottom + dp(6), rc.right - dp(8), rc.bottom - dp(8));
     m.gridTop = m.scopeRc.bottom + dp(10);
     m.gridH = rc.bottom - m.gridTop - dp(8);
     return m;
+}
+
+/// Returns preferred client size `(width, height)` in device pixels for `plug`'s Fruity Wrapper body+header.
+Point preferredPluginWrapperSize(const(PluginSlotState)* plug, bool showRawParams = false) nothrow @safe {
+    const int hdrH = dp(WRAP_HDR_H);
+    if (plug && plug.remoteEditorOpen && plug.editorW > 0 && plug.editorH > 0) {
+        int ew = plug.editorW + dp(16);
+        int eh = plug.editorH + hdrH + dp(14);
+        if (ew < dp(320)) ew = dp(320);
+        if (ew > dp(1040)) ew = dp(1040);
+        if (eh < dp(220)) eh = dp(220);
+        if (eh > dp(740)) eh = dp(740);
+        return Point(ew, eh);
+    }
+    if (!showRawParams && hasCustomBuiltinDeviceUi(plug)) {
+        const sz = preferredDeviceBodySize(resolveBuiltinDeviceKind(plug));
+        return Point(dp(sz.width), hdrH + dp(sz.height));
+    }
+    return Point(dp(430), hdrH + dp(240));
 }
 
 /// Computes aspect-fit destination rectangle for a remote VST3 framebuffer inside `availRc`.
@@ -191,7 +220,7 @@ void drawPluginWrapperCanvas(
     const pal = model ? model.palette() : getFlPalette();
     auto aaGuard = ScopedRetroAntialias(pal.retroBevel);
     buf.fillRect(rc, pal.bgWindow);
-    if (rc.width < dp(260) || rc.height < dp(160)) return;
+    if (rc.width < dp(180) || rc.height < dp(140)) return;
 
     const m = computePluginWrapperMetrics(rc);
     FontRef boldFnt = getDawFont(11, fnt, FontWeight.Normal);
@@ -202,9 +231,10 @@ void drawPluginWrapperCanvas(
     buf.fillRect(m.hdrRc, pal.bgPanelAlt);
     buf.fillRect(Rect(m.hdrRc.left, m.hdrRc.bottom - dp(1), m.hdrRc.right, m.hdrRc.bottom), pal.borderStrong);
 
+    const int maxTitleChars = (m.prevRc.left - m.hdrRc.left >= dp(140)) ? 18 : 11;
     const string plugTitle = plug ? plug.name : "No Plugin Loaded";
     drawVCenteredText(buf, boldFnt, m.hdrRc.left + dp(10), m.hdrRc,
-                      toUTF32(truncateLabel(plugTitle, 18)), pal.accentOrange);
+                      toUTF32(truncateLabel(plugTitle, maxTitleChars)), pal.accentOrange);
 
     // Unified flush Preset selector < Preset >
     drawThemeCard(buf, Rect(m.prevRc.left, m.prevRc.top, m.nextRc.right, m.nextRc.bottom),

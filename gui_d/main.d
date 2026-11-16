@@ -21,7 +21,8 @@ import gui_d.ipc_client;
 import gui_d.mixer_view : MixerCanvasWidget;
 import gui_d.modals : FlSettingsDialog, FlTextPromptDialog;
 import gui_d.piano_roll : PianoRollCanvasWidget;
-import gui_d.plugin_window : PluginWrapperWidget, resolveActiveWrapperPlugin, WrapperTargetKind;
+import gui_d.plugin_window : PluginWrapperWidget, preferredPluginWrapperSize, resolveActiveWrapperPlugin,
+    WrapperTargetKind;
 import gui_d.theme : activeDawUiFontFace, applyFlatThemeOverrides, dp, FlCompactButton, FlThemeId,
     registerBundledDawFonts;
 import gui_d.timeline_view : beatDurationSec, TimelineCanvasWidget;
@@ -219,7 +220,7 @@ extern (C) int UIAppMain(string[] args) {
     auto winMixer = new FlWindowFrame("win_mixer", "Mixer - Master",
                                       &model, mixerCanvas, Rect(dp(616), dp(346), dp(1180), dp(760)), 440, 240);
     auto winPlugin = new FlWindowFrame("win_plugin", "Fruity Wrapper - Acid Bass",
-                                       &model, pluginWrapper, Rect(dp(260), dp(140), dp(820), dp(490)), 440, 270);
+                                       &model, pluginWrapper, Rect(dp(260), dp(140), dp(780), dp(416)), 220, 200);
     winPlugin.visibility = Visibility.Gone;
 
     // Add in initial Z-order (last added = topmost)
@@ -284,6 +285,31 @@ extern (C) int UIAppMain(string[] args) {
         desktop.invalidate();
     }
 
+    void resizePluginWindowForTarget(const(PluginSlotState)* plug) {
+        const Point pref = preferredPluginWrapperSize(plug);
+        const int targetW = pref.x;
+        const int targetH = pref.y + winPlugin.headerH();
+        winPlugin.setMinPixelSize(targetW < dp(260) ? targetW : dp(260),
+                                  targetH < dp(190) ? targetH : dp(190));
+        const Rect deskLocal = desktop.desktopLocalRect();
+        int x0 = winPlugin.windowBounds.left;
+        int y0 = winPlugin.windowBounds.top;
+        if (deskLocal.width > targetW) {
+            if (x0 < 0) x0 = 0;
+            if (x0 + targetW > deskLocal.width) x0 = deskLocal.width - targetW;
+        } else {
+            x0 = 0;
+        }
+        if (deskLocal.height > targetH) {
+            if (y0 < 0) y0 = 0;
+            if (y0 + targetH > deskLocal.height) y0 = deskLocal.height - targetH;
+        } else {
+            y0 = 0;
+        }
+        winPlugin.windowBounds = Rect(x0, y0, x0 + targetW, y0 + targetH);
+        desktop.relayoutWindow(winPlugin);
+    }
+
     string enginePath = resolveEnginePath(args);
     FlSettingsDialog activeSettingsDlg;
     shared bool uiClosing = false;
@@ -301,6 +327,18 @@ extern (C) int UIAppMain(string[] args) {
             if ((notif.audio_input_list.hasValue || notif.midi_input_list.hasValue) &&
                 activeSettingsDlg !is null) {
                 activeSettingsDlg.refreshDeviceSummary();
+            }
+            if (notif.editor_frame_data.hasValue && winPlugin.visibility == Visibility.Visible) {
+                if (auto wp = resolveActiveWrapperPlugin(&model, pluginWrapper.targetKind,
+                                                         pluginWrapper.targetIndex, pluginWrapper.targetFxSlot)) {
+                    const Point pref = preferredPluginWrapperSize(wp);
+                    if (pref.x > 0 && pref.y > 0) {
+                        const int targetH = pref.y + winPlugin.headerH();
+                        if (winPlugin.windowBounds.width != pref.x || winPlugin.windowBounds.height != targetH) {
+                            resizePluginWindowForTarget(wp);
+                        }
+                    }
+                }
             }
             refreshUi(structural);
         });
@@ -983,8 +1021,10 @@ extern (C) int UIAppMain(string[] args) {
             pluginWrapper.setTargetMixerFx(targetIdx, fxSlot);
         }
         winPlugin.windowTitle = title;
+        auto wp = resolveActiveWrapperPlugin(&model, kind, targetIdx, fxSlot);
+        resizePluginWindowForTarget(wp);
         desktop.showWindow("win_plugin");
-        if (auto wp = resolveActiveWrapperPlugin(&model, kind, targetIdx, fxSlot)) {
+        if (wp) {
             if (wp.uri.length > 0 && !wp.uri.startsWith("builtin://") && !wp.remoteEditorOpen && client.isRunning()) {
                 wp.remoteEditorOpen = true;
                 const int trk = pluginWrapper.resolvedTrackIndex();
@@ -1502,7 +1542,7 @@ extern (C) int UIAppMain(string[] args) {
     };
     mixerCanvas.onPromptLoadFx = (int trackIdx, int slotIdx) {
         static struct FxPreset { string name; string uri; }
-        static immutable FxPreset[14] PRESETS = [
+        static immutable FxPreset[15] PRESETS = [
             FxPreset("Parametric EQ", "builtin://eq"),
             FxPreset("Compressor", "builtin://compressor"),
             FxPreset("Stereo Reverb", "builtin://reverb"),
@@ -1517,6 +1557,7 @@ extern (C) int UIAppMain(string[] args) {
             FxPreset("Convolver", "builtin://convolver"),
             FxPreset("Vocodey", "builtin://vocodey"),
             FxPreset("Stereo Width", "builtin://stereo_width"),
+            FxPreset("Aux Bus", "builtin://aux"),
         ];
         FxPreset[] choices;
         foreach (p; PRESETS) choices ~= p;

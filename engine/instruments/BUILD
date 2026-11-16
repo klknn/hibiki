@@ -293,6 +293,26 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "builtin_sylph_d",
+    srcs = ["builtin_sylph.d"],
+    betterc = True,
+    deps = [
+        ":adsr_d",
+        "//engine/core:math_d",
+    ],
+)
+
+cc_library(
+    name = "builtin_sylph",
+    srcs = ["builtin_sylph.cpp"],
+    hdrs = ["builtin_sylph.hpp"],
+    deps = [
+        ":builtin_sylph_d",
+        "//engine/plugin:iplugin",
+    ],
+)
+
 cc_library(
     name = "registry",
     srcs = ["registry.cpp"],
@@ -313,6 +333,7 @@ cc_library(
         ":builtin_film",
         ":builtin_organ",
         ":builtin_sampler",
+        ":builtin_sylph",
         "//engine/plugin:iplugin",
     ],
 )
@@ -354,6 +375,7 @@ cc_library(
         ":builtin_film",
         ":builtin_organ",
         ":builtin_sampler",
+        ":builtin_sylph",
     ],
 )
 
@@ -535,6 +557,17 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "builtin_sylph_test",
+    srcs = ["builtin_sylph_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_sylph",
+        ":registry",
+        "@googletest//:gtest_main",
+    ],
+)
+
 d_test(
     name = "instruments_d_test",
     srcs = ["instruments_d_test.d"],
@@ -550,5 +583,6 @@ d_test(
         ":builtin_dr8_rim_d",
         ":builtin_dr8_snare_d",
         ":builtin_dr8_tom_d",
+        ":builtin_sylph_d",
     ],
 )

@@ -15,6 +15,7 @@
 #include "engine/instruments/builtin_film.hpp"
 #include "engine/instruments/builtin_organ.hpp"
 #include "engine/instruments/builtin_sampler.hpp"
+#include "engine/instruments/builtin_sylph.hpp"
 
 namespace hibiki {
 
@@ -49,6 +50,8 @@ std::unique_ptr<IPlugin> createBuiltinInstrument(const std::string& path) {
     return std::make_unique<BuiltinSampler>();
   } else if (path.rfind(BuiltinFilm::kPath, 0) == 0) {
     return std::make_unique<BuiltinFilm>();
+  } else if (path == BuiltinSylph::kPath) {
+    return std::make_unique<BuiltinSylph>();
   }
   return nullptr;
 }

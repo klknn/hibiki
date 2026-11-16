@@ -37,6 +37,7 @@ immutable BrowserEntry[] DEFAULT_BROWSER_ENTRIES = [
     BrowserEntry(BrowserCategory.PROJECT, "Current Project", "Pat: Pattern 3 (E-Piano)", "pattern://2", false),
     BrowserEntry(BrowserCategory.PROJECT, "Current Project", "Auto: Acid Cutoff Env", "auto://0", false),
     // Built-in Generators
+    BrowserEntry(BrowserCategory.PLUGINS, "Generators", "Gen: Sylph (Trance/Kick)", "builtin://sylph", true),
     BrowserEntry(BrowserCategory.PLUGINS, "Generators", "Gen: FilM (FM Synth)", "builtin://film", true),
     BrowserEntry(BrowserCategory.PLUGINS, "Generators", "Gen: 3x Osc", "builtin://3xosc", true),
     BrowserEntry(BrowserCategory.PLUGINS, "Generators", "Gen: Acid Bass", "builtin://acid_bass", true),

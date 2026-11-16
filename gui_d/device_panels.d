@@ -41,6 +41,7 @@ enum BuiltinDeviceKind {
     DRUM_MACHINE,
     DR8_MODULE,
     FILM,
+    SYLPH,
     AUX,
 }
 
@@ -70,6 +71,7 @@ BuiltinDeviceKind resolveBuiltinDeviceKind(const(PluginSlotState)* plug) pure no
     if (u == "builtin://drum_machine") return BuiltinDeviceKind.DRUM_MACHINE;
     if (u.length >= 14 && u[0 .. 14] == "builtin://dr8_") return BuiltinDeviceKind.DR8_MODULE;
     if (u == "builtin://film" || (u.length >= 14 && u[0 .. 14] == "builtin://film")) return BuiltinDeviceKind.FILM;
+    if (u == "builtin://sylph") return BuiltinDeviceKind.SYLPH;
     if (u == "builtin://aux") return BuiltinDeviceKind.AUX;
     return BuiltinDeviceKind.GENERIC;
 }
@@ -105,6 +107,7 @@ DevicePreferredSize preferredDeviceBodySize(BuiltinDeviceKind kind) pure nothrow
         case BuiltinDeviceKind.THREE_OSC:       return DevicePreferredSize(440, 330);
         case BuiltinDeviceKind.DRUM_MACHINE:    return DevicePreferredSize(580, 320);
         case BuiltinDeviceKind.FILM:            return DevicePreferredSize(740, 380);
+        case BuiltinDeviceKind.SYLPH:           return DevicePreferredSize(760, 420);
         case BuiltinDeviceKind.GENERIC:         return DevicePreferredSize(420, 240);
     }
 }
@@ -142,6 +145,7 @@ struct BuiltinDeviceUiState {
     int acidActiveNote = -1;
     int filmTab = 0;      // 0=MAIN, 1..6=OP1..6, 7..9=F1..3
     int filmDragCell = -1; // 0..71 inside FilM 6x12 matrix
+    int sylphPresetIdx = 0; // 0..5 curated Sylph Trance/Kick presets
 
     int activeDragParamId = -1;
     int dragStartY = 0;
@@ -310,6 +314,67 @@ private string formatRatio(float n) @safe {
     return r >= 19.5f ? "inf:1" : format("%.1f:1", r);
 }
 
+private immutable string[6] SYLPH_PRESET_NAMES = [
+    "TRANCE LEAD", "HARD KICK", "909 PUNCH", "PLUCK", "HIVE PAD", "PSY BASS",
+];
+
+private immutable float[46][6] SYLPH_PRESETS = [
+    [
+        0.00f, 0.50f, 0.50f, 1.00f, 0.38f, 0.88f, 0.00f, 0.86f,
+        0.00f, 0.75f, 0.50f, 0.67f, 0.46f, 0.92f, 0.00f, 0.56f,
+        0.00f, 0.50f, 0.24f, 0.08f, 0.50f, 0.25f, 0.25f,
+        0.15f, 0.72f, 0.78f, 0.58f, 0.00f,
+        0.00f, 0.72f, 0.22f, 0.72f, 0.10f, 0.70f, 0.44f, 0.58f,
+        0.22f, 0.32f, 0.05f, 0.12f, 0.36f, 0.32f, 0.58f, 0.30f,
+        0.06f, 0.75f,
+    ],
+    [
+        0.85f, 0.50f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.95f,
+        0.55f, 0.50f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.24f,
+        0.00f, 0.85f, 0.55f, 0.58f, 0.94f, 0.36f, 0.16f,
+        0.00f, 0.64f, 0.00f, 0.44f, 0.50f,
+        0.00f, 0.42f, 0.18f, 0.82f, 0.00f, 0.55f, 0.12f, 0.42f,
+        0.58f, 0.20f, 0.00f, 0.00f, 0.00f, 0.00f, 0.40f, 0.00f,
+        0.00f, 0.84f,
+    ],
+    [
+        0.85f, 0.25f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.92f,
+        0.28f, 0.25f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.18f,
+        0.00f, 0.50f, 0.38f, 0.46f, 0.88f, 0.44f, 0.28f,
+        0.00f, 0.68f, 0.00f, 0.48f, 0.50f,
+        0.00f, 0.36f, 0.24f, 0.84f, 0.00f, 0.58f, 0.08f, 0.45f,
+        0.66f, 0.18f, 0.00f, 0.00f, 0.00f, 0.00f, 0.40f, 0.00f,
+        0.00f, 0.84f,
+    ],
+    [
+        0.00f, 0.50f, 0.50f, 0.67f, 0.32f, 0.78f, 0.00f, 0.82f,
+        0.28f, 0.75f, 0.50f, 0.50f, 0.38f, 0.82f, 0.00f, 0.48f,
+        0.00f, 0.50f, 0.18f, 0.05f, 0.54f, 0.18f, 0.10f,
+        0.00f, 0.68f, 0.08f, 0.56f, 0.00f,
+        0.00f, 0.28f, 0.26f, 0.90f, 0.00f, 0.62f, 0.10f, 0.54f,
+        0.16f, 0.38f, 0.00f, 0.08f, 0.30f, 0.46f, 0.62f, 0.34f,
+        0.00f, 0.78f,
+    ],
+    [
+        0.00f, 0.50f, 0.50f, 1.00f, 0.54f, 1.00f, 0.00f, 0.76f,
+        0.00f, 0.50f, 0.65f, 1.00f, 0.48f, 1.00f, 0.00f, 0.62f,
+        0.35f, 0.50f, 0.30f, 0.12f, 0.50f, 0.20f, 0.25f,
+        0.68f, 0.80f, 0.84f, 0.72f, 0.00f,
+        0.00f, 0.54f, 0.18f, 0.64f, 0.64f, 0.78f, 0.52f, 0.70f,
+        0.12f, 0.24f, 0.08f, 0.28f, 0.52f, 0.26f, 0.55f, 0.52f,
+        0.18f, 0.72f,
+    ],
+    [
+        0.00f, 0.25f, 0.50f, 0.00f, 0.00f, 0.00f, 1.00f, 0.88f,
+        0.00f, 0.25f, 0.50f, 0.17f, 0.10f, 0.18f, 1.00f, 0.30f,
+        0.00f, 0.25f, 0.45f, 0.04f, 0.50f, 0.22f, 0.15f,
+        0.00f, 0.54f, 0.32f, 0.40f, 0.80f,
+        0.00f, 0.24f, 0.34f, 0.86f, 0.00f, 0.52f, 0.05f, 0.40f,
+        0.40f, 0.30f, 0.00f, 0.00f, 0.00f, 0.00f, 0.40f, 0.00f,
+        0.12f, 0.80f,
+    ],
+];
+
 // =========================================================================
 // Layout Builder for Controls per Builtin Device Kind
 // =========================================================================
@@ -329,6 +394,7 @@ struct DeviceLayout {
     Rect[3] hottBarRcs;
     Rect[3] hottInspectorRcs;
     Rect[72] filmMatrixCells;
+    Rect[7] sylphDeckRcs; // [0]=OscA, [1]=Center, [2]=OscB, [3..6]=Amp,Filt,Lfo,Fx
 }
 
 private void appendKnobRow(
@@ -1078,6 +1144,172 @@ DeviceLayout buildBuiltinDeviceLayout(
                     dl.filmMatrixCells[r * 12 + col] = Rect(x0, y0, x0 + cw - dp(1), y0 + ch - dp(1));
                 }
             }
+            break;
+        }
+        case BuiltinDeviceKind.SYLPH: {
+            // Hive / Sylenth1 dual hypersaw & punch-kick synth:
+            // Top bar: Brand + 6 Preset pills + PlayMode pill
+            // Middle deck: [OSC A] [Central LCD + Filter/Drive + Sub/PitchPunch] [OSC B]
+            // Bottom deck: [AMP ENV] [FILT ENV] [LFO/GLIDE] [TRANCE FX]
+            const uint CYAN = 0x0032B8FF;
+            const uint AMBER = 0x00F59E0B;
+            const uint GREEN = 0x0034D399;
+            const uint PURPLE = 0x00A78BFA;
+
+            const int topH = dp(24);
+            dl.auxRc = Rect(inner.left, inner.top, inner.right, inner.top + topH);
+
+            // Preset strip pills + Play Mode toggle on right
+            const int brandW = dp(82);
+            const int modeW = dp(64);
+            const int pStripW = dl.auxRc.width - brandW - modeW - dp(8);
+            const int pw = pStripW / 6;
+            foreach (pi; 0 .. 6) {
+                const int px0 = dl.auxRc.left + brandW + dp(4) + pi * pw;
+                const bool pSel = (ui.sylphPresetIdx == pi);
+                const uint pCol = (pi == 1 || pi == 2 || pi == 5) ? AMBER : CYAN;
+                dl.pills ~= DevicePillSpec(
+                    Rect(px0, dl.auxRc.top + dp(2), px0 + pw - dp(3), dl.auxRc.bottom - dp(2)),
+                    SYLPH_PRESET_NAMES[pi], pSel, pCol, 6, 0, 0.0f, pi
+                );
+            }
+            const float pmVal = readPlugParam(plug, 27, 0.0f);
+            const int pmIdx = (pmVal < 0.34f) ? 0 : (pmVal < 0.67f ? 1 : 2);
+            static immutable string[3] PMODES = ["POLY", "MONO", "LEGA"];
+            static immutable float[3] PMODE_NORMS = [0.0f, 0.50f, 0.85f];
+            dl.pills ~= DevicePillSpec(
+                Rect(dl.auxRc.right - modeW, dl.auxRc.top + dp(2), dl.auxRc.right, dl.auxRc.bottom - dp(2)),
+                PMODES[pmIdx], pmIdx > 0, AMBER, 0, 27, PMODE_NORMS[(pmIdx + 1) % 3], pmIdx
+            );
+
+            // Split body into middle (synth engines) and bottom (envelopes + FX)
+            const int botH = dp(88);
+            Rect midArea = Rect(inner.left, dl.auxRc.bottom + dp(5), inner.right, inner.bottom - botH - dp(5));
+            Rect botArea = Rect(inner.left, midArea.bottom + dp(5), inner.right, inner.bottom);
+
+            const int oscW = (midArea.width * 29) / 100;
+            Rect oscARc = Rect(midArea.left, midArea.top, midArea.left + oscW, midArea.bottom);
+            Rect oscBRc = Rect(midArea.right - oscW, midArea.top, midArea.right, midArea.bottom);
+            Rect ctrRc = Rect(oscARc.right + dp(6), midArea.top, oscBRc.left - dp(6), midArea.bottom);
+            dl.sylphDeckRcs[0] = oscARc;
+            dl.sylphDeckRcs[1] = ctrRc;
+            dl.sylphDeckRcs[2] = oscBRc;
+
+            // Helper formatting lambdas for Osc A (base=0) & Osc B (base=8)
+            static immutable string[4] WAVES = ["SAW", "SQR", "TRI", "SIN"];
+            static immutable float[4] WNORMS = [0.0f, 0.35f, 0.62f, 0.90f];
+            foreach (oi; 0 .. 2) {
+                Rect oRc = (oi == 0) ? oscARc : oscBRc;
+                const uint b = cast(uint)(oi * 8);
+                const uint col = (oi == 0) ? CYAN : AMBER;
+                const float wv = readPlugParam(plug, b + 0, oi == 0 ? 0.0f : 0.0f);
+                const int wi = (wv < 0.25f) ? 0 : (wv < 0.50f ? 1 : (wv < 0.75f ? 2 : 3));
+                const bool retOn = readPlugParam(plug, b + 6, 0.0f) >= 0.5f;
+
+                // Top header pills: Wave cycle + Retrig Lock
+                const int barTop = oRc.top + dp(20);
+                const int halfW = (oRc.width - dp(12)) / 2;
+                dl.pills ~= DevicePillSpec(
+                    Rect(oRc.left + dp(4), barTop, oRc.left + dp(4) + halfW, barTop + dp(19)),
+                    WAVES[wi], true, col, 0, b + 0, WNORMS[(wi + 1) % 4], wi
+                );
+                dl.pills ~= DevicePillSpec(
+                    Rect(oRc.right - dp(4) - halfW, barTop, oRc.right - dp(4), barTop + dp(19)),
+                    retOn ? "RETRIG" : "FREE", retOn, retOn ? AMBER : col, 1, b + 6, 1.0f, 0
+                );
+
+                const float octN = readPlugParam(plug, b + 1, oi == 0 ? 0.5f : 0.75f);
+                const int octShow = cast(int)((octN - 0.5f) * 4.0f + (octN >= 0.5f ? 0.5f : -0.5f));
+                const float semiN = readPlugParam(plug, b + 2, 0.5f);
+                const int semiShow = cast(int)((semiN - 0.5f) * 24.0f + (semiN >= 0.5f ? 0.5f : -0.5f));
+                const int uniShow = cast(int)(readPlugParam(plug, b + 3, oi == 0 ? 1.0f : 0.67f) * 6.0f + 0.5f) + 1;
+
+                const int rowTop = barTop + dp(24);
+                const int rowH = (oRc.bottom - dp(4) - rowTop) / 2;
+                appendKnobRow(dl.knobs, Rect(oRc.left + dp(2), rowTop, oRc.right - dp(2), rowTop + rowH), plug,
+                    [b + 1, b + 2, b + 3],
+                    ["Oct", "Semi", "Unison"],
+                    [oi == 0 ? 0.5f : 0.75f, 0.5f, oi == 0 ? 1.0f : 0.67f],
+                    [format("%+d", octShow), format("%+d", semiShow), format("%dv", uniShow)],
+                    [col, col, col], pal);
+                appendKnobRow(dl.knobs, Rect(oRc.left + dp(2), rowTop + rowH, oRc.right - dp(2), oRc.bottom - dp(3)), plug,
+                    [b + 4, b + 5, b + 7],
+                    ["Detune", "Stereo", "Vol"],
+                    [oi == 0 ? 0.38f : 0.46f, oi == 0 ? 0.88f : 0.92f, oi == 0 ? 0.86f : 0.56f],
+                    null, [col, col, col], pal);
+            }
+
+            // Center Deck: LCD + Filter row + Kick/Sub/Pitch row
+            const int lcdH = dp(76);
+            dl.canvasRc = Rect(ctrRc.left + dp(6), ctrRc.top + dp(20), ctrRc.right - dp(6), ctrRc.top + dp(20) + lcdH);
+            const int remH = (ctrRc.bottom - dp(4) - dl.canvasRc.bottom - dp(4)) / 2;
+
+            // Filter row (FiltType pill + Cutoff, Res, Drive, EnvAmt)
+            Rect fRow = Rect(ctrRc.left + dp(4), dl.canvasRc.bottom + dp(4), ctrRc.right - dp(4), dl.canvasRc.bottom + dp(4) + remH);
+            const float ftv = readPlugParam(plug, 28, 0.0f);
+            const int fti = (ftv < 0.25f) ? 0 : (ftv < 0.50f ? 1 : (ftv < 0.75f ? 2 : 3));
+            static immutable string[4] FTYPES = ["LP24", "LP12", "BP12", "HP12"];
+            static immutable float[4] FTNORMS = [0.0f, 0.35f, 0.62f, 0.88f];
+            const int pillW = dp(42);
+            dl.pills ~= DevicePillSpec(
+                Rect(fRow.left, fRow.top + dp(18), fRow.left + pillW, fRow.top + dp(40)),
+                FTYPES[fti], true, CYAN, 0, 28, FTNORMS[(fti + 1) % 4], fti
+            );
+            const float cutHz = 20.0f * powf(900.0f, readPlugParam(plug, 29, 0.72f));
+            const float envPct = (readPlugParam(plug, 31, 0.72f) - 0.5f) * 200.0f;
+            appendKnobRow(dl.knobs, Rect(fRow.left + pillW + dp(2), fRow.top, fRow.right, fRow.bottom), plug,
+                [29u, 30u, 36u, 31u],
+                ["Cutoff", "Reso", "Drive", "EnvAmt"],
+                [0.72f, 0.22f, 0.22f, 0.72f],
+                [formatFreq(cutHz), null, null, format("%+.0f%%", envPct)],
+                [CYAN, CYAN, AMBER, CYAN], pal);
+
+            // Sub / Click / Pitch Punch row (SubWave pill + SubVol, Click, P.Amt, P.Dec, P.Crv)
+            Rect pRow = Rect(ctrRc.left + dp(4), fRow.bottom + dp(2), ctrRc.right - dp(4), ctrRc.bottom - dp(3));
+            const float swv = readPlugParam(plug, 16, 0.0f);
+            const int swi = (swv < 0.34f) ? 0 : (swv < 0.67f ? 1 : 2);
+            static immutable string[3] SUBWAVES = ["SIN", "TRI", "SQR"];
+            static immutable float[3] SUBNORMS = [0.0f, 0.50f, 0.85f];
+            dl.pills ~= DevicePillSpec(
+                Rect(pRow.left, pRow.top + dp(18), pRow.left + pillW, pRow.top + dp(40)),
+                SUBWAVES[swi], true, AMBER, 0, 16, SUBNORMS[(swi + 1) % 3], swi
+            );
+            const int pSt = cast(int)((readPlugParam(plug, 20, 0.5f) - 0.5f) * 96.0f + 0.5f);
+            const float pDecMs = 4.0f * powf(125.0f, readPlugParam(plug, 21, 0.25f));
+            appendKnobRow(dl.knobs, Rect(pRow.left + pillW + dp(2), pRow.top, pRow.right, pRow.bottom), plug,
+                [18u, 19u, 20u, 21u, 22u],
+                ["Sub", "Click", "P.Amt", "P.Dec", "P.Crv"],
+                [0.24f, 0.08f, 0.50f, 0.25f, 0.25f],
+                [null, null, format("%+dst", pSt), format("%.0fms", pDecMs), null],
+                [AMBER, AMBER, AMBER, AMBER, AMBER], pal);
+
+            // Bottom Deck (17 knobs divided cleanly into 4 groups: 4, 4, 4, 5)
+            const int grpGap = dp(5);
+            const int availW = botArea.width - grpGap * 3;
+            const int wAmp = (availW * 4) / 17;
+            const int wFilt = (availW * 4) / 17;
+            const int wMod = (availW * 4) / 17;
+            Rect rAmp = Rect(botArea.left, botArea.top, botArea.left + wAmp, botArea.bottom);
+            Rect rFilt = Rect(rAmp.right + grpGap, botArea.top, rAmp.right + grpGap + wFilt, botArea.bottom);
+            Rect rMod = Rect(rFilt.right + grpGap, botArea.top, rFilt.right + grpGap + wMod, botArea.bottom);
+            Rect rFx = Rect(rMod.right + grpGap, botArea.top, botArea.right, botArea.bottom);
+            dl.sylphDeckRcs[3] = rAmp;
+            dl.sylphDeckRcs[4] = rFilt;
+            dl.sylphDeckRcs[5] = rMod;
+            dl.sylphDeckRcs[6] = rFx;
+
+            appendKnobRow(dl.knobs, Rect(rAmp.left + dp(2), rAmp.top + dp(14), rAmp.right - dp(2), rAmp.bottom - dp(2)),
+                plug, [23u, 24u, 25u, 26u], ["Atk", "Dec", "Sus", "Rel"], [0.15f, 0.72f, 0.78f, 0.58f],
+                null, [GREEN, GREEN, GREEN, GREEN], pal);
+            appendKnobRow(dl.knobs, Rect(rFilt.left + dp(2), rFilt.top + dp(14), rFilt.right - dp(2), rFilt.bottom - dp(2)),
+                plug, [32u, 33u, 34u, 35u], ["Atk", "Dec", "Sus", "Rel"], [0.10f, 0.70f, 0.44f, 0.58f],
+                null, [CYAN, CYAN, CYAN, CYAN], pal);
+            appendKnobRow(dl.knobs, Rect(rMod.left + dp(2), rMod.top + dp(14), rMod.right - dp(2), rMod.bottom - dp(2)),
+                plug, [37u, 38u, 39u, 44u], ["Rate", "L>Pt", "L>Cut", "Glide"], [0.32f, 0.05f, 0.12f, 0.06f],
+                null, [PURPLE, PURPLE, PURPLE, AMBER], pal);
+            appendKnobRow(dl.knobs, Rect(rFx.left + dp(2), rFx.top + dp(14), rFx.right - dp(2), rFx.bottom - dp(2)),
+                plug, [40u, 41u, 42u, 43u, 45u], ["Chor", "Del", "Time", "Rev", "Vol"], [0.36f, 0.32f, 0.58f, 0.30f, 0.75f],
+                null, [CYAN, CYAN, CYAN, PURPLE, AMBER], pal);
             break;
         }
         case BuiltinDeviceKind.AUX: {
@@ -1989,6 +2221,105 @@ void drawBuiltinDevicePanel(
             }
             break;
         }
+        case BuiltinDeviceKind.SYLPH: {
+            // u-he Hive / Sylenth1 dual-layer chassis & central Filter/Pitch LCD
+            const uint CYAN = 0x0032B8FF;
+            const uint AMBER = 0x00F59E0B;
+            const uint GREEN = 0x0034D399;
+            const uint PURPLE = 0x00A78BFA;
+
+            // Dark anodized aluminum top strip with glowing SYLPH emblem
+            drawThemeCard(buf, dl.auxRc, 0x001B1F28, 0x00333B4C, pal, 2.0f, false);
+            drawVCenteredText(buf, uiFnt, dl.auxRc.left + dp(8), dl.auxRc, "SYLPH"d, CYAN);
+            drawVCenteredText(buf, valFnt, dl.auxRc.left + dp(48), dl.auxRc, "v2"d, AMBER);
+
+            // Section deck cards
+            static immutable string[7] DECK_NAMES = [
+                "OSC A · SUPERSAW", "FILTER · PUNCH", "OSC B · HARMONIC",
+                "AMP ENV", "FILT ENV", "LFO / GLIDE", "TRANCE FX / OUT",
+            ];
+            static immutable uint[7] DECK_COLS = [
+                CYAN, CYAN, AMBER, GREEN, CYAN, PURPLE, CYAN,
+            ];
+            foreach (di; 0 .. 7) {
+                Rect r = dl.sylphDeckRcs[di];
+                drawThemeCard(buf, r, 0x001D222C, 0x00323948, pal, 2.0f, false);
+                buf.fillRect(Rect(r.left + dp(2), r.top + dp(1), r.right - dp(2), r.top + dp(3)), DECK_COLS[di]);
+                drawVCenteredText(buf, valFnt, r.left + dp(6), Rect(r.left, r.top + dp(3), r.right, r.top + dp(17)),
+                                  toUTF32(DECK_NAMES[di]), DECK_COLS[di]);
+            }
+
+            // Central Hive-style Hex/Filter + Pitch-Snap LCD
+            Rect c = dl.canvasRc;
+            drawThemeCard(buf, c, 0x000D1118, 0x002B364A, pal, 2.0f, true);
+            const int lcdPad = dp(6);
+            const int sw = c.width - lcdPad * 2;
+            const int sh = c.height - lcdPad * 2;
+            if (sw > dp(24) && sh > dp(16)) {
+                drawPanelGrid(buf, c, pal);
+                // Filter frequency response trace (LP24 / LP12 / BP12 / HP12)
+                const float cutN = readPlugParam(plug, 29, 0.72f);
+                const float resN = readPlugParam(plug, 30, 0.22f);
+                const float ftv = readPlugParam(plug, 28, 0.0f);
+                const int fti = (ftv < 0.25f) ? 0 : (ftv < 0.50f ? 1 : (ftv < 0.75f ? 2 : 3));
+                float prevX = c.left + lcdPad;
+                float prevY = c.middley;
+                foreach (i; 0 .. 41) {
+                    const float t = cast(float)i / 40.0f;
+                    const float d = t - cutN;
+                    float resp = 0.55f;
+                    if (fti == 0 || fti == 1) {
+                        const float slope = (fti == 0) ? 14.0f : 7.5f;
+                        resp = 0.65f / (1.0f + expf(d * slope));
+                    } else if (fti == 2) {
+                        resp = 0.65f * expf(-d * d * 28.0f);
+                    } else {
+                        resp = 0.65f / (1.0f + expf(-d * 9.0f));
+                    }
+                    resp += resN * 0.34f * expf(-d * d * 120.0f);
+                    if (resp > 0.96f) resp = 0.96f;
+                    const float x = c.left + lcdPad + t * sw;
+                    const float y = c.bottom - lcdPad - resp * sh;
+                    if (i > 0) drawThickLine(buf, prevX, prevY, x, y, dpf(2.0f), CYAN);
+                    prevX = x;
+                    prevY = y;
+                }
+
+                // Pitch-Snap transient envelope trace in Amber (shows kick sweep!)
+                const float pitchAmt = readPlugParam(plug, 20, 0.5f) - 0.5f;
+                const float pDec = readPlugParam(plug, 21, 0.25f);
+                const float pCrv = 3.0f - readPlugParam(plug, 22, 0.25f) * 2.1f;
+                if (pitchAmt > 0.03f || pitchAmt < -0.03f) {
+                    const float pBaseY = c.bottom - lcdPad - sh * 0.16f;
+                    float px0 = c.left + lcdPad;
+                    float py0 = pBaseY - pitchAmt * sh * 1.4f;
+                    if (py0 < c.top + lcdPad) py0 = c.top + lcdPad;
+                    if (py0 > c.bottom - lcdPad) py0 = c.bottom - lcdPad;
+                    foreach (i; 1 .. 33) {
+                        const float t = cast(float)i / 32.0f;
+                        const float e = expf(-t * (6.5f - pDec * 4.5f));
+                        const float shaped = powf(e, pCrv);
+                        float y = pBaseY - pitchAmt * shaped * sh * 1.4f;
+                        if (y < c.top + lcdPad) y = c.top + lcdPad;
+                        if (y > c.bottom - lcdPad) y = c.bottom - lcdPad;
+                        const float x = c.left + lcdPad + t * sw;
+                        drawThickLine(buf, px0, py0, x, y, dpf(1.7f), AMBER);
+                        px0 = x;
+                        py0 = y;
+                    }
+                }
+
+                // HUD overlay inside LCD
+                const int u1 = cast(int)(readPlugParam(plug, 3, 1.0f) * 6.0f + 0.5f) + 1;
+                const int u2 = cast(int)(readPlugParam(plug, 11, 0.67f) * 6.0f + 0.5f) + 1;
+                const int pst = cast(int)((readPlugParam(plug, 20, 0.5f) - 0.5f) * 96.0f + 0.5f);
+                const string pName = (ui.sylphPresetIdx >= 0 && ui.sylphPresetIdx < 6)
+                    ? SYLPH_PRESET_NAMES[ui.sylphPresetIdx] : "CUSTOM";
+                drawVCenteredText(buf, valFnt, c.left + dp(6), Rect(c.left, c.top + dp(2), c.right, c.top + dp(16)),
+                                  toUTF32(format("%s · UNI %d+%d · PITCH %+dst", pName, u1, u2, pst)), 0x00CBD5E1);
+            }
+            break;
+        }
         case BuiltinDeviceKind.AUX: {
             Rect c = dl.canvasRc;
             drawThemeCard(buf, c, pal.bgLcd, pal.borderSubtle, pal, 2.0f, true);
@@ -2097,6 +2428,17 @@ bool handleBuiltinDeviceMouse(
             } else if (pl.actionKind == 5) {
                 const float cur = readPlugParam(plug, pl.paramId, 0.5f);
                 emitParam(pl.paramId, cur + pl.targetVal, 0.5f, pl.label);
+            } else if (pl.actionKind == 6 && dl.kind == BuiltinDeviceKind.SYLPH) {
+                const int pidx = pl.uiTabVal;
+                if (pidx >= 0 && pidx < 6) {
+                    ui.sylphPresetIdx = pidx;
+                    foreach (uint pid; 0 .. 46) {
+                        const float pv = SYLPH_PRESETS[pidx][pid];
+                        writePlugParam(plug, pid, pv, SYLPH_PRESETS[0][pid]);
+                        if (onSetParam !is null) onSetParam(trkIdx, plug.pluginIndex, pid, pv);
+                    }
+                    if (onHint !is null) onHint(format("Sylph — Loaded Preset: %s", SYLPH_PRESET_NAMES[pidx]));
+                }
             }
             return true;
         }
@@ -2392,13 +2734,13 @@ unittest {
     Rect bodyRc = Rect(0, 32, 440, 260);
 
     // 1. Test every builtin URI maps to non-GENERIC device UI & renders cleanly across modern & WIN95 themes
-    static immutable string[22] URIS = [
+    static immutable string[23] URIS = [
         "builtin://eq", "builtin://compressor", "builtin://limiter", "builtin://hott",
         "builtin://maxim", "builtin://delay", "builtin://reverb", "builtin://phaser",
         "builtin://chorus", "builtin://bitcrusher", "builtin://envelope_shaper", "builtin://convolver",
         "builtin://vocodey", "builtin://stereo_width", "builtin://acid_bass", "builtin://3xosc",
         "builtin://sampler", "builtin://epiano", "builtin://organ", "builtin://dr8_kick",
-        "builtin://film", "builtin://aux"
+        "builtin://film", "builtin://sylph", "builtin://aux"
     ];
     foreach (u; URIS) {
         PluginSlotState slot;
@@ -2511,4 +2853,27 @@ unittest {
         (int t, int p, uint pid, float v) { filmPid = cast(int)pid; },
         null, null, null, null);
     assert(filmPid == 272, "Expected FilM matrix cell[0,0] drag to emit param 272");
+
+    // 5. Test Sylph UI preset click ('HARD KICK' -> index 1 updates P_PITCH_AMT & P_OSC1_RETRIG)
+    PluginSlotState sylphSlot;
+    sylphSlot.uri = "builtin://sylph";
+    sylphSlot.name = "Sylph";
+    BuiltinDeviceUiState sylphUi;
+    Rect sylphRc = Rect(0, 32, 760, 452);
+    auto sylphBuf = new ColorDrawBuf(760, 460);
+    drawBuiltinDevicePanel(sylphBuf, sylphRc, &model, &sylphSlot, sylphUi, FontRef.init);
+    const dlSylph = buildBuiltinDeviceLayout(sylphRc, &sylphSlot, sylphUi, model.palette());
+    assert(dlSylph.knobs.length == 38, "Expected all 38 rotary controls laid out on Sylph panel");
+    int emittedCount = 0;
+    const auto kickPresetPill = dlSylph.pills[1]; // HARD KICK
+    handleBuiltinDeviceMouse(
+        new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
+                       cast(short)kickPresetPill.rc.middlex, cast(short)kickPresetPill.rc.middley),
+        sylphRc, &model, &sylphSlot, sylphUi, 100,
+        (int t, int p, uint pid, float v) { emittedCount++; },
+        null, null, null, null);
+    assert(emittedCount == 46 && sylphUi.sylphPresetIdx == 1,
+           "Expected Sylph HARD KICK preset pill to emit all 46 parameters");
+    assert(readPlugParam(&sylphSlot, 6, 0.0f) >= 0.5f && readPlugParam(&sylphSlot, 20, 0.5f) > 0.85f,
+           "Expected Sylph HARD KICK preset to enable Osc1 Retrig and high Pitch Snap");
 }

@@ -623,16 +623,17 @@ extern (C) int UIAppMain(string[] args) {
             new Action(302, "Acid Bass (Synth)"d),
             new Action(303, "E-Piano (Keys)"d),
             new Action(304, "Drum Machine"d),
-            new Action(305, "Sampler"d)
+            new Action(305, "Sampler"d),
+            new Action(306, "Sylph (Trance/Kick)"d)
         );
         showMenuPopup(s, m, (int id) {
-            static immutable string[5] NAMES = ["3x Osc", "Acid Bass", "E-Piano", "Drum Machine", "Sampler"];
-            static immutable string[5] URIS = [
+            static immutable string[6] NAMES = ["3x Osc", "Acid Bass", "E-Piano", "Drum Machine", "Sampler", "Sylph"];
+            static immutable string[6] URIS = [
                 "builtin://3xosc", "builtin://acid_bass", "builtin://epiano",
-                "builtin://drum_machine", "builtin://sampler"
+                "builtin://drum_machine", "builtin://sampler", "builtin://sylph"
             ];
             const int idx = id - 301;
-            if (idx >= 0 && idx < 5) {
+            if (idx >= 0 && idx < 6) {
                 model.saveCurrentPatternToStore();
                 const int chIdx = cast(int)model.channels.length;
                 ChannelState ch;

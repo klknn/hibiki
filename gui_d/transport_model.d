@@ -449,6 +449,10 @@ struct TransportModel {
         slot.mix = 1.0f;
         slot.isInstrument = isInst;
         slot.presets = ["Default", "Warm Analog", "Punchy Club", "Wide Stereo", "Init"];
+        if (uri == "builtin://sylph") {
+            // Sylph maintains its own 46-parameter Trance/Kick defaults until engine PLUGIN_INFO syncs.
+            return slot;
+        }
         if (isInst) {
             slot.params = [
                 ParamItemState(0, "Cutoff", 0.65f, 0.65f),

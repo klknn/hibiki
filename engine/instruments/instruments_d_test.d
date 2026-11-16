@@ -12,6 +12,7 @@ import engine.instruments.builtin_dr8_kick;
 import engine.instruments.builtin_dr8_rim;
 import engine.instruments.builtin_dr8_snare;
 import engine.instruments.builtin_dr8_tom;
+import engine.instruments.builtin_sylph;
 
 @nogc nothrow unittest {
     // 0. 3xOsc
@@ -218,4 +219,43 @@ import engine.instruments.builtin_dr8_tom;
         if (a > crash_max) crash_max = a;
     }
     assert(crash_max > 0.001f);
+
+    // 11. Sylph (Trance Hypersaw & Hard Kick Synth)
+    SylphDspState* sylph = d_sylph_create();
+    assert(sylph !is null);
+    scope (exit) d_sylph_destroy(sylph);
+
+    assert(d_sylph_norm_to_unison(1.0f) == 7);
+    assert(d_sylph_norm_to_unison(0.0f) == 1);
+    assert(d_sylph_norm_to_oct(0.5f) == 0);
+
+    float[512] sy_l, sy_r;
+    SylphMidiEvent[1] sy_ev = [SylphMidiEvent(60, 1.0f, true)];
+    d_sylph_process(*sylph, sy_l.ptr, sy_r.ptr, 512, 48000.0, sy_ev.ptr, 1);
+    float sy_max = 0.0f;
+    float stereo_diff = 0.0f;
+    foreach (idx; 0 .. 512) {
+        float al = sy_l[idx] >= 0 ? sy_l[idx] : -sy_l[idx];
+        if (al > sy_max) sy_max = al;
+        float df = sy_l[idx] - sy_r[idx];
+        stereo_diff += df >= 0 ? df : -df;
+    }
+    assert(sy_max > 0.05f, "Sylph Trance Lead default should produce strong audio");
+    assert(stereo_diff > 0.5f, "Sylph Trance Lead unison+chorus should be wide stereo");
+
+    // Hard Kick preset: phase-retriggered, tight attack, deterministic phase-locked punch
+    d_sylph_reset(sylph);
+    d_sylph_apply_preset(*sylph, 1);
+    float[512] kick1_l, kick1_r, kick2_l, kick2_r;
+    SylphMidiEvent[1] kev = [SylphMidiEvent(36, 1.0f, true)];
+    d_sylph_process(*sylph, kick1_l.ptr, kick1_r.ptr, 512, 48000.0, kev.ptr, 1);
+    d_sylph_reset(sylph);
+    d_sylph_apply_preset(*sylph, 1);
+    d_sylph_process(*sylph, kick2_l.ptr, kick2_r.ptr, 512, 48000.0, kev.ptr, 1);
+    float kick_peak = 0.0f;
+    foreach (idx; 0 .. 512) {
+        float a = kick1_l[idx] >= 0 ? kick1_l[idx] : -kick1_l[idx];
+        if (a > kick_peak) kick_peak = a;
+    }
+    assert(kick_peak > 0.2f, "Sylph Hard Kick should hit hard");
 }

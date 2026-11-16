@@ -132,6 +132,7 @@ message TimelineClipInfo {
   float fade_out_sec = 12;  // Linear fade-out duration in seconds
   bool muted = 13;          // Clip is muted (bounced-in-place)
   optional int32 pattern_index = 14;
+  bool is_midi = 15;
 }
 
 // Track name metadata.

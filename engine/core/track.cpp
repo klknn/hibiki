@@ -347,6 +347,7 @@ void Track::InsertPreparedTimelineClip(std::unique_ptr<Clip> clip,
       clip->duration_beats;  // In beats for MIDI clips, 0 for audio
   tc->pattern_index = pattern_idx;
   std::vector<float> waveform = clip->waveform_summary;  // copy before move
+  const bool is_midi = (clip->type == Clip::Type::MIDI);
   tc->clip = std::move(clip);
   tc->start_time_sec = start_time_sec;
   // For GUI: use duration_sec if set, otherwise convert duration_beats using
@@ -359,7 +360,7 @@ void Track::InsertPreparedTimelineClip(std::unique_ptr<Clip> clip,
   // Use basename for display name
   hibiki::sendTimelineClipInfo(
       index, clip_idx, basename, path, (float)start_time_sec, duration_for_gui,
-      waveform, false, -1, 0.0f, 0.0f, 0.0f, false, pattern_idx);
+      waveform, false, -1, 0.0f, 0.0f, 0.0f, false, pattern_idx, is_midi);
 }
 
 void Track::AddTimelineClip(const std::string& path, double start_time_sec,

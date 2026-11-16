@@ -2019,9 +2019,10 @@ TEST_F(ProjectTest, BounceProjectAppliesEqStereoSepAndFxMix) {
   gen->track_type = hibiki::Track::TrackType::NORMAL;
   gen->output_track_index = 0;
   gen->volume = 1.0f;
-  gen->pan = 0.8f;          // Distinct L/R amplitudes before stereo sep
+  gen->pan = 0.0f;
   gen->stereo_sep = -1.0f;  // Merge 100% -> must produce mono L == R!
   ASSERT_GE(gen->LoadPlugin("builtin://3xosc", 0, state.sample_rate).index, 0);
+  gen->plugins[0]->setParameterValue(4, 1.0);  // Osc1 Pan hard right (L != R)
 
   hibiki::SequencerChannel ch;
   ch.channel_index = 0;
@@ -2056,6 +2057,21 @@ TEST_F(ProjectTest, BounceProjectAppliesEqStereoSepAndFxMix) {
   EXPECT_LT(max_diff, 1e-4f)
       << "stereo_sep = -1.0f should merge L and R into identical mono signal";
   std::remove(out_wav.c_str());
+
+  // Also verify track->pan applies AFTER stereo_sep (panning mono bus right)
+  gen->pan = 0.8f;
+  const std::string pan_wav = "test_bounce_post_sep_pan.wav";
+  hibiki::BounceProject(state, pan_wav);
+  std::vector<float> pan_audio;
+  ASSERT_THAT(hibiki::LoadWav(pan_wav, pan_audio, nch, dur), IsOk());
+  float peakL = 0.0f, peakR = 0.0f;
+  for (size_t i = 0; i + 1 < pan_audio.size(); i += 2) {
+    peakL = std::max(peakL, std::abs(pan_audio[i]));
+    peakR = std::max(peakR, std::abs(pan_audio[i + 1]));
+  }
+  EXPECT_GT(peakR, peakL * 2.0f) << "Track pan=0.8 after stereo_sep=-1.0 "
+                                    "should pan right in BounceProject";
+  std::remove(pan_wav.c_str());
 }
 
 TEST_F(ProjectTest, SaveClearLoadAndUndoRedoFullProjectRoundTrip) {
@@ -2245,6 +2261,198 @@ TEST_F(ProjectTest, PatternLoopFourBeatNoteAtTickZeroIsAudible) {
       << "A full 4-beat (1-bar) note at tick 0 in a 16-step pattern must not "
          "self-cancel on beat 0 via fmod";
   std::remove(out_wav.c_str());
+}
+
+TEST_F(ProjectTest, ReverseOrderBusRoutingAndBounceParity) {
+  hibiki::ProjectState state;
+  state.bpm = 120.0;
+  state.sample_rate = 44100.0;
+  state.playback_mode = hibiki::SequencerPlaybackMode::PAT;
+  state.selected_pattern_index = 0;
+
+  // Bus 5 (GROUP) -> Bus 2 (GROUP) -> Master (reverse track index order!)
+  auto* bus2 = hibiki::GetOrCreateTrack(state, 2);
+  bus2->track_type = hibiki::Track::TrackType::GROUP;
+  bus2->volume = 1.0f;
+
+  auto* bus5 = hibiki::GetOrCreateTrack(state, 5);
+  bus5->track_type = hibiki::Track::TrackType::GROUP;
+  bus5->output_track_index = 2;
+  bus5->volume = 1.0f;
+
+  auto* gen = hibiki::GetOrCreateTrack(state, 100);
+  gen->track_type = hibiki::Track::TrackType::NORMAL;
+  gen->output_track_index = 5;
+  gen->volume = 0.8f;
+  ASSERT_GE(gen->LoadPlugin("builtin://3xosc", 0, state.sample_rate).index, 0);
+  gen->plugins[0]->setParameterValue(17, 1.0);  // P_GAIN_S
+
+  hibiki::SequencerChannel ch;
+  ch.channel_index = 0;
+  ch.name = "3x Osc";
+  ch.uri = "builtin://3xosc";
+  ch.mixer_insert = 5;
+  state.sequencer_channels.push_back(ch);
+
+  hibiki::SequencerPattern pat;
+  pat.pattern_index = 0;
+  pat.length_steps = 16;
+  hibiki::ChannelPatternStepData cpd;
+  hibiki::pb::core::MidiEvent ev;
+  ev.set_tick(0);
+  ev.set_pitch(60);
+  ev.set_duration_ticks(480);
+  ev.set_velocity(120);
+  cpd.notes.push_back(ev);
+  pat.channels[0] = cpd;
+  state.sequencer_patterns.push_back(pat);
+
+  const std::string out_wav = "test_reverse_bus_order.wav";
+  hibiki::BounceProject(state, out_wav);
+
+  std::vector<float> audio;
+  int nch = 0;
+  double dur = 0.0;
+  ASSERT_THAT(hibiki::LoadWav(out_wav, audio, nch, dur), IsOk());
+  float peak = 0.0f;
+  for (float s : audio) peak = std::max(peak, std::abs(s));
+  EXPECT_GT(peak, 0.02f) << "Reverse-order bus routing (Bus 5 -> Bus 2 -> "
+                            "Master) must remain audible";
+
+  // Verify Track mute is respected by unified BounceProject
+  bus5->muted = true;
+  const std::string muted_wav = "test_reverse_bus_muted.wav";
+  hibiki::BounceProject(state, muted_wav);
+  std::vector<float> muted_audio;
+  ASSERT_THAT(hibiki::LoadWav(muted_wav, muted_audio, nch, dur), IsOk());
+  float muted_peak = 0.0f;
+  for (float s : muted_audio) muted_peak = std::max(muted_peak, std::abs(s));
+  EXPECT_LT(muted_peak, 1e-4f)
+      << "Muting intermediate GROUP bus in BounceProject must silence output";
+
+  std::remove(out_wav.c_str());
+  std::remove(muted_wav.c_str());
+}
+
+TEST_F(ProjectTest, ProjectScalarSettingsSaveLoadAnd32StepRoundTrip) {
+  hibiki::ProjectState state;
+  state.bpm = 128.0;
+  state.sample_rate = 44100.0;
+  state.metronome_enabled = true;
+  state.master_volume = 0.61f;
+  state.master_pitch = 3.0f;
+  state.loop_enabled = true;
+  state.loop_start_sec = 1.5;
+  state.loop_end_sec = 5.25;
+
+  hibiki::SequencerChannel ch;
+  ch.channel_index = 0;
+  ch.name = "Lead";
+  ch.uri = "builtin://3xosc";
+  state.sequencer_channels.push_back(ch);
+
+  hibiki::SequencerPattern pat;
+  pat.pattern_index = 0;
+  pat.length_steps = 32;
+  hibiki::ChannelPatternStepData cpd;
+  cpd.steps[24] = true;
+  cpd.step_pans[24] = -0.9f;
+  pat.channels[0] = cpd;
+  state.sequencer_patterns.push_back(pat);
+
+  const std::string hbk = "test_scalar_32step_roundtrip.hbk";
+  ASSERT_THAT(hibiki::SaveProject(state, hbk), IsOk());
+
+  hibiki::ProjectState loaded;
+  loaded.sample_rate = 44100.0;
+  ASSERT_THAT(hibiki::LoadProject(loaded, hbk), IsOk());
+  EXPECT_TRUE(loaded.metronome_enabled.load());
+  EXPECT_FLOAT_EQ(loaded.master_volume.load(), 0.61f);
+  EXPECT_FLOAT_EQ(loaded.master_pitch.load(), 3.0f);
+  EXPECT_TRUE(loaded.loop_enabled.load());
+  EXPECT_DOUBLE_EQ(loaded.loop_start_sec.load(), 1.5);
+  EXPECT_DOUBLE_EQ(loaded.loop_end_sec.load(), 5.25);
+  ASSERT_EQ(loaded.sequencer_patterns.size(), 1u);
+  EXPECT_EQ(loaded.sequencer_patterns[0].length_steps, 32);
+  EXPECT_TRUE(loaded.sequencer_patterns[0].channels[0].steps[24]);
+  EXPECT_FLOAT_EQ(loaded.sequencer_patterns[0].channels[0].step_pans[24],
+                  -0.9f);
+  std::remove(hbk.c_str());
+
+  // Legacy project proto without optional master_volume preserves default 0.82f
+  hibiki::pb::core::Project legacy_proto;
+  legacy_proto.set_bpm(120.0f);
+  std::string raw;
+  ASSERT_TRUE(legacy_proto.SerializeToString(&raw));
+  std::vector<uint8_t> bytes(raw.begin(), raw.end());
+  hibiki::ProjectState legacy_state;
+  legacy_state.sample_rate = 44100.0;
+  ASSERT_THAT(hibiki::ApplyProjectState(legacy_state, bytes), IsOk());
+  EXPECT_FLOAT_EQ(legacy_state.master_volume.load(), 0.82f);
+}
+
+TEST_F(ProjectTest, SequencerStepPanShiftsLeftRightRms) {
+  auto bounceWithPan = [](float pan_val, const std::string& wav) {
+    hibiki::ProjectState state;
+    state.bpm = 120.0;
+    state.sample_rate = 44100.0;
+    state.playback_mode = hibiki::SequencerPlaybackMode::PAT;
+    state.selected_pattern_index = 0;
+
+    auto* gen = hibiki::GetOrCreateTrack(state, 100);
+    gen->track_type = hibiki::Track::TrackType::NORMAL;
+    gen->output_track_index = 0;
+    gen->volume = 1.0f;
+    ASSERT_GE(gen->LoadPlugin("builtin://3xosc", 0, state.sample_rate).index,
+              0);
+    gen->plugins[0]->setParameterValue(17, 1.0);
+
+    hibiki::SequencerChannel ch;
+    ch.channel_index = 0;
+    ch.name = "3x Osc";
+    ch.uri = "builtin://3xosc";
+    ch.mixer_insert = 0;
+    state.sequencer_channels.push_back(ch);
+
+    hibiki::SequencerPattern pat;
+    pat.pattern_index = 0;
+    pat.length_steps = 16;
+    hibiki::ChannelPatternStepData cpd;
+    cpd.steps[0] = true;
+    cpd.step_pans[0] = pan_val;
+    pat.channels[0] = cpd;
+    state.sequencer_patterns.push_back(pat);
+
+    hibiki::BounceProject(state, wav);
+  };
+
+  auto computeLrRms = [](const std::string& wav) -> std::pair<double, double> {
+    std::vector<float> audio;
+    int nch = 0;
+    double dur = 0.0;
+    EXPECT_THAT(hibiki::LoadWav(wav, audio, nch, dur), IsOk());
+    double sumL = 0.0, sumR = 0.0;
+    size_t frames = audio.size() / 2;
+    for (size_t i = 0; i + 1 < audio.size(); i += 2) {
+      sumL += static_cast<double>(audio[i]) * audio[i];
+      sumR += static_cast<double>(audio[i + 1]) * audio[i + 1];
+    }
+    std::remove(wav.c_str());
+    return {std::sqrt(sumL / std::max<size_t>(1, frames)),
+            std::sqrt(sumR / std::max<size_t>(1, frames))};
+  };
+
+  bounceWithPan(-1.0f, "test_step_pan_left.wav");
+  auto [l1, r1] = computeLrRms("test_step_pan_left.wav");
+  EXPECT_GT(l1, 0.01);
+  EXPECT_GT(l1, r1 * 10.0)
+      << "step_pans[0]=-1.0 must isolate note to Left channel";
+
+  bounceWithPan(1.0f, "test_step_pan_right.wav");
+  auto [l2, r2] = computeLrRms("test_step_pan_right.wav");
+  EXPECT_GT(r2, 0.01);
+  EXPECT_GT(r2, l2 * 10.0)
+      << "step_pans[0]=+1.0 must isolate note to Right channel";
 }
 
 }  // namespace hibiki

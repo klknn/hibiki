@@ -683,7 +683,8 @@ Request makeAutomationAddLaneRequest(int trackIdx, int pluginIdx = 0, uint param
     return req;
 }
 
-Request makeAutomationAddClipRequest(int trackIdx, int laneIdx, float startSec, float durBeats) @safe {
+Request makeAutomationAddClipRequest(int trackIdx, int laneIdx, float startSec, float durBeats,
+                                     string clipName = "") @safe {
     Request req;
     AutomationCmd cmd;
     cmd.action = AutomationCmd.Action.ACTION_ADD_CLIP;
@@ -693,6 +694,7 @@ Request makeAutomationAddClipRequest(int trackIdx, int laneIdx, float startSec, 
     cmd.target = target;
     cmd.start_time_sec = startSec;
     cmd.duration_beats = durBeats;
+    if (clipName.length > 0) cmd.clip_name = clipName;
     req.automation.set(cmd);
     return req;
 }
@@ -902,6 +904,24 @@ Request makeProjectCollectFilesRequest(string dirPath = "") @safe {
     cmd.action = ProjectCmd.Action.ACTION_COLLECT_FILES;
     cmd.path = dirPath;
     req.project.set(cmd);
+    return req;
+}
+
+Request makeClearHistoryRequest() @safe {
+    Request req;
+    ProjectCmd cmd;
+    cmd.action = ProjectCmd.Action.ACTION_CLEAR_HISTORY;
+    req.project.set(cmd);
+    return req;
+}
+
+Request makeSequencerPatternLengthRequest(int patIdx, int lengthSteps) @safe {
+    Request req;
+    SequencerCmd cmd;
+    cmd.action = SequencerCmd.Action.ACTION_SET_PATTERN_LENGTH;
+    cmd.pattern_index = cast(uint)patIdx;
+    cmd.length_steps = lengthSteps;
+    req.sequencer.set(cmd);
     return req;
 }
 

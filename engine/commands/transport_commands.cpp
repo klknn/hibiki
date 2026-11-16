@@ -124,7 +124,8 @@ void handleTransportCmd(const pb::commands::TransportCmd& cmd,
             sendTimelineClipInfo(
                 pair.first, clip_idx, filename, "",
                 (float)state.record_start_sec, (float)duration_sec,
-                track->timeline_clips[clip_idx]->clip->waveform_summary);
+                track->timeline_clips[clip_idx]->clip->waveform_summary, false,
+                -1, 0.0f, 0.0f, 0.0f, false, -1, true);
 
             // If this is a Channel Rack generator track (>= 100), also append
             // recorded notes into the active SequencerPattern so Piano Roll

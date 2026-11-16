@@ -69,6 +69,7 @@ class BuiltinSampler : public IPlugin {
     bool active = false;
     int note = -1;
     float velocity = 0;
+    float pan = 0.0f;
     double position = 0;
     Adsr gain_env;
     Adsr filter_env;
@@ -76,7 +77,7 @@ class BuiltinSampler : public IPlugin {
     uint64_t age = 0;
   };
 
-  int noteOn(int pitch, float velocity);
+  int noteOn(int pitch, float velocity, float pan = 0.0f);
   void noteOff(int pitch);
   double getDefaultValue(int id) const;
   void generateWaveformSummary();

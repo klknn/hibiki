@@ -208,6 +208,12 @@ struct Project {
     @ProtoField(7) int selected_pattern_index = 0;
     @ProtoField(8) SequencerChannel[] channels;
     @ProtoField(9) SequencerPattern[] patterns;
+    @ProtoField(10) bool metronome_enabled = false;
+    @ProtoField(11) ProtoOptional!(float) master_volume;
+    @ProtoField(12) float master_pitch = 0.0f;
+    @ProtoField(13) bool loop_enabled = false;
+    @ProtoField(14) double loop_start_sec = 0.0;
+    @ProtoField(15) double loop_end_sec = 0.0;
 }
 
 struct EntityRef {

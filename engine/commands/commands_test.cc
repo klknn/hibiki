@@ -1065,4 +1065,122 @@ TEST_F(CommandsTest, SetBpmDoesNotEmitClearProject) {
       << "ACTION_SET_BPM should update timeline clip durations";
 }
 
+TEST_F(CommandsTest, RejectsRoutingCyclesOnOutputGroupAndAux) {
+  auto* t1 = hibiki::GetOrCreateTrack(state, 1);
+  t1->track_type = hibiki::Track::TrackType::GROUP;
+  auto* t2 = hibiki::GetOrCreateTrack(state, 2);
+  t2->track_type = hibiki::Track::TrackType::GROUP;
+  auto* t3 = hibiki::GetOrCreateTrack(state, 3);
+  t3->track_type = hibiki::Track::TrackType::AUX;
+
+  // Valid chain: 1 -> 2
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.set_target_track_index(2);
+    hibiki::handleTrackCmd(cmd, state, history);
+    EXPECT_EQ(t1->output_track_index, 2);
+  }
+
+  // Self-cycle 1 -> 1 rejected
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.set_target_track_index(1);
+    hibiki::handleTrackCmd(cmd, state, history);
+    EXPECT_EQ(t1->output_track_index, 2);
+  }
+
+  // Indirect cycle 2 -> 1 rejected
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING);
+    cmd.mutable_target()->set_track_index(2);
+    cmd.set_target_track_index(1);
+    hibiki::handleTrackCmd(cmd, state, history);
+    EXPECT_EQ(t2->output_track_index, -1);
+  }
+
+  // Group parent cycle 2 -> 1 rejected
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_GROUP_PARENT);
+    cmd.mutable_target()->set_track_index(2);
+    cmd.set_target_track_index(1);
+    hibiki::handleTrackCmd(cmd, state, history);
+    EXPECT_EQ(t2->group_parent_index, -1);
+  }
+
+  // Aux send cycle 2 -> 3 then 3 -> 2 rejected
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_AUX_SEND);
+    cmd.mutable_target()->set_track_index(2);
+    cmd.set_aux_track_index(3);
+    cmd.set_send_level(0.5f);
+    hibiki::handleTrackCmd(cmd, state, history);
+    ASSERT_EQ(t2->aux_sends.size(), 1u);
+
+    hibiki::pb::commands::TrackCmd bad;
+    bad.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING);
+    bad.mutable_target()->set_track_index(3);
+    bad.set_target_track_index(2);
+    hibiki::handleTrackCmd(bad, state, history);
+    EXPECT_EQ(t3->output_track_index, -1);
+  }
+}
+
+TEST_F(CommandsTest, SequencerCmdUndoRedo32StepsAndClearHistory) {
+  // 1. Set pattern length = 32 steps
+  {
+    hibiki::pb::commands::SequencerCmd cmd;
+    cmd.set_action(
+        hibiki::pb::commands::SequencerCmd::ACTION_SET_PATTERN_LENGTH);
+    cmd.set_pattern_index(0);
+    cmd.set_length_steps(32);
+    hibiki::handleSequencerCmd(cmd, state, history);
+    ASSERT_FALSE(state.sequencer_patterns.empty());
+    EXPECT_EQ(state.sequencer_patterns[0].length_steps, 32);
+  }
+
+  // 2. Toggle step 24 ON
+  {
+    hibiki::pb::commands::SequencerCmd cmd;
+    cmd.set_action(hibiki::pb::commands::SequencerCmd::ACTION_SET_STEP);
+    cmd.set_pattern_index(0);
+    cmd.set_channel_index(0);
+    cmd.set_step_index(24);
+    cmd.set_enabled(true);
+    hibiki::handleSequencerCmd(cmd, state, history);
+    EXPECT_TRUE(state.sequencer_patterns[0].channels[0].steps[24]);
+  }
+
+  // 3. Undo step 24 toggle -> false, then Redo -> true
+  {
+    hibiki::pb::commands::ProjectCmd undo_cmd;
+    undo_cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_UNDO);
+    hibiki::handleProjectCmd(undo_cmd, state, history);
+    EXPECT_FALSE(state.sequencer_patterns[0].channels[0].steps[24]);
+
+    hibiki::pb::commands::ProjectCmd redo_cmd;
+    redo_cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_REDO);
+    hibiki::handleProjectCmd(redo_cmd, state, history);
+    EXPECT_TRUE(state.sequencer_patterns[0].channels[0].steps[24]);
+  }
+
+  // 4. Clear history -> Undo must no longer revert step 24
+  {
+    hibiki::pb::commands::ProjectCmd clr_cmd;
+    clr_cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_CLEAR_HISTORY);
+    hibiki::handleProjectCmd(clr_cmd, state, history);
+
+    hibiki::pb::commands::ProjectCmd undo_cmd;
+    undo_cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_UNDO);
+    hibiki::handleProjectCmd(undo_cmd, state, history);
+    EXPECT_TRUE(state.sequencer_patterns[0].channels[0].steps[24]);
+  }
+}
+
 }  // namespace hibiki

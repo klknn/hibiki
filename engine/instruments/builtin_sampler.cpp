@@ -87,7 +87,7 @@ void BuiltinSampler::process(float** /*inputs*/, float** outputs,
     while (event_idx < events.size() && events[event_idx].sampleOffset <= i) {
       const auto& ev = events[event_idx];
       if (ev.isNoteOn && ev.velocity > 0) {
-        int target = noteOn(ev.pitch, ev.velocity);
+        int target = noteOn(ev.pitch, ev.velocity, ev.pan);
         if (target >= 0 && target < kMaxVoices) {
           pitch_ratios[target] =
               std::pow(2.0f, (voices_[target].note - root_note) / 12.0f) *
@@ -150,8 +150,10 @@ void BuiltinSampler::process(float** /*inputs*/, float** outputs,
       sL = voice.filterL.process(sL);
       sR = voice.filterR.process(sR);
 
-      outL[i] += sL * gain_val * voice.velocity * master_vol;
-      outR[i] += sR * gain_val * voice.velocity * master_vol;
+      float balL = std::min(1.0f, 1.0f - voice.pan);
+      float balR = std::min(1.0f, 1.0f + voice.pan);
+      outL[i] += sL * gain_val * voice.velocity * master_vol * balL;
+      outR[i] += sR * gain_val * voice.velocity * master_vol * balR;
     }
   }
 }
@@ -209,7 +211,7 @@ bool BuiltinSampler::isInstrument() const { return true; }
 
 // --- Private ---
 
-int BuiltinSampler::noteOn(int pitch, float velocity) {
+int BuiltinSampler::noteOn(int pitch, float velocity, float pan) {
   int target = -1;
   for (int i = 0; i < kMaxVoices; ++i) {
     if (!voices_[i].active && voices_[i].gain_env.isIdle()) {
@@ -232,6 +234,7 @@ int BuiltinSampler::noteOn(int pitch, float velocity) {
   v.active = true;
   v.note = pitch;
   v.velocity = velocity;
+  v.pan = std::clamp(pan, -1.0f, 1.0f);
   v.position = 0;
   v.age = ++voice_counter_;
   v.filterL.reset();

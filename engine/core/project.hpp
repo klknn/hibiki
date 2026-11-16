@@ -15,11 +15,12 @@ namespace hibiki {
 enum class SequencerPlaybackMode { PAT = 0, SONG = 1 };
 
 struct ChannelPatternStepData {
-  std::vector<bool> steps = std::vector<bool>(16, false);
-  std::vector<float> step_velocities = std::vector<float>(16, 0.78f);
-  std::vector<float> step_pitches = std::vector<float>(16, 0.0f);
-  std::vector<float> step_pans = std::vector<float>(16, 0.0f);
-  std::vector<float> step_shifts = std::vector<float>(16, 0.0f);
+  static constexpr int kMaxSteps = 64;
+  std::vector<bool> steps = std::vector<bool>(kMaxSteps, false);
+  std::vector<float> step_velocities = std::vector<float>(kMaxSteps, 0.78f);
+  std::vector<float> step_pitches = std::vector<float>(kMaxSteps, 0.0f);
+  std::vector<float> step_pans = std::vector<float>(kMaxSteps, 0.0f);
+  std::vector<float> step_shifts = std::vector<float>(kMaxSteps, 0.0f);
   std::vector<hibiki::pb::core::MidiEvent> notes;
 };
 
@@ -129,6 +130,63 @@ absl::Status ApplyProjectState(ProjectState& state,
                                const std::vector<uint8_t>& data);
 void SyncProjectToGui(const ProjectState& state);
 double GetProjectDuration(const ProjectState& state);
+struct RenderProjectWorkspace {
+  static constexpr int kMaxBlockSize = 4096;
+  static constexpr int kMaxBusTracks = 512;
+  std::vector<double> bufferL;
+  std::vector<double> bufferR;
+  std::vector<double> dryBufL;
+  std::vector<double> dryBufR;
+  std::vector<float> plugBufL;
+  std::vector<float> plugBufR;
+  std::vector<double> mixBufferL;
+  std::vector<double> mixBufferR;
+  std::vector<MidiNoteEvent> clipMidiEvents;
+  std::vector<MidiNoteEvent> timelineMidiEvents;
+  std::vector<MidiNoteEvent> allEvents;
+  std::vector<float> input_block;
+  int bus_indices[kMaxBusTracks]{};
+  int bus_indeg[kMaxBusTracks]{};
+  int bus_out[kMaxBusTracks]{};
+  int bus_queue[kMaxBusTracks]{};
+  bool bus_visited[kMaxBusTracks]{};
+
+  void reserve(int block_size) {
+    const int n = std::min(block_size, kMaxBlockSize);
+    bufferL.assign(n, 0.0);
+    bufferR.assign(n, 0.0);
+    dryBufL.assign(n, 0.0);
+    dryBufR.assign(n, 0.0);
+    plugBufL.assign(n, 0.0f);
+    plugBufR.assign(n, 0.0f);
+    mixBufferL.assign(n, 0.0);
+    mixBufferR.assign(n, 0.0);
+    clipMidiEvents.reserve(512);
+    timelineMidiEvents.reserve(512);
+    allEvents.reserve(512);
+    input_block.reserve(n * 8);
+  }
+};
+
+struct RenderBlockOptions {
+  bool capture_live_inputs = false;
+  bool update_meters = false;
+  bool render_metronome = false;
+  double cur_bpm = 120.0;
+  double cur_playhead_sec = 0.0;
+  float sample_rate = 44100.0f;
+  bool cur_playing = false;
+  bool cur_recording = false;
+};
+
+// Renders one stereo block of the entire project (Pass 1 Normal -> Pass 2
+// topological Group/Aux DAG -> Metronome -> Pass 3 Master -> Global Volume)
+// into ws.mixBufferL / ws.mixBufferR. Caller must hold state.tracks_mutex in
+// live playback (or own an isolated ProjectState during offline bounce).
+void RenderProjectAudioBlock(ProjectState& state, HostProcessContext& context,
+                             RenderProjectWorkspace& ws, int block_size,
+                             const RenderBlockOptions& opts);
+
 void BounceProject(ProjectState& live_state, const std::string& path);
 // Bounce a single track's clip range + tail to a WAV file (no mutex held).
 // timeline_clips: deep-copied from live state so MIDI events are preserved.

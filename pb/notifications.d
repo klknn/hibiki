@@ -100,6 +100,7 @@ struct TimelineClipInfo {
     @ProtoField(12) float fade_out_sec = 0.0f;
     @ProtoField(13) bool muted = false;
     @ProtoField(14) ProtoOptional!(int) pattern_index;
+    @ProtoField(15) bool is_midi = false;
 }
 
 struct TrackInfo {

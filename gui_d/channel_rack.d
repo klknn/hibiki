@@ -23,7 +23,9 @@ struct ChannelRackMetrics {
     int graphAreaTop;
     int stepAreaLeft;
     int stepW;
+    int patSteps;
     Rect filterRc;
+    Rect patLenRc;
     Rect graphBtnRc;
     Rect addBtnRc;
 }
@@ -37,15 +39,22 @@ ChannelRackMetrics computeChannelRackMetrics(Rect rc, const(TransportModel)* mod
     m.bodyTop = rc.top + m.toolbarH + dp(4);
     m.graphAreaTop = (model && model.graphEditorOpen) ? (rc.bottom - m.graphH) : rc.bottom;
     m.stepAreaLeft = rc.left + m.leftControlsW;
+    m.patSteps = model ? model.activePatternLengthSteps() : 16;
     const int stepAreaW = rc.right - m.stepAreaLeft - dp(10);
-    m.stepW = (stepAreaW > dp(160)) ? (stepAreaW / 16) : dp(14);
+    if (m.patSteps <= 16) {
+        m.stepW = (stepAreaW > dp(160)) ? (stepAreaW / 16) : dp(14);
+    } else {
+        const int scaled = stepAreaW / m.patSteps;
+        m.stepW = (scaled > dp(6)) ? scaled : dp(6);
+    }
     m.filterRc = Rect(rc.left + dp(8), rc.top + dp(4), rc.left + dp(68), rc.top + m.toolbarH - dp(4));
+    m.patLenRc = Rect(rc.left + dp(172), rc.top + dp(4), rc.left + dp(230), rc.top + m.toolbarH - dp(4));
     m.graphBtnRc = Rect(rc.right - dp(60), rc.top + dp(4), rc.right - dp(34), rc.top + m.toolbarH - dp(4));
     m.addBtnRc = Rect(rc.right - dp(34), rc.top + dp(4), rc.right - dp(8), rc.top + m.toolbarH - dp(4));
     return m;
 }
 
-/// Renders the FL Studio 2026 Channel Rack, Pan/Vol knobs, 16-Step Sequencer, and Graph Editor.
+/// Renders the FL Studio 2026 Channel Rack, Pan/Vol knobs, 16/32/64-Step Sequencer, and Graph Editor.
 void drawChannelRackCanvas(
     DrawBuf buf,
     Rect rc,
@@ -84,6 +93,10 @@ void drawChannelRackCanvas(
                       toUTF32(format("SWING %d%%", cast(int)(model.swingAmount * 100.0f + 0.5f))),
                       pal.fgMuted);
 
+    // Pattern step count selector (16 / 32 / 64)
+    drawThemeCard(buf, m.patLenRc, pal.bgLcd, pal.borderSubtle, pal, 1.5f, true);
+    drawCenteredText(buf, monoFnt, m.patLenRc, toUTF32(format("%d ST", m.patSteps)), pal.accentCyan);
+
     // Unified flush Graph Editor & Add Channel strip on right
     Rect crToolsRc = Rect(m.graphBtnRc.left, m.graphBtnRc.top, m.addBtnRc.right, m.addBtnRc.bottom);
     drawThemeCard(buf, crToolsRc, pal.bgControl, COLOR_TRANSPARENT, pal, 1.5f, false);
@@ -99,7 +112,7 @@ void drawChannelRackCanvas(
 
     // Playhead step indicator strip
     const int activeStep = model.currentStepIndex();
-    if (activeStep >= 0 && activeStep < 16) {
+    if (activeStep >= 0 && activeStep < m.patSteps) {
         const int sx0 = m.stepAreaLeft + activeStep * m.stepW + dp(2);
         buf.fillRect(Rect(sx0, tbRc.bottom + dp(1), sx0 + m.stepW - dp(4), tbRc.bottom + dp(4)), pal.accentGreen);
     }
@@ -153,10 +166,10 @@ void drawChannelRackCanvas(
         drawVCenteredText(buf, boldFnt, pillRc.left + dp(9), pillRc,
                           toUTF32(truncateLabel(ch.name, 14)), contrastTextColor(ch.color));
 
-        // 16-Step Sequencer Pads (4 groups of 4: cool slate vs warm muted slate)
-        foreach (s; 0 .. 16) {
+        // 16/32/64-Step Sequencer Pads (4 groups of 4: cool slate vs warm muted slate)
+        foreach (s; 0 .. m.patSteps) {
             const int sx0 = m.stepAreaLeft + s * m.stepW + dp(1);
-            const int sx1 = sx0 + m.stepW - dp(3);
+            const int sx1 = sx0 + m.stepW - (m.patSteps > 16 ? dp(2) : dp(3));
             const bool oddGroup = ((s / 4) % 2) == 1;
             const bool active = ch.steps[s];
             const uint padCol = active
@@ -202,7 +215,7 @@ void drawChannelRackCanvas(
                              mAct ? pal.bgLcd : pal.fgText);
         }
 
-        // Selected channel's 16 vertical parameter bars aligned with steps above
+        // Selected channel's vertical parameter bars aligned with steps above
         const(ChannelState)* selCh = null;
         foreach (const ref c; model.channels) {
             if (c.index == model.selectedChannelIndex) {
@@ -215,9 +228,9 @@ void drawChannelRackCanvas(
             const int barsBot = gRc.bottom - dp(6);
             const int barsH = barsBot - barsTop;
             if (barsH > dp(8)) {
-                foreach (s; 0 .. 16) {
-                    const int sx0 = m.stepAreaLeft + s * m.stepW + dp(2);
-                    const int sx1 = sx0 + m.stepW - dp(5);
+                foreach (s; 0 .. m.patSteps) {
+                    const int sx0 = m.stepAreaLeft + s * m.stepW + dp(1);
+                    const int sx1 = sx0 + m.stepW - (m.patSteps > 16 ? dp(2) : dp(5));
                     drawThemeCard(buf, Rect(sx0, barsTop, sx1, barsBot), pal.bgLcd, COLOR_TRANSPARENT, pal, 1.5f, true);
 
                     float val = 0.5f;
@@ -265,7 +278,7 @@ void drawChannelRackCanvas(
     }
 }
 
-/// Interactive FL Studio 2026 Channel Rack & 16-Step Sequencer Widget.
+/// Interactive FL Studio 2026 Channel Rack & 16/32/64-Step Sequencer Widget.
 class ChannelRackWidget : Widget {
     private TransportModel* model_;
 
@@ -288,6 +301,7 @@ class ChannelRackWidget : Widget {
     void delegate(int channelIdx, float pan) onPanChannel;
     void delegate(float swing) onSwingChanged;
     void delegate(int channelIdx, int stepIdx, int graphParam, float value) onStepGraphChanged;
+    void delegate(int patternIdx, int lengthSteps) onPatternLengthChange;
     void delegate() onAddChannelPrompt;
 
     this(string id, TransportModel* model) {
@@ -346,6 +360,20 @@ class ChannelRackWidget : Widget {
                     invalidate();
                     return true;
                 }
+                if (m.patLenRc.isPointInside(event.x, event.y)) {
+                    const int curLen = m.patSteps;
+                    const int nextLen = (curLen <= 16) ? 32 : ((curLen <= 32) ? 64 : 16);
+                    if (model_.selectedPatternIndex >= 0 &&
+                        model_.selectedPatternIndex < cast(int)model_.patterns.length) {
+                        model_.patterns[model_.selectedPatternIndex].lengthSteps = nextLen;
+                    }
+                    model_.hintText = format("Pattern length: %d steps (%d bars)", nextLen, nextLen / 16);
+                    if (onPatternLengthChange !is null) {
+                        onPatternLengthChange(model_.selectedPatternIndex, nextLen);
+                    }
+                    invalidate();
+                    return true;
+                }
                 if (event.x >= _pos.left + dp(76) && event.x <= _pos.left + dp(170)) {
                     if (event.button == MouseButton.Right) {
                         model_.swingAmount = 0.0f;
@@ -388,7 +416,7 @@ class ChannelRackWidget : Widget {
                     return true;
                 }
                 dragTarget_ = DragTarget.GRAPH_BAR;
-                updateGraphBarAt(event.x, event.y, m.stepAreaLeft, m.stepW, m.graphAreaTop);
+                updateGraphBarAt(event.x, event.y, m.stepAreaLeft, m.stepW, m.graphAreaTop, m.patSteps);
                 return true;
             }
 
@@ -474,9 +502,9 @@ class ChannelRackWidget : Widget {
                 return true;
             }
 
-            // 16-Step Sequencer Pad
+            // Step Sequencer Pad (16 / 32 / 64)
             const int stepIdx = (event.x - m.stepAreaLeft) / m.stepW;
-            if (stepIdx >= 0 && stepIdx < 16) {
+            if (stepIdx >= 0 && stepIdx < m.patSteps) {
                 dragTarget_ = DragTarget.STEP_PAINT;
                 dragChannelArrIdx_ = visIdx[visRow];
                 if (event.button == MouseButton.Right) {
@@ -541,7 +569,7 @@ class ChannelRackWidget : Widget {
                 case DragTarget.STEP_PAINT:
                     if (dragChannelArrIdx_ >= 0 && dragChannelArrIdx_ < cast(int)model_.channels.length) {
                         const int stepIdx = (event.x - m.stepAreaLeft) / m.stepW;
-                        if (stepIdx >= 0 && stepIdx < 16 &&
+                        if (stepIdx >= 0 && stepIdx < m.patSteps &&
                             model_.channels[dragChannelArrIdx_].steps[stepIdx] != dragStepPaintVal_) {
                             model_.channels[dragChannelArrIdx_].steps[stepIdx] = dragStepPaintVal_;
                             if (onStepToggle !is null) {
@@ -553,7 +581,7 @@ class ChannelRackWidget : Widget {
                     }
                     return true;
                 case DragTarget.GRAPH_BAR:
-                    updateGraphBarAt(event.x, event.y, m.stepAreaLeft, m.stepW, m.graphAreaTop);
+                    updateGraphBarAt(event.x, event.y, m.stepAreaLeft, m.stepW, m.graphAreaTop, m.patSteps);
                     return true;
             }
         }
@@ -568,10 +596,10 @@ class ChannelRackWidget : Widget {
         return super.onMouseEvent(event);
     }
 
-    private void updateGraphBarAt(int mx, int my, int stepAreaLeft, int stepW, int graphAreaTop) {
+    private void updateGraphBarAt(int mx, int my, int stepAreaLeft, int stepW, int graphAreaTop, int patSteps) {
         if (!model_) return;
         const int stepIdx = (mx - stepAreaLeft) / stepW;
-        if (stepIdx < 0 || stepIdx >= 16) return;
+        if (stepIdx < 0 || stepIdx >= patSteps) return;
         const int barsTop = graphAreaTop + dp(26);
         const int barsBot = _pos.bottom - dp(6);
         if (barsBot <= barsTop) return;
@@ -681,4 +709,18 @@ unittest {
     const float swingBefore = model.swingAmount;
     cr.onMouseEvent(new MouseEvent(MouseAction.Move, MouseButton.None, 0, 92, 0));
     assert(model.swingAmount == swingBefore, "Expected Cancel to clear swing drag");
+
+    // Regression 4: Clicking pattern length pill cycles 16 -> 32 -> 64 and enables step 31
+    int patLenCb = 0;
+    cr.onPatternLengthChange = (int patIdx, int newLen) { patLenCb = newLen; };
+    const auto mLen = computeChannelRackMetrics(Rect(0, 0, 720, 320), &model);
+    cr.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
+                                   cast(short)mLen.patLenRc.middlex, cast(short)mLen.patLenRc.middley));
+    assert(model.activePatternLengthSteps() == 32 && patLenCb == 32,
+           "Expected patLenRc click to cycle pattern length from 16 to 32 steps");
+    cr.scrollRow = 0;
+    const auto m32 = computeChannelRackMetrics(Rect(0, 0, 720, 320), &model);
+    cr.onMouseEvent(new MouseEvent(MouseAction.ButtonDown, MouseButton.Left, MouseFlag.LButton,
+                                   cast(short)(m32.stepAreaLeft + 31 * m32.stepW + 2), cast(short)(m32.bodyTop + 10)));
+    assert(model.channels[0].steps[31], "Expected toggling step 31 in 32-step mode");
 }

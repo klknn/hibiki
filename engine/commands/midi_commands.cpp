@@ -149,10 +149,11 @@ void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
                 (tc->loop_interval_beats > 0)
                     ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
                     : 0.0f;
-            sendTimelineClipInfo(tidx, cidx, clipname, clip->path,
-                                 (float)tc->start_time_sec, duration_for_gui,
-                                 clip->waveform_summary, clip->is_loop,
-                                 tc->alias_source, li_sec_u);
+            sendTimelineClipInfo(
+                tidx, cidx, clipname, clip->path, (float)tc->start_time_sec,
+                duration_for_gui, clip->waveform_summary, clip->is_loop,
+                tc->alias_source, li_sec_u, (float)tc->fade_in_sec,
+                (float)tc->fade_out_sec, tc->muted, tc->pattern_index, true);
             // Propagate MIDI edits to alias clips
             for (int ai = 0; ai < (int)track->timeline_clips.size(); ++ai) {
               if (ai == cidx) continue;
@@ -175,7 +176,9 @@ void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
                                      (float)atc->start_time_sec, alias_dur,
                                      atc->clip->waveform_summary,
                                      atc->clip->is_loop, atc->alias_source,
-                                     ali_sec);
+                                     ali_sec, (float)atc->fade_in_sec,
+                                     (float)atc->fade_out_sec, atc->muted,
+                                     atc->pattern_index, true);
               }
             }
           }

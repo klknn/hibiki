@@ -31,6 +31,7 @@ class BuiltinDrumMachine : public IPlugin {
     std::vector<PadEffect> effects;
     float volume = 1.0f;
     float pan = 0.0f;
+    float note_pan = 0.0f;
     bool mute = false;
     bool solo = false;
     std::string sample_path;

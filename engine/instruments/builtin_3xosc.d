@@ -46,12 +46,14 @@ struct ThreeXOscMidiEvent {
     int pitch;
     float velocity;
     bool is_note_on;
+    float pan = 0.0f;
 }
 
 struct ThreeXOscVoice {
     bool active = false;
     int note = -1;
     float velocity = 0.0f;
+    float pan = 0.0f;
     float base_freq = 0.0f;
     double[kNum3xOsc] phase = 0.0;
     Adsr gain_env;
@@ -77,6 +79,7 @@ struct ThreeXOscDspState {
             v.active = false;
             v.note = -1;
             v.velocity = 0.0f;
+            v.pan = 0.0f;
             v.base_freq = 0.0f;
             v.phase[] = 0.0;
             v.gain_env = Adsr.init;
@@ -131,7 +134,7 @@ nothrow @nogc @trusted float d_3xosc_generate_osc(ThreeXOscWaveform wf, double p
     }
 }
 
-void d_3xosc_note_on(ref ThreeXOscDspState state, int pitch, float velocity) nothrow @nogc @safe {
+void d_3xosc_note_on(ref ThreeXOscDspState state, int pitch, float velocity, float pan = 0.0f) nothrow @nogc @safe {
     int target = -1;
     foreach (i; 0 .. kMax3xOscVoices) {
         if (!state.voices[i].active && state.voices[i].gain_env.isIdle()) {
@@ -154,6 +157,10 @@ void d_3xosc_note_on(ref ThreeXOscDspState state, int pitch, float velocity) not
     v.active = true;
     v.note = pitch;
     v.velocity = velocity;
+    float p = pan;
+    if (p < -1.0f) p = -1.0f;
+    if (p > 1.0f) p = 1.0f;
+    v.pan = p;
     v.base_freq = 440.0f * pow(2.0f, (pitch - 69) / 12.0f);
     v.phase[] = 0.0;
     v.age = ++state.voice_counter;
@@ -256,7 +263,7 @@ void d_3xosc_process(
     foreach (e; 0 .. num_events) {
         const ev = events[e];
         if (ev.is_note_on && ev.velocity > 0) {
-            d_3xosc_note_on(state, ev.pitch, ev.velocity);
+            d_3xosc_note_on(state, ev.pitch, ev.velocity, ev.pan);
         } else {
             d_3xosc_note_off(state, ev.pitch);
         }
@@ -281,6 +288,9 @@ void d_3xosc_process(
     foreach (v_idx; 0 .. kMax3xOscVoices) {
         auto v = &state.voices[v_idx];
         if (!v.active && v.gain_env.isIdle()) continue;
+
+        const float bal_l = v.pan > 0.0f ? (1.0f - v.pan) : 1.0f;
+        const float bal_r = v.pan < 0.0f ? (1.0f + v.pan) : 1.0f;
 
         foreach (i; 0 .. num_samples) {
             float gain_val = v.gain_env.process(sr_f);
@@ -326,8 +336,8 @@ void d_3xosc_process(
             float filt_l = v.filter_l.process(mix_l);
             float filt_r = v.filter_r.process(mix_r);
 
-            out_l[i] += filt_l * gain_val * v.velocity * master_vol;
-            out_r[i] += filt_r * gain_val * v.velocity * master_vol;
+            out_l[i] += filt_l * gain_val * v.velocity * master_vol * bal_l;
+            out_r[i] += filt_r * gain_val * v.velocity * master_vol * bal_r;
         }
     }
 }

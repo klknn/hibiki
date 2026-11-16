@@ -47,7 +47,7 @@ Track* syncChannelGeneratorTrack(ProjectState& state,
 }  // namespace
 
 void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
-                        ProjectState& state, HistoryManager& /*history*/) {
+                        ProjectState& state, HistoryManager& history) {
   const int pat_idx = static_cast<int>(cmd.pattern_index());
   const int ch_idx = static_cast<int>(cmd.channel_index());
 
@@ -74,11 +74,23 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
     }
     case pb::commands::SequencerCmd::ACTION_ADD_PATTERN: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
       SequencerPattern* pat = findOrCreatePattern(state, pat_idx);
       if (!cmd.name().empty()) pat->name = cmd.name();
       if (cmd.color() != 0) pat->color = cmd.color();
-      if (cmd.length_steps() > 0) pat->length_steps = cmd.length_steps();
+      if (cmd.length_steps() > 0) {
+        pat->length_steps = std::clamp(cmd.length_steps(), 1, 64);
+      }
       sendAck("SEQ_ADD_PATTERN", true);
+      break;
+    }
+    case pb::commands::SequencerCmd::ACTION_SET_PATTERN_LENGTH: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
+      SequencerPattern* pat = findOrCreatePattern(state, pat_idx);
+      const int len = std::clamp(cmd.length_steps(), 1, 64);
+      pat->length_steps = len;
+      sendAck("SEQ_SET_PATTERN_LENGTH", true);
       break;
     }
     case pb::commands::SequencerCmd::ACTION_ADD_CHANNEL: {
@@ -97,6 +109,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
       std::unique_ptr<IPlugin> displaced;
       {
         std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        history.pushState(CaptureProjectState(state));
         SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
         if (!cmd.name().empty()) ch->name = cmd.name();
         if (!cmd.uri().empty()) ch->uri = cmd.uri();
@@ -137,6 +150,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_ROUTE: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
       SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
       ch->mixer_insert = cmd.mixer_insert();
       syncChannelGeneratorTrack(state, *ch);
@@ -145,6 +159,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_MUTE: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
       SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
       ch->muted = cmd.enabled();
       syncChannelGeneratorTrack(state, *ch);
@@ -153,6 +168,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_SOLO: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
       SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
       ch->soloed = cmd.enabled();
       syncChannelGeneratorTrack(state, *ch);
@@ -161,6 +177,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_VOLUME: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
       SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
       ch->volume = std::clamp(cmd.value(), 0.0f, 1.5f);
       syncChannelGeneratorTrack(state, *ch);
@@ -169,6 +186,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_PAN: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
       SequencerChannel* ch = findOrCreateChannel(state, ch_idx);
       ch->pan = std::clamp(cmd.value(), -1.0f, 1.0f);
       syncChannelGeneratorTrack(state, *ch);
@@ -177,10 +195,15 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
     }
     case pb::commands::SequencerCmd::ACTION_SET_STEP: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
       SequencerPattern* pat = findOrCreatePattern(state, pat_idx);
       auto& data = pat->channels[ch_idx];
+      if (static_cast<int>(data.steps.size()) <
+          ChannelPatternStepData::kMaxSteps) {
+        data.steps.resize(ChannelPatternStepData::kMaxSteps, false);
+      }
       const int sidx = static_cast<int>(cmd.step_index());
-      if (sidx >= 0 && sidx < 16) {
+      if (sidx >= 0 && sidx < ChannelPatternStepData::kMaxSteps) {
         data.steps[sidx] = cmd.enabled();
       }
       sendAck("SEQ_SET_STEP", true);
@@ -188,10 +211,18 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
     }
     case pb::commands::SequencerCmd::ACTION_SET_STEP_GRAPH: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
       SequencerPattern* pat = findOrCreatePattern(state, pat_idx);
       auto& data = pat->channels[ch_idx];
+      if (static_cast<int>(data.step_velocities.size()) <
+          ChannelPatternStepData::kMaxSteps) {
+        data.step_velocities.resize(ChannelPatternStepData::kMaxSteps, 0.78f);
+        data.step_pitches.resize(ChannelPatternStepData::kMaxSteps, 0.0f);
+        data.step_pans.resize(ChannelPatternStepData::kMaxSteps, 0.0f);
+        data.step_shifts.resize(ChannelPatternStepData::kMaxSteps, 0.0f);
+      }
       const int sidx = static_cast<int>(cmd.step_index());
-      if (sidx >= 0 && sidx < 16) {
+      if (sidx >= 0 && sidx < ChannelPatternStepData::kMaxSteps) {
         switch (cmd.graph_param()) {
           case 0:
             data.step_velocities[sidx] = std::clamp(cmd.value(), 0.0f, 1.0f);
@@ -214,6 +245,7 @@ void handleSequencerCmd(const pb::commands::SequencerCmd& cmd,
     }
     case pb::commands::SequencerCmd::ACTION_SET_CHANNEL_NOTES: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.pushState(CaptureProjectState(state));
       SequencerPattern* pat = findOrCreatePattern(state, pat_idx);
       auto& data = pat->channels[ch_idx];
       data.notes.assign(cmd.notes().begin(), cmd.notes().end());

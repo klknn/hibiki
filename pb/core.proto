@@ -253,6 +253,12 @@ message Project {
   int32 selected_pattern_index = 7;
   repeated SequencerChannel channels = 8;
   repeated SequencerPattern patterns = 9;
+  bool metronome_enabled = 10;
+  optional float master_volume = 11;
+  float master_pitch = 12;
+  bool loop_enabled = 13;
+  double loop_start_sec = 14;
+  double loop_end_sec = 15;
 }
 
 // Generic entity reference — replaces per-message track_index/slot_index.

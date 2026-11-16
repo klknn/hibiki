@@ -79,6 +79,7 @@ void BuiltinDrumMachine::process(float** /*inputs*/, float** outputs,
         pad_events.push_back(pad_ev);
         if (ev.isNoteOn) {
           has_note_on = true;
+          pad.note_pan = std::clamp(ev.pan, -1.0f, 1.0f);
         }
       }
     }
@@ -109,7 +110,7 @@ void BuiltinDrumMachine::process(float** /*inputs*/, float** outputs,
 
     if (play_pad) {
       float vol = pad.volume;
-      float pan = pad.pan;
+      float pan = std::clamp(pad.pan + pad.note_pan, -1.0f, 1.0f);
       float left_gain = vol * (1.0f - std::max(0.0f, pan));
       float right_gain = vol * (1.0f - std::max(0.0f, -pan));
 

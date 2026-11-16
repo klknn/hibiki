@@ -43,6 +43,7 @@ enum EditorTool {
 enum PlaylistClipKind {
     PATTERN,
     AUDIO,
+    MIDI,
     AUTOMATION,
 }
 
@@ -95,8 +96,11 @@ struct TimelineClipState {
     int clipIndex = 0;
     int laneIndex = 0;
     int patternIndex = 0;
+    int pluginIndex = 0;
+    uint paramId = 0;
     PlaylistClipKind kind = PlaylistClipKind.PATTERN;
     string name = "Pattern 1";
+    string path;
     uint color = 0x00385770;
     double startTimeSec = 0.0;
     double durationSec = 4.0;
@@ -171,16 +175,17 @@ struct ChannelState {
     bool muted = false;
     bool soloed = false;
     int mixerInsert = 1; // 0 = Master, 1..N = Insert
-    bool[16] steps;
-    float[16] stepVelocities;
-    float[16] stepPitches; // [-1..1] (0 = C5)
-    float[16] stepPans;    // [-1..1]
-    float[16] stepShifts;  // [0..1]
+    bool[64] steps;
+    float[64] stepVelocities;
+    float[64] stepPitches; // [-1..1] (0 = C5)
+    float[64] stepPans;    // [-1..1]
+    float[64] stepShifts;  // [0..1]
     MidiEvent[] notes;
     PluginSlotState generatorPlugin;
 
     void initDefaults() @safe {
-        foreach (i; 0 .. 16) {
+        foreach (i; 0 .. 64) {
+            steps[i] = false;
             stepVelocities[i] = 0.78f;
             stepPitches[i] = 0.0f;
             stepPans[i] = 0.0f;
@@ -192,15 +197,15 @@ struct ChannelState {
 /// Per-channel step sequencer & Piano Roll data saved per Pattern.
 struct ChannelPatternSteps {
     int channelIndex = 0;
-    bool[16] steps;
-    float[16] stepVelocities;
-    float[16] stepPitches;
-    float[16] stepPans;
-    float[16] stepShifts;
+    bool[64] steps;
+    float[64] stepVelocities;
+    float[64] stepPitches;
+    float[64] stepPans;
+    float[64] stepShifts;
     MidiEvent[] notes;
 
     void initDefaults() @safe {
-        foreach (i; 0 .. 16) {
+        foreach (i; 0 .. 64) {
             steps[i] = false;
             stepVelocities[i] = 0.78f;
             stepPitches[i] = 0.0f;
@@ -339,6 +344,9 @@ struct TransportModel {
     EditorTool pianoRollTool = EditorTool.DRAW;
     PlaylistClipKind activePickerKind = PlaylistClipKind.PATTERN;
     int activePickerIndex = 0;
+    int activeAutomationPluginIndex = 0;
+    uint activeAutomationParamId = 0;
+    string activeAutomationTargetName = "Slot 0 : Cutoff / Gain";
     bool showClipPicker = true;
     bool showMixerFxRack = true;
     bool showVelocityLane = true;
@@ -347,6 +355,43 @@ struct TransportModel {
     bool graphEditorOpen = false;
     GraphEditorMode graphEditorMode = GraphEditorMode.VELOCITY;
     ChannelFilterMode channelFilter = ChannelFilterMode.ALL;
+
+    static struct AutomationTargetChoice {
+        int pluginIndex = 0;
+        uint paramId = 0;
+        string label;
+    }
+
+    int activePatternLengthSteps() const pure nothrow @safe {
+        if (selectedPatternIndex >= 0 && selectedPatternIndex < cast(int)patterns.length) {
+            const int l = patterns[selectedPatternIndex].lengthSteps;
+            if (l >= 1 && l <= 64) return l;
+        }
+        return 16;
+    }
+
+    AutomationTargetChoice[] collectAutomationTargets(int trackIdx) const @safe {
+        AutomationTargetChoice[] res;
+        foreach (const ref t; tracks) {
+            if (t.index != trackIdx) continue;
+            foreach (const ref p; t.plugins) {
+                if (p.params.length == 0) {
+                    res ~= AutomationTargetChoice(p.pluginIndex, 0, p.name ~ " : Mix/Gain");
+                } else {
+                    foreach (const ref prm; p.params) {
+                        res ~= AutomationTargetChoice(p.pluginIndex, prm.id, p.name ~ " : " ~ prm.name);
+                        if (res.length >= 16) return res;
+                    }
+                }
+            }
+            break;
+        }
+        if (res.length == 0) {
+            res ~= AutomationTargetChoice(0, 0, "Slot 0 : Cutoff / Param 0");
+            res ~= AutomationTargetChoice(0, 1, "Slot 0 : Param 1");
+        }
+        return res;
+    }
 
     int selectedTrack = 0;
     int selectedClipIndex = 0;
@@ -440,10 +485,10 @@ struct TransportModel {
             kick.category = "Drums";
             kick.color = 0x00466480;
             kick.mixerInsert = 1;
-            kick.steps = [true, false, false, false, true, false, false, false,
-                          true, false, false, false, true, false, false, false];
-            kick.stepVelocities = [0.95f, 0.78f, 0.78f, 0.78f, 0.90f, 0.78f, 0.78f, 0.78f,
-                                   0.95f, 0.78f, 0.78f, 0.78f, 0.88f, 0.78f, 0.78f, 0.78f];
+            kick.steps[0 .. 16] = [true, false, false, false, true, false, false, false,
+                                   true, false, false, false, true, false, false, false];
+            kick.stepVelocities[0 .. 16] = [0.95f, 0.78f, 0.78f, 0.78f, 0.90f, 0.78f, 0.78f, 0.78f,
+                                            0.95f, 0.78f, 0.78f, 0.78f, 0.88f, 0.78f, 0.78f, 0.78f];
             kick.generatorPlugin = makeDefaultPluginSlot("DR-8 Kick", "builtin://dr8_kick", true, 0);
 
             ChannelState snare;
@@ -454,8 +499,8 @@ struct TransportModel {
             snare.category = "Drums";
             snare.color = 0x00664B78;
             snare.mixerInsert = 2;
-            snare.steps = [false, false, false, false, true, false, false, false,
-                           false, false, false, false, true, false, false, true];
+            snare.steps[0 .. 16] = [false, false, false, false, true, false, false, false,
+                                    false, false, false, false, true, false, false, true];
             snare.stepVelocities[4] = 0.92f;
             snare.stepVelocities[12] = 0.95f;
             snare.stepVelocities[15] = 0.55f;
@@ -470,8 +515,8 @@ struct TransportModel {
             hat.color = 0x0033665E;
             hat.mixerInsert = 3;
             hat.pan = 0.18f;
-            hat.steps = [true, false, true, false, true, false, true, false,
-                         true, false, true, false, true, false, true, true];
+            hat.steps[0 .. 16] = [true, false, true, false, true, false, true, false,
+                                  true, false, true, false, true, false, true, true];
             hat.generatorPlugin = makeDefaultPluginSlot("DR-8 Hat", "builtin://dr8_hat", true, 0);
 
             ChannelState bass;
@@ -482,8 +527,8 @@ struct TransportModel {
             bass.category = "Synths";
             bass.color = 0x00785535;
             bass.mixerInsert = 4;
-            bass.steps = [true, false, true, false, false, true, false, true,
-                          true, false, false, true, false, true, true, false];
+            bass.steps[0 .. 16] = [true, false, true, false, false, true, false, true,
+                                   true, false, false, true, false, true, true, false];
             bass.generatorPlugin = makeDefaultPluginSlot("Acid Bass", "builtin://acid_bass", true, 0);
 
             ChannelState epiano;
@@ -630,8 +675,8 @@ struct TransportModel {
                 ChannelPatternSteps kick1;
                 kick1.initDefaults();
                 kick1.channelIndex = 0;
-                kick1.steps = [true, false, false, false, true, false, false, false,
-                               true, false, false, false, true, false, false, false];
+                kick1.steps[0 .. 16] = [true, false, false, false, true, false, false, false,
+                                        true, false, false, false, true, false, false, false];
                 ChannelPatternSteps bass1;
                 bass1.initDefaults();
                 bass1.channelIndex = 3;
@@ -668,13 +713,13 @@ struct TransportModel {
                 ChannelPatternSteps sn3;
                 sn3.initDefaults();
                 sn3.channelIndex = 1;
-                sn3.steps = [false, false, false, false, true, false, false, false,
-                             true, false, true, true, true, true, true, true];
+                sn3.steps[0 .. 16] = [false, false, false, false, true, false, false, false,
+                                      true, false, true, true, true, true, true, true];
                 ChannelPatternSteps ht3;
                 ht3.initDefaults();
                 ht3.channelIndex = 2;
-                ht3.steps = [true, true, true, true, true, true, true, true,
-                             true, true, true, true, true, true, true, true];
+                ht3.steps[0 .. 16] = [true, true, true, true, true, true, true, true,
+                                      true, true, true, true, true, true, true, true];
                 patterns[3].channelSteps = [sn3, ht3];
             }
         }
@@ -719,7 +764,7 @@ struct TransportModel {
                 }
             }
             if (!found) {
-                foreach (i; 0 .. 16) {
+                foreach (i; 0 .. 64) {
                     ch.steps[i] = false;
                     ch.stepVelocities[i] = 0.78f;
                     ch.stepPitches[i] = 0.0f;
@@ -840,11 +885,12 @@ struct TransportModel {
         return null;
     }
 
-    /// Current 16th-step index `[0..15]` for the Step Sequencer playhead indicator.
+    /// Current 16th-step index `[0..patLen-1]` for the Step Sequencer playhead indicator.
     int currentStepIndex() const pure nothrow @safe {
         if (!isPlaying) return -1;
         const double beats = playheadPosSec * ((bpm > 0.0 ? bpm : 140.0) / 60.0);
-        const int step = cast(int)(beats * 4.0) % 16;
+        const int len = activePatternLengthSteps();
+        const int step = cast(int)(beats * 4.0) % len;
         return step < 0 ? 0 : step;
     }
 
@@ -940,22 +986,25 @@ struct TransportModel {
                 if (isPat && patIdx >= 0 && patIdx < cast(int)patterns.length) {
                     patColor = patterns[patIdx].color;
                 }
+                const PlaylistClipKind resolvedKind = isPat
+                    ? PlaylistClipKind.PATTERN
+                    : (tci.is_midi ? PlaylistClipKind.MIDI
+                                   : (tci.waveform.length > 0 ? PlaylistClipKind.AUDIO : PlaylistClipKind.PATTERN));
+                const uint resolvedColor = isPat
+                    ? patColor
+                    : (resolvedKind == PlaylistClipKind.AUDIO ? palette().clipAudio : palette().clipPattern);
                 bool found = false;
                 foreach (ref c; tracks[idx].clips) {
                     if (c.kind != PlaylistClipKind.AUTOMATION && c.clipIndex == tci.clip_index) {
                         if (tci.name.length > 0) c.name = tci.name.idup;
+                        if (tci.path.length > 0) c.path = tci.path.idup;
                         c.startTimeSec = tci.start_time;
                         c.durationSec = tci.duration;
                         c.muted = tci.muted;
                         c.waveform = tci.waveform.dup;
-                        if (isPat) {
-                            c.kind = PlaylistClipKind.PATTERN;
-                            c.patternIndex = patIdx;
-                            c.color = patColor;
-                        } else {
-                            c.kind = tci.waveform.length > 0 ? PlaylistClipKind.AUDIO : PlaylistClipKind.PATTERN;
-                            if (tci.waveform.length > 0) c.color = palette().clipAudio;
-                        }
+                        c.kind = resolvedKind;
+                        c.patternIndex = patIdx;
+                        c.color = resolvedColor;
                         found = true;
                         break;
                     }
@@ -964,13 +1013,13 @@ struct TransportModel {
                     TimelineClipState c;
                     c.clipIndex = tci.clip_index;
                     c.name = tci.name.length > 0 ? tci.name.idup : "Clip";
-                    c.color = isPat ? patColor : (tci.waveform.length > 0 ? palette().clipAudio : palette().clipPattern);
+                    c.path = tci.path.idup;
+                    c.color = resolvedColor;
                     c.startTimeSec = tci.start_time;
                     c.durationSec = tci.duration;
                     c.muted = tci.muted;
                     c.waveform = tci.waveform.dup;
-                    c.kind = isPat ? PlaylistClipKind.PATTERN
-                                   : (tci.waveform.length > 0 ? PlaylistClipKind.AUDIO : PlaylistClipKind.PATTERN);
+                    c.kind = resolvedKind;
                     c.patternIndex = patIdx;
                     tracks[idx].clips ~= c;
                 }
@@ -1126,7 +1175,7 @@ struct TransportModel {
                 foreach (cp; sp.channels) {
                     ChannelPatternSteps cpe;
                     cpe.channelIndex = cast(int)cp.channel_index;
-                    foreach (i; 0 .. 16) {
+                    foreach (i; 0 .. 64) {
                         cpe.steps[i] = (i < cp.steps.length) ? cp.steps[i] : false;
                         cpe.stepVelocities[i] = (i < cp.step_velocities.length) ? cp.step_velocities[i] : 0.78f;
                         cpe.stepPitches[i] = (i < cp.step_pitches.length) ? cp.step_pitches[i] : 0.0f;
@@ -1266,6 +1315,8 @@ struct TransportModel {
                         TimelineClipState ac;
                         ac.clipIndex = cast(int)ci;
                         ac.laneIndex = lane.lane_index;
+                        ac.pluginIndex = lane.plugin_index;
+                        ac.paramId = lane.param_id;
                         ac.kind = PlaylistClipKind.AUTOMATION;
                         ac.color = palette().clipAutomation;
                         ac.name = ptc.clip.name.length > 0
@@ -1742,4 +1793,28 @@ unittest {
            model.tracks[t4].clips[0].kind == PlaylistClipKind.AUTOMATION &&
            model.tracks[t4].clips[0].autoPoints.length == 2,
            "Expected AutomationLanesData to restore Playlist automation clips after ClearProject");
+
+    // Regression: TimelineClipInfo with is_midi=true and non-empty preview waveform must resolve to MIDI (not AUDIO)
+    Notification nMidiTci;
+    TimelineClipInfo tciMidi;
+    tciMidi.track_index = 2;
+    tciMidi.clip_index = 0;
+    tciMidi.name = "rec_take.mid";
+    tciMidi.waveform = [0.2f, 0.5f, 0.8f];
+    tciMidi.is_midi = true;
+    nMidiTci.timeline_clip_info.set(tciMidi);
+    model.applyNotification(nMidiTci);
+    const size_t t2Midi = model.ensureTrackIndex(2);
+    assert(model.tracks[t2Midi].clips[0].kind == PlaylistClipKind.MIDI,
+           "Expected is_midi=true TimelineClipInfo with preview waveform to classify as MIDI");
+
+    // Regression: collectAutomationTargets surfaces real plugin params on target track
+    PluginSlotState eqPlug;
+    eqPlug.pluginIndex = 1;
+    eqPlug.name = "Parametric EQ";
+    eqPlug.params = [ParamItemState(2, "High Gain", 0.5f, 0.5f)];
+    model.tracks[t2Midi].plugins ~= eqPlug;
+    const auto autoTargets = model.collectAutomationTargets(2);
+    assert(autoTargets.length >= 1 && autoTargets[0].pluginIndex == 1 && autoTargets[0].paramId == 2,
+           "Expected collectAutomationTargets to list track plugin parameters dynamically");
 }

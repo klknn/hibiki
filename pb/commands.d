@@ -174,6 +174,7 @@ struct ProjectCmd {
         ACTION_QUIT = 6,
         ACTION_SET_BPM = 7,
         ACTION_COLLECT_FILES = 8,
+        ACTION_CLEAR_HISTORY = 9,
     }
 
     @ProtoField(1) Action action = Action.ACTION_UNSPECIFIED;
@@ -317,6 +318,7 @@ struct SequencerCmd {
         ACTION_SET_STEP = 11,
         ACTION_SET_STEP_GRAPH = 12,
         ACTION_SET_CHANNEL_NOTES = 13,
+        ACTION_SET_PATTERN_LENGTH = 14,
     }
 
     @ProtoField(1) Action action = Action.ACTION_UNSPECIFIED;

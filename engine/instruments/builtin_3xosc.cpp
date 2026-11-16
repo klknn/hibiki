@@ -13,6 +13,7 @@ struct ThreeXOscMidiEvent {
   int pitch;
   float velocity;
   bool is_note_on;
+  float pan = 0.0f;
 };
 
 ThreeXOscDspState* d_3xosc_create();
@@ -59,6 +60,7 @@ void Builtin3xOsc::process(float** /*inputs*/, float** outputs, int num_samples,
     ThreeXOscMidiEvent mev;
     mev.pitch = ev.pitch;
     mev.velocity = ev.velocity;
+    mev.pan = ev.pan;
     mev.is_note_on = ev.isNoteOn;
     midi_events.push_back(mev);
   }

@@ -211,13 +211,19 @@ void drawTimelineCanvas(
                 drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc, toUTF32(nm), contrastTextColor(pal.clipAudio));
             }
         } else {
-            static immutable string[2] AUT_NAMES = ["Acid Cutoff Env", "Master Volume Env"];
-            foreach (i, nm; AUT_NAMES) {
-                const int py = pkrRc.top + dp(30) + cast(int)i * rowStep;
-                Rect itemRc = Rect(pkrRc.left + dp(6), py, pkrRc.right - dp(6), py + itemH);
-                const bool sel = (cast(int)i == curIdx);
-                drawThemeCard(buf, itemRc, pal.clipAutomation, sel ? pal.borderAccent : COLOR_TRANSPARENT, pal, 2.0f, false);
-                drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc, toUTF32(nm), contrastTextColor(pal.clipAutomation));
+            if (model) {
+                const auto targets = model.collectAutomationTargets(model.selectedMixerInsert);
+                foreach (i, const ref tgt; targets) {
+                    const int py = pkrRc.top + dp(30) + cast(int)i * rowStep;
+                    if (py + itemH > pkrRc.bottom) break;
+                    Rect itemRc = Rect(pkrRc.left + dp(6), py, pkrRc.right - dp(6), py + itemH);
+                    const bool sel = (tgt.pluginIndex == model.activeAutomationPluginIndex &&
+                                      tgt.paramId == model.activeAutomationParamId);
+                    drawThemeCard(buf, itemRc, pal.clipAutomation, sel ? pal.borderAccent : COLOR_TRANSPARENT, pal, 2.0f, false);
+                    drawVCenteredText(buf, uiFnt, itemRc.left + dp(6), itemRc,
+                                      toUTF32(truncateLabel(tgt.label, 18)),
+                                      contrastTextColor(pal.clipAutomation));
+                }
             }
         }
     }
@@ -446,10 +452,12 @@ private void drawPlaylistClip(
                 drawFilledCircle(buf, nx, ny, nodeR, pal.fgText, pal.bgLcd);
             }
         }
-    } else if (clip.kind == PlaylistClipKind.PATTERN) {
-        // Mini piano-roll / step preview bars inside pattern clip
+    } else if (clip.kind == PlaylistClipKind.PATTERN || clip.kind == PlaylistClipKind.MIDI) {
+        // Mini piano-roll / step preview bars inside pattern or recorded MIDI clip
         const uint noteCol = clip.muted ? pal.fgDim : pal.noteFill;
-        const uint attackCol = clip.muted ? pal.fgDim : pal.accentGreen;
+        const uint attackCol = clip.muted
+            ? pal.fgDim
+            : (clip.kind == PlaylistClipKind.MIDI ? pal.accentCyan : pal.accentGreen);
         const int spanY = bodyBot - bodyTop - dp(3);
         if (spanY > 0) {
             foreach (k; 0 .. 8) {
@@ -613,8 +621,17 @@ class TimelineCanvasWidget : Widget {
                     if (model_.activePickerKind == PlaylistClipKind.PATTERN &&
                         itemIdx < cast(int)model_.patterns.length) {
                         model_.selectedPatternIndex = itemIdx;
+                    } else if (model_.activePickerKind == PlaylistClipKind.AUTOMATION) {
+                        const auto targets = model_.collectAutomationTargets(model_.selectedMixerInsert);
+                        if (itemIdx < cast(int)targets.length) {
+                            model_.activeAutomationPluginIndex = targets[itemIdx].pluginIndex;
+                            model_.activeAutomationParamId = targets[itemIdx].paramId;
+                            model_.activeAutomationTargetName = targets[itemIdx].label;
+                        }
                     }
-                    model_.hintText = "Selected clip brush in Picker — click in Playlist lane to paint";
+                    model_.hintText = (model_.activePickerKind == PlaylistClipKind.AUTOMATION)
+                        ? format("Automation Target: %s — click Playlist lane to paint", model_.activeAutomationTargetName)
+                        : "Selected clip brush in Picker — click in Playlist lane to paint";
                     invalidate();
                 }
                 return true;

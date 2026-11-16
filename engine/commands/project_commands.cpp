@@ -173,7 +173,7 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
                 dur_gui, tc->clip->waveform_summary, tc->clip->is_loop,
                 tc->alias_source, li_sec, static_cast<float>(tc->fade_in_sec),
                 static_cast<float>(tc->fade_out_sec), tc->muted,
-                tc->pattern_index);
+                tc->pattern_index, tc->clip->type == Clip::Type::MIDI);
           }
           for (auto& lane : track->automation_lanes) {
             for (auto& tc : lane.clips) {
@@ -281,6 +281,12 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
         sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
                          data.size());
       }
+      break;
+    }
+    case pb::commands::ProjectCmd::ACTION_CLEAR_HISTORY: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.clear();
+      sendAck("CLEAR_HISTORY", true);
       break;
     }
     default:

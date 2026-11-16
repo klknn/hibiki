@@ -21,6 +21,7 @@ struct MidiNoteEvent {
   uint8_t pitch;
   float velocity;  // 0.0 - 1.0
   bool isNoteOn;
+  float pan = 0.0f;  // [-1.0 .. 1.0], 0.0 = center
 };
 
 struct VstParamInfo {

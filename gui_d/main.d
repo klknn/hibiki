@@ -363,6 +363,7 @@ extern (C) int UIAppMain(string[] args) {
         client.sendRequest(makeSequencerModeRequest(
             model.playbackMode == PlaybackMode.PAT
                 ? PbPlaybackMode.PLAYBACK_MODE_PAT : PbPlaybackMode.PLAYBACK_MODE_SONG));
+        client.sendRequest(makeClearHistoryRequest());
     }
 
     // Popup menu helper for top bar and window ▼ menus
@@ -581,7 +582,7 @@ extern (C) int UIAppMain(string[] args) {
             client.sendRequest(makeSequencerAddPatternRequest(idx, newPat.name, newPat.color, newPat.lengthSteps));
             if (id == 402) {
                 foreach (ref cp; newPat.channelSteps) {
-                    foreach (stepIdx; 0 .. 16) {
+                    foreach (stepIdx; 0 .. newPat.lengthSteps) {
                         if (cp.steps[stepIdx]) {
                             client.sendRequest(makeSequencerStepRequest(idx, cp.channelIndex, stepIdx, true));
                         }
@@ -1032,6 +1033,10 @@ extern (C) int UIAppMain(string[] args) {
         client.sendRequest(makeSequencerRouteChannelRequest(chIdx, mixerInsert));
         refreshUi();
     };
+    channelRack.onPatternLengthChange = (int patIdx, int lengthSteps) {
+        client.sendRequest(makeSequencerPatternLengthRequest(patIdx, lengthSteps));
+        refreshUi();
+    };
     channelRack.onStepToggle = (int chIdx, int stepIdx, bool active) {
         model.saveCurrentPatternToStore();
         client.sendRequest(makeSequencerStepRequest(model.selectedPatternIndex, chIdx, stepIdx, active));
@@ -1105,10 +1110,10 @@ extern (C) int UIAppMain(string[] args) {
             clip.waveform = realPeaks.length > 0 ? realPeaks : model.samplePreview.waveform.dup;
             client.sendRequest(makeAddTimelineClipRequest(trackIdx, AUDIO_PATHS[ai], cast(float)startSec, 8.0f));
         } else {
-            static immutable string[2] AUTO_NAMES = ["Acid Cutoff Env", "Master Volume Env"];
-            const size_t aui = (model.activePickerIndex >= 0 && model.activePickerIndex < 2)
-                ? cast(size_t)model.activePickerIndex : 0;
-            clip.name = AUTO_NAMES[aui];
+            clip.name = model.activeAutomationTargetName.length > 0
+                ? model.activeAutomationTargetName : "Automation Env";
+            clip.pluginIndex = model.activeAutomationPluginIndex;
+            clip.paramId = model.activeAutomationParamId;
             clip.color = model.palette().clipAutomation;
             clip.autoPoints = [
                 AutomationPoint(0.0, 0.2f),
@@ -1117,18 +1122,35 @@ extern (C) int UIAppMain(string[] args) {
             ];
             const float autoDurBeats = cast(float)(clip.durationSec * (model.bpm / 60.0));
             uint autoClipIdx = 0;
+            int foundLaneIdx = -1;
             foreach (const ref existing; model.tracks[idx].clips) {
-                if (existing.kind == PlaylistClipKind.AUTOMATION) ++autoClipIdx;
+                if (existing.kind == PlaylistClipKind.AUTOMATION &&
+                    existing.pluginIndex == clip.pluginIndex &&
+                    existing.paramId == clip.paramId) {
+                    if (foundLaneIdx < 0) foundLaneIdx = existing.laneIndex;
+                    ++autoClipIdx;
+                }
             }
-            if (autoClipIdx == 0) {
-                client.sendRequest(makeAutomationAddLaneRequest(trackIdx, 0, 0));
+            if (foundLaneIdx < 0) {
+                int maxLane = -1;
+                foreach (const ref existing; model.tracks[idx].clips) {
+                    if (existing.kind == PlaylistClipKind.AUTOMATION && existing.laneIndex > maxLane) {
+                        maxLane = existing.laneIndex;
+                    }
+                }
+                foundLaneIdx = maxLane + 1;
+                client.sendRequest(makeAutomationAddLaneRequest(
+                    trackIdx, clip.pluginIndex, clip.paramId));
             }
-            client.sendRequest(makeAutomationAddClipRequest(trackIdx, 0, cast(float)startSec, autoDurBeats));
+            clip.laneIndex = foundLaneIdx;
+            clip.clipIndex = cast(int)autoClipIdx;
+            client.sendRequest(makeAutomationAddClipRequest(
+                trackIdx, foundLaneIdx, cast(float)startSec, autoDurBeats, clip.name));
             PbAutoPoint[] pbPts;
             foreach (const ref ap; clip.autoPoints) {
                 pbPts ~= PbAutoPoint(ap.normTime * autoDurBeats, ap.value, 0.0f);
             }
-            client.sendRequest(makeAutomationUpdatePointsRequest(trackIdx, 0, autoClipIdx, pbPts));
+            client.sendRequest(makeAutomationUpdatePointsRequest(trackIdx, foundLaneIdx, autoClipIdx, pbPts));
         }
         model.tracks[idx].clips ~= clip;
         model.hintText = format("Painted '%s' at %.2fs on Track %d (Right-click to delete)",
@@ -1203,12 +1225,30 @@ extern (C) int UIAppMain(string[] args) {
             model.selectPattern(patternIdx);
             client.sendRequest(makeSequencerSelectPatternRequest(patternIdx));
             desktop.showWindow("win_piano_roll");
-        } else if (kind == PlaylistClipKind.AUDIO) {
+        } else if (kind == PlaylistClipKind.MIDI) {
             model.activeMidi.trackIndex = trackIdx;
             model.activeMidi.clipIndex = clipIdx;
             model.activeMidi.channelIndex = -1;
             client.sendRequest(makeMidiGetRequest(trackIdx, clipIdx));
             desktop.showWindow("win_piano_roll");
+        } else if (kind == PlaylistClipKind.AUDIO) {
+            string wavPath;
+            string clipName = "Audio Clip";
+            const size_t tArr = model.ensureTrackIndex(trackIdx);
+            foreach (const ref c; model.tracks[tArr].clips) {
+                if (c.kind == PlaylistClipKind.AUDIO && c.clipIndex == clipIdx) {
+                    wavPath = c.path;
+                    clipName = c.name;
+                    break;
+                }
+            }
+            if (wavPath.length > 0) {
+                client.sendRequest(makeAudioEditorLoadRequest(wavPath));
+                client.sendRequest(makeAudioEditorPreviewPlayRequest());
+                model.hintText = format("Loaded '%s' into Audio Editor", clipName);
+            } else {
+                model.hintText = format("Audio Clip: %s", clipName);
+            }
         }
         refreshUi();
     };

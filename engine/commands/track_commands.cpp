@@ -2,6 +2,8 @@
 #include <filesystem>
 #include <mutex>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
@@ -15,6 +17,36 @@
 #include "pb/commands.pb.h"
 
 namespace hibiki {
+
+namespace {
+
+bool WouldCreateRoutingCycle(const ProjectState& state, int src_idx,
+                             int target_idx) {
+  if (target_idx < 0) return false;
+  if (target_idx == src_idx) return true;
+  std::vector<int> stack{target_idx};
+  std::unordered_set<int> visited;
+  while (!stack.empty()) {
+    int cur = stack.back();
+    stack.pop_back();
+    if (cur == src_idx) return true;
+    if (!visited.insert(cur).second) continue;
+    auto it = state.tracks.find(cur);
+    if (it == state.tracks.end() || !it->second) continue;
+    const Track* tr = it->second.get();
+    int out_idx = tr->output_track_index >= 0 ? tr->output_track_index
+                                              : tr->group_parent_index;
+    if (out_idx >= 0) stack.push_back(out_idx);
+    for (const auto& send : tr->aux_sends) {
+      if (send.aux_track_index >= 0 && send.level > 0.0f) {
+        stack.push_back(send.aux_track_index);
+      }
+    }
+  }
+  return false;
+}
+
+}  // namespace
 
 void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
                     HistoryManager& history) {
@@ -108,10 +140,13 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
                 (tc->loop_interval_beats > 0)
                     ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
                     : 0.0f;
-            sendTimelineClipInfo(tidx, tcidx, clipname, tc->clip->path,
-                                 (float)tc->start_time_sec, duration_for_gui,
-                                 tc->clip->waveform_summary, tc->clip->is_loop,
-                                 tc->alias_source, li_sec);
+            sendTimelineClipInfo(
+                tidx, tcidx, clipname, tc->clip->path,
+                (float)tc->start_time_sec, duration_for_gui,
+                tc->clip->waveform_summary, tc->clip->is_loop, tc->alias_source,
+                li_sec, (float)tc->fade_in_sec, (float)tc->fade_out_sec,
+                tc->muted, tc->pattern_index,
+                tc->clip->type == Clip::Type::MIDI);
           }
         }
       } else {
@@ -175,7 +210,10 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
               tidx, cidx, clipname, tc->clip ? tc->clip->path : "",
               (float)tc->start_time_sec, duration_for_gui,
               tc->clip ? tc->clip->waveform_summary : std::vector<float>{},
-              tc->clip ? tc->clip->is_loop : false, tc->alias_source, li_sec_r);
+              tc->clip ? tc->clip->is_loop : false, tc->alias_source, li_sec_r,
+              (float)tc->fade_in_sec, (float)tc->fade_out_sec, tc->muted,
+              tc->pattern_index,
+              tc->clip && tc->clip->type == Clip::Type::MIDI);
         }
       }
       sendAck("RESIZE_TIMELINE_CLIP", true);
@@ -261,11 +299,13 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
               (added->loop_interval_beats > 0)
                   ? (float)beatsToSec(added->loop_interval_beats, state.bpm)
                   : 0.0f;
-          sendTimelineClipInfo(target_tidx, new_cidx, clipname,
-                               added->clip->path, (float)added->start_time_sec,
-                               duration_for_gui, added->clip->waveform_summary,
-                               added->clip->is_loop, added->alias_source,
-                               li_sec_c);
+          sendTimelineClipInfo(
+              target_tidx, new_cidx, clipname, added->clip->path,
+              (float)added->start_time_sec, duration_for_gui,
+              added->clip->waveform_summary, added->clip->is_loop,
+              added->alias_source, li_sec_c, (float)added->fade_in_sec,
+              (float)added->fade_out_sec, added->muted, added->pattern_index,
+              added->clip->type == Clip::Type::MIDI);
         }
       }
       sendAck("COPY_TIMELINE_CLIP", true);
@@ -301,7 +341,9 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
               (float)tc->start_time_sec, duration_for_gui,
               tc->clip ? tc->clip->waveform_summary : std::vector<float>{},
               tc->clip ? tc->clip->is_loop : false, tc->alias_source, li_sec,
-              (float)tc->fade_in_sec, (float)tc->fade_out_sec);
+              (float)tc->fade_in_sec, (float)tc->fade_out_sec, tc->muted,
+              tc->pattern_index,
+              tc->clip && tc->clip->type == Clip::Type::MIDI);
         }
       }
       sendAck("SET_CLIP_FADE", true);
@@ -395,7 +437,8 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
             (float)tc->start_time_sec, dur_gui,
             tc->clip ? tc->clip->waveform_summary : std::vector<float>{},
             tc->clip ? tc->clip->is_loop : false, tc->alias_source, li_sec,
-            (float)tc->fade_in_sec, (float)tc->fade_out_sec, tc->muted);
+            (float)tc->fade_in_sec, (float)tc->fade_out_sec, tc->muted,
+            tc->pattern_index, tc->clip && tc->clip->type == Clip::Type::MIDI);
 
         // Find next available track index
         int new_tidx = 0;
@@ -462,7 +505,9 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
               (float)tc->start_time_sec, dur_gui,
               tc->clip ? tc->clip->waveform_summary : std::vector<float>{},
               tc->clip ? tc->clip->is_loop : false, tc->alias_source, li_sec,
-              (float)tc->fade_in_sec, (float)tc->fade_out_sec, tc->muted);
+              (float)tc->fade_in_sec, (float)tc->fade_out_sec, tc->muted,
+              tc->pattern_index,
+              tc->clip && tc->clip->type == Clip::Type::MIDI);
         }
       }
       sendAck("SET_CLIP_MUTED", true);
@@ -589,8 +634,15 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
     }
     case pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      int target_idx = cmd.target_track_index();
+      if (WouldCreateRoutingCycle(state, tidx, target_idx)) {
+        sendLog("Rejected routing cycle on track " + std::to_string(tidx) +
+                " -> " + std::to_string(target_idx));
+        sendAck("SET_OUTPUT_ROUTING", false);
+        break;
+      }
       auto track = GetOrCreateTrack(state, tidx);
-      track->output_track_index = cmd.target_track_index();
+      track->output_track_index = target_idx;
       std::vector<std::tuple<int, float, bool>> sends;
       for (const auto& s : track->aux_sends)
         sends.emplace_back(s.aux_track_index, s.level, s.pre_fader);
@@ -604,10 +656,16 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
     }
     case pb::commands::TrackCmd::ACTION_SET_AUX_SEND: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
-      auto track = GetOrCreateTrack(state, tidx);
       int aux_idx = cmd.aux_track_index();
       float level = cmd.send_level();
       bool pre = cmd.pre_fader();
+      if (level > 0.0f && WouldCreateRoutingCycle(state, tidx, aux_idx)) {
+        sendLog("Rejected aux routing cycle on track " + std::to_string(tidx) +
+                " -> " + std::to_string(aux_idx));
+        sendAck("SET_AUX_SEND", false);
+        break;
+      }
+      auto track = GetOrCreateTrack(state, tidx);
       bool found = false;
       for (auto& send : track->aux_sends) {
         if (send.aux_track_index == aux_idx) {
@@ -638,8 +696,15 @@ void handleTrackCmd(const pb::commands::TrackCmd& cmd, ProjectState& state,
     }
     case pb::commands::TrackCmd::ACTION_SET_GROUP_PARENT: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      int parent_idx = cmd.target_track_index();
+      if (WouldCreateRoutingCycle(state, tidx, parent_idx)) {
+        sendLog("Rejected group parent cycle on track " + std::to_string(tidx) +
+                " -> " + std::to_string(parent_idx));
+        sendAck("SET_GROUP_PARENT", false);
+        break;
+      }
       auto track = GetOrCreateTrack(state, tidx);
-      track->group_parent_index = cmd.target_track_index();
+      track->group_parent_index = parent_idx;
       std::vector<std::tuple<int, float, bool>> sends;
       for (const auto& s : track->aux_sends)
         sends.emplace_back(s.aux_track_index, s.level, s.pre_fader);

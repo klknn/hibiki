@@ -33,6 +33,7 @@ genhtml
 .idea/
 .antigravitycli/
 *.iml
+dub.json
 
 # OS generated files
 .DS_Store
@@ -42,6 +43,7 @@ genhtml
 # Downloaded tools
 tools/google-java-format-*.jar
 tools/buildifier
+tools/dfmt
 
 # Temporary files
 *.log

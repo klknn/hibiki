@@ -168,8 +168,6 @@ http_archive(
 http_archive(
     name = "dlangui",
     build_file = "//third_party:dlangui.BUILD",
-    patch_strip = 1,
-    patches = ["//third_party:dlangui_ft_shutdown.patch"],
     strip_prefix = "dlangui-master",
     url = "https://github.com/buggins/dlangui/archive/refs/heads/master.tar.gz",
 )

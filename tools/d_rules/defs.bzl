@@ -247,6 +247,14 @@ def _link_d_executable(ctx, is_test):
             files = depset([out_bin]),
             runfiles = runfiles,
         ),
+        DInfo(
+            srcs = all_srcs,
+            import_dirs = all_imports,
+            string_imports = all_str_imports,
+            string_import_dirs = all_str_dirs,
+            d_versions = all_versions,
+            betterc = ctx.attr.betterc,
+        ),
     ]
 
 def _d_binary_impl(ctx):
@@ -316,4 +324,164 @@ d_test = rule(
     test = True,
     fragments = ["cpp"],
     toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
+)
+
+def _dedup_preserve_order(items):
+    seen = {}
+    out = []
+    for item in items:
+        if item not in seen:
+            seen[item] = True
+            out.append(item)
+    return out
+
+def _d_dub_json_impl(ctx):
+    transitive_srcs = []
+    transitive_imports = [depset([".", ctx.bin_dir.path])]
+    transitive_str_dirs = []
+    transitive_versions = []
+
+    for dep in ctx.attr.deps:
+        if DInfo in dep:
+            info = dep[DInfo]
+            transitive_srcs.append(info.srcs)
+            transitive_imports.append(info.import_dirs)
+            transitive_str_dirs.append(info.string_import_dirs)
+            transitive_versions.append(info.d_versions)
+
+    all_srcs = depset(transitive = transitive_srcs)
+    import_dirs = _dedup_preserve_order(depset(transitive = transitive_imports).to_list())
+    if ctx.attr.include_stdlib:
+        import_dirs.append(ctx.file._ldc_conf.dirname + "/../import")
+    string_import_dirs = _dedup_preserve_order(depset(transitive = transitive_str_dirs).to_list())
+    d_versions = _dedup_preserve_order(depset(transitive = transitive_versions).to_list())
+
+    manifest = ctx.actions.declare_file(ctx.label.name + ".manifest.json")
+    ctx.actions.write(
+        output = manifest,
+        content = json.encode_indent({
+            "name": ctx.attr.package_name,
+            "output_path": ctx.attr.output_path,
+            "bin_dir": ctx.bin_dir.path,
+            "import_dirs": import_dirs,
+            "string_import_dirs": string_import_dirs,
+            "versions": d_versions,
+        }),
+    )
+
+    launcher = ctx.actions.declare_file(ctx.label.name + ".sh")
+    ctx.actions.write(
+        output = launcher,
+        is_executable = True,
+        content = """#!/usr/bin/env bash
+set -euo pipefail
+MANIFEST="{manifest_short_path}"
+if [[ ! -f "$MANIFEST" && -n "${{RUNFILES_DIR:-}}" ]]; then
+  MANIFEST="$RUNFILES_DIR/_main/{manifest_short_path}"
+fi
+python3 - "$MANIFEST" <<'PYEOF'
+import json
+import os
+import sys
+
+manifest_path = sys.argv[1]
+with open(manifest_path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+ws = os.environ.get("BUILD_WORKSPACE_DIRECTORY") or os.getcwd()
+
+# Locate Bazel output_base from bazel-out convenience symlink or current execroot.
+output_base = None
+bazel_out_link = os.path.join(ws, "bazel-out")
+if os.path.exists(bazel_out_link):
+    real_out = os.path.realpath(bazel_out_link)
+    if "/execroot/" in real_out:
+        output_base = real_out.split("/execroot/")[0]
+if not output_base and "/execroot/" in os.getcwd():
+    output_base = os.getcwd().split("/execroot/")[0]
+
+bin_dir = data["bin_dir"]
+
+def resolve_dir(raw):
+    if not raw or raw == ".":
+        return "."
+    if raw == bin_dir:
+        return "bazel-bin"
+    if raw.startswith(bin_dir + "/"):
+        return "bazel-bin/" + raw[len(bin_dir) + 1:]
+    if raw.startswith("external/"):
+        if output_base:
+            return os.path.normpath(os.path.join(output_base, raw))
+        return os.path.normpath(raw)
+    return os.path.normpath(raw)
+
+def collect_existing(raw_list):
+    seen = set()
+    result = []
+    for raw in raw_list:
+        resolved = resolve_dir(raw)
+        if resolved in seen:
+            continue
+        abs_check = resolved if os.path.isabs(resolved) else os.path.join(ws, resolved)
+        if os.path.isdir(abs_check):
+            seen.add(resolved)
+            result.append(resolved)
+    return result
+
+import_paths = collect_existing(data["import_dirs"])
+string_import_paths = collect_existing(data["string_import_dirs"])
+versions = data["versions"]
+
+dub_cfg = {{
+    "name": data["name"],
+    "targetType": "sourceLibrary",
+    "sourcePaths": [],
+    "importPaths": import_paths,
+    "stringImportPaths": string_import_paths,
+    "versions": versions,
+}}
+
+out_file = os.path.join(ws, data["output_path"])
+with open(out_file, "w", encoding="utf-8") as f:
+    json.dump(dub_cfg, f, indent=2)
+    f.write("\\n")
+
+print(
+    f"Wrote {{out_file}} ({{len(import_paths)}} importPaths, "
+    f"{{len(string_import_paths)}} stringImportPaths, {{len(versions)}} versions)"
+)
+PYEOF
+""".format(manifest_short_path = manifest.short_path),
+    )
+
+    # Include generated .d sources (e.g. dproto outputs in bazel-bin) so serve-d sees them immediately.
+    gen_srcs = [f for f in all_srcs.to_list() if not f.is_source]
+    runfiles = ctx.runfiles(files = [manifest, ctx.file._ldc_conf] + gen_srcs)
+
+    return [
+        DefaultInfo(
+            executable = launcher,
+            files = depset([launcher, manifest] + gen_srcs),
+            runfiles = runfiles,
+        ),
+    ]
+
+d_dub_json = rule(
+    implementation = _d_dub_json_impl,
+    doc = "Generates a workspace dub.json from transitive DInfo providers for serve-d / DCD IDE support.",
+    attrs = {
+        "deps": attr.label_list(
+            providers = [DInfo],
+            mandatory = True,
+            doc = "D targets whose transitive import paths, string import paths, and versions are exported.",
+        ),
+        "package_name": attr.string(default = "hibiki"),
+        "output_path": attr.string(default = "dub.json"),
+        "include_stdlib": attr.bool(default = True),
+        "_ldc_conf": attr.label(
+            default = "@ldc_toolchain//:etc/ldc2.conf",
+            allow_single_file = True,
+        ),
+    },
+    executable = True,
 )

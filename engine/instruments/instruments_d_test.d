@@ -15,247 +15,258 @@ import engine.instruments.builtin_dr8_tom;
 import engine.instruments.builtin_sylph;
 
 @nogc nothrow unittest {
-    // 0. 3xOsc
-    ThreeXOscDspState osc;
-    osc.reset();
-    assert(osc.enabled);
-    assert(d_3xosc_get_default_value(ThreeXOscParamId.P_VOL) == 1.0);
+  // 0. 3xOsc
+  ThreeXOscDspState osc;
+  osc.reset();
+  assert(osc.enabled);
+  assert(d_3xosc_get_default_value(ThreeXOscParamId.P_VOL) == 1.0);
 
-    float[128] osc_out_l, osc_out_r;
-    ThreeXOscMidiEvent[1] osc_ev = [ThreeXOscMidiEvent(69, 1.0f, true)];
-    d_3xosc_process(osc, osc_out_l.ptr, osc_out_r.ptr, 128, 48000.0, osc_ev.ptr, 1);
-    assert(osc.voices[0].active);
-    float osc_max = 0.0f;
-    foreach (s; osc_out_l) {
-        float a = s >= 0 ? s : -s;
-        if (a > osc_max) osc_max = a;
-    }
-    assert(osc_max > 0.01f);
+  float[128] osc_out_l, osc_out_r;
+  ThreeXOscMidiEvent[1] osc_ev = [ThreeXOscMidiEvent(69, 1.0f, true)];
+  d_3xosc_process(osc, osc_out_l.ptr, osc_out_r.ptr, 128, 48000.0, osc_ev.ptr, 1);
+  assert(osc.voices[0].active);
+  float osc_max = 0.0f;
+  foreach (s; osc_out_l) {
+    float a = s >= 0 ? s : -s;
+    if (a > osc_max)
+      osc_max = a;
+  }
+  assert(osc_max > 0.01f);
 
-    // 1. Acid Bass
-    AcidBassDspState acid;
-    acid.reset();
-    assert(d_acid_norm_to_cutoff_hz(0.0) == 100.0f);
-    assert(d_acid_norm_to_decay_s(0.0) == 0.05f);
+  // 1. Acid Bass
+  AcidBassDspState acid;
+  acid.reset();
+  assert(d_acid_norm_to_cutoff_hz(0.0) == 100.0f);
+  assert(d_acid_norm_to_decay_s(0.0) == 0.05f);
 
-    float[128] out_l, out_r;
+  float[128] out_l, out_r;
 
-    // Trigger note 60 (C4)
-    AcidMidiEvent[1] ev_on = [AcidMidiEvent(60, 0.9f, true)];
-    d_acid_bass_process(
-        acid, out_l.ptr, out_r.ptr, 128, 48000.0, ev_on.ptr, 1,
-        0.0, 0.5, 0.6, 0.5, 0.2, 0.0, 0.1, 0.7, 0.5, 0.0, 0.0
-    );
+  // Trigger note 60 (C4)
+  AcidMidiEvent[1] ev_on = [AcidMidiEvent(60, 0.9f, true)];
+  d_acid_bass_process(acid, out_l.ptr, out_r.ptr, 128, 48000.0, ev_on.ptr, 1,
+      0.0, 0.5, 0.6, 0.5, 0.2, 0.0, 0.1, 0.7, 0.5, 0.0, 0.0);
 
-    assert(acid.note_active);
-    assert(acid.target_freq > 260.0 && acid.target_freq < 263.0);
-    // Sound produced
-    float max_val = 0.0f;
-    foreach (s; out_l) {
-        float a = s >= 0 ? s : -s;
-        if (a > max_val) max_val = a;
-    }
-    assert(max_val > 0.001f);
+  assert(acid.note_active);
+  assert(acid.target_freq > 260.0 && acid.target_freq < 263.0);
+  // Sound produced
+  float max_val = 0.0f;
+  foreach (s; out_l) {
+    float a = s >= 0 ? s : -s;
+    if (a > max_val)
+      max_val = a;
+  }
+  assert(max_val > 0.001f);
 
-    // Note off
-    AcidMidiEvent[1] ev_off = [AcidMidiEvent(60, 0.0f, false)];
-    d_acid_bass_process(
-        acid, out_l.ptr, out_r.ptr, 128, 48000.0, ev_off.ptr, 1,
-        0.0, 0.5, 0.6, 0.5, 0.2, 0.0, 0.1, 0.7, 0.5, 0.0, 0.0
-    );
-    assert(!acid.note_active);
+  // Note off
+  AcidMidiEvent[1] ev_off = [AcidMidiEvent(60, 0.0f, false)];
+  d_acid_bass_process(acid, out_l.ptr, out_r.ptr, 128, 48000.0, ev_off.ptr, 1,
+      0.0, 0.5, 0.6, 0.5, 0.2, 0.0, 0.1, 0.7, 0.5, 0.0, 0.0);
+  assert(!acid.note_active);
 
-    // 2. DR8 Kick
-    Dr8KickDspState kick;
-    kick.reset();
-    assert(d_dr8_kick_norm_to_pitch_hz(0.0) == 40.0f);
-    assert(d_dr8_kick_norm_to_pitch_hz(1.0) == 80.0f);
+  // 2. DR8 Kick
+  Dr8KickDspState kick;
+  kick.reset();
+  assert(d_dr8_kick_norm_to_pitch_hz(0.0) == 40.0f);
+  assert(d_dr8_kick_norm_to_pitch_hz(1.0) == 80.0f);
 
-    float[256] kout_l, kout_r;
-    Dr8KickMidiEvent[1] kev_on = [Dr8KickMidiEvent(1.0f, true)];
-    d_dr8_kick_process(
-        kick, kout_l.ptr, kout_r.ptr, 256, 48000.0, kev_on.ptr, 1,
-        0.25, 0.4, 0.3, 0.5, 0.2, 0.1, 0.7
-    );
-    assert(kick.active);
-    float k_max = 0.0f;
-    foreach (s; kout_l) {
-        float a = s >= 0 ? s : -s;
-        if (a > k_max) k_max = a;
-    }
-    assert(k_max > 0.01f);
+  float[256] kout_l, kout_r;
+  Dr8KickMidiEvent[1] kev_on = [Dr8KickMidiEvent(1.0f, true)];
+  d_dr8_kick_process(kick, kout_l.ptr, kout_r.ptr, 256, 48000.0, kev_on.ptr, 1,
+      0.25, 0.4, 0.3, 0.5, 0.2, 0.1, 0.7);
+  assert(kick.active);
+  float k_max = 0.0f;
+  foreach (s; kout_l) {
+    float a = s >= 0 ? s : -s;
+    if (a > k_max)
+      k_max = a;
+  }
+  assert(k_max > 0.01f);
 
-    // 3. DR8 Snare
-    Dr8SnareDspState snare;
-    snare.reset();
-    assert(d_dr8_snare_norm_to_pitch_hz(0.0) == 100.0f);
-    assert(d_dr8_snare_norm_to_pitch_hz(1.0) == 250.0f);
+  // 3. DR8 Snare
+  Dr8SnareDspState snare;
+  snare.reset();
+  assert(d_dr8_snare_norm_to_pitch_hz(0.0) == 100.0f);
+  assert(d_dr8_snare_norm_to_pitch_hz(1.0) == 250.0f);
 
-    float[256] sout_l, sout_r;
-    Dr8SnareMidiEvent[1] sev_on = [Dr8SnareMidiEvent(38, 0.9f, true)];
-    d_dr8_snare_process(&snare, sout_l.ptr, sout_r.ptr, 256, 48000.0, sev_on.ptr, 1);
-    assert(snare.active);
-    float s_max = 0.0f;
-    foreach (s; sout_l) {
-        float a = s >= 0 ? s : -s;
-        if (a > s_max) s_max = a;
-    }
-    assert(s_max > 0.01f);
+  float[256] sout_l, sout_r;
+  Dr8SnareMidiEvent[1] sev_on = [Dr8SnareMidiEvent(38, 0.9f, true)];
+  d_dr8_snare_process(&snare, sout_l.ptr, sout_r.ptr, 256, 48000.0, sev_on.ptr, 1);
+  assert(snare.active);
+  float s_max = 0.0f;
+  foreach (s; sout_l) {
+    float a = s >= 0 ? s : -s;
+    if (a > s_max)
+      s_max = a;
+  }
+  assert(s_max > 0.01f);
 
-    // 4. DR8 Hat
-    Dr8HatDspState hat;
-    hat.reset();
-    assert(fabs(d_dr8_hat_norm_to_hpf_hz(0.0) - 3000.0f) < 0.1f);
-    assert(fabs(d_dr8_hat_norm_to_bpf_hz(0.0) - 6000.0f) < 0.1f);
+  // 4. DR8 Hat
+  Dr8HatDspState hat;
+  hat.reset();
+  assert(fabs(d_dr8_hat_norm_to_hpf_hz(0.0) - 3000.0f) < 0.1f);
+  assert(fabs(d_dr8_hat_norm_to_bpf_hz(0.0) - 6000.0f) < 0.1f);
 
-    float[256] hout_l, hout_r;
-    Dr8HatMidiEvent[1] hev_on = [Dr8HatMidiEvent(42, 0.9f, true)];
-    d_dr8_hat_process(&hat, hout_l.ptr, hout_r.ptr, 256, 48000.0, hev_on.ptr, 1);
-    assert(hat.active);
-    float h_max = 0.0f;
-    foreach (s; hout_l) {
-        float a = s >= 0 ? s : -s;
-        if (a > h_max) h_max = a;
-    }
-    assert(h_max > 0.001f);
+  float[256] hout_l, hout_r;
+  Dr8HatMidiEvent[1] hev_on = [Dr8HatMidiEvent(42, 0.9f, true)];
+  d_dr8_hat_process(&hat, hout_l.ptr, hout_r.ptr, 256, 48000.0, hev_on.ptr, 1);
+  assert(hat.active);
+  float h_max = 0.0f;
+  foreach (s; hout_l) {
+    float a = s >= 0 ? s : -s;
+    if (a > h_max)
+      h_max = a;
+  }
+  assert(h_max > 0.001f);
 
-    // 5. DR8 Clap
-    Dr8ClapDspState clap;
-    clap.reset();
-    assert(fabs(d_dr8_clap_norm_to_decay_s(0.0) - 0.05f) < 0.001f);
-    assert(fabs(d_dr8_clap_norm_to_cutoff_hz(0.0) - 500.0f) < 0.1f);
+  // 5. DR8 Clap
+  Dr8ClapDspState clap;
+  clap.reset();
+  assert(fabs(d_dr8_clap_norm_to_decay_s(0.0) - 0.05f) < 0.001f);
+  assert(fabs(d_dr8_clap_norm_to_cutoff_hz(0.0) - 500.0f) < 0.1f);
 
-    float[256] cout_l, cout_r;
-    Dr8ClapMidiEvent[1] cev_on = [Dr8ClapMidiEvent(39, 0.9f, true)];
-    d_dr8_clap_process(&clap, cout_l.ptr, cout_r.ptr, 256, 48000.0, cev_on.ptr, 1);
-    assert(clap.active);
-    float c_max = 0.0f;
-    foreach (s; cout_l) {
-        float a = s >= 0 ? s : -s;
-        if (a > c_max) c_max = a;
-    }
-    assert(c_max > 0.001f);
+  float[256] cout_l, cout_r;
+  Dr8ClapMidiEvent[1] cev_on = [Dr8ClapMidiEvent(39, 0.9f, true)];
+  d_dr8_clap_process(&clap, cout_l.ptr, cout_r.ptr, 256, 48000.0, cev_on.ptr, 1);
+  assert(clap.active);
+  float c_max = 0.0f;
+  foreach (s; cout_l) {
+    float a = s >= 0 ? s : -s;
+    if (a > c_max)
+      c_max = a;
+  }
+  assert(c_max > 0.001f);
 
-    // 6. DR8 Rimshot
-    Dr8RimDspState rim;
-    rim.reset();
-    assert(d_dr8_rim_norm_to_pitch_hz(0.0) == 200.0f);
-    assert(d_dr8_rim_norm_to_decay_s(0.0) == 0.01f);
+  // 6. DR8 Rimshot
+  Dr8RimDspState rim;
+  rim.reset();
+  assert(d_dr8_rim_norm_to_pitch_hz(0.0) == 200.0f);
+  assert(d_dr8_rim_norm_to_decay_s(0.0) == 0.01f);
 
-    float[256] rim_out_l, rim_out_r;
-    Dr8RimMidiEvent[1] rim_ev = [Dr8RimMidiEvent(37, 0.9f, true)];
-    d_dr8_rim_process(&rim, rim_out_l.ptr, rim_out_r.ptr, 256, 48000.0, rim_ev.ptr, 1);
-    assert(rim.active);
-    float rim_max = 0.0f;
-    foreach (s; rim_out_l) {
-        float a = s >= 0 ? s : -s;
-        if (a > rim_max) rim_max = a;
-    }
-    assert(rim_max > 0.001f);
+  float[256] rim_out_l, rim_out_r;
+  Dr8RimMidiEvent[1] rim_ev = [Dr8RimMidiEvent(37, 0.9f, true)];
+  d_dr8_rim_process(&rim, rim_out_l.ptr, rim_out_r.ptr, 256, 48000.0, rim_ev.ptr, 1);
+  assert(rim.active);
+  float rim_max = 0.0f;
+  foreach (s; rim_out_l) {
+    float a = s >= 0 ? s : -s;
+    if (a > rim_max)
+      rim_max = a;
+  }
+  assert(rim_max > 0.001f);
 
-    // 7. DR8 Tom
-    Dr8TomDspState tom;
-    tom.reset();
-    assert(d_dr8_tom_norm_to_pitch_hz(0.0) == 70.0f);
-    assert(fabs(d_dr8_tom_norm_to_decay_s(0.0) - 0.1f) < 0.001f);
+  // 7. DR8 Tom
+  Dr8TomDspState tom;
+  tom.reset();
+  assert(d_dr8_tom_norm_to_pitch_hz(0.0) == 70.0f);
+  assert(fabs(d_dr8_tom_norm_to_decay_s(0.0) - 0.1f) < 0.001f);
 
-    float[256] tom_out_l, tom_out_r;
-    Dr8TomMidiEvent[1] tom_ev = [Dr8TomMidiEvent(45, 0.9f, true)];
-    d_dr8_tom_process(&tom, tom_out_l.ptr, tom_out_r.ptr, 256, 48000.0, tom_ev.ptr, 1);
-    assert(tom.active);
-    float tom_max = 0.0f;
-    foreach (s; tom_out_l) {
-        float a = s >= 0 ? s : -s;
-        if (a > tom_max) tom_max = a;
-    }
-    assert(tom_max > 0.001f);
+  float[256] tom_out_l, tom_out_r;
+  Dr8TomMidiEvent[1] tom_ev = [Dr8TomMidiEvent(45, 0.9f, true)];
+  d_dr8_tom_process(&tom, tom_out_l.ptr, tom_out_r.ptr, 256, 48000.0, tom_ev.ptr, 1);
+  assert(tom.active);
+  float tom_max = 0.0f;
+  foreach (s; tom_out_l) {
+    float a = s >= 0 ? s : -s;
+    if (a > tom_max)
+      tom_max = a;
+  }
+  assert(tom_max > 0.001f);
 
-    // 8. DR8 Conga
-    Dr8CongaDspState conga;
-    conga.reset();
-    assert(d_dr8_conga_norm_to_pitch_hz(0.0) == 150.0f);
-    assert(fabs(d_dr8_conga_norm_to_decay_s(0.0) - 0.05f) < 0.001f);
+  // 8. DR8 Conga
+  Dr8CongaDspState conga;
+  conga.reset();
+  assert(d_dr8_conga_norm_to_pitch_hz(0.0) == 150.0f);
+  assert(fabs(d_dr8_conga_norm_to_decay_s(0.0) - 0.05f) < 0.001f);
 
-    float[256] conga_out_l, conga_out_r;
-    Dr8CongaMidiEvent[1] conga_ev = [Dr8CongaMidiEvent(64, 0.9f, true)];
-    d_dr8_conga_process(&conga, conga_out_l.ptr, conga_out_r.ptr, 256, 48000.0, conga_ev.ptr, 1);
-    assert(conga.active);
-    float conga_max = 0.0f;
-    foreach (s; conga_out_l) {
-        float a = s >= 0 ? s : -s;
-        if (a > conga_max) conga_max = a;
-    }
-    assert(conga_max > 0.001f);
+  float[256] conga_out_l, conga_out_r;
+  Dr8CongaMidiEvent[1] conga_ev = [Dr8CongaMidiEvent(64, 0.9f, true)];
+  d_dr8_conga_process(&conga, conga_out_l.ptr, conga_out_r.ptr, 256, 48000.0, conga_ev
+      .ptr, 1);
+  assert(conga.active);
+  float conga_max = 0.0f;
+  foreach (s; conga_out_l) {
+    float a = s >= 0 ? s : -s;
+    if (a > conga_max)
+      conga_max = a;
+  }
+  assert(conga_max > 0.001f);
 
-    // 9. DR8 Cowbell
-    Dr8CowbellDspState cowbell;
-    cowbell.reset();
-    assert(d_dr8_cowbell_norm_to_pitch_hz(0.0) == 400.0f);
-    assert(fabs(d_dr8_cowbell_norm_to_detune_ratio(0.0) - 1.40f) < 0.001f);
+  // 9. DR8 Cowbell
+  Dr8CowbellDspState cowbell;
+  cowbell.reset();
+  assert(d_dr8_cowbell_norm_to_pitch_hz(0.0) == 400.0f);
+  assert(fabs(d_dr8_cowbell_norm_to_detune_ratio(0.0) - 1.40f) < 0.001f);
 
-    float[256] cowbell_out_l, cowbell_out_r;
-    Dr8CowbellMidiEvent[1] cowbell_ev = [Dr8CowbellMidiEvent(56, 0.9f, true)];
-    d_dr8_cowbell_process(&cowbell, cowbell_out_l.ptr, cowbell_out_r.ptr, 256, 48000.0, cowbell_ev.ptr, 1);
-    assert(cowbell.active);
-    float cowbell_max = 0.0f;
-    foreach (s; cowbell_out_l) {
-        float a = s >= 0 ? s : -s;
-        if (a > cowbell_max) cowbell_max = a;
-    }
-    assert(cowbell_max > 0.001f);
+  float[256] cowbell_out_l, cowbell_out_r;
+  Dr8CowbellMidiEvent[1] cowbell_ev = [Dr8CowbellMidiEvent(56, 0.9f, true)];
+  d_dr8_cowbell_process(&cowbell, cowbell_out_l.ptr, cowbell_out_r.ptr, 256,
+      48000.0, cowbell_ev.ptr, 1);
+  assert(cowbell.active);
+  float cowbell_max = 0.0f;
+  foreach (s; cowbell_out_l) {
+    float a = s >= 0 ? s : -s;
+    if (a > cowbell_max)
+      cowbell_max = a;
+  }
+  assert(cowbell_max > 0.001f);
 
-    // 10. DR8 Crash
-    Dr8CrashDspState crash;
-    crash.reset();
-    assert(fabs(d_dr8_crash_norm_to_decay_s(0.0) - 0.2f) < 0.001f);
+  // 10. DR8 Crash
+  Dr8CrashDspState crash;
+  crash.reset();
+  assert(fabs(d_dr8_crash_norm_to_decay_s(0.0) - 0.2f) < 0.001f);
 
-    float[256] crash_out_l, crash_out_r;
-    Dr8CrashMidiEvent[1] crash_ev = [Dr8CrashMidiEvent(49, 0.9f, true)];
-    d_dr8_crash_process(&crash, crash_out_l.ptr, crash_out_r.ptr, 256, 48000.0, crash_ev.ptr, 1);
-    assert(crash.active);
-    float crash_max = 0.0f;
-    foreach (s; crash_out_l) {
-        float a = s >= 0 ? s : -s;
-        if (a > crash_max) crash_max = a;
-    }
-    assert(crash_max > 0.001f);
+  float[256] crash_out_l, crash_out_r;
+  Dr8CrashMidiEvent[1] crash_ev = [Dr8CrashMidiEvent(49, 0.9f, true)];
+  d_dr8_crash_process(&crash, crash_out_l.ptr, crash_out_r.ptr, 256, 48000.0, crash_ev
+      .ptr, 1);
+  assert(crash.active);
+  float crash_max = 0.0f;
+  foreach (s; crash_out_l) {
+    float a = s >= 0 ? s : -s;
+    if (a > crash_max)
+      crash_max = a;
+  }
+  assert(crash_max > 0.001f);
 
-    // 11. Sylph (Trance Hypersaw & Hard Kick Synth)
-    SylphDspState* sylph = d_sylph_create();
-    assert(sylph !is null);
-    scope (exit) d_sylph_destroy(sylph);
+  // 11. Sylph (Trance Hypersaw & Hard Kick Synth)
+  SylphDspState* sylph = d_sylph_create();
+  assert(sylph !is null);
+  scope (exit)
+    d_sylph_destroy(sylph);
 
-    assert(d_sylph_norm_to_unison(1.0f) == 7);
-    assert(d_sylph_norm_to_unison(0.0f) == 1);
-    assert(d_sylph_norm_to_oct(0.5f) == 0);
+  assert(d_sylph_norm_to_unison(1.0f) == 7);
+  assert(d_sylph_norm_to_unison(0.0f) == 1);
+  assert(d_sylph_norm_to_oct(0.5f) == 0);
 
-    float[512] sy_l, sy_r;
-    SylphMidiEvent[1] sy_ev = [SylphMidiEvent(60, 1.0f, true)];
-    d_sylph_process(*sylph, sy_l.ptr, sy_r.ptr, 512, 48000.0, sy_ev.ptr, 1);
-    float sy_max = 0.0f;
-    float stereo_diff = 0.0f;
-    foreach (idx; 0 .. 512) {
-        float al = sy_l[idx] >= 0 ? sy_l[idx] : -sy_l[idx];
-        if (al > sy_max) sy_max = al;
-        float df = sy_l[idx] - sy_r[idx];
-        stereo_diff += df >= 0 ? df : -df;
-    }
-    assert(sy_max > 0.05f, "Sylph Trance Lead default should produce strong audio");
-    assert(stereo_diff > 0.5f, "Sylph Trance Lead unison+chorus should be wide stereo");
+  float[512] sy_l, sy_r;
+  SylphMidiEvent[1] sy_ev = [SylphMidiEvent(60, 1.0f, true)];
+  d_sylph_process(*sylph, sy_l.ptr, sy_r.ptr, 512, 48000.0, sy_ev.ptr, 1);
+  float sy_max = 0.0f;
+  float stereo_diff = 0.0f;
+  foreach (idx; 0 .. 512) {
+    float al = sy_l[idx] >= 0 ? sy_l[idx] : -sy_l[idx];
+    if (al > sy_max)
+      sy_max = al;
+    float df = sy_l[idx] - sy_r[idx];
+    stereo_diff += df >= 0 ? df : -df;
+  }
+  assert(sy_max > 0.05f, "Sylph Trance Lead default should produce strong audio");
+  assert(stereo_diff > 0.5f, "Sylph Trance Lead unison+chorus should be wide stereo");
 
-    // Hard Kick preset: phase-retriggered, tight attack, deterministic phase-locked punch
-    d_sylph_reset(sylph);
-    d_sylph_apply_preset(*sylph, 1);
-    float[512] kick1_l, kick1_r, kick2_l, kick2_r;
-    SylphMidiEvent[1] kev = [SylphMidiEvent(36, 1.0f, true)];
-    d_sylph_process(*sylph, kick1_l.ptr, kick1_r.ptr, 512, 48000.0, kev.ptr, 1);
-    d_sylph_reset(sylph);
-    d_sylph_apply_preset(*sylph, 1);
-    d_sylph_process(*sylph, kick2_l.ptr, kick2_r.ptr, 512, 48000.0, kev.ptr, 1);
-    float kick_peak = 0.0f;
-    foreach (idx; 0 .. 512) {
-        float a = kick1_l[idx] >= 0 ? kick1_l[idx] : -kick1_l[idx];
-        if (a > kick_peak) kick_peak = a;
-    }
-    assert(kick_peak > 0.2f, "Sylph Hard Kick should hit hard");
+  // Hard Kick preset: phase-retriggered, tight attack, deterministic phase-locked punch
+  d_sylph_reset(sylph);
+  d_sylph_apply_preset(*sylph, 1);
+  float[512] kick1_l, kick1_r, kick2_l, kick2_r;
+  SylphMidiEvent[1] kev = [SylphMidiEvent(36, 1.0f, true)];
+  d_sylph_process(*sylph, kick1_l.ptr, kick1_r.ptr, 512, 48000.0, kev.ptr, 1);
+  d_sylph_reset(sylph);
+  d_sylph_apply_preset(*sylph, 1);
+  d_sylph_process(*sylph, kick2_l.ptr, kick2_r.ptr, 512, 48000.0, kev.ptr, 1);
+  float kick_peak = 0.0f;
+  foreach (idx; 0 .. 512) {
+    float a = kick1_l[idx] >= 0 ? kick1_l[idx] : -kick1_l[idx];
+    if (a > kick_peak)
+      kick_peak = a;
+  }
+  assert(kick_peak > 0.2f, "Sylph Hard Kick should hit hard");
 }

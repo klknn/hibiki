@@ -26,6 +26,24 @@ void hibiki::Vst3Plugin::runMainLoop() {
     }
 }
 
+void hibiki::Vst3Plugin::stopMainLoop() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (NSApp) {
+            [NSApp stop:nil];
+            NSEvent* event = [NSEvent otherEventWithType:NSEventTypeApplicationDefined
+                                                location:NSMakePoint(0, 0)
+                                           modifierFlags:0
+                                               timestamp:0
+                                            windowNumber:0
+                                                 context:nil
+                                                 subtype:0
+                                                   data1:0
+                                                   data2:0];
+            [NSApp postEvent:event atStart:YES];
+        }
+    });
+}
+
 void hibiki::Vst3Plugin::showEditor() {
     if (!impl->controller) {
         std::cerr << "No controller available for showing editor" << std::endl;

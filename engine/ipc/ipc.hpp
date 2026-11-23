@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -12,12 +13,17 @@
 
 namespace hibiki {
 
+using NotificationHandler =
+    std::function<void(const uint8_t* buf, size_t size)>;
+
 extern bool g_ipc_enabled;
+void setNotificationHandler(NotificationHandler handler);
 void sendNotification(const uint8_t* buf, size_t size);
 void sendAck(const char* cmd_type, bool success);
 void sendParamList(int track_idx, int plugin_idx,
                    const std::string& plugin_name, bool is_instrument,
-                   const std::vector<VstParamInfo>& params);
+                   const std::vector<VstParamInfo>& params,
+                   bool bypassed = false, float mix = 1.0f);
 void sendLog(const std::string& msg);
 void sendClipInfo(int track_idx, int slot_index, const std::string& name,
                   const std::string& path);
@@ -29,17 +35,26 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
                           float duration, const std::vector<float>& waveform,
                           bool is_looped = false, int alias_source = -1,
                           float loop_interval = 0.0f, float fade_in_sec = 0.0f,
-                          float fade_out_sec = 0.0f, bool muted = false);
+                          float fade_out_sec = 0.0f, bool muted = false,
+                          int pattern_index = -1, bool is_midi = false);
 void sendPlayheadInfo(float position_sec, float bpm, bool is_playing,
                       bool loop_enabled = false, float loop_start = 0,
-                      float loop_end = 0);
+                      float loop_end = 0, bool is_recording = false,
+                      int cpu_percent = 0,
+                      const std::vector<float>* oscilloscope = nullptr,
+                      int playback_mode = 0, float swing_amount = 0.0f,
+                      int selected_pattern_index = 0);
+void sendSequencerSync(const hibiki::pb::notifications::SequencerSync& sync);
 void sendBounceFinished(const std::string& path, bool success);
 void sendTrackInfo(int track_idx, const std::string& name);
 void sendTrackInfoFull(
     int track_idx, const std::string& name, int track_type,
     int output_track_index,
     const std::vector<std::tuple<int, float, bool>>& aux_sends,
-    int group_parent_index = -1);
+    int group_parent_index = -1, float volume = -1.0f, float pan = 0.0f,
+    bool has_pan = false, bool muted = false, bool soloed = false,
+    float eq_low = 0.5f, float eq_mid = 0.5f, float eq_high = 0.5f,
+    float stereo_sep = 0.0f);
 
 // Send clip MIDI data to GUI. Use slot_idx >= 0 for session clips, clip_idx >=
 // 0 for timeline clips

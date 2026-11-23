@@ -133,6 +133,8 @@ message TimelineClip {
   bool muted = 7;            // Clip is muted (bounced-in-place)
   float duration_beats = 8;
   float loop_interval_beats = 9;
+  optional int32 pattern_index =
+      10;  // Sequencer pattern index (0..N if pattern clip)
 }
 
 // A session slot — one cell in the clip launcher grid.
@@ -146,6 +148,7 @@ enum TrackType {
   TRACK_NORMAL = 0;  // Regular audio/instrument track
   TRACK_GROUP = 1;   // Group bus (receives from child tracks)
   TRACK_AUX = 2;     // Aux/return bus (receives via sends)
+  TRACK_MASTER = 3;  // Dedicated master output bus
 }
 
 // An aux send from a track to an aux bus.
@@ -171,11 +174,21 @@ message Track {
   bool input_stereo = 12;           // true = stereo (ch, ch+1), false = mono
   string midi_input_device_id =
       13;  // Selected MIDI input device ID ("__global__" = all)
-  TrackType track_type = 14;  // Normal, Group, or Aux
+  TrackType track_type = 14;  // Normal, Group, Aux, or Master
   int32 output_track_index =
       15;  // Output routing: -1 = master, else group track index
   repeated AuxSend aux_sends = 16;  // Aux sends from this track
   int32 group_parent_index = 17;    // Group parent track index (-1 = none)
+  optional float volume = 18;
+  optional float pan = 19;
+  bool muted = 20;
+  bool soloed = 21;
+  repeated int32 bypassed_plugins = 22;
+  optional float eq_low = 23;
+  optional float eq_mid = 24;
+  optional float eq_high = 25;
+  optional float stereo_sep = 26;
+  repeated float plugin_mix = 27;
 }
 
 // Transport state enum. Prefer enum over bool `is_playing`
@@ -187,6 +200,47 @@ enum TransportState {
   TRANSPORT_STATE_RECORDING = 3;
 }
 
+// Pattern vs Song playback mode.
+enum PlaybackMode {
+  PLAYBACK_MODE_UNSPECIFIED = 0;
+  PLAYBACK_MODE_PAT = 1;
+  PLAYBACK_MODE_SONG = 2;
+}
+
+// Per-channel step sequencer & Piano Roll state within a pattern.
+message ChannelPatternData {
+  uint32 channel_index = 1;
+  repeated bool steps = 2;
+  repeated float step_velocities = 3;
+  repeated float step_pitches = 4;
+  repeated float step_pans = 5;
+  repeated float step_shifts = 6;
+  repeated MidiEvent notes = 7;
+}
+
+// A Channel Rack Pattern containing step and Piano Roll data per channel.
+message SequencerPattern {
+  uint32 pattern_index = 1;
+  string name = 2;
+  uint32 color = 3;
+  int32 length_steps = 4;
+  repeated ChannelPatternData channels = 5;
+}
+
+// Channel Rack generator/sampler row metadata.
+message SequencerChannel {
+  uint32 channel_index = 1;
+  string name = 2;
+  string uri = 3;
+  string category = 4;
+  uint32 color = 5;
+  int32 mixer_insert = 6;
+  float volume = 7;
+  float pan = 8;
+  bool muted = 9;
+  bool soloed = 10;
+}
+
 // Full project state.
 // Used for save/load (.hbk files) AND full-state sync after undo/redo.
 message Project {
@@ -194,6 +248,17 @@ message Project {
   float playhead_sec = 2;
   TransportState transport_state = 3;
   repeated Track tracks = 4;
+  PlaybackMode playback_mode = 5;
+  float swing_amount = 6;
+  int32 selected_pattern_index = 7;
+  repeated SequencerChannel channels = 8;
+  repeated SequencerPattern patterns = 9;
+  bool metronome_enabled = 10;
+  optional float master_volume = 11;
+  float master_pitch = 12;
+  bool loop_enabled = 13;
+  double loop_start_sec = 14;
+  double loop_end_sec = 15;
 }
 
 // Generic entity reference — replaces per-message track_index/slot_index.

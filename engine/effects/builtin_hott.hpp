@@ -1,11 +1,9 @@
 #pragma once
 
-#include <atomic>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "engine/core/biquad_filter.hpp"
-#include "engine/effects/builtin_compressor.hpp"
 #include "engine/plugin/iplugin.hpp"
 
 namespace hibiki {
@@ -35,7 +33,6 @@ class BuiltinHott : public IPlugin {
     PARAM_LOW_UP_THRESH = 12,
     PARAM_MID_UP_THRESH = 13,
     PARAM_HIGH_UP_THRESH = 14,
-    // --- New params (Xfer OTT parity) ---
     PARAM_SOFT_KNEE = 15,
     PARAM_RMS_MODE = 16,
     PARAM_LOW_ATTACK = 17,
@@ -56,6 +53,7 @@ class BuiltinHott : public IPlugin {
   };
 
   BuiltinHott();
+  ~BuiltinHott() override;
 
   // IPlugin interface
   bool load(const std::string& path, int plugin_index = 0,
@@ -85,26 +83,8 @@ class BuiltinHott : public IPlugin {
   static float normToDb24(double norm);  // -24..+24 dB
 
  private:
-  double params_[kTotalParams] = {};
-  double sample_rate_ = 44100.0;
-  bool enabled_ = true;
-
-  // Crossover filter states (LR4 = 2 cascaded biquads per split)
-  // Low/High split: 2 biquads per channel per split = 4 biquad states per split
-  BiquadFilter lp1_L_[2], lp1_R_[2];  // low-pass for low split (2 stages)
-  BiquadFilter hp1_L_[2], hp1_R_[2];  // high-pass for low split
-  BiquadFilter lp2_L_[2], lp2_R_[2];  // low-pass for high split
-  BiquadFilter hp2_L_[2], hp2_R_[2];  // high-pass for high split
-
-  BuiltinCompressor band_comp_[kNumBands];  // Low=0, Mid=1, High=2
-
-  std::atomic<float> input_db_{-200.0f};
-  std::atomic<float> output_db_{-200.0f};
-  int64_t last_time_samples_ = -1;  // For transport discontinuity detection
-
-  void reset();
-  void updateBandCompParams();
-  void updateCrossoverCoeffs();
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace hibiki

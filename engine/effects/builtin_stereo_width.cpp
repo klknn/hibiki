@@ -1,35 +1,37 @@
 #include "engine/effects/builtin_stereo_width.hpp"
 
 #include <algorithm>
-#include <cmath>
-
-#include "engine/core/math.hpp"
 
 namespace hibiki {
 
 static const std::string kStereoWidthName = "Stereo Width";
 static const std::string kStereoWidthPath = "builtin://stereo_width";
 
+struct StereoWidthDspState {
+  double lp_state_l = 0.0;
+  double lp_state_r = 0.0;
+  float delay_buf_l[16384] = {};
+  float delay_buf_r[16384] = {};
+  int write_idx = 0;
+  void reset();
+};
+
+extern float d_stereo_width_norm_to_delay_ms(double norm);
+extern float d_stereo_width_norm_to_mono_freq(double norm);
+extern float d_stereo_width_norm_to_width(double norm);
+extern void d_stereo_width_process(StereoWidthDspState& state,
+                                   const float* in_l, const float* in_r,
+                                   float* out_l, float* out_r, int num_samples,
+                                   double sample_rate, double delay_norm,
+                                   double channel_norm, double mono_freq_norm,
+                                   double width_norm, bool enabled);
+
 struct BuiltinStereoWidth::Impl {
   double params[kTotalParams] = {};
   double sample_rate = 44100.0;
+  StereoWidthDspState dsp_state;
 
-  // Filter state for crossover (Lowpass)
-  double lp_state_l = 0.0;
-  double lp_state_r = 0.0;
-
-  // Delay lines (circular buffers for high-pass signal)
-  std::vector<float> delay_buf_l;
-  std::vector<float> delay_buf_r;
-  int write_idx = 0;
-
-  void reset() {
-    lp_state_l = 0.0;
-    lp_state_r = 0.0;
-    std::fill(delay_buf_l.begin(), delay_buf_l.end(), 0.0f);
-    std::fill(delay_buf_r.begin(), delay_buf_r.end(), 0.0f);
-    write_idx = 0;
-  }
+  void reset() { dsp_state.reset(); }
 };
 
 BuiltinStereoWidth::BuiltinStereoWidth() : impl_(std::make_unique<Impl>()) {
@@ -38,9 +40,6 @@ BuiltinStereoWidth::BuiltinStereoWidth() : impl_(std::make_unique<Impl>()) {
   impl_->params[PARAM_MONO_FREQ] = 0.222222;  // ~150 Hz crossover default
   impl_->params[PARAM_WIDTH] = 0.5;           // 1.0x width default
   impl_->params[PARAM_ENABLE] = 1.0;          // enabled
-
-  impl_->delay_buf_l.resize(16384, 0.0f);
-  impl_->delay_buf_r.resize(16384, 0.0f);
   impl_->reset();
 }
 
@@ -54,18 +53,15 @@ bool BuiltinStereoWidth::load(const std::string& /*path*/, int /*plugin_index*/,
 }
 
 float BuiltinStereoWidth::normToDelayMs(double norm) {
-  // Delay range: 0.0 to 40.0 ms
-  return (float)(norm * 40.0);
+  return d_stereo_width_norm_to_delay_ms(norm);
 }
 
 float BuiltinStereoWidth::normToMonoFreq(double norm) {
-  // Crossover frequency: 50.0 to 500.0 Hz
-  return (float)(50.0 + norm * 450.0);
+  return d_stereo_width_norm_to_mono_freq(norm);
 }
 
 float BuiltinStereoWidth::normToWidth(double norm) {
-  // Width: 0.0 (mono) to 2.0 (extra wide)
-  return (float)(norm * 2.0);
+  return d_stereo_width_norm_to_width(norm);
 }
 
 void BuiltinStereoWidth::process(float** inputs, float** outputs,
@@ -74,85 +70,11 @@ void BuiltinStereoWidth::process(float** inputs, float** outputs,
                                  const std::vector<MidiNoteEvent>& /*events*/,
                                  float** /*sidechain*/) {
   bool enabled = impl_->params[PARAM_ENABLE] >= 0.5;
-  if (!enabled) {
-    for (int i = 0; i < num_samples; ++i) {
-      outputs[0][i] = inputs[0][i];
-      outputs[1][i] = inputs[1][i];
-    }
-    return;
-  }
-
-  float delay_ms = normToDelayMs(impl_->params[PARAM_DELAY]);
-  bool delay_left = impl_->params[PARAM_CHANNEL] < 0.5;
-  float crossover_fc = normToMonoFreq(impl_->params[PARAM_MONO_FREQ]);
-  float width = normToWidth(impl_->params[PARAM_WIDTH]);
-
-  // Crossover filter coefficient (one-pole lowpass)
-  double theta = 2.0 * hibiki::pi * crossover_fc / impl_->sample_rate;
-  double alpha = 1.0 - std::exp(-theta);
-  alpha = std::clamp(alpha, 0.0, 1.0);
-
-  int buf_size = (int)impl_->delay_buf_l.size();
-  double delay_samples = delay_ms * 0.001 * impl_->sample_rate;
-
-  for (int i = 0; i < num_samples; ++i) {
-    float in_l = inputs[0][i];
-    float in_r = inputs[1][i];
-
-    // Crossover filter: Low-pass band
-    impl_->lp_state_l += alpha * (in_l - impl_->lp_state_l);
-    impl_->lp_state_r += alpha * (in_r - impl_->lp_state_r);
-
-    float low_l = (float)impl_->lp_state_l;
-    float low_r = (float)impl_->lp_state_r;
-
-    // Keep low frequencies centered in mono
-    float low_mono = 0.5f * (low_l + low_r);
-
-    // High-pass band (subtraction)
-    float high_l = in_l - low_l;
-    float high_r = in_r - low_r;
-
-    // Write high band into circular delay buffers
-    impl_->delay_buf_l[impl_->write_idx] = high_l;
-    impl_->delay_buf_r[impl_->write_idx] = high_r;
-
-    float high_l_proc = high_l;
-    float high_r_proc = high_r;
-
-    // Apply Haas delay with linear interpolation to high-pass band
-    if (delay_left) {
-      double read_pos_l = (double)impl_->write_idx - delay_samples;
-      if (read_pos_l < 0.0) read_pos_l += buf_size;
-      int idx_l1 = (int)std::floor(read_pos_l) % buf_size;
-      int idx_l2 = (idx_l1 + 1) % buf_size;
-      float frac_l = (float)(read_pos_l - std::floor(read_pos_l));
-      high_l_proc = (1.0f - frac_l) * impl_->delay_buf_l[idx_l1] +
-                    frac_l * impl_->delay_buf_l[idx_l2];
-    } else {
-      double read_pos_r = (double)impl_->write_idx - delay_samples;
-      if (read_pos_r < 0.0) read_pos_r += buf_size;
-      int idx_r1 = (int)std::floor(read_pos_r) % buf_size;
-      int idx_r2 = (idx_r1 + 1) % buf_size;
-      float frac_r = (float)(read_pos_r - std::floor(read_pos_r));
-      high_r_proc = (1.0f - frac_r) * impl_->delay_buf_r[idx_r1] +
-                    frac_r * impl_->delay_buf_r[idx_r2];
-    }
-
-    // Advance write pointer
-    impl_->write_idx = (impl_->write_idx + 1) % buf_size;
-
-    // Mid/Side width processing on high-pass band
-    float mid = 0.5f * (high_l_proc + high_r_proc);
-    float side = 0.5f * (high_l_proc - high_r_proc) * width;
-
-    float high_l_out = mid + side;
-    float high_r_out = mid - side;
-
-    // Sum back low band (mono) and high band (widened)
-    outputs[0][i] = low_mono + high_l_out;
-    outputs[1][i] = low_mono + high_r_out;
-  }
+  d_stereo_width_process(
+      impl_->dsp_state, inputs[0], inputs[1], outputs[0], outputs[1],
+      num_samples, impl_->sample_rate, impl_->params[PARAM_DELAY],
+      impl_->params[PARAM_CHANNEL], impl_->params[PARAM_MONO_FREQ],
+      impl_->params[PARAM_WIDTH], enabled);
 }
 
 int BuiltinStereoWidth::getParameterCount() const { return kTotalParams; }

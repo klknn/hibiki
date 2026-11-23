@@ -5,6 +5,7 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test", "objc_library")
 load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_test")
 load("@rules_jvm_external//:defs.bzl", "pom_file")
+load("//tools/d_rules:defs.bzl", "d_dub_json")
 load(
     ":ts_check.bzl",
     "ts_check",
@@ -595,5 +596,33 @@ java_test(
         "@clojure_jar//jar",
         "@clojure_spec_alpha_jar//jar",
         "@maven//:com_google_protobuf_protobuf_java",
+    ],
+)
+
+platform(
+    name = "android_arm64",
+    constraint_values = [
+        "@platforms//os:android",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+platform(
+    name = "arm64-v8a",
+    constraint_values = [
+        "@platforms//os:android",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+d_dub_json(
+    name = "gen_dub_json",
+    deps = [
+        "//dproto",
+        "//engine:hbk-play",
+        "//gui_d:hibiki_gui",
+        "//pb:commands_d_proto",
+        "//pb:core_d_proto",
+        "//pb:notifications_d_proto",
     ],
 )

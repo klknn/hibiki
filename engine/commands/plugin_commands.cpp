@@ -44,6 +44,18 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
     case pb::commands::PluginCmd::ACTION_LOAD: {
       std::string vpath = cmd.path();
       int pidx = cmd.target().plugin_index();
+      double sr = state.sample_rate.load();
+      if (std::isnan(sr) || sr <= 0.0) sr = 44100.0;
+      PluginHostMode host_mode = PluginHostMode::IN_PROCESS;
+      {
+        std::lock_guard<std::mutex> lock(state.tracks_mutex);
+        host_mode = state.plugin_host_mode;
+      }
+      LOG(INFO) << "BACKEND: Loading plugin: " << vpath;
+      sendLog("Loading plugin: " + vpath + " ...");
+      auto loaded_plugin = Track::CreateAndLoadPlugin(
+          vpath, pidx, tidx, sr, host_mode, cmd.remote_host());
+
       // Displaced plugin must be destroyed OUTSIDE tracks_mutex to avoid
       // blocking the audio thread during VST3 teardown (editor thread join,
       // COM release, etc.)
@@ -52,22 +64,22 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
         std::lock_guard<std::mutex> lock(state.tracks_mutex);
         history.pushState(CaptureProjectState(state));
         auto track = GetOrCreateTrack(state, tidx);
-        LOG(INFO) << "BACKEND: Loading plugin: " << vpath;
-        sendLog("Loading plugin: " + vpath + " ...");
-        auto result =
-            track->LoadPlugin(vpath, pidx, state.sample_rate,
-                              state.plugin_host_mode, cmd.remote_host());
+        auto result = track->InsertLoadedPlugin(std::move(loaded_plugin));
         displaced = std::move(result.displaced);
         int target_idx = result.index;
         if (target_idx != -1) {
           auto& plugin = track->plugins[target_idx];
+          bool bp = track->plugin_bypass.count(target_idx) > 0;
+          const auto params = collectParams(*plugin);
           sendParamList(tidx, target_idx, plugin->getName(),
-                        plugin->isInstrument(), collectParams(*plugin));
+                        plugin->isInstrument(), params, bp,
+                        track->GetPluginMix(target_idx));
           // Push all current param values to UI so knobs reflect
           // the state set during load() (e.g. DX7 preset import).
-          for (int i = 0; i < plugin->getParameterCount(); ++i) {
-            sendParamValueChange(tidx, target_idx, i,
-                                 plugin->getParameterValue(i));
+          for (const auto& info : params) {
+            sendParamValueChange(
+                tidx, target_idx, info.id,
+                static_cast<float>(plugin->getParameterValue(info.id)));
           }
           if (auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugin.get())) {
             dm->sendAllPadStates();
@@ -78,8 +90,9 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
             for (int i = 0; i < (int)track->plugins.size(); ++i) {
               if (i == target_idx) continue;
               auto& p = track->plugins[i];
+              bool pbp = track->plugin_bypass.count(i) > 0;
               sendParamList(tidx, i, p->getName(), p->isInstrument(),
-                            collectParams(*p));
+                            collectParams(*p), pbp, track->GetPluginMix(i));
             }
           }
         } else {
@@ -109,8 +122,9 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
           // Re-send param lists for all remaining plugins at their new indices
           for (int i = 0; i < (int)track->plugins.size(); ++i) {
             auto& p = track->plugins[i];
+            bool pbp = track->plugin_bypass.count(i) > 0;
             sendParamList(tidx, i, p->getName(), p->isInstrument(),
-                          collectParams(*p));
+                          collectParams(*p), pbp, track->GetPluginMix(i));
           }
         }
       }
@@ -231,6 +245,7 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
             sd->set_sample_name(slash != std::string::npos
                                     ? sample_path.substr(slash + 1)
                                     : sample_path);
+            sd->set_sample_duration_sec(sampler->getSampleDurationSec());
             std::string data;
             notification.SerializeToString(&data);
             sendNotification(reinterpret_cast<const uint8_t*>(data.data()),
@@ -291,13 +306,23 @@ void handlePluginCmd(const pb::commands::PluginCmd& cmd, ProjectState& state,
         // Re-send param lists for all plugins at their new indices
         for (int i = 0; i < (int)track->plugins.size(); ++i) {
           auto& p = track->plugins[i];
+          bool pbp = track->plugin_bypass.count(i) > 0;
           sendParamList(tidx, i, p->getName(), p->isInstrument(),
-                        collectParams(*p));
+                        collectParams(*p), pbp, track->GetPluginMix(i));
         }
       }
       LOG(INFO) << "Reordered plugin on track " << tidx << ": " << from_idx
                 << " -> " << to_idx;
       sendAck("REORDER_PLUGIN", true);
+      break;
+    }
+    case pb::commands::PluginCmd::ACTION_SET_MIX: {
+      int pidx = cmd.target().plugin_index();
+      float mix = std::max(0.0f, std::min(1.0f, cmd.param_value()));
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      auto track = GetOrCreateTrack(state, tidx);
+      track->plugin_mix[pidx] = mix;
+      sendAck("SET_PLUGIN_MIX", true);
       break;
     }
     default:

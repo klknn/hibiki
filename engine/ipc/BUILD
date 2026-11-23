@@ -1,24 +1,34 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/d_rules:defs.bzl", "d_library", "d_test")
 
 package(default_visibility = ["//visibility:public"])
 
+d_library(
+    name = "tcp_d",
+    srcs = ["tcp.d"],
+    betterc = True,
+)
+
+d_test(
+    name = "tcp_d_test",
+    srcs = ["tcp.d"],
+)
+
 cc_library(
     name = "tcp",
-    srcs = select({
-        "@platforms//os:windows": ["tcp_win32.cpp"],
-        "//conditions:default": ["tcp_posix.cpp"],
-    }),
     hdrs = ["tcp.hpp"],
     linkopts = select({
         "@platforms//os:windows": ["-lws2_32"],
         "//conditions:default": [],
     }),
+    deps = [":tcp_d"],
 )
 
 cc_library(
     name = "worker_channel",
     srcs = select({
         "@platforms//os:windows": ["worker_channel_win32.cpp"],
+        "@platforms//os:android": ["worker_channel_android.cpp"],
         "//conditions:default": ["worker_channel_posix.cpp"],
     }),
     hdrs = [
@@ -28,6 +38,7 @@ cc_library(
     linkopts = select({
         "@platforms//os:windows": [],
         "@platforms//os:macos": [],
+        "@platforms//os:android": [],
         "//conditions:default": ["-lrt"],
     }),
     deps = ["@abseil-cpp//absl/log"],
@@ -46,11 +57,32 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "ipc_d",
+    srcs = ["ipc.d"],
+    deps = [
+        "//dproto",
+        "//pb:core_d_proto",
+        "//pb:notifications_d_proto",
+    ],
+)
+
+d_test(
+    name = "ipc_d_test",
+    srcs = ["ipc.d"],
+    deps = [
+        "//dproto",
+        "//pb:core_d_proto",
+        "//pb:notifications_d_proto",
+    ],
+)
+
 cc_library(
     name = "ipc",
     srcs = ["ipc.cpp"],
     hdrs = ["ipc.hpp"],
     deps = [
+        ":ipc_d",
         "//engine/plugin:iplugin",
         "//pb:core_cc_proto",
         "//pb:notifications_cc_proto",

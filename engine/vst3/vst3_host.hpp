@@ -45,6 +45,7 @@ class Vst3Plugin : public IPlugin {
   static std::vector<std::string> getDefaultVst3Dirs();
   static void
   runMainLoop();  // For platforms that need a UI loop on the main thread
+  static void stopMainLoop();
 
  private:
   std::unique_ptr<Vst3PluginImpl> impl;

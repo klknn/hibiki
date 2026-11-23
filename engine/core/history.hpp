@@ -9,6 +9,7 @@ namespace hibiki {
 class HistoryManager {
  public:
   void pushState(const std::vector<uint8_t>& state);
+  void clear();
   bool undo(std::vector<uint8_t>& current_state,
             std::vector<uint8_t>& out_state);
   bool redo(std::vector<uint8_t>& current_state,

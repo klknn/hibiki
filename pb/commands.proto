@@ -27,6 +27,10 @@ message TransportCmd {
     ACTION_SEEK = 3;
     ACTION_RECORD = 4;
     ACTION_SET_LOOP = 5;  // Set or clear the loop region
+    ACTION_SET_METRONOME = 6;
+    ACTION_PANIC = 7;
+    ACTION_SET_MASTER_VOLUME = 8;
+    ACTION_SET_MASTER_PITCH = 9;
   }
   Action action = 1;
   float seek_pos = 2;
@@ -34,6 +38,8 @@ message TransportCmd {
   bool loop_enabled = 4;
   float loop_start = 5;  // loop start in seconds
   float loop_end = 6;    // loop end in seconds
+  bool enabled = 7;
+  float value = 8;
 }
 
 message TrackCmd {
@@ -64,6 +70,8 @@ message TrackCmd {
     ACTION_SET_OUTPUT_ROUTING = 23;  // Set output routing to group or master
     ACTION_SET_AUX_SEND = 24;        // Set aux send level
     ACTION_SET_GROUP_PARENT = 25;    // Set/clear group parent
+    ACTION_SET_EQ = 26;          // Set 3-band mixer EQ (low/mid/high in [0, 1])
+    ACTION_SET_STEREO_SEP = 27;  // Set stereo separation [-1, 1]
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -82,6 +90,9 @@ message TrackCmd {
   float send_level = 15;          // Aux send level [0.0, 1.0]
   bool pre_fader = 16;            // Pre-fader send flag
   // 17 reserved (was new_track_index for ACTION_REORDER_TRACK)
+  float eq_low = 18;
+  float eq_mid = 19;
+  float eq_high = 20;
 }
 
 message PluginCmd {
@@ -99,6 +110,7 @@ message PluginCmd {
     ACTION_SET_SIDECHAIN = 10;   // Set/clear sidechain source track
     ACTION_SET_BYPASS = 11;      // Enable/disable (bypass) a plugin
     ACTION_REORDER_PLUGIN = 12;  // Reorder plugin in signal chain
+    ACTION_SET_MIX = 13;         // Set wet/dry mix [0, 1] for an FX slot
   }
   Action action = 1;
   hibiki.pb.core.EntityRef target = 2;
@@ -169,6 +181,8 @@ message ProjectCmd {
     ACTION_QUIT = 6;
     ACTION_SET_BPM = 7;
     ACTION_COLLECT_FILES = 8;  // Gather external files into project dir
+    ACTION_CLEAR_HISTORY =
+        9;  // Clear undo/redo stack (e.g. after template init)
   }
   Action action = 1;
   string path = 2;
@@ -309,6 +323,43 @@ message DrumPadCmd {
   uint32 effect_index = 11;
 }
 
+// Commands for the Channel Rack, 16-step sequencer, Patterns, and PAT/SONG
+// mode.
+message SequencerCmd {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_SET_PLAYBACK_MODE = 1;
+    ACTION_SET_SWING = 2;
+    ACTION_SELECT_PATTERN = 3;
+    ACTION_ADD_PATTERN = 4;
+    ACTION_ADD_CHANNEL = 5;
+    ACTION_SET_CHANNEL_ROUTE = 6;
+    ACTION_SET_CHANNEL_MUTE = 7;
+    ACTION_SET_CHANNEL_SOLO = 8;
+    ACTION_SET_CHANNEL_VOLUME = 9;
+    ACTION_SET_CHANNEL_PAN = 10;
+    ACTION_SET_STEP = 11;
+    ACTION_SET_STEP_GRAPH = 12;
+    ACTION_SET_CHANNEL_NOTES = 13;
+    ACTION_SET_PATTERN_LENGTH = 14;
+  }
+  Action action = 1;
+  hibiki.pb.core.PlaybackMode playback_mode = 2;
+  float value = 3;
+  uint32 pattern_index = 4;
+  uint32 channel_index = 5;
+  uint32 step_index = 6;
+  int32 graph_param = 7;  // 0=velocity, 1=pitch, 2=pan, 3=shift
+  bool enabled = 8;
+  string name = 9;
+  string uri = 10;
+  string category = 11;
+  uint32 color = 12;
+  int32 length_steps = 13;
+  int32 mixer_insert = 14;
+  repeated hibiki.pb.core.MidiEvent notes = 15;
+}
+
 // ─── Request Envelope ───────────────────────────────────────────────
 
 // Contains the new domain-grouped commands.
@@ -331,5 +382,6 @@ message Request {
     SetProcessingPrecision set_processing_precision = 54;
     AudioEditorCmd audio_editor = 55;
     DrumPadCmd drum_pad = 56;
+    SequencerCmd sequencer = 57;
   }
 }

@@ -1,6 +1,7 @@
 #include "engine/ipc/ipc.hpp"
 
 #include <condition_variable>
+#include <cstring>
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -9,6 +10,29 @@
 #include "engine/plugin/iplugin.hpp"
 #include "pb/core.pb.h"
 #include "pb/notifications.pb.h"
+
+extern "C" {
+int d_encode_ack(const char* cmd_type, size_t cmd_len, bool success,
+                 uint8_t* out_buf, int cap);
+int d_encode_log(const char* msg, size_t msg_len, uint8_t* out_buf, int cap);
+int d_encode_clip_info(int track_idx, int slot_idx, const char* name,
+                       size_t name_len, const char* path, size_t path_len,
+                       uint8_t* out_buf, int cap);
+int d_encode_clear_project(uint8_t* out_buf, int cap);
+int d_encode_playhead_info(float pos_sec, float bpm, bool is_playing,
+                           bool loop_enabled, float loop_start, float loop_end,
+                           uint8_t* out_buf, int cap);
+int d_encode_bounce_finished(const char* path, size_t path_len, bool success,
+                             uint8_t* out_buf, int cap);
+int d_encode_track_info(int track_idx, const char* name, size_t name_len,
+                        uint8_t* out_buf, int cap);
+int d_encode_param_value_change(int track_idx, int plugin_idx,
+                                uint32_t param_id, float value,
+                                uint8_t* out_buf, int cap);
+int d_encode_plugin_spectrum(int track_idx, int plugin_idx, const float* in_db,
+                             const float* out_db, int num_bins,
+                             uint8_t* out_buf, int cap);
+}
 
 namespace hibiki {
 
@@ -59,8 +83,23 @@ static void ensureSenderThread() {
   }
 }
 
+static NotificationHandler g_custom_handler = nullptr;
+static std::mutex g_handler_mutex;
+
+void setNotificationHandler(NotificationHandler handler) {
+  std::lock_guard<std::mutex> lock(g_handler_mutex);
+  g_custom_handler = std::move(handler);
+}
+
 void sendNotification(const uint8_t* buf, size_t size) {
   if (!g_ipc_enabled) return;
+  {
+    std::lock_guard<std::mutex> lock(g_handler_mutex);
+    if (g_custom_handler) {
+      g_custom_handler(buf, size);
+      return;
+    }
+  }
   ensureSenderThread();
   {
     std::lock_guard<std::mutex> lock(g_queue_mutex);
@@ -69,7 +108,7 @@ void sendNotification(const uint8_t* buf, size_t size) {
   g_queue_cv.notify_one();
 }
 
-// Helper to serialize a Notification and send it
+// Helper to serialize a Notification in C++ (for complex/variable types)
 static void sendProto(
     const hibiki::pb::notifications::Notification& notification) {
   std::string data;
@@ -77,23 +116,34 @@ static void sendProto(
   sendNotification(reinterpret_cast<const uint8_t*>(data.data()), data.size());
 }
 
+template <typename Fn>
+static void sendDEncoded(Fn&& encode_fn) {
+  uint8_t buf[16384];
+  int written = encode_fn(buf, static_cast<int>(sizeof(buf)));
+  if (written > 0) {
+    sendNotification(buf, static_cast<size_t>(written));
+  }
+}
+
 void sendAck(const char* cmd_type, bool success) {
-  hibiki::pb::notifications::Notification notification;
-  auto* ack = notification.mutable_acknowledge();
-  ack->set_command_type(cmd_type);
-  ack->set_success(success);
-  sendProto(notification);
+  size_t len = cmd_type ? std::strlen(cmd_type) : 0;
+  sendDEncoded([&](uint8_t* b, int cap) {
+    return d_encode_ack(cmd_type, len, success, b, cap);
+  });
 }
 
 void sendParamList(int track_idx, int plugin_idx,
                    const std::string& plugin_name, bool is_instrument,
-                   const std::vector<VstParamInfo>& params) {
+                   const std::vector<VstParamInfo>& params, bool bypassed,
+                   float mix) {
   hibiki::pb::notifications::Notification notification;
   auto* list = notification.mutable_param_list();
   list->set_track_index(track_idx);
   list->set_plugin_index(plugin_idx);
   list->set_plugin_name(plugin_name);
   list->set_is_instrument(is_instrument);
+  list->set_bypassed(bypassed);
+  list->set_mix(mix);
   for (const auto& p : params) {
     auto* pi = list->add_params();
     pi->set_id(p.id);
@@ -104,26 +154,22 @@ void sendParamList(int track_idx, int plugin_idx,
 }
 
 void sendLog(const std::string& msg) {
-  hibiki::pb::notifications::Notification notification;
-  notification.mutable_log()->set_message(msg);
-  sendProto(notification);
+  sendDEncoded([&](uint8_t* b, int cap) {
+    return d_encode_log(msg.data(), msg.size(), b, cap);
+  });
 }
 
 void sendClipInfo(int track_idx, int slot_index, const std::string& name,
                   const std::string& path) {
-  hibiki::pb::notifications::Notification notification;
-  auto* ci = notification.mutable_clip_info();
-  ci->set_track_index(track_idx);
-  ci->set_slot_index(slot_index);
-  ci->set_name(name);
-  ci->set_path(path);
-  sendProto(notification);
+  sendDEncoded([&](uint8_t* b, int cap) {
+    return d_encode_clip_info(track_idx, slot_index, name.data(), name.size(),
+                              path.data(), path.size(), b, cap);
+  });
 }
 
 void sendClearProject() {
-  hibiki::pb::notifications::Notification notification;
-  notification.mutable_clear_project();  // Just set the oneof variant
-  sendProto(notification);
+  sendDEncoded(
+      [&](uint8_t* b, int cap) { return d_encode_clear_project(b, cap); });
 }
 
 void sendPluginList(const std::string& path,
@@ -136,6 +182,7 @@ void sendPluginList(const std::string& path,
     pd->set_index(p.index);
     pd->set_name(p.name);
     pd->set_vendor(p.vendor);
+    pd->set_path(path);
     pd->set_is_instrument(p.is_instrument);
   }
   sendProto(notification);
@@ -145,7 +192,8 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
                           const std::string& path, float start_time,
                           float duration, const std::vector<float>& waveform,
                           bool is_looped, int alias_source, float loop_interval,
-                          float fade_in_sec, float fade_out_sec, bool muted) {
+                          float fade_in_sec, float fade_out_sec, bool muted,
+                          int pattern_index, bool is_midi) {
   hibiki::pb::notifications::Notification notification;
   auto* tci = notification.mutable_timeline_clip_info();
   tci->set_track_index(track_idx);
@@ -163,46 +211,76 @@ void sendTimelineClipInfo(int track_idx, int clip_idx, const std::string& name,
   tci->set_fade_in_sec(fade_in_sec);
   tci->set_fade_out_sec(fade_out_sec);
   tci->set_muted(muted);
+  if (pattern_index >= 0) tci->set_pattern_index(pattern_index);
+  tci->set_is_midi(is_midi);
   sendProto(notification);
 }
 
 void sendPlayheadInfo(float position_sec, float bpm, bool is_playing,
-                      bool loop_enabled, float loop_start, float loop_end) {
+                      bool loop_enabled, float loop_start, float loop_end,
+                      bool is_recording, int cpu_percent,
+                      const std::vector<float>* oscilloscope, int playback_mode,
+                      float swing_amount, int selected_pattern_index) {
+  if (!is_recording && cpu_percent == 0 &&
+      (oscilloscope == nullptr || oscilloscope->empty()) &&
+      playback_mode == 0 && swing_amount == 0.0f &&
+      selected_pattern_index == 0) {
+    sendDEncoded([&](uint8_t* b, int cap) {
+      return d_encode_playhead_info(position_sec, bpm, is_playing, loop_enabled,
+                                    loop_start, loop_end, b, cap);
+    });
+    return;
+  }
   hibiki::pb::notifications::Notification notification;
   auto* phi = notification.mutable_playhead_info();
   phi->set_position_sec(position_sec);
   phi->set_bpm(bpm);
-  phi->set_transport_state(is_playing
-                               ? hibiki::pb::core::TRANSPORT_STATE_PLAYING
-                               : hibiki::pb::core::TRANSPORT_STATE_STOPPED);
+  phi->set_transport_state(
+      is_recording ? hibiki::pb::core::TRANSPORT_STATE_RECORDING
+                   : (is_playing ? hibiki::pb::core::TRANSPORT_STATE_PLAYING
+                                 : hibiki::pb::core::TRANSPORT_STATE_STOPPED));
   phi->set_loop_enabled(loop_enabled);
   phi->set_loop_start(loop_start);
   phi->set_loop_end(loop_end);
+  phi->set_cpu_percent(cpu_percent);
+  if (oscilloscope != nullptr) {
+    for (float s : *oscilloscope) {
+      phi->add_oscilloscope(s);
+    }
+  }
+  phi->set_playback_mode(static_cast<hibiki::pb::core::PlaybackMode>(
+      playback_mode == 1 ? hibiki::pb::core::PLAYBACK_MODE_SONG
+                         : hibiki::pb::core::PLAYBACK_MODE_PAT));
+  phi->set_swing_amount(swing_amount);
+  phi->set_selected_pattern_index(selected_pattern_index);
+  sendProto(notification);
+}
+
+void sendSequencerSync(const hibiki::pb::notifications::SequencerSync& sync) {
+  hibiki::pb::notifications::Notification notification;
+  *notification.mutable_sequencer_sync() = sync;
   sendProto(notification);
 }
 
 void sendBounceFinished(const std::string& path, bool success) {
-  hibiki::pb::notifications::Notification notification;
-  auto* bf = notification.mutable_bounce_finished();
-  bf->set_path(path);
-  bf->set_success(success);
-  sendProto(notification);
+  sendDEncoded([&](uint8_t* b, int cap) {
+    return d_encode_bounce_finished(path.data(), path.size(), success, b, cap);
+  });
 }
 
 void sendTrackInfo(int track_idx, const std::string& name) {
-  hibiki::pb::notifications::Notification notification;
-  auto* ti = notification.mutable_track_info();
-  ti->set_track_index(track_idx);
-  ti->set_name(name);
-  sendProto(notification);
+  sendDEncoded([&](uint8_t* b, int cap) {
+    return d_encode_track_info(track_idx, name.data(), name.size(), b, cap);
+  });
 }
 
-// Extended version with routing info
+// Extended version with routing and mix info
 void sendTrackInfoFull(
     int track_idx, const std::string& name, int track_type,
     int output_track_index,
     const std::vector<std::tuple<int, float, bool>>& aux_sends,
-    int group_parent_index) {
+    int group_parent_index, float volume, float pan, bool has_pan, bool muted,
+    bool soloed, float eq_low, float eq_mid, float eq_high, float stereo_sep) {
   hibiki::pb::notifications::Notification notification;
   auto* ti = notification.mutable_track_info();
   ti->set_track_index(track_idx);
@@ -210,6 +288,14 @@ void sendTrackInfoFull(
   ti->set_track_type(static_cast<hibiki::pb::core::TrackType>(track_type));
   ti->set_output_track_index(output_track_index);
   ti->set_group_parent_index(group_parent_index);
+  if (volume >= 0.0f) ti->set_volume(volume);
+  if (has_pan) ti->set_pan(pan);
+  ti->set_muted(muted);
+  ti->set_soloed(soloed);
+  ti->set_eq_low(eq_low);
+  ti->set_eq_mid(eq_mid);
+  ti->set_eq_high(eq_high);
+  ti->set_stereo_sep(stereo_sep);
   for (const auto& [aux_idx, level, pre] : aux_sends) {
     auto* as = ti->add_aux_sends();
     as->set_aux_track_index(aux_idx);
@@ -235,13 +321,10 @@ void sendClipMidiData(int track_idx, int slot_idx, int clip_idx, int resolution,
 
 void sendParamValueChange(int track_idx, int plugin_idx, uint32_t param_id,
                           float value) {
-  hibiki::pb::notifications::Notification notification;
-  auto* pvc = notification.mutable_param_value_change();
-  pvc->set_track_index(track_idx);
-  pvc->set_plugin_index(plugin_idx);
-  pvc->set_param_id(param_id);
-  pvc->set_value(value);
-  sendProto(notification);
+  sendDEncoded([&](uint8_t* b, int cap) {
+    return d_encode_param_value_change(track_idx, plugin_idx, param_id, value,
+                                       b, cap);
+  });
 }
 
 void sendEditorFrameData(int track_idx, int plugin_idx, int width, int height,
@@ -259,15 +342,10 @@ void sendEditorFrameData(int track_idx, int plugin_idx, int width, int height,
 void sendPluginSpectrumData(int track_idx, int plugin_idx,
                             const float* input_db, const float* output_db,
                             int num_bins) {
-  hibiki::pb::notifications::Notification notification;
-  auto* spec = notification.mutable_plugin_spectrum();
-  spec->set_track_index(track_idx);
-  spec->set_plugin_index(plugin_idx);
-  for (int i = 0; i < num_bins; ++i) {
-    spec->add_input_magnitudes(input_db[i]);
-    spec->add_output_magnitudes(output_db[i]);
-  }
-  sendProto(notification);
+  sendDEncoded([&](uint8_t* b, int cap) {
+    return d_encode_plugin_spectrum(track_idx, plugin_idx, input_db, output_db,
+                                    num_bins, b, cap);
+  });
 }
 
 void sendPluginMeteringData(

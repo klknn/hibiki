@@ -1,12 +1,11 @@
 #include <AudioUnit/AudioUnit.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
-#include <iostream>
 #include <thread>
 
 #include "absl/log/log.h"
+#include "engine/audio/ring_buffer.hpp"
 #include "engine/audio/sound.hpp"
 
 namespace hibiki {
@@ -19,51 +18,14 @@ class SoundDeviceCoreAudio : public SoundDevice {
     int sampleRate;
     int channels;
     bool ready = false;
+    AudioRingBufferHandle ring;
 
-    // A simple ring buffer to bridge push (write) and pull (callback)
-    std::vector<float> ringBuffer;
-    std::atomic<size_t> readPtr{0};
-    std::atomic<size_t> writePtr{0};
-    size_t capacity;
-
-    Impl(int rate, int ch, int latency_ms) : sampleRate(rate), channels(ch) {
-      // Use a buffer size that is a multiple of the requested latency.
-      // 3x latency is usually a safe bet for stable audio on macOS.
-      size_t frames_needed = (static_cast<size_t>(rate) * latency_ms) / 1000;
-      capacity = frames_needed * ch * 3;
-
-      // Ensure a reasonable minimum size (e.g., 2048 samples)
-      if (capacity < 2048) capacity = 2048;
-
-      ringBuffer.resize(capacity, 0.0f);
-    }
-
-    size_t getAvailableRead() {
-      size_t r = readPtr.load(std::memory_order_acquire);
-      size_t w = writePtr.load(std::memory_order_acquire);
-      if (w >= r) return w - r;
-      return capacity - r + w;
-    }
-
-    size_t getAvailableWrite() { return capacity - getAvailableRead() - 1; }
-
-    void writeData(const float* data, size_t count) {
-      size_t w = writePtr.load(std::memory_order_relaxed);
-      for (size_t i = 0; i < count; ++i) {
-        ringBuffer[w] = data[i];
-        w = (w + 1) % capacity;
-      }
-      writePtr.store(w, std::memory_order_release);
-    }
-
-    void readData(float* data, size_t count) {
-      size_t r = readPtr.load(std::memory_order_relaxed);
-      for (size_t i = 0; i < count; ++i) {
-        data[i] = ringBuffer[r];
-        r = (r + 1) % capacity;
-      }
-      readPtr.store(r, std::memory_order_release);
-    }
+    Impl(int rate, int ch, int latency_ms)
+        : sampleRate(rate),
+          channels(ch),
+          ring(std::max<size_t>(
+              2048,
+              ((static_cast<size_t>(rate) * latency_ms) / 1000) * ch * 3)) {}
   };
 
   std::unique_ptr<Impl> impl;
@@ -79,23 +41,7 @@ class SoundDeviceCoreAudio : public SoundDevice {
     float* outL = static_cast<float*>(ioData->mBuffers[0].mData);
     float* outR = static_cast<float*>(ioData->mBuffers[1].mData);
 
-    size_t needed = inNumberFrames * 2;
-    size_t available = impl->getAvailableRead();
-
-    if (available < needed) {
-      // Underflow
-      std::fill(outL, outL + inNumberFrames, 0.0f);
-      std::fill(outR, outR + inNumberFrames, 0.0f);
-      return noErr;
-    }
-
-    for (UInt32 i = 0; i < inNumberFrames; ++i) {
-      float interleaved[2];
-      impl->readData(interleaved, 2);
-      outL[i] = interleaved[0];
-      outR[i] = interleaved[1];
-    }
-
+    impl->ring.readStereo(outL, outR, inNumberFrames);
     return noErr;
   }
 
@@ -183,11 +129,11 @@ class SoundDeviceCoreAudio : public SoundDevice {
     size_t count = interleaved_data.size();
 
     // Simple back-pressure if buffer is full
-    while (impl->getAvailableWrite() < count) {
+    while (impl->ring.availableWrite() < count) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    impl->writeData(interleaved_data.data(), count);
+    impl->ring.write(interleaved_data.data(), count);
   }
 };
 

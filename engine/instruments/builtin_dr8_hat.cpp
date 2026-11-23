@@ -1,56 +1,43 @@
 #include "engine/instruments/builtin_dr8_hat.hpp"
 
-#include <algorithm>
-#include <cmath>
-
-#include "engine/core/biquad_filter.hpp"
+#include <vector>
 
 namespace hibiki {
 
 static const std::string kDr8HatName = "DR8 Hat";
 static const std::string kDr8HatPath = "builtin://dr8_hat";
 
-// Detuning ratios for the 6 square-wave oscillators in TR-808 hihat
-static constexpr double kHatOscRatios[6] = {
-    1.0,    // base
-    1.315,  // Osc 2
-    1.55,   // Osc 3
-    1.715,  // Osc 4
-    2.0,    // Osc 5
-    2.25    // Osc 6
+struct Dr8HatDspState;
+
+struct Dr8HatMidiEvent {
+  int pitch;
+  float velocity;
+  bool is_note_on;
 };
 
+Dr8HatDspState* d_dr8_hat_create();
+void d_dr8_hat_destroy(Dr8HatDspState* state);
+void d_dr8_hat_reset(Dr8HatDspState* state);
+void d_dr8_hat_set_parameter(Dr8HatDspState* state, uint32_t id, double value);
+double d_dr8_hat_get_parameter(const Dr8HatDspState* state, uint32_t id);
+void d_dr8_hat_process(Dr8HatDspState* state, float* out_l, float* out_r,
+                       int num_samples, double sample_rate,
+                       const Dr8HatMidiEvent* events, int num_events);
+
+float d_dr8_hat_norm_to_decay_s(double norm);
+float d_dr8_hat_norm_to_hpf_hz(double norm);
+float d_dr8_hat_norm_to_bpf_hz(double norm);
+
 struct BuiltinDr8Hat::Impl {
-  double params[kTotalParams] = {};
+  Dr8HatDspState* state = nullptr;
   double sample_rate = 44100.0;
 
-  // Synthesizer state
-  bool active = false;
-  double osc_phase[6] = {};
-  double env_amp = 0.0;
-  float velocity = 0.0f;
-
-  // Filters (one bandpass, one highpass)
-  BiquadFilter bpf;
-  BiquadFilter hpf;
-
-  void reset() {
-    active = false;
-    std::fill(std::begin(osc_phase), std::end(osc_phase), 0.0);
-    env_amp = 0.0;
-    velocity = 0.0f;
-    bpf.reset();
-    hpf.reset();
-  }
+  Impl() : state(d_dr8_hat_create()) {}
+  ~Impl() { d_dr8_hat_destroy(state); }
+  void reset() { d_dr8_hat_reset(state); }
 };
 
 BuiltinDr8Hat::BuiltinDr8Hat() : impl_(std::make_unique<Impl>()) {
-  impl_->params[PARAM_DECAY] = 0.3;     // moderate decay
-  impl_->params[PARAM_HPF_FREQ] = 0.5;  // ~7.5 kHz high-pass
-  impl_->params[PARAM_BPF_FREQ] = 0.5;  // ~10 kHz band-pass
-  impl_->params[PARAM_TENSION] = 0.4;   // base frequency ~270 Hz
-  impl_->params[PARAM_VOLUME] = 0.7;    // master volume
-
   impl_->reset();
 }
 
@@ -64,18 +51,15 @@ bool BuiltinDr8Hat::load(const std::string& /*path*/, int /*plugin_index*/,
 }
 
 float BuiltinDr8Hat::normToDecayS(double norm) {
-  // Exponential mapping: 0.02 seconds to 0.8 seconds
-  return (float)(0.02 * std::pow(40.0, norm));
+  return d_dr8_hat_norm_to_decay_s(norm);
 }
 
 float BuiltinDr8Hat::normToHpfHz(double norm) {
-  // Linear mapping: 3000 Hz to 12000 Hz
-  return (float)(3000.0 + norm * 9000.0);
+  return d_dr8_hat_norm_to_hpf_hz(norm);
 }
 
 float BuiltinDr8Hat::normToBpfHz(double norm) {
-  // Linear mapping: 6000 Hz to 15000 Hz
-  return (float)(6000.0 + norm * 9000.0);
+  return d_dr8_hat_norm_to_bpf_hz(norm);
 }
 
 void BuiltinDr8Hat::process(float** /*inputs*/, float** outputs,
@@ -84,80 +68,19 @@ void BuiltinDr8Hat::process(float** /*inputs*/, float** outputs,
                             float** /*sidechain*/) {
   impl_->sample_rate = context.sampleRate;
 
-  // Process MIDI events
+  std::vector<Dr8HatMidiEvent> devents;
+  devents.reserve(events.size());
   for (const auto& ev : events) {
-    if (ev.isNoteOn && ev.velocity > 0) {
-      impl_->active = true;
-      std::fill(std::begin(impl_->osc_phase), std::end(impl_->osc_phase), 0.0);
-      impl_->env_amp = 1.0;
-      impl_->velocity = ev.velocity;
-    }
+    Dr8HatMidiEvent dev;
+    dev.pitch = ev.pitch;
+    dev.velocity = ev.velocity;
+    dev.is_note_on = ev.isNoteOn;
+    devents.push_back(dev);
   }
 
-  float* out_l = outputs[0];
-  float* out_r = outputs[1];
-
-  for (int i = 0; i < num_samples; ++i) {
-    out_l[i] = 0.0f;
-    out_r[i] = 0.0f;
-  }
-
-  if (!impl_->active) return;
-
-  double decay_s = normToDecayS(impl_->params[PARAM_DECAY]);
-  double hpf_fc = normToHpfHz(impl_->params[PARAM_HPF_FREQ]);
-  double bpf_fc = normToBpfHz(impl_->params[PARAM_BPF_FREQ]);
-  double tension = impl_->params[PARAM_TENSION];
-  double volume = impl_->params[PARAM_VOLUME];
-
-  // Base frequency scale: 150 Hz to 450 Hz
-  double base_freq = 150.0 + tension * 300.0;
-
-  // Envelope decay coefficient
-  double amp_decay_coeff = std::exp(-1.0 / (decay_s * impl_->sample_rate));
-
-  // Configure filter parameters (re-setup each block or sample; biquads are
-  // fast)
-  impl_->bpf.setParams(BiquadFilter::Type::BANDPASS, (float)bpf_fc, 1.5f, 0.0f,
-                       (float)impl_->sample_rate);
-  impl_->hpf.setParams(BiquadFilter::Type::HIGHPASS, (float)hpf_fc, 0.707f,
-                       0.0f, (float)impl_->sample_rate);
-
-  // Pre-calculate step increments
-  double dt[6];
-  for (int d = 0; d < 6; ++d) {
-    dt[d] = (base_freq * kHatOscRatios[d]) / impl_->sample_rate;
-  }
-
-  for (int i = 0; i < num_samples; ++i) {
-    if (impl_->env_amp < 0.0001) {
-      impl_->active = false;
-      impl_->reset();
-      break;
-    }
-
-    // Accumulate the 6 detuned square waves
-    double osc_sum = 0.0;
-    for (int d = 0; d < 6; ++d) {
-      impl_->osc_phase[d] += dt[d];
-      if (impl_->osc_phase[d] >= 1.0) impl_->osc_phase[d] -= 1.0;
-      osc_sum += (impl_->osc_phase[d] < 0.5 ? 1.0 : -1.0);
-    }
-    double metallic = osc_sum / 6.0;
-
-    // Filter cascade: Bandpass -> Highpass
-    float bpf_out = impl_->bpf.process((float)metallic);
-    float hpf_out = impl_->hpf.process(bpf_out);
-
-    float out_val =
-        (float)(hpf_out * impl_->env_amp * impl_->velocity * volume);
-
-    out_l[i] = out_val;
-    out_r[i] = out_val;
-
-    // Decay amplitude envelope
-    impl_->env_amp *= amp_decay_coeff;
-  }
+  d_dr8_hat_process(impl_->state, outputs[0], outputs[1], num_samples,
+                    context.sampleRate, devents.data(),
+                    static_cast<int>(devents.size()));
 }
 
 int BuiltinDr8Hat::getParameterCount() const { return kTotalParams; }
@@ -174,16 +97,11 @@ bool BuiltinDr8Hat::getParameterInfo(int index, VstParamInfo& info) const {
 }
 
 void BuiltinDr8Hat::setParameterValue(uint32_t id, double value) {
-  if (id < kTotalParams) {
-    impl_->params[id] = std::clamp(value, 0.0, 1.0);
-  }
+  d_dr8_hat_set_parameter(impl_->state, id, value);
 }
 
 double BuiltinDr8Hat::getParameterValue(uint32_t id) const {
-  if (id < kTotalParams) {
-    return impl_->params[id];
-  }
-  return 0.0;
+  return d_dr8_hat_get_parameter(impl_->state, id);
 }
 
 const std::string& BuiltinDr8Hat::getName() const { return kDr8HatName; }

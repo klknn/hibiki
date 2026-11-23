@@ -8,6 +8,26 @@
 
 namespace hibiki {
 
+struct LimiterDspState {
+  float lookahead_l[960];
+  float lookahead_r[960];
+  int la_write;
+  float envelope;
+  float gain_reduction_db;
+  void reset();
+};
+
+float d_limiter_norm_to_ceiling_db(double norm);
+float d_limiter_norm_to_release_ms(double norm);
+float d_limiter_norm_to_lookahead_ms(double norm);
+float d_limiter_norm_to_gain_db(double norm);
+
+void d_limiter_process(LimiterDspState& state, const float* in_l,
+                       const float* in_r, float* out_l, float* out_r,
+                       int num_samples, double sample_rate, double ceiling_norm,
+                       double release_norm, double lookahead_norm,
+                       double gain_norm, bool link_stereo, bool enabled);
+
 // Brickwall lookahead limiter for mastering.
 // Uses a lookahead buffer to achieve transparent limiting.
 class BuiltinLimiter : public IPlugin {
@@ -61,13 +81,7 @@ class BuiltinLimiter : public IPlugin {
   double sample_rate_ = 44100.0;
   bool enabled_ = true;
 
-  // Lookahead delay line
-  std::vector<float> lookahead_l_, lookahead_r_;
-  int la_write_ = 0;
-
-  // Gain reduction envelope
-  float envelope_ = 1.0f;  // linear gain
-  std::atomic<float> gain_reduction_db_{0.0f};
+  LimiterDspState dsp_state_{};
 
   void reset();
 };

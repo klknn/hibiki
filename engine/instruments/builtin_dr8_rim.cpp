@@ -1,45 +1,42 @@
 #include "engine/instruments/builtin_dr8_rim.hpp"
 
-#include <algorithm>
-#include <cmath>
-
-#include "engine/core/biquad_filter.hpp"
-#include "engine/core/math.hpp"
+#include <vector>
 
 namespace hibiki {
 
 static const std::string kDr8RimName = "DR8 Rimshot";
 static const std::string kDr8RimPath = "builtin://dr8_rim";
 
+struct Dr8RimDspState;
+
+struct Dr8RimMidiEvent {
+  int pitch;
+  float velocity;
+  bool is_note_on;
+};
+
+Dr8RimDspState* d_dr8_rim_create();
+void d_dr8_rim_destroy(Dr8RimDspState* state);
+void d_dr8_rim_reset(Dr8RimDspState* state);
+void d_dr8_rim_set_parameter(Dr8RimDspState* state, uint32_t id, double value);
+double d_dr8_rim_get_parameter(const Dr8RimDspState* state, uint32_t id);
+void d_dr8_rim_process(Dr8RimDspState* state, float* out_l, float* out_r,
+                       int num_samples, double sample_rate,
+                       const Dr8RimMidiEvent* events, int num_events);
+
+float d_dr8_rim_norm_to_pitch_hz(double norm);
+float d_dr8_rim_norm_to_decay_s(double norm);
+
 struct BuiltinDr8Rim::Impl {
-  double params[kTotalParams] = {};
+  Dr8RimDspState* state = nullptr;
   double sample_rate = 44100.0;
 
-  // Synthesizer state
-  bool active = false;
-  double osc_phase[3] = {};
-  double env_amp[3] = {};
-  float velocity = 0.0f;
-
-  // Filters
-  BiquadFilter bpf[3];
-
-  void reset() {
-    active = false;
-    for (int i = 0; i < 3; ++i) {
-      osc_phase[i] = 0.0;
-      env_amp[i] = 0.0;
-      bpf[i].reset();
-    }
-    velocity = 0.0f;
-  }
+  Impl() : state(d_dr8_rim_create()) {}
+  ~Impl() { d_dr8_rim_destroy(state); }
+  void reset() { d_dr8_rim_reset(state); }
 };
 
 BuiltinDr8Rim::BuiltinDr8Rim() : impl_(std::make_unique<Impl>()) {
-  impl_->params[PARAM_PITCH] = 0.4;   // ~320 Hz base pitch default
-  impl_->params[PARAM_DECAY] = 0.3;   // ~37ms decay default
-  impl_->params[PARAM_VOLUME] = 0.7;  // master volume default
-
   impl_->reset();
 }
 
@@ -53,13 +50,11 @@ bool BuiltinDr8Rim::load(const std::string& /*path*/, int /*plugin_index*/,
 }
 
 float BuiltinDr8Rim::normToPitchHz(double norm) {
-  // Linear mapping: 200 Hz to 500 Hz
-  return (float)(200.0 + norm * 300.0);
+  return d_dr8_rim_norm_to_pitch_hz(norm);
 }
 
 float BuiltinDr8Rim::normToDecayS(double norm) {
-  // Linear mapping: 0.01s to 0.1s
-  return (float)(0.01 + norm * 0.09);
+  return d_dr8_rim_norm_to_decay_s(norm);
 }
 
 void BuiltinDr8Rim::process(float** /*inputs*/, float** outputs,
@@ -68,105 +63,19 @@ void BuiltinDr8Rim::process(float** /*inputs*/, float** outputs,
                             float** /*sidechain*/) {
   impl_->sample_rate = context.sampleRate;
 
-  // Process MIDI events
+  std::vector<Dr8RimMidiEvent> d_events;
+  d_events.reserve(events.size());
   for (const auto& ev : events) {
-    if (ev.isNoteOn && ev.velocity > 0) {
-      impl_->active = true;
-      for (int i = 0; i < 3; ++i) {
-        impl_->osc_phase[i] = 0.0;
-        impl_->env_amp[i] = 1.0;
-      }
-      impl_->velocity = ev.velocity;
-    }
+    Dr8RimMidiEvent dev;
+    dev.pitch = ev.pitch;
+    dev.velocity = ev.velocity;
+    dev.is_note_on = ev.isNoteOn;
+    d_events.push_back(dev);
   }
 
-  float* out_l = outputs[0];
-  float* out_r = outputs[1];
-
-  for (int i = 0; i < num_samples; ++i) {
-    out_l[i] = 0.0f;
-    out_r[i] = 0.0f;
-  }
-
-  if (!impl_->active) return;
-
-  double base_freq = normToPitchHz(impl_->params[PARAM_PITCH]);
-  double decay_s = normToDecayS(impl_->params[PARAM_DECAY]);
-  double volume = impl_->params[PARAM_VOLUME];
-
-  double f[3];
-  f[0] = base_freq;
-  f[1] = base_freq * 2.6;
-  f[2] = base_freq * 4.6;
-
-  // Clamp frequencies below Nyquist
-  double nyquist = impl_->sample_rate * 0.49;
-  for (int j = 0; j < 3; ++j) {
-    if (f[j] > nyquist) f[j] = nyquist;
-  }
-
-  double dt[3];
-  for (int j = 0; j < 3; ++j) {
-    dt[j] = f[j] / impl_->sample_rate;
-  }
-
-  // Decay coefficients: higher components decay faster
-  double decay_s_val[3];
-  decay_s_val[0] = decay_s;
-  decay_s_val[1] = decay_s * 0.5;
-  decay_s_val[2] = decay_s * 0.25;
-
-  double decay_coeff[3];
-  for (int j = 0; j < 3; ++j) {
-    decay_coeff[j] = std::exp(-1.0 / (decay_s_val[j] * impl_->sample_rate));
-  }
-
-  // Configure filters (resonant bandpass filters around each frequency)
-  for (int j = 0; j < 3; ++j) {
-    impl_->bpf[j].setParams(BiquadFilter::Type::BANDPASS, (float)f[j], 4.0f,
-                            0.0f, (float)impl_->sample_rate);
-  }
-
-  for (int i = 0; i < num_samples; ++i) {
-    if (impl_->env_amp[0] < 0.0001 && impl_->env_amp[1] < 0.0001 &&
-        impl_->env_amp[2] < 0.0001) {
-      impl_->active = false;
-      impl_->reset();
-      break;
-    }
-
-    double signal_sum = 0.0;
-
-    // Component 1 (fundamental)
-    impl_->osc_phase[0] += dt[0];
-    if (impl_->osc_phase[0] >= 1.0) impl_->osc_phase[0] -= 1.0;
-    double osc0 = std::sin(2.0 * hibiki::pi * impl_->osc_phase[0]);
-    float filt0 = impl_->bpf[0].process((float)osc0);
-    signal_sum += 0.4 * filt0 * impl_->env_amp[0];
-
-    // Component 2 (2.6x harmonic)
-    impl_->osc_phase[1] += dt[1];
-    if (impl_->osc_phase[1] >= 1.0) impl_->osc_phase[1] -= 1.0;
-    double osc1 = std::sin(2.0 * hibiki::pi * impl_->osc_phase[1]);
-    float filt1 = impl_->bpf[1].process((float)osc1);
-    signal_sum += 0.4 * filt1 * impl_->env_amp[1];
-
-    // Component 3 (4.6x harmonic)
-    impl_->osc_phase[2] += dt[2];
-    if (impl_->osc_phase[2] >= 1.0) impl_->osc_phase[2] -= 1.0;
-    double osc2 = std::sin(2.0 * hibiki::pi * impl_->osc_phase[2]);
-    float filt2 = impl_->bpf[2].process((float)osc2);
-    signal_sum += 0.2 * filt2 * impl_->env_amp[2];
-
-    float out_val = (float)(signal_sum * impl_->velocity * volume);
-    out_l[i] = out_val;
-    out_r[i] = out_val;
-
-    // Apply envelope decay
-    for (int j = 0; j < 3; ++j) {
-      impl_->env_amp[j] *= decay_coeff[j];
-    }
-  }
+  d_dr8_rim_process(impl_->state, outputs[0], outputs[1], num_samples,
+                    context.sampleRate, d_events.data(),
+                    static_cast<int>(d_events.size()));
 }
 
 int BuiltinDr8Rim::getParameterCount() const { return kTotalParams; }
@@ -182,16 +91,11 @@ bool BuiltinDr8Rim::getParameterInfo(int index, VstParamInfo& info) const {
 }
 
 void BuiltinDr8Rim::setParameterValue(uint32_t id, double value) {
-  if (id < kTotalParams) {
-    impl_->params[id] = std::clamp(value, 0.0, 1.0);
-  }
+  d_dr8_rim_set_parameter(impl_->state, id, value);
 }
 
 double BuiltinDr8Rim::getParameterValue(uint32_t id) const {
-  if (id < kTotalParams) {
-    return impl_->params[id];
-  }
-  return 0.0;
+  return d_dr8_rim_get_parameter(impl_->state, id);
 }
 
 const std::string& BuiltinDr8Rim::getName() const { return kDr8RimName; }

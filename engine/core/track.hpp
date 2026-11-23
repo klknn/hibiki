@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cmath>
 #include <map>
 #include <memory>
@@ -38,6 +39,7 @@ struct TimelineClip {
   double fade_in_sec = 0.0;   // Linear fade-in duration in seconds
   double fade_out_sec = 0.0;  // Linear fade-out duration in seconds
   bool muted = false;         // Clip is muted (bounced-in-place)
+  int pattern_index = -1;     // Sequencer pattern index (-1 = not pattern clip)
 };
 
 // Automation lane targeting a single plugin parameter
@@ -132,8 +134,8 @@ inline float GetAutomationValue(const AutomationLane& lane, double time_beats,
 
 class Track {
  public:
-  // Track type: Normal, Group (bus), or Aux (return)
-  enum class TrackType { NORMAL = 0, GROUP = 1, AUX = 2 };
+  // Track type: Normal, Group (bus), Aux (return), or Master
+  enum class TrackType { NORMAL = 0, GROUP = 1, AUX = 2, MASTER = 3 };
 
   // Aux send from this track to an aux bus
   struct AuxSend {
@@ -157,6 +159,11 @@ class Track {
   };
   std::map<int, SidechainRoute> plugin_sidechain;  // key = plugin_index
   std::map<int, bool> plugin_bypass;  // key = plugin_index, true = bypassed
+  std::map<int, float> plugin_mix;  // key = plugin_index, default = 1.0f (wet)
+  float GetPluginMix(int pidx) const {
+    auto it = plugin_mix.find(pidx);
+    return (it != plugin_mix.end()) ? it->second : 1.0f;
+  }
 
   // Track routing
   TrackType track_type = TrackType::NORMAL;
@@ -176,6 +183,20 @@ class Track {
   float pan = 0.0f;  // -1.0 (full left) to 1.0 (full right), 0.0 = center
   bool muted = false;
   bool soloed = false;
+  float eq_low = 0.5f;      // [0..1] 0.5 = 0 dB flat
+  float eq_mid = 0.5f;      // [0..1] 0.5 = 0 dB flat
+  float eq_high = 0.5f;     // [0..1] 0.5 = 0 dB flat
+  float stereo_sep = 0.0f;  // [-1..1] -1 = mono, 0 = default, +1 = wide
+  double eq_filter_state[48] = {0.0};
+
+  // Pre-allocated real-time audio scratch buffers (avoids per-block heap
+  // allocation and std::map lookups on the audio thread).
+  static constexpr int kMaxRealtimeBlockSize = 4096;
+  std::array<double, kMaxRealtimeBlockSize> rt_bus_in_l{};
+  std::array<double, kMaxRealtimeBlockSize> rt_bus_in_r{};
+  std::array<float, kMaxRealtimeBlockSize> rt_sc_l{};
+  std::array<float, kMaxRealtimeBlockSize> rt_sc_r{};
+  bool rt_sc_valid = false;
 
   // Recording state
   enum class RecordMode { RECORD_AUDIO = 0, RECORD_MIDI = 1 };
@@ -197,7 +218,7 @@ class Track {
 
   // MIDI input state
   std::string midi_input_device_id = MIDI_GLOBAL_ID;  // Default: global
-  std::unique_ptr<MidiInput> midi_input_device;       // Lazily created
+  std::unique_ptr<MidiInput> midi_input_device;
 
   // Virtual MIDI queue (from PC keyboard / on-screen piano)
   std::mutex virtual_midi_mutex;
@@ -207,11 +228,18 @@ class Track {
     int index = -1;                      // slot index, -1 on failure
     std::unique_ptr<IPlugin> displaced;  // old plugin displaced by replacement
   };
+  static std::unique_ptr<IPlugin> CreateAndLoadPlugin(
+      const std::string& path, int plugin_index, int track_index,
+      double sample_rate, PluginHostMode host_mode = PluginHostMode::IN_PROCESS,
+      const std::string& remote_host = "");
+  LoadResult InsertLoadedPlugin(std::unique_ptr<IPlugin> plugin);
   LoadResult LoadPlugin(const std::string& path, int plugin_index,
                         double sample_rate,
                         PluginHostMode host_mode = PluginHostMode::IN_PROCESS,
                         const std::string& remote_host = "");
   bool DeleteClip(int slot);
+  bool InsertLoadedClip(int slot, std::unique_ptr<Clip> clip,
+                        const std::string& path);
   bool LoadClip(int slot, const std::string& path, bool is_loop = false,
                 double sample_rate = 0.0);
   void SetClipLoop(int slot, bool is_loop);
@@ -221,6 +249,14 @@ class Track {
   std::unique_ptr<IPlugin> RemovePlugin(size_t pidx);
   void ReorderPlugin(int from_index, int to_index);
 
+  static std::unique_ptr<Clip> PrepareTimelineClip(const std::string& path,
+                                                   double duration_beats,
+                                                   double sample_rate,
+                                                   int& out_pattern_idx);
+  void InsertPreparedTimelineClip(std::unique_ptr<Clip> clip,
+                                  const std::string& path,
+                                  double start_time_sec, double bpm,
+                                  int pattern_idx);
   void AddTimelineClip(const std::string& path, double start_time_sec,
                        double bpm, double duration_beats = 0,
                        double sample_rate = 0.0);

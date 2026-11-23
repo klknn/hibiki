@@ -10,6 +10,11 @@ void HistoryManager::pushState(const std::vector<uint8_t>& state) {
   redo_stack_.clear();
 }
 
+void HistoryManager::clear() {
+  undo_stack_.clear();
+  redo_stack_.clear();
+}
+
 bool HistoryManager::undo(std::vector<uint8_t>& current_state,
                           std::vector<uint8_t>& out_state) {
   if (undo_stack_.empty()) return false;

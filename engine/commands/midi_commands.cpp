@@ -17,8 +17,12 @@ namespace hibiki {
 void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
                    HistoryManager& history) {
   int tidx = cmd.target().track_index();
-  int sidx = cmd.target().session_slot();
-  int cidx = cmd.target().timeline_clip();
+  int sidx = cmd.target().has_session_slot()
+                 ? static_cast<int>(cmd.target().session_slot())
+                 : -1;
+  int cidx = cmd.target().has_timeline_clip()
+                 ? static_cast<int>(cmd.target().timeline_clip())
+                 : -1;
   switch (cmd.action()) {
     case pb::commands::MidiCmd::ACTION_GET: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
@@ -145,10 +149,11 @@ void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
                 (tc->loop_interval_beats > 0)
                     ? (float)beatsToSec(tc->loop_interval_beats, state.bpm)
                     : 0.0f;
-            sendTimelineClipInfo(tidx, cidx, clipname, clip->path,
-                                 (float)tc->start_time_sec, duration_for_gui,
-                                 clip->waveform_summary, clip->is_loop,
-                                 tc->alias_source, li_sec_u);
+            sendTimelineClipInfo(
+                tidx, cidx, clipname, clip->path, (float)tc->start_time_sec,
+                duration_for_gui, clip->waveform_summary, clip->is_loop,
+                tc->alias_source, li_sec_u, (float)tc->fade_in_sec,
+                (float)tc->fade_out_sec, tc->muted, tc->pattern_index, true);
             // Propagate MIDI edits to alias clips
             for (int ai = 0; ai < (int)track->timeline_clips.size(); ++ai) {
               if (ai == cidx) continue;
@@ -171,7 +176,9 @@ void handleMidiCmd(const pb::commands::MidiCmd& cmd, ProjectState& state,
                                      (float)atc->start_time_sec, alias_dur,
                                      atc->clip->waveform_summary,
                                      atc->clip->is_loop, atc->alias_source,
-                                     ali_sec);
+                                     ali_sec, (float)atc->fade_in_sec,
+                                     (float)atc->fade_out_sec, atc->muted,
+                                     atc->pattern_index, true);
               }
             }
           }

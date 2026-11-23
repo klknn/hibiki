@@ -12,23 +12,22 @@
 
 namespace hibiki {
 
-Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
-                                    double sample_rate,
-                                    PluginHostMode host_mode,
-                                    const std::string& remote_host) {
-  std::lock_guard<DummyMutex> lock(mutex);
+std::unique_ptr<IPlugin> Track::CreateAndLoadPlugin(
+    const std::string& path, int plugin_index, int track_index,
+    double sample_rate, PluginHostMode host_mode,
+    const std::string& remote_host) {
   std::unique_ptr<IPlugin> plugin;
 
   // Built-in devices: create native IPlugin implementations
   if (isBuiltinPluginPath(path)) {
     plugin = createBuiltinPlugin(path);
     if (!plugin) {
-      return {-1, nullptr};
+      return nullptr;
     }
     if (path == BuiltinDrumMachine::kPath) {
       auto* dm = dynamic_cast<BuiltinDrumMachine*>(plugin.get());
       if (dm) {
-        dm->setTrackIndex(index);
+        dm->setTrackIndex(track_index);
         dm->setPluginHostMode(host_mode);
       }
     }
@@ -44,7 +43,7 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
     }
     plugin = std::make_unique<PluginProxy>(host, port);
     if (!plugin->load(path, plugin_index, sample_rate)) {
-      return {-1, nullptr};
+      return nullptr;
     }
   } else {
     // Local plugin — use configured host mode
@@ -58,9 +57,15 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
         break;
     }
     if (!plugin->load(path, plugin_index, sample_rate)) {
-      return {-1, nullptr};
+      return nullptr;
     }
   }
+  return plugin;
+}
+
+Track::LoadResult Track::InsertLoadedPlugin(std::unique_ptr<IPlugin> plugin) {
+  if (!plugin) return {-1, nullptr};
+  std::lock_guard<DummyMutex> lock(mutex);
 
   bool is_instrument = plugin->isInstrument();
   int target_idx = -1;
@@ -112,6 +117,16 @@ Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
   return {target_idx, std::move(displaced)};
 }
 
+Track::LoadResult Track::LoadPlugin(const std::string& path, int plugin_index,
+                                    double sample_rate,
+                                    PluginHostMode host_mode,
+                                    const std::string& remote_host) {
+  auto plugin = CreateAndLoadPlugin(path, plugin_index, index, sample_rate,
+                                    host_mode, remote_host);
+  if (!plugin) return {-1, nullptr};
+  return InsertLoadedPlugin(std::move(plugin));
+}
+
 bool Track::DeleteClip(int slot) {
   std::lock_guard<DummyMutex> lock(mutex);
   if (clips.count(slot)) {
@@ -124,13 +139,11 @@ bool Track::DeleteClip(int slot) {
   return false;
 }
 
-bool Track::LoadClip(int slot, const std::string& path, bool is_loop,
-                     double sample_rate) {
+bool Track::InsertLoadedClip(int slot, std::unique_ptr<Clip> clip,
+                             const std::string& path) {
+  if (!clip) return false;
   std::lock_guard<DummyMutex> lock(mutex);
 
-  auto result = hibiki::LoadClip(path, is_loop, sample_rate);
-  if (!result.ok()) return false;
-  auto clip = std::make_unique<Clip>(std::move(*result));
   std::string basename = path;
   size_t pos = basename.find_last_of("/\\");
   if (pos != std::string::npos) basename = basename.substr(pos + 1);
@@ -174,6 +187,14 @@ bool Track::LoadClip(int slot, const std::string& path, bool is_loop,
   return true;
 }
 
+bool Track::LoadClip(int slot, const std::string& path, bool is_loop,
+                     double sample_rate) {
+  auto result = hibiki::LoadClip(path, is_loop, sample_rate);
+  if (!result.ok()) return false;
+  auto clip = std::make_unique<Clip>(std::move(*result));
+  return InsertLoadedClip(slot, std::move(clip), path);
+}
+
 void Track::SetClipLoop(int slot, bool is_loop) {
   std::lock_guard<DummyMutex> lock(mutex);
   if (clips.count(slot)) {
@@ -206,6 +227,34 @@ std::unique_ptr<IPlugin> Track::RemovePlugin(size_t pidx) {
   plugins[pidx]->stopEditor();
   auto removed = std::move(plugins[pidx]);
   plugins.erase(plugins.begin() + pidx);
+
+  const int ipidx = static_cast<int>(pidx);
+  std::map<int, bool> new_bypass;
+  for (auto& [idx, val] : plugin_bypass) {
+    if (idx < ipidx)
+      new_bypass[idx] = val;
+    else if (idx > ipidx)
+      new_bypass[idx - 1] = val;
+  }
+  plugin_bypass = std::move(new_bypass);
+
+  std::map<int, float> new_mix;
+  for (auto& [idx, val] : plugin_mix) {
+    if (idx < ipidx)
+      new_mix[idx] = val;
+    else if (idx > ipidx)
+      new_mix[idx - 1] = val;
+  }
+  plugin_mix = std::move(new_mix);
+
+  std::map<int, SidechainRoute> new_sc;
+  for (auto& [idx, val] : plugin_sidechain) {
+    if (idx < ipidx)
+      new_sc[idx] = val;
+    else if (idx > ipidx)
+      new_sc[idx - 1] = val;
+  }
+  plugin_sidechain = std::move(new_sc);
   return removed;
 }
 
@@ -221,7 +270,7 @@ void Track::ReorderPlugin(int from_index, int to_index) {
   plugins.erase(plugins.begin() + from_index);
   plugins.insert(plugins.begin() + to_index, std::move(plugin));
 
-  // Remap index-keyed maps (plugin_bypass, plugin_sidechain)
+  // Remap index-keyed maps (plugin_bypass, plugin_mix, plugin_sidechain)
   // Build a mapping: old_index -> new_index
   auto remap = [&](int old_idx) -> int {
     if (old_idx == from_index) return to_index;
@@ -239,18 +288,29 @@ void Track::ReorderPlugin(int from_index, int to_index) {
   for (auto& [idx, val] : plugin_bypass) new_bypass[remap(idx)] = val;
   plugin_bypass = std::move(new_bypass);
 
+  std::map<int, float> new_mix;
+  for (auto& [idx, val] : plugin_mix) new_mix[remap(idx)] = val;
+  plugin_mix = std::move(new_mix);
+
   std::map<int, SidechainRoute> new_sidechain;
   for (auto& [idx, val] : plugin_sidechain) new_sidechain[remap(idx)] = val;
   plugin_sidechain = std::move(new_sidechain);
 }
 
-void Track::AddTimelineClip(const std::string& path, double start_time_sec,
-                            double bpm, double duration_beats,
-                            double sample_rate) {
-  std::lock_guard<DummyMutex> lock(mutex);
+std::unique_ptr<Clip> Track::PrepareTimelineClip(const std::string& path,
+                                                 double duration_beats,
+                                                 double sample_rate,
+                                                 int& out_pattern_idx) {
   std::unique_ptr<Clip> clip;
-  if (path.empty()) {
-    // Create an empty MIDI clip for composing from scratch
+  out_pattern_idx = -1;
+  if (path.rfind("pattern://", 0) == 0) {
+    out_pattern_idx = std::atoi(path.c_str() + 10);
+    clip = std::make_unique<Clip>();
+    clip->type = Clip::Type::MIDI;
+    clip->path = path;
+    clip->duration_beats = (duration_beats > 0) ? duration_beats : 4.0;
+    clip->duration_sec = 0.0;
+  } else if (path.empty()) {
     clip = std::make_unique<Clip>();
     clip->type = Clip::Type::MIDI;
     clip->path = "";
@@ -258,13 +318,26 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec,
     clip->duration_sec = 0.0;
   } else {
     auto result = hibiki::LoadClip(path, false, sample_rate);
-    if (!result.ok()) return;
+    if (!result.ok()) return nullptr;
     clip = std::make_unique<Clip>(std::move(*result));
   }
+  return clip;
+}
 
-  std::string basename = path.empty() ? "New Clip" : path;
-  size_t pos = basename.find_last_of("/\\");
-  if (pos != std::string::npos) basename = basename.substr(pos + 1);
+void Track::InsertPreparedTimelineClip(std::unique_ptr<Clip> clip,
+                                       const std::string& path,
+                                       double start_time_sec, double bpm,
+                                       int pattern_idx) {
+  if (!clip) return;
+  std::lock_guard<DummyMutex> lock(mutex);
+
+  std::string basename = (pattern_idx >= 0)
+                             ? ("Pattern " + std::to_string(pattern_idx + 1))
+                             : (path.empty() ? "New Clip" : path);
+  if (pattern_idx < 0) {
+    size_t pos = basename.find_last_of("/\\");
+    if (pos != std::string::npos) basename = basename.substr(pos + 1);
+  }
   clip->name = basename;
 
   auto tc = std::make_unique<TimelineClip>();
@@ -272,7 +345,9 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec,
       clip->duration_sec;  // In seconds for audio clips, 0 for MIDI
   tc->duration_beats =
       clip->duration_beats;  // In beats for MIDI clips, 0 for audio
+  tc->pattern_index = pattern_idx;
   std::vector<float> waveform = clip->waveform_summary;  // copy before move
+  const bool is_midi = (clip->type == Clip::Type::MIDI);
   tc->clip = std::move(clip);
   tc->start_time_sec = start_time_sec;
   // For GUI: use duration_sec if set, otherwise convert duration_beats using
@@ -283,9 +358,20 @@ void Track::AddTimelineClip(const std::string& path, double start_time_sec,
   timeline_clips.push_back(std::move(tc));
   int clip_idx = (int)timeline_clips.size() - 1;
   // Use basename for display name
-  hibiki::sendTimelineClipInfo(index, clip_idx, basename, path,
-                               (float)start_time_sec, duration_for_gui,
-                               waveform);
+  hibiki::sendTimelineClipInfo(
+      index, clip_idx, basename, path, (float)start_time_sec, duration_for_gui,
+      waveform, false, -1, 0.0f, 0.0f, 0.0f, false, pattern_idx, is_midi);
+}
+
+void Track::AddTimelineClip(const std::string& path, double start_time_sec,
+                            double bpm, double duration_beats,
+                            double sample_rate) {
+  int pattern_idx = -1;
+  auto clip =
+      PrepareTimelineClip(path, duration_beats, sample_rate, pattern_idx);
+  if (!clip) return;
+  InsertPreparedTimelineClip(std::move(clip), path, start_time_sec, bpm,
+                             pattern_idx);
 }
 
 void Track::RemoveTimelineClip(int clip_index) {

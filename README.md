@@ -37,7 +37,7 @@ Common
 - `testdata/`: Sample MIDI files and test plugins.
 
 Audio engine backend
-- `main.cpp`: C++ audio engine entry point and IPC handler.
+- `main.d`: D audio engine entry point and IPC handler.
 - `vst3_host.cpp`: VST3 hosting implementation.
 - `midi.cpp`: MIDI event library.
 - `alsa_out.cpp`: ALSA audio playback.

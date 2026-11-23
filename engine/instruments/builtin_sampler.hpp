@@ -46,6 +46,8 @@ class BuiltinSampler : public IPlugin {
             double sample_rate = 44100.0) override;
   bool loadSample(const std::string& path);
   const std::vector<float>& getWaveformSummary() const;
+  /// Returns loaded sample duration in seconds, or 0.0 if unloaded.
+  double getSampleDurationSec() const;
 
   void showEditor() override {}
   void stopEditor() override {}
@@ -67,6 +69,7 @@ class BuiltinSampler : public IPlugin {
     bool active = false;
     int note = -1;
     float velocity = 0;
+    float pan = 0.0f;
     double position = 0;
     Adsr gain_env;
     Adsr filter_env;
@@ -74,7 +77,7 @@ class BuiltinSampler : public IPlugin {
     uint64_t age = 0;
   };
 
-  int noteOn(int pitch, float velocity);
+  int noteOn(int pitch, float velocity, float pan = 0.0f);
   void noteOff(int pitch);
   double getDefaultValue(int id) const;
   void generateWaveformSummary();

@@ -1,36 +1,49 @@
 #include "engine/instruments/builtin_dr8_kick.hpp"
 
 #include <algorithm>
-#include <cmath>
-#include <cstdlib>
-
-#include "engine/core/math.hpp"
+#include <vector>
 
 namespace hibiki {
 
 static const std::string kDr8KickName = "DR8 Kick";
 static const std::string kDr8KickPath = "builtin://dr8_kick";
 
+struct Dr8KickMidiEvent {
+  float velocity;
+  bool is_note_on;
+};
+
+struct Dr8KickDspState {
+  bool active;
+  double osc_phase;
+  double env_amp;
+  double env_pitch;
+  double env_click;
+  float velocity;
+  uint32_t rng_state;
+
+  void reset();
+};
+
+float d_dr8_kick_norm_to_pitch_hz(double norm);
+float d_dr8_kick_norm_to_decay_s(double norm);
+float d_dr8_kick_norm_to_pitch_env_decay_s(double norm);
+float d_dr8_kick_norm_to_pitch_env_depth_hz(double norm);
+
+void d_dr8_kick_process(Dr8KickDspState& state, float* out_l, float* out_r,
+                        int num_samples, double sample_rate,
+                        const Dr8KickMidiEvent* events, int num_events,
+                        double pitch_norm, double decay_norm,
+                        double pitch_env_decay_norm,
+                        double pitch_env_depth_norm, double click_level_norm,
+                        double distortion_norm, double volume_norm);
+
 struct BuiltinDr8Kick::Impl {
   double params[kTotalParams] = {};
   double sample_rate = 44100.0;
+  Dr8KickDspState dsp_state{};
 
-  // Synthesizer state
-  bool active = false;
-  double osc_phase = 0.0;
-  double env_amp = 0.0;
-  double env_pitch = 0.0;
-  double env_click = 0.0;
-  float velocity = 0.0f;
-
-  void reset() {
-    active = false;
-    osc_phase = 0.0;
-    env_amp = 0.0;
-    env_pitch = 0.0;
-    env_click = 0.0;
-    velocity = 0.0f;
-  }
+  void reset() { dsp_state.reset(); }
 };
 
 BuiltinDr8Kick::BuiltinDr8Kick() : impl_(std::make_unique<Impl>()) {
@@ -55,23 +68,19 @@ bool BuiltinDr8Kick::load(const std::string& /*path*/, int /*plugin_index*/,
 }
 
 float BuiltinDr8Kick::normToPitchHz(double norm) {
-  // Linear mapping: 40 Hz to 80 Hz
-  return (float)(40.0 + norm * 40.0);
+  return d_dr8_kick_norm_to_pitch_hz(norm);
 }
 
 float BuiltinDr8Kick::normToDecayS(double norm) {
-  // Exponential mapping: 0.05 seconds to 1.0 seconds
-  return (float)(0.05 * std::pow(20.0, norm));
+  return d_dr8_kick_norm_to_decay_s(norm);
 }
 
 float BuiltinDr8Kick::normToPitchEnvDecayS(double norm) {
-  // Linear mapping: 0.01 seconds to 0.15 seconds
-  return (float)(0.01 + norm * 0.14);
+  return d_dr8_kick_norm_to_pitch_env_decay_s(norm);
 }
 
 float BuiltinDr8Kick::normToPitchEnvDepthHz(double norm) {
-  // Linear mapping: 0 Hz to 300 Hz
-  return (float)(norm * 300.0);
+  return d_dr8_kick_norm_to_pitch_env_depth_hz(norm);
 }
 
 void BuiltinDr8Kick::process(float** /*inputs*/, float** outputs,
@@ -80,94 +89,32 @@ void BuiltinDr8Kick::process(float** /*inputs*/, float** outputs,
                              float** /*sidechain*/) {
   impl_->sample_rate = context.sampleRate;
 
-  // Process MIDI events
+  std::vector<Dr8KickMidiEvent> kick_events;
+  kick_events.reserve(events.size());
   for (const auto& ev : events) {
     if (ev.isNoteOn && ev.velocity > 0) {
-      impl_->active = true;
-      impl_->env_amp = 1.0;
-      impl_->env_pitch = 1.0;
-      impl_->env_click = 1.0;
-      impl_->osc_phase = 0.0;
-      impl_->velocity = ev.velocity;
+      Dr8KickMidiEvent kev;
+      kev.velocity = ev.velocity;
+      kev.is_note_on = true;
+      kick_events.push_back(kev);
     }
   }
 
-  float* out_l = outputs[0];
-  float* out_r = outputs[1];
-
-  for (int i = 0; i < num_samples; ++i) {
-    out_l[i] = 0.0f;
-    out_r[i] = 0.0f;
-  }
-
-  if (!impl_->active) return;
-
-  double base_freq = normToPitchHz(impl_->params[PARAM_PITCH]);
-  double decay_s = normToDecayS(impl_->params[PARAM_DECAY]);
-  double pitch_decay_s =
-      normToPitchEnvDecayS(impl_->params[PARAM_PITCH_ENV_DECAY]);
-  double pitch_depth =
-      normToPitchEnvDepthHz(impl_->params[PARAM_PITCH_ENV_DEPTH]);
-  double click_level = impl_->params[PARAM_CLICK_LEVEL];
-  double distortion = impl_->params[PARAM_DISTORTION];
-  double volume = impl_->params[PARAM_VOLUME];
-
-  // Coefficients
-  double amp_decay_coeff = std::exp(-1.0 / (decay_s * impl_->sample_rate));
-  double pitch_decay_coeff =
-      std::exp(-1.0 / (pitch_decay_s * impl_->sample_rate));
-  double click_decay_coeff = std::exp(
-      -1.0 / (0.005 * impl_->sample_rate));  // 5ms fixed click envelope
-
-  for (int i = 0; i < num_samples; ++i) {
-    if (impl_->env_amp < 0.0001) {
-      impl_->active = false;
-      impl_->reset();
-      break;
-    }
-
-    // Dynamic frequency calculation
-    double current_freq = base_freq + impl_->env_pitch * pitch_depth;
-    current_freq = std::max(10.0, current_freq);
-
-    // Oscillator phase step
-    double dt = current_freq / impl_->sample_rate;
-    impl_->osc_phase += dt;
-    if (impl_->osc_phase >= 1.0) impl_->osc_phase -= 1.0;
-
-    double sine_out = std::sin(2.0 * hibiki::pi * impl_->osc_phase);
-
-    // Generate Click noise
-    double noise = (((double)std::rand() / RAND_MAX) * 2.0 - 1.0);
-    double click = noise * impl_->env_click * click_level;
-
-    // Sum
-    double raw = sine_out * impl_->env_amp * impl_->velocity + click;
-
-    // Saturation
-    double drive = distortion * 5.0;
-    double saturated = std::tanh(raw * (1.0 + drive));
-
-    // Scaling
-    float out_val = (float)(saturated * volume);
-
-    out_l[i] = out_val;
-    out_r[i] = out_val;
-
-    // Decay envelopes
-    impl_->env_amp *= amp_decay_coeff;
-    impl_->env_pitch *= pitch_decay_coeff;
-    impl_->env_click *= click_decay_coeff;
-  }
+  d_dr8_kick_process(
+      impl_->dsp_state, outputs[0], outputs[1], num_samples, impl_->sample_rate,
+      kick_events.data(), (int)kick_events.size(), impl_->params[PARAM_PITCH],
+      impl_->params[PARAM_DECAY], impl_->params[PARAM_PITCH_ENV_DECAY],
+      impl_->params[PARAM_PITCH_ENV_DEPTH], impl_->params[PARAM_CLICK_LEVEL],
+      impl_->params[PARAM_DISTORTION], impl_->params[PARAM_VOLUME]);
 }
 
 int BuiltinDr8Kick::getParameterCount() const { return kTotalParams; }
 
 bool BuiltinDr8Kick::getParameterInfo(int index, VstParamInfo& info) const {
   if (index < 0 || index >= kTotalParams) return false;
-  static const char* names[] = {
-      "Pitch",       "Decay",      "Pitch Env Decay", "Pitch Env Depth",
-      "Click Level", "Distortion", "Volume"};
+  static const char* names[] = {"Pitch", "Decay",       "Pitch Env Decay",
+                                "Punch", "Click Level", "Distortion",
+                                "Gain"};
   static const double defaults[] = {0.25, 0.4, 0.3, 0.5, 0.2, 0.1, 0.7};
   info.id = index;
   info.name = names[index];

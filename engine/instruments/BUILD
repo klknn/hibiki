@@ -1,21 +1,44 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/d_rules:defs.bzl", "d_library", "d_test")
 
 package(default_visibility = ["//visibility:public"])
 
+d_library(
+    name = "adsr_d",
+    srcs = ["adsr.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
+)
+
 cc_library(
     name = "adsr",
-    srcs = [
-        "adsr.cpp",
-    ],
-    hdrs = [
-        "adsr.hpp",
-    ],
+    hdrs = ["adsr.hpp"],
+    deps = [":adsr_d"],
+)
+
+d_library(
+    name = "multi_point_envelope_d",
+    srcs = ["multi_point_envelope.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
 )
 
 cc_library(
     name = "multi_point_envelope",
     srcs = ["multi_point_envelope.cpp"],
     hdrs = ["multi_point_envelope.hpp"],
+    deps = [":multi_point_envelope_d"],
+)
+
+d_library(
+    name = "builtin_3xosc_d",
+    srcs = ["builtin_3xosc.d"],
+    betterc = True,
+    deps = [
+        ":adsr_d",
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
+    ],
 )
 
 cc_library(
@@ -23,11 +46,16 @@ cc_library(
     srcs = ["builtin_3xosc.cpp"],
     hdrs = ["builtin_3xosc.hpp"],
     deps = [
-        ":adsr",
-        "//engine/core:biquad_filter",
+        ":builtin_3xosc_d",
         "//engine/plugin:iplugin",
-        "@abseil-cpp//absl/base",
     ],
+)
+
+d_library(
+    name = "builtin_acid_bass_d",
+    srcs = ["builtin_acid_bass.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
 )
 
 cc_library(
@@ -35,9 +63,17 @@ cc_library(
     srcs = ["builtin_acid_bass.cpp"],
     hdrs = ["builtin_acid_bass.hpp"],
     deps = [
+        ":builtin_acid_bass_d",
         "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
+)
+
+d_library(
+    name = "builtin_dr8_kick_d",
+    srcs = ["builtin_dr8_kick.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
 )
 
 cc_library(
@@ -45,9 +81,17 @@ cc_library(
     srcs = ["builtin_dr8_kick.cpp"],
     hdrs = ["builtin_dr8_kick.hpp"],
     deps = [
+        ":builtin_dr8_kick_d",
         "//engine/core:math",
         "//engine/plugin:iplugin",
     ],
+)
+
+d_library(
+    name = "builtin_dr8_snare_d",
+    srcs = ["builtin_dr8_snare.d"],
+    betterc = True,
+    deps = ["//engine/core:math_d"],
 )
 
 cc_library(
@@ -55,8 +99,19 @@ cc_library(
     srcs = ["builtin_dr8_snare.cpp"],
     hdrs = ["builtin_dr8_snare.hpp"],
     deps = [
+        ":builtin_dr8_snare_d",
         "//engine/core:math",
         "//engine/plugin:iplugin",
+    ],
+)
+
+d_library(
+    name = "builtin_dr8_hat_d",
+    srcs = ["builtin_dr8_hat.d"],
+    betterc = True,
+    deps = [
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
     ],
 )
 
@@ -65,8 +120,18 @@ cc_library(
     srcs = ["builtin_dr8_hat.cpp"],
     hdrs = ["builtin_dr8_hat.hpp"],
     deps = [
-        "//engine/core:biquad_filter",
+        ":builtin_dr8_hat_d",
         "//engine/plugin:iplugin",
+    ],
+)
+
+d_library(
+    name = "builtin_dr8_tom_d",
+    srcs = ["builtin_dr8_tom.d"],
+    betterc = True,
+    deps = [
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
     ],
 )
 
@@ -75,9 +140,18 @@ cc_library(
     srcs = ["builtin_dr8_tom.cpp"],
     hdrs = ["builtin_dr8_tom.hpp"],
     deps = [
-        "//engine/core:biquad_filter",
-        "//engine/core:math",
+        ":builtin_dr8_tom_d",
         "//engine/plugin:iplugin",
+    ],
+)
+
+d_library(
+    name = "builtin_dr8_clap_d",
+    srcs = ["builtin_dr8_clap.d"],
+    betterc = True,
+    deps = [
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
     ],
 )
 
@@ -86,8 +160,18 @@ cc_library(
     srcs = ["builtin_dr8_clap.cpp"],
     hdrs = ["builtin_dr8_clap.hpp"],
     deps = [
-        "//engine/core:biquad_filter",
+        ":builtin_dr8_clap_d",
         "//engine/plugin:iplugin",
+    ],
+)
+
+d_library(
+    name = "builtin_dr8_cowbell_d",
+    srcs = ["builtin_dr8_cowbell.d"],
+    betterc = True,
+    deps = [
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
     ],
 )
 
@@ -96,8 +180,18 @@ cc_library(
     srcs = ["builtin_dr8_cowbell.cpp"],
     hdrs = ["builtin_dr8_cowbell.hpp"],
     deps = [
-        "//engine/core:biquad_filter",
+        ":builtin_dr8_cowbell_d",
         "//engine/plugin:iplugin",
+    ],
+)
+
+d_library(
+    name = "builtin_dr8_crash_d",
+    srcs = ["builtin_dr8_crash.d"],
+    betterc = True,
+    deps = [
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
     ],
 )
 
@@ -106,8 +200,18 @@ cc_library(
     srcs = ["builtin_dr8_crash.cpp"],
     hdrs = ["builtin_dr8_crash.hpp"],
     deps = [
-        "//engine/core:biquad_filter",
+        ":builtin_dr8_crash_d",
         "//engine/plugin:iplugin",
+    ],
+)
+
+d_library(
+    name = "builtin_dr8_rim_d",
+    srcs = ["builtin_dr8_rim.d"],
+    betterc = True,
+    deps = [
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
     ],
 )
 
@@ -116,9 +220,18 @@ cc_library(
     srcs = ["builtin_dr8_rim.cpp"],
     hdrs = ["builtin_dr8_rim.hpp"],
     deps = [
-        "//engine/core:biquad_filter",
-        "//engine/core:math",
+        ":builtin_dr8_rim_d",
         "//engine/plugin:iplugin",
+    ],
+)
+
+d_library(
+    name = "builtin_dr8_conga_d",
+    srcs = ["builtin_dr8_conga.d"],
+    betterc = True,
+    deps = [
+        "//engine/core:biquad_filter_d",
+        "//engine/core:math_d",
     ],
 )
 
@@ -127,8 +240,7 @@ cc_library(
     srcs = ["builtin_dr8_conga.cpp"],
     hdrs = ["builtin_dr8_conga.hpp"],
     deps = [
-        "//engine/core:biquad_filter",
-        "//engine/core:math",
+        ":builtin_dr8_conga_d",
         "//engine/plugin:iplugin",
     ],
 )
@@ -181,6 +293,26 @@ cc_library(
     ],
 )
 
+d_library(
+    name = "builtin_sylph_d",
+    srcs = ["builtin_sylph.d"],
+    betterc = True,
+    deps = [
+        ":adsr_d",
+        "//engine/core:math_d",
+    ],
+)
+
+cc_library(
+    name = "builtin_sylph",
+    srcs = ["builtin_sylph.cpp"],
+    hdrs = ["builtin_sylph.hpp"],
+    deps = [
+        ":builtin_sylph_d",
+        "//engine/plugin:iplugin",
+    ],
+)
+
 cc_library(
     name = "registry",
     srcs = ["registry.cpp"],
@@ -201,6 +333,7 @@ cc_library(
         ":builtin_film",
         ":builtin_organ",
         ":builtin_sampler",
+        ":builtin_sylph",
         "//engine/plugin:iplugin",
     ],
 )
@@ -242,6 +375,7 @@ cc_library(
         ":builtin_film",
         ":builtin_organ",
         ":builtin_sampler",
+        ":builtin_sylph",
     ],
 )
 
@@ -420,5 +554,35 @@ cc_test(
     deps = [
         ":builtin_epiano",
         "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "builtin_sylph_test",
+    srcs = ["builtin_sylph_test.cpp"],
+    linkstatic = True,
+    deps = [
+        ":builtin_sylph",
+        ":registry",
+        "@googletest//:gtest_main",
+    ],
+)
+
+d_test(
+    name = "instruments_d_test",
+    srcs = ["instruments_d_test.d"],
+    deps = [
+        ":builtin_3xosc_d",
+        ":builtin_acid_bass_d",
+        ":builtin_dr8_clap_d",
+        ":builtin_dr8_conga_d",
+        ":builtin_dr8_cowbell_d",
+        ":builtin_dr8_crash_d",
+        ":builtin_dr8_hat_d",
+        ":builtin_dr8_kick_d",
+        ":builtin_dr8_rim_d",
+        ":builtin_dr8_snare_d",
+        ":builtin_dr8_tom_d",
+        ":builtin_sylph_d",
     ],
 )

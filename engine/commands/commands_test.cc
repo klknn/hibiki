@@ -446,4 +446,741 @@ TEST_F(CommandsTest, MidiClipDurationUpdate) {
   EXPECT_DOUBLE_EQ(clip->duration_beats, 4.0);
 }
 
+TEST_F(CommandsTest, TransportMetronomePanicMasterVolPitch) {
+  auto trk = hibiki::GetOrCreateTrack(state, 1);
+  ASSERT_NE(trk, nullptr);
+
+  hibiki::pb::commands::TransportCmd metro;
+  metro.set_action(hibiki::pb::commands::TransportCmd::ACTION_SET_METRONOME);
+  metro.set_enabled(true);
+  hibiki::handleTransportCmd(metro, state);
+  EXPECT_TRUE(state.metronome_enabled);
+
+  hibiki::pb::commands::TransportCmd mv;
+  mv.set_action(hibiki::pb::commands::TransportCmd::ACTION_SET_MASTER_VOLUME);
+  mv.set_value(0.55f);
+  hibiki::handleTransportCmd(mv, state);
+  EXPECT_FLOAT_EQ(state.master_volume, 0.55f);
+
+  hibiki::pb::commands::TransportCmd mp;
+  mp.set_action(hibiki::pb::commands::TransportCmd::ACTION_SET_MASTER_PITCH);
+  mp.set_value(-5.0f);
+  hibiki::handleTransportCmd(mp, state);
+  EXPECT_FLOAT_EQ(state.master_pitch, -5.0f);
+
+  hibiki::pb::commands::TransportCmd panic;
+  panic.set_action(hibiki::pb::commands::TransportCmd::ACTION_PANIC);
+  hibiki::handleTransportCmd(panic, state);
+  EXPECT_TRUE(trk->panic_requested_.load());
+}
+
+TEST_F(CommandsTest, SyncProjectToGuiIncludesMixBypassAndMidi) {
+  auto track = hibiki::GetOrCreateTrack(state, 1);
+  track->name = "Acid Lead";
+  track->track_type = hibiki::Track::TrackType::GROUP;
+  track->output_track_index = 0;
+  track->volume = 0.72f;
+  track->pan = -0.35f;
+  track->muted = true;
+  track->LoadPlugin("builtin://eq", 0, state.sample_rate);
+  track->plugin_bypass[0] = true;
+
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+
+  hibiki::SyncProjectToGui(state);
+
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  bool saw_playhead = false;
+  bool saw_track_mix = false;
+  bool saw_param_bypass = false;
+  for (const auto& n : captured) {
+    if (n.has_playhead_info()) {
+      saw_playhead = true;
+      EXPECT_FLOAT_EQ(n.playhead_info().bpm(), 120.0f);
+    }
+    if (n.has_track_info() && n.track_info().track_index() == 1) {
+      saw_track_mix = true;
+      EXPECT_FLOAT_EQ(n.track_info().volume(), 0.72f);
+      EXPECT_FLOAT_EQ(n.track_info().pan(), -0.35f);
+      EXPECT_TRUE(n.track_info().muted());
+    }
+    if (n.has_param_list() && n.param_list().track_index() == 1) {
+      saw_param_bypass = n.param_list().bypassed();
+    }
+  }
+  EXPECT_TRUE(saw_playhead);
+  EXPECT_TRUE(saw_track_mix);
+  EXPECT_TRUE(saw_param_bypass);
+}
+
+TEST_F(CommandsTest, SequencerCmdChannelRoutingStepsNotesAndSync) {
+  state.sample_rate = 44100.0;
+  state.bpm = 140.0;
+
+  // 1. Add Channel 0 -> creates generator track 100 routed to Insert 4
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(hibiki::pb::commands::SequencerCmd::ACTION_ADD_CHANNEL);
+    seq.set_channel_index(0);
+    seq.set_name("DR-8 Kick");
+    seq.set_uri("builtin://dr8_kick");
+    seq.set_category("Drums");
+    seq.set_mixer_insert(4);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  ASSERT_EQ(state.sequencer_channels.size(), 1u);
+  ASSERT_NE(state.tracks.find(100), state.tracks.end());
+  EXPECT_EQ(state.tracks[100]->output_track_index, 4);
+  EXPECT_FALSE(state.tracks[100]->plugins.empty());
+
+  // 2. Add Pattern 0 + Pattern 1, toggle steps, set graph param & Piano Roll
+  // notes
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(hibiki::pb::commands::SequencerCmd::ACTION_ADD_PATTERN);
+    seq.set_pattern_index(0);
+    seq.set_name("Pattern 1");
+    seq.set_length_steps(16);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(hibiki::pb::commands::SequencerCmd::ACTION_SET_STEP);
+    seq.set_pattern_index(0);
+    seq.set_channel_index(0);
+    seq.set_step_index(4);
+    seq.set_enabled(true);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(hibiki::pb::commands::SequencerCmd::ACTION_SET_STEP_GRAPH);
+    seq.set_pattern_index(0);
+    seq.set_channel_index(0);
+    seq.set_step_index(4);
+    seq.set_graph_param(1);  // pitch
+    seq.set_value(0.25f);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(
+        hibiki::pb::commands::SequencerCmd::ACTION_SET_CHANNEL_NOTES);
+    seq.set_pattern_index(0);
+    seq.set_channel_index(0);
+    auto* ev = seq.add_notes();
+    ev->set_tick(240);
+    ev->set_pitch(64);
+    ev->set_duration_ticks(180);
+    ev->set_velocity(110);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(hibiki::pb::commands::SequencerCmd::ACTION_SET_SWING);
+    seq.set_value(0.45f);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(
+        hibiki::pb::commands::SequencerCmd::ACTION_SET_PLAYBACK_MODE);
+    seq.set_playback_mode(hibiki::pb::core::PLAYBACK_MODE_PAT);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+
+  ASSERT_EQ(state.sequencer_patterns.size(), 1u);
+  ASSERT_EQ(state.sequencer_patterns[0].channels.size(), 1u);
+  EXPECT_TRUE(state.sequencer_patterns[0].channels[0].steps[4]);
+  EXPECT_FLOAT_EQ(state.sequencer_patterns[0].channels[0].step_pitches[4],
+                  0.25f);
+  ASSERT_EQ(state.sequencer_patterns[0].channels[0].notes.size(), 1u);
+  EXPECT_EQ(state.sequencer_patterns[0].channels[0].notes[0].pitch(), 64u);
+  EXPECT_FLOAT_EQ(state.swing_amount, 0.45f);
+  EXPECT_EQ(state.playback_mode, hibiki::SequencerPlaybackMode::PAT);
+
+  // 3. Re-route channel to Insert 7 & add pattern://0 Playlist clip
+  {
+    hibiki::pb::commands::SequencerCmd seq;
+    seq.set_action(
+        hibiki::pb::commands::SequencerCmd::ACTION_SET_CHANNEL_ROUTE);
+    seq.set_channel_index(0);
+    seq.set_mixer_insert(7);
+    hibiki::handleSequencerCmd(seq, state, history);
+  }
+  EXPECT_EQ(state.tracks[100]->output_track_index, 7);
+
+  auto* lane1 = hibiki::GetOrCreateTrack(state, 1);
+  lane1->AddTimelineClip("pattern://0", 0.0, state.bpm, 8.0);
+  ASSERT_EQ(lane1->timeline_clips.size(), 1u);
+  EXPECT_EQ(lane1->timeline_clips[0]->pattern_index, 0);
+
+  // 4. SyncProjectToGui emits SequencerSync & pattern_index
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+  hibiki::SyncProjectToGui(state);
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  bool saw_seq_sync = false;
+  bool saw_pat_clip = false;
+  for (const auto& n : captured) {
+    if (n.has_sequencer_sync()) {
+      saw_seq_sync = true;
+      EXPECT_EQ(n.sequencer_sync().playback_mode(),
+                hibiki::pb::core::PLAYBACK_MODE_PAT);
+      EXPECT_FLOAT_EQ(n.sequencer_sync().swing_amount(), 0.45f);
+      EXPECT_EQ(n.sequencer_sync().channels_size(), 1);
+      EXPECT_EQ(n.sequencer_sync().patterns_size(), 1);
+    }
+    if (n.has_timeline_clip_info() &&
+        n.timeline_clip_info().has_pattern_index()) {
+      saw_pat_clip = (n.timeline_clip_info().pattern_index() == 0);
+    }
+  }
+  EXPECT_TRUE(saw_seq_sync);
+  EXPECT_TRUE(saw_pat_clip);
+}
+
+TEST_F(CommandsTest, TrackEqStereoSepAndPluginMixCommandsAndSync) {
+  auto* t1 = hibiki::GetOrCreateTrack(state, 1);
+  t1->track_type = hibiki::Track::TrackType::GROUP;
+  ASSERT_GE(t1->LoadPlugin("builtin://eq", 0, 44100.0).index, 0);
+
+  // 1. Set 3-band EQ
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_EQ);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.set_eq_low(0.8f);
+    cmd.set_eq_mid(0.35f);
+    cmd.set_eq_high(0.9f);
+    hibiki::handleTrackCmd(cmd, state, history);
+  }
+  EXPECT_FLOAT_EQ(t1->eq_low, 0.8f);
+  EXPECT_FLOAT_EQ(t1->eq_mid, 0.35f);
+  EXPECT_FLOAT_EQ(t1->eq_high, 0.9f);
+
+  // 2. Set Stereo Separation
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_STEREO_SEP);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.set_value(-0.6f);
+    hibiki::handleTrackCmd(cmd, state, history);
+  }
+  EXPECT_FLOAT_EQ(t1->stereo_sep, -0.6f);
+
+  // 3. Set Plugin Wet/Dry Mix
+  {
+    hibiki::pb::commands::PluginCmd cmd;
+    cmd.set_action(hibiki::pb::commands::PluginCmd::ACTION_SET_MIX);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.mutable_target()->set_plugin_index(0);
+    cmd.set_param_value(0.42f);
+    hibiki::handlePluginCmd(cmd, state, history);
+  }
+  EXPECT_FLOAT_EQ(t1->GetPluginMix(0), 0.42f);
+
+  // 4. Setting routing preserves eq/sep and volume instead of resetting them
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.set_target_track_index(0);
+    hibiki::handleTrackCmd(cmd, state, history);
+  }
+  EXPECT_FLOAT_EQ(t1->eq_low, 0.8f);
+  EXPECT_FLOAT_EQ(t1->stereo_sep, -0.6f);
+
+  // 5. SyncProjectToGui emits TrackInfo EQ/StereoSep and ParamList Mix
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+  hibiki::SyncProjectToGui(state);
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  bool saw_track_eq = false;
+  bool saw_plugin_mix = false;
+  for (const auto& n : captured) {
+    if (n.has_track_info() && n.track_info().track_index() == 1) {
+      saw_track_eq = true;
+      EXPECT_FLOAT_EQ(n.track_info().eq_low(), 0.8f);
+      EXPECT_FLOAT_EQ(n.track_info().eq_mid(), 0.35f);
+      EXPECT_FLOAT_EQ(n.track_info().eq_high(), 0.9f);
+      EXPECT_FLOAT_EQ(n.track_info().stereo_sep(), -0.6f);
+    }
+    if (n.has_param_list() && n.param_list().track_index() == 1 &&
+        n.param_list().plugin_index() == 0) {
+      saw_plugin_mix = true;
+      EXPECT_FLOAT_EQ(n.param_list().mix(), 0.42f);
+    }
+  }
+  EXPECT_TRUE(saw_track_eq);
+  EXPECT_TRUE(saw_plugin_mix);
+}
+
+TEST_F(CommandsTest, MidiClipTimelineTargetNotShadowedByUnsetSessionSlot) {
+  auto* t0 = hibiki::GetOrCreateTrack(state, 0);
+  // Populate both session slot 0 and timeline clip 0; target timeline_clip(0)
+  // explicitly without setting session_slot.
+  t0->clips[0] = std::make_unique<hibiki::Clip>();
+  t0->clips[0]->type = hibiki::Clip::Type::MIDI;
+  {
+    hibiki::MidiEvent slotEv{};
+    slotEv.beats = 0.0;
+    slotEv.type = 0x90;
+    slotEv.channel = 0;
+    slotEv.note = 36;
+    slotEv.velocity = 100;
+    t0->clips[0]->midi_events.push_back(slotEv);
+  }
+  auto tc = std::make_unique<hibiki::TimelineClip>();
+  tc->clip = std::make_unique<hibiki::Clip>();
+  tc->clip->type = hibiki::Clip::Type::MIDI;
+  t0->timeline_clips.push_back(std::move(tc));
+
+  hibiki::pb::commands::MidiCmd cmd;
+  cmd.set_action(hibiki::pb::commands::MidiCmd::ACTION_UPDATE);
+  cmd.mutable_target()->set_track_index(0);
+  cmd.mutable_target()->set_timeline_clip(0);
+  cmd.set_resolution(480);
+  auto* ev = cmd.add_events();
+  ev->set_tick(0);
+  ev->set_pitch(72);
+  ev->set_duration_ticks(240);
+  ev->set_velocity(100);
+  hibiki::handleMidiCmd(cmd, state, history);
+
+  // Session slot 0 must stay untouched (note 36), while timeline clip 0 gets
+  // note 72
+  ASSERT_EQ(t0->clips[0]->midi_events.size(), 1u);
+  EXPECT_EQ(t0->clips[0]->midi_events[0].note, 36);
+  ASSERT_GE(t0->timeline_clips[0]->clip->midi_events.size(), 1u);
+  EXPECT_EQ(t0->timeline_clips[0]->clip->midi_events[0].note, 72);
+}
+
+TEST_F(CommandsTest, SyncProjectToGuiSendsSequencerSyncBeforeChannelTracks) {
+  hibiki::SequencerChannel ch;
+  ch.channel_index = 0;
+  ch.name = "Acid Bass";
+  ch.uri = "builtin://acid_bass";
+  ch.mixer_insert = 1;
+  state.sequencer_channels.push_back(ch);
+
+  auto* gen = hibiki::GetOrCreateTrack(state, 100);
+  gen->track_type = hibiki::Track::TrackType::NORMAL;
+  gen->output_track_index = 1;
+  ASSERT_GE(gen->LoadPlugin("builtin://acid_bass", 0, state.sample_rate).index,
+            0);
+  gen->plugins[0]->setParameterValue(0, 0.25);
+
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+  hibiki::SyncProjectToGui(state);
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  int seq_sync_idx = -1;
+  int gen_param_list_idx = -1;
+  for (int i = 0; i < static_cast<int>(captured.size()); ++i) {
+    if (captured[i].has_sequencer_sync() && seq_sync_idx < 0) {
+      seq_sync_idx = i;
+    }
+    if (captured[i].has_param_list() &&
+        captured[i].param_list().track_index() == 100 &&
+        gen_param_list_idx < 0) {
+      gen_param_list_idx = i;
+    }
+  }
+  ASSERT_GE(seq_sync_idx, 0) << "Expected SequencerSync notification";
+  ASSERT_GE(gen_param_list_idx, 0)
+      << "Expected ParamList for generator track 100";
+  EXPECT_LT(seq_sync_idx, gen_param_list_idx)
+      << "SequencerSync must precede track 100 ParamList so GUI channels exist "
+         "before plugin params arrive";
+}
+
+TEST_F(CommandsTest, SequencerAddChannelEmitsParamListForGenerator) {
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+
+  hibiki::pb::commands::SequencerCmd cmd;
+  cmd.set_action(hibiki::pb::commands::SequencerCmd::ACTION_ADD_CHANNEL);
+  cmd.set_channel_index(0);
+  cmd.set_name("Acid Bass");
+  cmd.set_uri("builtin://acid_bass");
+  cmd.set_mixer_insert(1);
+  hibiki::handleSequencerCmd(cmd, state, history);
+
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  bool saw_param_list = false;
+  for (const auto& n : captured) {
+    if (n.has_param_list() && n.param_list().track_index() == 100 &&
+        n.param_list().plugin_index() == 0 &&
+        n.param_list().params_size() > 0) {
+      saw_param_list = true;
+    }
+  }
+  EXPECT_TRUE(saw_param_list)
+      << "ACTION_ADD_CHANNEL must emit ParamList so GUI wrapper gets real "
+         "generator parameters";
+}
+
+TEST_F(CommandsTest, CollectFilesUsesCmdPathAndSaveCreatesParentDir) {
+  namespace fs = std::filesystem;
+  const fs::path base = fs::temp_directory_path() / "hibiki_collect_save_test";
+  std::error_code ec;
+  fs::remove_all(base, ec);
+
+  auto* t1 = hibiki::GetOrCreateTrack(state, 1);
+  t1->AddTimelineClip("testdata/loop140.wav", 0.0, state.bpm, 4.0,
+                      state.sample_rate);
+  ASSERT_EQ(t1->timeline_clips.size(), 1u);
+
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+
+  const fs::path collect_dir = base / "collected";
+  {
+    hibiki::pb::commands::ProjectCmd cmd;
+    cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_COLLECT_FILES);
+    cmd.set_path(collect_dir.string());
+    hibiki::handleProjectCmd(cmd, state, history);
+  }
+  {
+    hibiki::pb::commands::ProjectCmd cmd;
+    cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_SAVE);
+    cmd.set_path((base / "nested" / "sub" / "proj.hbk").string());
+    hibiki::handleProjectCmd(cmd, state, history);
+  }
+
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  bool collect_ok = false;
+  bool save_ok = false;
+  for (const auto& n : captured) {
+    if (n.has_acknowledge()) {
+      if (n.acknowledge().command_type() == "COLLECT_FILES") {
+        collect_ok = n.acknowledge().success();
+      } else if (n.acknowledge().command_type() == "SAVE_PROJECT") {
+        save_ok = n.acknowledge().success();
+      }
+    }
+  }
+  EXPECT_TRUE(collect_ok)
+      << "ACTION_COLLECT_FILES should accept target dir from cmd.path()";
+  EXPECT_TRUE(fs::exists(collect_dir / "audio" / "loop140.wav"))
+      << "Collected audio file should be copied into target dir/audio";
+  EXPECT_TRUE(save_ok)
+      << "ACTION_SAVE should create missing parent directories automatically";
+  EXPECT_TRUE(fs::exists(base / "nested" / "sub" / "proj.hbk"));
+
+  fs::remove_all(base, ec);
+}
+
+TEST_F(CommandsTest, ApplyProjectStateDoesNotEmitSpuriousTrackInfo) {
+  hibiki::GetOrCreateTrack(state, 1)->name = "Lead";
+  auto snapshot = hibiki::CaptureProjectState(state);
+
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+  hibiki::ProjectState offscreen;
+  offscreen.sample_rate = 44100.0;
+  ASSERT_TRUE(hibiki::ApplyProjectState(offscreen, snapshot).ok());
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  for (const auto& n : captured) {
+    EXPECT_FALSE(n.has_track_info())
+        << "ApplyProjectState (used by offline BounceProject) must not emit "
+           "TrackInfo IPC notifications";
+  }
+}
+
+TEST_F(CommandsTest, StopRecordingMidiSyncsActiveSequencerPatternAndChannel) {
+  hibiki::SequencerChannel ch;
+  ch.channel_index = 0;
+  ch.name = "Acid Bass";
+  ch.uri = "builtin://acid_bass";
+  ch.mixer_insert = 1;
+  state.sequencer_channels.push_back(ch);
+
+  hibiki::SequencerPattern pat;
+  pat.pattern_index = 0;
+  pat.name = "Pattern 1";
+  state.sequencer_patterns.push_back(pat);
+  state.selected_pattern_index = 0;
+
+  auto* gen = hibiki::GetOrCreateTrack(state, 100);
+  gen->track_type = hibiki::Track::TrackType::NORMAL;
+  gen->record_armed = true;
+  gen->record_mode = hibiki::Track::RecordMode::RECORD_MIDI;
+
+  state.is_recording = true;
+  state.is_timeline_playing = true;
+  state.bpm = 120.0;
+  state.record_start_sec = 0.0;
+
+  hibiki::Track::TimestampedMidiEvent note_on{};
+  note_on.time_sec = 0.5;
+  note_on.event.channel = 0;
+  note_on.event.pitch = 60;
+  note_on.event.velocity = 0.8f;
+  note_on.event.isNoteOn = true;
+  gen->midi_record_buffer.push_back(note_on);
+
+  hibiki::Track::TimestampedMidiEvent note_off{};
+  note_off.time_sec = 1.0;
+  note_off.event.channel = 0;
+  note_off.event.pitch = 60;
+  note_off.event.velocity = 0.0f;
+  note_off.event.isNoteOn = false;
+  gen->midi_record_buffer.push_back(note_off);
+
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+
+  hibiki::pb::commands::TransportCmd stop;
+  stop.set_action(hibiki::pb::commands::TransportCmd::ACTION_STOP);
+  hibiki::handleTransportCmd(stop, state);
+
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  ASSERT_FALSE(state.sequencer_patterns[0].channels[0].notes.empty())
+      << "Recorded MIDI notes on track 100 must populate Pattern 0 channel 0";
+  EXPECT_EQ(state.sequencer_patterns[0].channels[0].notes[0].pitch(), 60u);
+
+  bool saw_seq_sync_note = false;
+  for (const auto& n : captured) {
+    if (n.has_sequencer_sync() && n.sequencer_sync().patterns_size() > 0) {
+      for (const auto& cp : n.sequencer_sync().patterns(0).channels()) {
+        if (cp.channel_index() == 0 && cp.notes_size() > 0 &&
+            cp.notes(0).pitch() == 60u) {
+          saw_seq_sync_note = true;
+        }
+      }
+    }
+  }
+  EXPECT_TRUE(saw_seq_sync_note)
+      << "ACTION_STOP must emit SequencerSync with recorded notes";
+}
+
+TEST_F(CommandsTest, SetBpmDoesNotEmitClearProject) {
+  hibiki::SequencerChannel ch;
+  ch.channel_index = 0;
+  ch.name = "Kick";
+  ch.uri = "builtin://sampler";
+  ch.mixer_insert = 1;
+  state.sequencer_channels.push_back(ch);
+
+  auto* t1 = hibiki::GetOrCreateTrack(state, 1);
+  t1->AddTimelineClip("testdata/loop140.wav", 1.0, state.bpm, 4.0,
+                      state.sample_rate);
+
+  std::vector<hibiki::pb::notifications::Notification> captured;
+  hibiki::g_ipc_enabled = true;
+  hibiki::setNotificationHandler([&](const uint8_t* buf, size_t size) {
+    hibiki::pb::notifications::Notification n;
+    if (n.ParseFromArray(buf, static_cast<int>(size))) {
+      captured.push_back(std::move(n));
+    }
+  });
+
+  hibiki::pb::commands::ProjectCmd cmd;
+  cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_SET_BPM);
+  cmd.set_bpm(140.0f);
+  hibiki::handleProjectCmd(cmd, state, history);
+
+  hibiki::setNotificationHandler(nullptr);
+  hibiki::g_ipc_enabled = false;
+
+  bool saw_clear = false;
+  bool saw_clip = false;
+  for (const auto& n : captured) {
+    if (n.has_clear_project()) saw_clear = true;
+    if (n.has_timeline_clip_info() &&
+        n.timeline_clip_info().track_index() == 1) {
+      saw_clip = true;
+    }
+  }
+  EXPECT_FALSE(saw_clear)
+      << "ACTION_SET_BPM must not emit ClearProject while dragging BPM";
+  EXPECT_TRUE(saw_clip)
+      << "ACTION_SET_BPM should update timeline clip durations";
+}
+
+TEST_F(CommandsTest, RejectsRoutingCyclesOnOutputGroupAndAux) {
+  auto* t1 = hibiki::GetOrCreateTrack(state, 1);
+  t1->track_type = hibiki::Track::TrackType::GROUP;
+  auto* t2 = hibiki::GetOrCreateTrack(state, 2);
+  t2->track_type = hibiki::Track::TrackType::GROUP;
+  auto* t3 = hibiki::GetOrCreateTrack(state, 3);
+  t3->track_type = hibiki::Track::TrackType::AUX;
+
+  // Valid chain: 1 -> 2
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.set_target_track_index(2);
+    hibiki::handleTrackCmd(cmd, state, history);
+    EXPECT_EQ(t1->output_track_index, 2);
+  }
+
+  // Self-cycle 1 -> 1 rejected
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING);
+    cmd.mutable_target()->set_track_index(1);
+    cmd.set_target_track_index(1);
+    hibiki::handleTrackCmd(cmd, state, history);
+    EXPECT_EQ(t1->output_track_index, 2);
+  }
+
+  // Indirect cycle 2 -> 1 rejected
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING);
+    cmd.mutable_target()->set_track_index(2);
+    cmd.set_target_track_index(1);
+    hibiki::handleTrackCmd(cmd, state, history);
+    EXPECT_EQ(t2->output_track_index, -1);
+  }
+
+  // Group parent cycle 2 -> 1 rejected
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_GROUP_PARENT);
+    cmd.mutable_target()->set_track_index(2);
+    cmd.set_target_track_index(1);
+    hibiki::handleTrackCmd(cmd, state, history);
+    EXPECT_EQ(t2->group_parent_index, -1);
+  }
+
+  // Aux send cycle 2 -> 3 then 3 -> 2 rejected
+  {
+    hibiki::pb::commands::TrackCmd cmd;
+    cmd.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_AUX_SEND);
+    cmd.mutable_target()->set_track_index(2);
+    cmd.set_aux_track_index(3);
+    cmd.set_send_level(0.5f);
+    hibiki::handleTrackCmd(cmd, state, history);
+    ASSERT_EQ(t2->aux_sends.size(), 1u);
+
+    hibiki::pb::commands::TrackCmd bad;
+    bad.set_action(hibiki::pb::commands::TrackCmd::ACTION_SET_OUTPUT_ROUTING);
+    bad.mutable_target()->set_track_index(3);
+    bad.set_target_track_index(2);
+    hibiki::handleTrackCmd(bad, state, history);
+    EXPECT_EQ(t3->output_track_index, -1);
+  }
+}
+
+TEST_F(CommandsTest, SequencerCmdUndoRedo32StepsAndClearHistory) {
+  // 1. Set pattern length = 32 steps
+  {
+    hibiki::pb::commands::SequencerCmd cmd;
+    cmd.set_action(
+        hibiki::pb::commands::SequencerCmd::ACTION_SET_PATTERN_LENGTH);
+    cmd.set_pattern_index(0);
+    cmd.set_length_steps(32);
+    hibiki::handleSequencerCmd(cmd, state, history);
+    ASSERT_FALSE(state.sequencer_patterns.empty());
+    EXPECT_EQ(state.sequencer_patterns[0].length_steps, 32);
+  }
+
+  // 2. Toggle step 24 ON
+  {
+    hibiki::pb::commands::SequencerCmd cmd;
+    cmd.set_action(hibiki::pb::commands::SequencerCmd::ACTION_SET_STEP);
+    cmd.set_pattern_index(0);
+    cmd.set_channel_index(0);
+    cmd.set_step_index(24);
+    cmd.set_enabled(true);
+    hibiki::handleSequencerCmd(cmd, state, history);
+    EXPECT_TRUE(state.sequencer_patterns[0].channels[0].steps[24]);
+  }
+
+  // 3. Undo step 24 toggle -> false, then Redo -> true
+  {
+    hibiki::pb::commands::ProjectCmd undo_cmd;
+    undo_cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_UNDO);
+    hibiki::handleProjectCmd(undo_cmd, state, history);
+    EXPECT_FALSE(state.sequencer_patterns[0].channels[0].steps[24]);
+
+    hibiki::pb::commands::ProjectCmd redo_cmd;
+    redo_cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_REDO);
+    hibiki::handleProjectCmd(redo_cmd, state, history);
+    EXPECT_TRUE(state.sequencer_patterns[0].channels[0].steps[24]);
+  }
+
+  // 4. Clear history -> Undo must no longer revert step 24
+  {
+    hibiki::pb::commands::ProjectCmd clr_cmd;
+    clr_cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_CLEAR_HISTORY);
+    hibiki::handleProjectCmd(clr_cmd, state, history);
+
+    hibiki::pb::commands::ProjectCmd undo_cmd;
+    undo_cmd.set_action(hibiki::pb::commands::ProjectCmd::ACTION_UNDO);
+    hibiki::handleProjectCmd(undo_cmd, state, history);
+    EXPECT_TRUE(state.sequencer_patterns[0].channels[0].steps[24]);
+  }
+}
+
 }  // namespace hibiki

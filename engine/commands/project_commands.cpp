@@ -26,6 +26,10 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
       std::string project_path = cmd.path();
       std::filesystem::path proj_dir =
           std::filesystem::path(project_path).parent_path();
+      if (!proj_dir.empty()) {
+        std::error_code dir_ec;
+        std::filesystem::create_directories(proj_dir, dir_ec);
+      }
       state.project_dir = proj_dir.string();
       std::filesystem::path audio_dir = proj_dir / "audio";
       std::filesystem::path tmp_dir = "/tmp/hibiki";
@@ -70,7 +74,10 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
       history.pushState(CaptureProjectState(state));
       auto load_status = LoadProject(state, cmd.path());
-      if (!load_status.ok()) {
+      if (load_status.ok()) {
+        state.project_dir =
+            std::filesystem::path(cmd.path()).parent_path().string();
+      } else {
         LOG(ERROR) << "Load failed: " << load_status.message();
       }
       SyncProjectToGui(state);
@@ -97,7 +104,11 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
       std::vector<uint8_t> current = CaptureProjectState(state);
       std::vector<uint8_t> prev;
       if (history.undo(current, prev)) {
-        ApplyProjectState(state, prev);
+        if (auto status = ApplyProjectState(state, prev); !status.ok()) {
+          LOG(WARNING) << "Undo failed: " << status.message();
+          sendAck("UNDO", false);
+          break;
+        }
         SyncProjectToGui(state);
         sendAck("UNDO", true);
       } else {
@@ -110,7 +121,11 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
       std::vector<uint8_t> current = CaptureProjectState(state);
       std::vector<uint8_t> next;
       if (history.redo(current, next)) {
-        ApplyProjectState(state, next);
+        if (auto status = ApplyProjectState(state, next); !status.ok()) {
+          LOG(WARNING) << "Redo failed: " << status.message();
+          sendAck("REDO", false);
+          break;
+        }
         SyncProjectToGui(state);
         sendAck("REDO", true);
       } else {
@@ -131,20 +146,49 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
         state.bpm = new_bpm;
         double scale = old_bpm / new_bpm;
         for (auto& [tidx, track] : state.tracks) {
-          for (auto& tc : track->timeline_clips) {
+          for (int tc_idx = 0;
+               tc_idx < static_cast<int>(track->timeline_clips.size());
+               ++tc_idx) {
+            auto& tc = track->timeline_clips[tc_idx];
             tc->start_time_sec *= scale;
+            if (!tc->clip) continue;
+            std::string cname =
+                tc->clip->name.empty() ? tc->clip->path : tc->clip->name;
+            const size_t last_slash = cname.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+              cname = cname.substr(last_slash + 1);
+            }
+            if (cname.empty()) cname = "New Clip";
+            const float dur_gui =
+                (tc->duration_beats > 0)
+                    ? static_cast<float>(tc->duration_beats * 60.0 / state.bpm)
+                    : static_cast<float>(tc->duration_sec);
+            const float li_sec =
+                (tc->loop_interval_beats > 0)
+                    ? static_cast<float>(tc->loop_interval_beats * 60.0 /
+                                         state.bpm)
+                    : 0.0f;
+            sendTimelineClipInfo(
+                tidx, tc_idx, cname, tc->clip->path, tc->start_time_sec,
+                dur_gui, tc->clip->waveform_summary, tc->clip->is_loop,
+                tc->alias_source, li_sec, static_cast<float>(tc->fade_in_sec),
+                static_cast<float>(tc->fade_out_sec), tc->muted,
+                tc->pattern_index, tc->clip->type == Clip::Type::MIDI);
           }
           for (auto& lane : track->automation_lanes) {
             for (auto& tc : lane.clips) {
               tc->start_time_sec *= scale;
             }
           }
+          if (!track->automation_lanes.empty()) {
+            sendAutomationLanesData(tidx, track->automation_lanes,
+                                    track->plugins);
+          }
         }
-        state.playhead_pos_sec *= scale;
-        state.record_start_sec *= scale;
-        state.loop_start_sec *= scale;
-        state.loop_end_sec *= scale;
-        SyncProjectToGui(state);
+        state.playhead_pos_sec.store(state.playhead_pos_sec.load() * scale);
+        state.record_start_sec.store(state.record_start_sec.load() * scale);
+        state.loop_start_sec.store(state.loop_start_sec.load() * scale);
+        state.loop_end_sec.store(state.loop_end_sec.load() * scale);
       } else if (new_bpm > 0) {
         state.bpm = new_bpm;
       }
@@ -153,6 +197,9 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
     }
     case pb::commands::ProjectCmd::ACTION_COLLECT_FILES: {
       std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      if (!cmd.path().empty()) {
+        state.project_dir = cmd.path();
+      }
       if (state.project_dir.empty()) {
         sendAck("COLLECT_FILES", false);
         break;
@@ -236,6 +283,12 @@ void handleProjectCmd(const pb::commands::ProjectCmd& cmd, ProjectState& state,
       }
       break;
     }
+    case pb::commands::ProjectCmd::ACTION_CLEAR_HISTORY: {
+      std::lock_guard<std::mutex> lock(state.tracks_mutex);
+      history.clear();
+      sendAck("CLEAR_HISTORY", true);
+      break;
+    }
     default:
       break;
   }
@@ -296,10 +349,11 @@ void saveConfig(const ProjectState& state) {
 void handleSetAudioBufferSize(const pb::commands::SetAudioBufferSize& cmd,
                               ProjectState& state) {
   int ms = cmd.buffer_size_ms();
-  if (ms < 10) ms = 10;
+  if (ms < 5) ms = 5;
   if (ms > 2000) ms = 2000;
   state.buffer_latency_ms = ms;
-  LOG(INFO) << "Audio buffer size set to " << ms << " ms (restart to apply)";
+  state.audio_restart_requested.store(true);
+  LOG(INFO) << "Audio buffer size set to " << ms << " ms";
   sendAck("SET_AUDIO_BUFFER_SIZE", true);
   saveConfig(state);
 }

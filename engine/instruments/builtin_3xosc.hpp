@@ -1,10 +1,9 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "engine/core/biquad_filter.hpp"
-#include "engine/instruments/adsr.hpp"
 #include "engine/plugin/iplugin.hpp"
 
 namespace hibiki {
@@ -48,6 +47,7 @@ class Builtin3xOsc : public IPlugin {
   };
 
   Builtin3xOsc();
+  ~Builtin3xOsc() override;
 
   bool load(const std::string& path, int plugin_index = 0,
             double sample_rate = 44100.0) override;
@@ -67,31 +67,8 @@ class Builtin3xOsc : public IPlugin {
   bool isInstrument() const override;
 
  private:
-  struct Voice {
-    bool active = false;
-    int note = -1;
-    float velocity = 0;
-    float base_freq = 0;
-    double phase[kNumOsc] = {};
-    Adsr gain_env;
-    Adsr filter_env;
-    BiquadFilter filterL, filterR;
-    uint64_t age = 0;
-  };
-
-  static Waveform normToWaveform(float norm);
-  static float generateOsc(Waveform wf, double phase, float freq, double sr);
-
-  void noteOn(int pitch, float velocity);
-  void noteOff(int pitch);
-  double getDefaultValue(int id) const;
-  void reset();
-
-  double sample_rate_ = 44100.0;
-  bool enabled_ = true;
-  float params_[kTotalParams] = {};
-  Voice voices_[kMaxVoices];
-  uint64_t voice_counter_ = 0;
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace hibiki

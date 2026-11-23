@@ -1,50 +1,45 @@
 #include "engine/instruments/builtin_dr8_conga.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstdlib>
-
-#include "engine/core/biquad_filter.hpp"
-#include "engine/core/math.hpp"
+#include <vector>
 
 namespace hibiki {
 
 static const std::string kDr8CongaName = "DR8 Conga";
 static const std::string kDr8CongaPath = "builtin://dr8_conga";
 
+struct Dr8CongaDspState;
+
+struct Dr8CongaMidiEvent {
+  int pitch;
+  float velocity;
+  bool is_note_on;
+};
+
+Dr8CongaDspState* d_dr8_conga_create();
+void d_dr8_conga_destroy(Dr8CongaDspState* state);
+void d_dr8_conga_reset(Dr8CongaDspState* state);
+void d_dr8_conga_set_parameter(Dr8CongaDspState* state, uint32_t id,
+                               double value);
+double d_dr8_conga_get_parameter(const Dr8CongaDspState* state, uint32_t id);
+void d_dr8_conga_process(Dr8CongaDspState* state, float* out_l, float* out_r,
+                         int num_samples, double sample_rate,
+                         const Dr8CongaMidiEvent* events, int num_events);
+
+float d_dr8_conga_norm_to_pitch_hz(double norm);
+float d_dr8_conga_norm_to_decay_s(double norm);
+float d_dr8_conga_norm_to_pitch_env_decay_s(double norm);
+float d_dr8_conga_norm_to_pitch_env_depth_hz(double norm);
+
 struct BuiltinDr8Conga::Impl {
-  double params[kTotalParams] = {};
+  Dr8CongaDspState* state = nullptr;
   double sample_rate = 44100.0;
 
-  // Synthesizer state
-  bool active = false;
-  double osc_phase = 0.0;
-  double env_amp = 0.0;
-  double env_pitch = 0.0;
-  double env_click = 0.0;
-  float velocity = 0.0f;
-
-  // Warm tone filter
-  BiquadFilter lpf;
-
-  void reset() {
-    active = false;
-    osc_phase = 0.0;
-    env_amp = 0.0;
-    env_pitch = 0.0;
-    env_click = 0.0;
-    velocity = 0.0f;
-    lpf.reset();
-  }
+  Impl() : state(d_dr8_conga_create()) {}
+  ~Impl() { d_dr8_conga_destroy(state); }
+  void reset() { d_dr8_conga_reset(state); }
 };
 
 BuiltinDr8Conga::BuiltinDr8Conga() : impl_(std::make_unique<Impl>()) {
-  impl_->params[PARAM_PITCH] = 0.3;             // ~210 Hz base pitch default
-  impl_->params[PARAM_DECAY] = 0.4;             // moderate amplitude decay
-  impl_->params[PARAM_PITCH_ENV_DECAY] = 0.4;   // pitch decay
-  impl_->params[PARAM_PITCH_ENV_DEPTH] = 0.33;  // ~40 Hz pitch sweep
-  impl_->params[PARAM_VOLUME] = 0.7;            // master volume default
-
   impl_->reset();
 }
 
@@ -58,23 +53,19 @@ bool BuiltinDr8Conga::load(const std::string& /*path*/, int /*plugin_index*/,
 }
 
 float BuiltinDr8Conga::normToPitchHz(double norm) {
-  // Linear mapping: 150 Hz to 350 Hz
-  return (float)(150.0 + norm * 200.0);
+  return d_dr8_conga_norm_to_pitch_hz(norm);
 }
 
 float BuiltinDr8Conga::normToDecayS(double norm) {
-  // Exponential mapping: 0.05s to 0.8s
-  return (float)(0.05 * std::pow(16.0, norm));
+  return d_dr8_conga_norm_to_decay_s(norm);
 }
 
 float BuiltinDr8Conga::normToPitchEnvDecayS(double norm) {
-  // Linear mapping: 0.01s to 0.15s
-  return (float)(0.01 + norm * 0.14);
+  return d_dr8_conga_norm_to_pitch_env_decay_s(norm);
 }
 
 float BuiltinDr8Conga::normToPitchEnvDepthHz(double norm) {
-  // Linear mapping: 0 Hz to 120 Hz
-  return (float)(norm * 120.0);
+  return d_dr8_conga_norm_to_pitch_env_depth_hz(norm);
 }
 
 void BuiltinDr8Conga::process(float** /*inputs*/, float** outputs,
@@ -84,83 +75,19 @@ void BuiltinDr8Conga::process(float** /*inputs*/, float** outputs,
                               float** /*sidechain*/) {
   impl_->sample_rate = context.sampleRate;
 
-  // Process MIDI events
+  std::vector<Dr8CongaMidiEvent> d_events;
+  d_events.reserve(events.size());
   for (const auto& ev : events) {
-    if (ev.isNoteOn && ev.velocity > 0) {
-      impl_->active = true;
-      impl_->env_amp = 1.0;
-      impl_->env_pitch = 1.0;
-      impl_->env_click = 1.0;
-      impl_->osc_phase = 0.0;
-      impl_->velocity = ev.velocity;
-    }
+    Dr8CongaMidiEvent dev;
+    dev.pitch = ev.pitch;
+    dev.velocity = ev.velocity;
+    dev.is_note_on = ev.isNoteOn;
+    d_events.push_back(dev);
   }
 
-  float* out_l = outputs[0];
-  float* out_r = outputs[1];
-
-  for (int i = 0; i < num_samples; ++i) {
-    out_l[i] = 0.0f;
-    out_r[i] = 0.0f;
-  }
-
-  if (!impl_->active) return;
-
-  double base_freq = normToPitchHz(impl_->params[PARAM_PITCH]);
-  double decay_s = normToDecayS(impl_->params[PARAM_DECAY]);
-  double pitch_decay_s =
-      normToPitchEnvDecayS(impl_->params[PARAM_PITCH_ENV_DECAY]);
-  double pitch_depth =
-      normToPitchEnvDepthHz(impl_->params[PARAM_PITCH_ENV_DEPTH]);
-  double volume = impl_->params[PARAM_VOLUME];
-
-  // Coefficients
-  double amp_decay_coeff = std::exp(-1.0 / (decay_s * impl_->sample_rate));
-  double pitch_decay_coeff =
-      std::exp(-1.0 / (pitch_decay_s * impl_->sample_rate));
-  double click_decay_coeff =
-      std::exp(-1.0 / (0.003 * impl_->sample_rate));  // sharp 3ms click
-
-  for (int i = 0; i < num_samples; ++i) {
-    if (impl_->env_amp < 0.0001) {
-      impl_->active = false;
-      impl_->reset();
-      break;
-    }
-
-    // Dynamic pitch sweep
-    double current_freq = base_freq + impl_->env_pitch * pitch_depth;
-    current_freq = std::max(20.0, current_freq);
-
-    // Step phase
-    double dt = current_freq / impl_->sample_rate;
-    impl_->osc_phase += dt;
-    if (impl_->osc_phase >= 1.0) impl_->osc_phase -= 1.0;
-
-    double sine_out = std::sin(2.0 * hibiki::pi * impl_->osc_phase);
-
-    // Hardcoded noise click level (0.12) to emulate physical strike click
-    double noise = (((double)std::rand() / RAND_MAX) * 2.0 - 1.0);
-    double click = noise * impl_->env_click * 0.12;
-
-    double raw = sine_out * impl_->env_amp * impl_->velocity + click;
-
-    // Filter to warm up the sound and reduce high-frequency click harshness
-    impl_->lpf.setParams(BiquadFilter::Type::LOWPASS,
-                         (float)(current_freq * 2.5), 0.707f, 0.0f,
-                         (float)impl_->sample_rate);
-    float filtered = impl_->lpf.process((float)raw);
-
-    float out_val = (float)(filtered * volume);
-
-    out_l[i] = out_val;
-    out_r[i] = out_val;
-
-    // Decay envelopes
-    impl_->env_amp *= amp_decay_coeff;
-    impl_->env_pitch *= pitch_decay_coeff;
-    impl_->env_click *= click_decay_coeff;
-  }
+  d_dr8_conga_process(impl_->state, outputs[0], outputs[1], num_samples,
+                      context.sampleRate, d_events.data(),
+                      static_cast<int>(d_events.size()));
 }
 
 int BuiltinDr8Conga::getParameterCount() const { return kTotalParams; }
@@ -177,16 +104,11 @@ bool BuiltinDr8Conga::getParameterInfo(int index, VstParamInfo& info) const {
 }
 
 void BuiltinDr8Conga::setParameterValue(uint32_t id, double value) {
-  if (id < kTotalParams) {
-    impl_->params[id] = std::clamp(value, 0.0, 1.0);
-  }
+  d_dr8_conga_set_parameter(impl_->state, id, value);
 }
 
 double BuiltinDr8Conga::getParameterValue(uint32_t id) const {
-  if (id < kTotalParams) {
-    return impl_->params[id];
-  }
-  return 0.0;
+  return d_dr8_conga_get_parameter(impl_->state, id);
 }
 
 const std::string& BuiltinDr8Conga::getName() const { return kDr8CongaName; }
